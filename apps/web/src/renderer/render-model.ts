@@ -9,6 +9,7 @@
  */
 
 import { Offset } from '../core/hex/hex-coords';
+import { ProjectionMode } from './projection';
 
 /** A tile palette entry; mirrors the engine's `PaletteEntry`. */
 export interface RenderPaletteEntry {
@@ -53,9 +54,26 @@ export interface RenderOverlay {
 export interface RenderModel {
   readonly width: number;
   readonly height: number;
+  /** How the hex plane is projected; authored per world. */
+  readonly projection: ProjectionMode;
   readonly palette: readonly RenderPaletteEntry[];
   /** One palette index per cell, row-major in offset coordinates. */
   readonly terrain: Uint8Array;
+  /**
+   * One elevation per cell, in the same layout as {@link terrain}.
+   *
+   * Empty means "flat everywhere", which is what a world without authored
+   * elevation produces. Only read in isometric mode.
+   */
+  readonly elevation: Int8Array;
+  /**
+   * Bounds on the values in {@link elevation} — not necessarily tight.
+   *
+   * The renderer uses them to size the culling margin and the band it searches
+   * when hit-testing, so a loose bound costs a little work and a wrong one drops
+   * cells. Producers that cannot track the range exactly should widen it.
+   */
+  readonly elevationRange: { readonly min: number; readonly max: number };
   readonly entities: readonly RenderEntity[];
   readonly locations: readonly RenderLocation[];
   readonly overlays: readonly RenderOverlay[];
@@ -70,8 +88,11 @@ export function emptyRenderModel(): RenderModel {
   return {
     width: 0,
     height: 0,
+    projection: 'topDown',
     palette: [],
     terrain: new Uint8Array(0),
+    elevation: new Int8Array(0),
+    elevationRange: { min: 0, max: 0 },
     entities: [],
     locations: [],
     overlays: [],
@@ -80,4 +101,23 @@ export function emptyRenderModel(): RenderModel {
     showGrid: true,
     showCoordinates: false,
   };
+}
+
+/**
+ * The exact range of an elevation buffer.
+ *
+ * One pass over the whole buffer, so callers should do this when the buffer is
+ * *produced* — once per loaded world — not once per frame.
+ */
+export function elevationRangeOf(elevation: Int8Array): { min: number; max: number } {
+  let min = 0;
+  let max = 0;
+  for (const value of elevation) {
+    if (value < min) {
+      min = value;
+    } else if (value > max) {
+      max = value;
+    }
+  }
+  return { min, max };
 }

@@ -15,6 +15,14 @@
       >
         col,row
       </button>
+      <button
+        type="button"
+        (click)="toggleProjection()"
+        [class.on]="projection() === 'isometric'"
+        title="Switch the world between top-down and isometric (saved with the world)"
+      >
+        Isometric
+      </button>
     </div>
 
     @let cell = hover();
@@ -25,6 +33,7 @@
         @if (tile !== null) {
           · {{ tile.name }} · cost {{ tile.movementCost }}{{ tile.passable ? '' : ' (impassable)' }}
         }
+        · elevation {{ hoveredElevation() }}
       } @else {
         drag with the left button to paint · right-drag or middle-drag to pan · wheel to zoom
       }
@@ -50,6 +59,7 @@
           <div class="row"><span>name</span><span>{{ doc.name }}</span></div>
           <div class="row"><span>size</span><span>{{ doc.width }} × {{ doc.height }}</span></div>
           <div class="row"><span>tile set</span><span>{{ doc.tileSetId }}</span></div>
+          <div class="row"><span>projection</span><span>{{ projection() }}</span></div>
           <div class="row"><span>source</span><span>{{ source() }}{{ dirty() ? ' · edited' : '' }}</span></div>
           <div class="row">
             <span>entities</span>
@@ -62,6 +72,8 @@
         <h2>Tool</h2>
         <div class="tools">
           <button type="button" [class.on]="tool() === 'paint'" (click)="selectTool('paint')">Paint</button>
+          <button type="button" [class.on]="tool() === 'raise'" (click)="selectTool('raise')">Raise</button>
+          <button type="button" [class.on]="tool() === 'lower'" (click)="selectTool('lower')">Lower</button>
           <button type="button" [class.on]="tool() === 'player'" (click)="selectTool('player')">Player</button>
           <button type="button" [class.on]="tool() === 'monster'" (click)="selectTool('monster')">Monster</button>
           <button type="button" [class.on]="tool() === 'erase'" (click)="selectTool('erase')">Erase entity</button>
@@ -69,6 +81,8 @@
         <p class="hint">
           @switch (tool()) {
             @case ('paint') { Click or drag to paint the selected terrain. }
+            @case ('raise') { Click or drag to raise cells by one step. Visible in isometric. }
+            @case ('lower') { Click or drag to lower cells by one step. Visible in isometric. }
             @case ('player') { Click a hex to move the player start. A world has exactly one. }
             @case ('monster') { Click hexes to add hunters. }
             @case ('erase') { Click a hex to remove the entity standing on it. }

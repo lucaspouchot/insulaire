@@ -117,6 +117,16 @@ export class EngineService {
     return this.call(() => this.engine().terrainBuffer(worldId));
   }
 
+  /**
+   * The packed elevation buffer: one signed byte per cell, same layout as
+   * {@link terrainBuffer}.
+   *
+   * Presentation only; the renderer uses it in isometric mode.
+   */
+  elevationBuffer(worldId: string): Int8Array {
+    return this.call(() => this.engine().elevationBuffer(worldId));
+  }
+
   // ------------------------------------------------------------------- game
 
   /** Starts a game. The engine owns the seed from here on. */

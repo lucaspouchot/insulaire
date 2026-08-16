@@ -99,11 +99,12 @@ drawn while a texture loads. Rendering *logic* never appears in content.
   "width": 20,
   "height": 20,
   "orientation": "pointy",
+  "projection": "isometric",
   "tileSetId": "mvp_terrain",
   "defaultTile": "grass",
   "tiles": [
-    { "at": [4, 1], "tile": "mountain" },
-    { "at": [5, 1], "tile": "mountain" }
+    { "at": [4, 1], "tile": "mountain", "elevation": 4 },
+    { "at": [5, 1], "tile": "mountain", "elevation": 4 }
   ],
   "entities": [
     { "id": "player_1", "templateId": "player", "at": [4, 10], "tags": ["hero"] },
@@ -127,6 +128,7 @@ drawn while a texture loads. Rendering *logic* never appears in content.
 | `name` | string | no | Display name. |
 | `width`, `height` | integer | yes | Columns and rows. `1..2048`. |
 | `orientation` | `"pointy"` \| `"flat"` | no | Defaults to `"pointy"`. `"flat"` is reserved and currently rejected. |
+| `projection` | `"topDown"` \| `"isometric"` | no | Defaults to `"topDown"`. How the renderer draws this world; see below. |
 | `tileSetId` | string | yes | The `TileSetDefinition` this world paints with. |
 | `defaultTile` | string | yes | Tile used for every cell not listed in `tiles`. |
 | `tiles` | PlacedTile[] | no | Only the cells that differ from `defaultTile`. |
@@ -141,13 +143,34 @@ world with a lake and a ridge is 82 lines rather than 400, and painting one hex
 changes one line of the diff. The runtime expands this into a dense buffer on
 load; the editor re-sparsifies on export.
 
+### Projection and elevation
+
+`projection` is **presentation carried by content**. The simulation never reads
+it and no rule may depend on it; it decides how the renderer draws the map, and
+it travels to the UI on `WorldView.projection`
+(`docs/adr/ADR-0016-isometric-projection.md`).
+
+| Value | What it draws |
+|---|---|
+| `"topDown"` | The hex plane straight down. `elevation` has no visible effect. |
+| `"isometric"` | The hex plane foreshortened vertically, with elevated cells lifted off their row and drawn with a side face. |
+
+`elevation` is likewise presentation only in the MVP: nothing about movement,
+passability or line of sight reads it. It is packed as **one signed byte per
+cell**, so it is constrained to `-128..=127` — outside that, validation reports
+`tile.elevationOutOfRange`.
+
+A cell carrying elevation is written to `tiles` even when its tile *is* the
+`defaultTile`, because the sparse array is the only place elevation can be
+stored.
+
 ### PlacedTile
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `at` | `[col, row]` | yes | Position. Must be in bounds and unique. |
 | `tile` | string | yes | A `TileDefinition.id` from the referenced tile set. |
-| `elevation` | integer | no | Carried through; unused by MVP rules. Omitted when `0`. |
+| `elevation` | integer | no | `-128..=127` steps of relief. Drawn in `isometric`, ignored by the rules. Omitted when `0`. |
 | `tags` | string[] | no | Per-cell tags, in addition to the tile's own. |
 
 ### EntityDefinition
@@ -211,6 +234,7 @@ such as `entities[3].at`, and a message.
 | `tile.outOfBounds` | A placed tile is outside the map. |
 | `tile.duplicatePosition` | Two tiles painted on one cell. |
 | `tile.unknownReference` | A placed tile references an unknown tile id. |
+| `tile.elevationOutOfRange` | A placed tile's `elevation` is outside `-128..=127`. |
 | `entity.missingId` / `entity.duplicateId` | Ids must exist and be unique. |
 | `entity.outOfBounds` | Entity placed outside the map. |
 | `entity.onImpassableTile` | Entity standing on `movementCost: 0`. |

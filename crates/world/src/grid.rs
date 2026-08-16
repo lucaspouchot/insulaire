@@ -1,19 +1,20 @@
 //! The resolved runtime view of an authored world.
 //!
 //! [`WorldGrid`] flattens a sparse [`WorldDefinition`] plus its
-//! [`TileSetDefinition`] into two compact structures:
+//! [`TileSetDefinition`] into three compact structures:
 //!
-//! * a palette of [`ResolvedTile`]s, and
-//! * one `u8` palette index per cell, row-major in offset coordinates.
+//! * a palette of [`ResolvedTile`]s,
+//! * one `u8` palette index per cell, row-major in offset coordinates, and
+//! * one `i8` elevation per cell, in the same layout.
 //!
-//! The index buffer is handed to JavaScript as a single `Uint8Array`, so
-//! rendering a 2048x2048 map costs exactly one boundary crossing instead of
-//! four million (see `CLAUDE.md`, "Performance").
+//! Both buffers are handed to JavaScript whole — as a `Uint8Array` and an
+//! `Int8Array` — so rendering a 2048x2048 map costs two boundary crossings
+//! instead of eight million (see `CLAUDE.md`, "Performance").
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::definition::WorldDefinition;
+use crate::definition::{WorldDefinition, MAX_ELEVATION, MIN_ELEVATION};
 use crate::hex::{Hex, OffsetCoord};
 use crate::tileset::TileSetDefinition;
 
@@ -84,6 +85,8 @@ pub struct WorldGrid {
     palette: Vec<ResolvedTile>,
     /// One palette index per cell, row-major in offset coordinates.
     cells: Vec<u8>,
+    /// One elevation per cell, in the same layout as [`cells`](Self::cells).
+    elevations: Vec<i8>,
 }
 
 impl WorldGrid {
@@ -134,6 +137,7 @@ impl WorldGrid {
 
         let default_index = index_of(&world.default_tile)?;
         let mut cells = vec![default_index; world.cell_count()];
+        let mut elevations = vec![0_i8; world.cell_count()];
 
         for placed in &world.tiles {
             let cell =
@@ -146,6 +150,9 @@ impl WorldGrid {
                         height: world.height,
                     })?;
             cells[cell] = index_of(&placed.tile)?;
+            // Validation rejects anything outside the byte range; clamping here
+            // keeps an unvalidated definition from silently wrapping around.
+            elevations[cell] = placed.elevation.clamp(MIN_ELEVATION, MAX_ELEVATION) as i8;
         }
 
         Ok(Self {
@@ -153,6 +160,7 @@ impl WorldGrid {
             height: world.height,
             palette,
             cells,
+            elevations,
         })
     }
 
@@ -178,6 +186,22 @@ impl WorldGrid {
     #[must_use]
     pub fn cells(&self) -> &[u8] {
         &self.cells
+    }
+
+    /// The packed elevations, in the same layout as [`cells`](Self::cells).
+    ///
+    /// Presentation only: the renderer lifts a cell by this much in isometric
+    /// mode (`docs/adr/ADR-0016-isometric-projection.md`). No rule reads it.
+    #[must_use]
+    pub fn elevations(&self) -> &[i8] {
+        &self.elevations
+    }
+
+    /// The elevation at `hex`, or `None` when out of bounds.
+    #[must_use]
+    pub fn elevation_at(&self, hex: Hex) -> Option<i8> {
+        let index = hex.to_offset().index_in(self.width, self.height)?;
+        self.elevations.get(index).copied()
     }
 
     /// Returns `true` when `hex` lies inside the map.
@@ -269,6 +293,38 @@ mod tests {
         world.default_tile = "lava".into();
         let error = WorldGrid::build(&world, &testing::sample_tile_set()).expect_err("should fail");
         assert!(matches!(error, GridError::UnknownTile { .. }));
+    }
+
+    #[test]
+    fn elevation_defaults_to_zero_and_follows_the_painted_cell() {
+        let world = testing::sample_world();
+        let grid = WorldGrid::build(&world, &testing::sample_tile_set()).expect("build");
+
+        assert_eq!(grid.elevations().len(), world.cell_count());
+        assert_eq!(
+            grid.elevation_at(Hex::from_offset(testing::RAISED_CELL)),
+            Some(testing::RAISED_ELEVATION as i8)
+        );
+        assert_eq!(
+            grid.elevation_at(Hex::from_offset(OffsetCoord::new(0, 0))),
+            Some(0)
+        );
+        assert_eq!(
+            grid.elevation_at(Hex::from_offset(OffsetCoord::new(-1, 0))),
+            None
+        );
+    }
+
+    #[test]
+    fn elevation_beyond_a_byte_is_clamped_rather_than_wrapped() {
+        // Validation rejects this world; `build` must still not wrap 300 to 44.
+        let mut world = testing::sample_world();
+        world.tiles[1].elevation = 300;
+        let grid = WorldGrid::build(&world, &testing::sample_tile_set()).expect("build");
+        assert_eq!(
+            grid.elevation_at(Hex::from_offset(testing::RAISED_CELL)),
+            Some(i8::MAX)
+        );
     }
 
     #[test]

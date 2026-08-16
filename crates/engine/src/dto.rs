@@ -219,8 +219,8 @@ pub struct LocationView {
     pub tags: Vec<String>,
 }
 
-/// Everything the renderer needs about a loaded world *except* the tile indices,
-/// which travel separately as a packed `Uint8Array`.
+/// Everything the renderer needs about a loaded world *except* the per-cell
+/// buffers, which travel separately as packed typed arrays.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorldView {
@@ -234,13 +234,18 @@ pub struct WorldView {
     pub height: u32,
     /// Hex orientation, currently always `"pointy"`.
     pub orientation: String,
+    /// Authored render projection: `"topDown"` or `"isometric"`.
+    ///
+    /// Transported, never interpreted: the engine has no notion of pixels
+    /// (`docs/adr/ADR-0016-isometric-projection.md`).
+    pub projection: String,
     /// Id of the tile set this world paints with.
     pub tile_set_id: String,
     /// The palette that the packed terrain buffer indexes into.
     pub palette: Vec<PaletteEntry>,
     /// Authored points of interest.
     pub locations: Vec<LocationView>,
-    /// Length of the packed terrain buffer, i.e. `width * height`.
+    /// Length of the packed terrain and elevation buffers, i.e. `width * height`.
     pub cell_count: u32,
 }
 

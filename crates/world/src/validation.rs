@@ -9,7 +9,9 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
-use crate::definition::{HexOrientation, WorldDefinition, WORLD_SCHEMA_VERSION};
+use crate::definition::{
+    HexOrientation, WorldDefinition, MAX_ELEVATION, MIN_ELEVATION, WORLD_SCHEMA_VERSION,
+};
 use crate::template::{EntityKind, TemplateRegistry};
 use crate::tileset::{TileSetDefinition, TILE_SET_SCHEMA_VERSION};
 
@@ -288,6 +290,19 @@ fn validate_tiles(
                 ),
             ));
         }
+        // Elevation is packed as one signed byte per cell for the renderer
+        // (`docs/adr/ADR-0016-isometric-projection.md`), so the schema cannot
+        // carry more than a byte's worth of relief.
+        if !(MIN_ELEVATION..=MAX_ELEVATION).contains(&placed.elevation) {
+            issues.push(ValidationIssue::error(
+                "tile.elevationOutOfRange",
+                format!("{path}.elevation"),
+                format!(
+                    "elevation {} at {} is outside {MIN_ELEVATION}..={MAX_ELEVATION}",
+                    placed.elevation, placed.at
+                ),
+            ));
+        }
     }
 }
 
@@ -486,6 +501,31 @@ mod tests {
         assert!(!report.valid);
         assert!(codes(&report).contains(&"tile.outOfBounds"));
         assert!(codes(&report).contains(&"entity.outOfBounds"));
+    }
+
+    #[test]
+    fn elevation_outside_a_signed_byte_is_an_error() {
+        let mut world = testing::sample_world();
+        world.tiles[1].elevation = MAX_ELEVATION + 1;
+        let report = validate_world(
+            &world,
+            Some(&testing::sample_tile_set()),
+            &TemplateRegistry::builtin(),
+        );
+        assert!(!report.valid);
+        assert!(codes(&report).contains(&"tile.elevationOutOfRange"));
+
+        world.tiles[1].elevation = MIN_ELEVATION;
+        let report = validate_world(
+            &world,
+            Some(&testing::sample_tile_set()),
+            &TemplateRegistry::builtin(),
+        );
+        assert!(
+            report.valid,
+            "the bounds themselves are legal: {:?}",
+            report.issues
+        );
     }
 
     #[test]

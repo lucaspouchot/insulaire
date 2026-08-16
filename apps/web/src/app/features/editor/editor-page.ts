@@ -27,7 +27,7 @@ import { Router } from '@angular/router';
 
 import { Offset } from '../../../core/hex/hex-coords';
 import { HexLayout } from '../../../core/hex/hex-layout';
-import { WorldDefinition } from '../../../content/content-types';
+import { ProjectionMode, WorldDefinition } from '../../../content/content-types';
 import { DocumentTile, WorldDocument } from '../../../content/world-document';
 import { serializeWorld } from '../../../content/world-serializer';
 import { ValidationReport } from '../../../engine/engine.types';
@@ -41,7 +41,7 @@ import { WorldStoreService } from '../../services/world-store.service';
 /** Hex circumradius in world pixels. The camera scales from here. */
 const HEX_SIZE = 28;
 
-export type EditorTool = 'paint' | 'player' | 'monster' | 'erase';
+export type EditorTool = 'paint' | 'raise' | 'lower' | 'player' | 'monster' | 'erase';
 
 @Component({
   selector: 'app-editor-page',
@@ -171,6 +171,12 @@ export class EditorPage implements AfterViewInit, OnDestroy {
         changed = tileId !== null && document.paint(cell, tileId);
         break;
       }
+      case 'raise':
+        changed = document.raise(cell, 1);
+        break;
+      case 'lower':
+        changed = document.raise(cell, -1);
+        break;
       case 'player':
         changed = document.placeEntity(cell, 'player', true) !== null;
         break;
@@ -315,6 +321,40 @@ export class EditorPage implements AfterViewInit, OnDestroy {
     this.rebuild();
   }
 
+  /**
+   * Switches the world between top-down and isometric.
+   *
+   * This edits the *document*, not the view: the projection is authored content
+   * (`docs/adr/ADR-0016-isometric-projection.md`), so the runtime will render
+   * the exported world exactly the way the editor shows it.
+   */
+  protected toggleProjection(): void {
+    const document = this.store.document();
+    if (document === null) {
+      return;
+    }
+    document.projection = document.projection === 'isometric' ? 'topDown' : 'isometric';
+    this.store.touch();
+    this.report.set(null);
+    this.message.set(null);
+    this.rebuild();
+    this.view?.fit();
+  }
+
+  /** The projection the document is currently authored with. */
+  protected readonly projection = computed<ProjectionMode>(() => {
+    this.revision();
+    return this.document()?.projection ?? 'topDown';
+  });
+
+  /** Elevation of the hovered cell, for the status bar. */
+  protected readonly hoveredElevation = computed<number | null>(() => {
+    this.revision();
+    const cell = this.hover();
+    const document = this.document();
+    return cell === null || document === null ? null : document.elevationAt(cell);
+  });
+
   protected dismissError(): void {
     this.error.set(null);
   }
@@ -342,8 +382,11 @@ export class EditorPage implements AfterViewInit, OnDestroy {
     return {
       width: document.width,
       height: document.height,
+      projection: document.projection,
       palette: document.palette,
       terrain: document.terrain,
+      elevation: document.elevation,
+      elevationRange: document.elevationRange,
       entities: document.placedEntities.map((entity) => ({
         id: entity.id,
         at: entity.at,

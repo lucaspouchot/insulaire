@@ -101,6 +101,54 @@ describe('WorldDocument', () => {
     expect(document.toDefinition().tiles).toEqual([{ at: [2, 2], tile: 'water' }]);
   });
 
+  it('carries elevation and projection through a round trip', () => {
+    const authored: WorldDefinition = {
+      ...world,
+      projection: 'isometric',
+      // Row-major, which is the order the sparse export writes them back in.
+      tiles: [
+        { at: [2, 0], tile: 'grass', elevation: 5 },
+        { at: [1, 1], tile: 'water', elevation: -3 },
+      ],
+    };
+
+    const document = WorldDocument.fromDefinition(authored, tileSet);
+    expect(document.projection).toBe('isometric');
+    expect(document.elevationAt(offset(1, 1))).toBe(-3);
+    expect(document.elevationAt(offset(2, 0))).toBe(5);
+    expect(document.elevationAt(offset(0, 0))).toBe(0);
+    expect(document.elevationRange).toEqual({ min: -3, max: 5 });
+
+    // A default-tile cell carrying elevation must still be written out: the
+    // sparse export is the only place that elevation can live.
+    const exported = document.toDefinition(() => new Date('2026-01-01T00:00:00Z'));
+    expect(exported.projection).toBe('isometric');
+    expect(exported.tiles).toEqual(authored.tiles);
+  });
+
+  it('raises and lowers cells within the packed byte range', () => {
+    const document = documentFor();
+
+    expect(document.raise(offset(1, 1), 2)).toBe(true);
+    expect(document.raise(offset(1, 1), -1)).toBe(true);
+    expect(document.elevationAt(offset(1, 1))).toBe(1);
+
+    expect(document.raise(offset(9, 9), 1)).toBe(false);
+
+    document.raise(offset(0, 0), 500);
+    expect(document.elevationAt(offset(0, 0))).toBe(127);
+    expect(document.raise(offset(0, 0), 3)).toBe(false);
+
+    document.raise(offset(0, 1), -500);
+    expect(document.elevationAt(offset(0, 1))).toBe(-128);
+  });
+
+  it('defaults an authored world without a projection to top-down', () => {
+    expect(documentFor().projection).toBe('topDown');
+    expect(documentFor().toDefinition().projection).toBe('topDown');
+    expect(documentFor().elevationRange).toEqual({ min: 0, max: 0 });
+  });
+
   it('reports whether a paint actually changed anything', () => {
     const document = documentFor();
     expect(document.paint(offset(0, 0), 'water')).toBe(true);

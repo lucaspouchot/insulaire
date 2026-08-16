@@ -102,6 +102,8 @@ export interface WorldView {
   width: number;
   height: number;
   orientation: string;
+  /** `"topDown"` or `"isometric"`; presentation carried by the content. */
+  projection: string;
   tileSetId: string;
   palette: PaletteEntry[];
   locations: LocationView[];
@@ -215,6 +217,7 @@ export interface RawHexEngine {
   contentSummary(): string;
   worldView(worldId: string): string;
   terrainBuffer(worldId: string): Uint8Array;
+  elevationBuffer(worldId: string): Int8Array;
   createGame(worldId: string, seed: number): string;
   snapshot(): string;
   dispatch(commandJson: string): string;

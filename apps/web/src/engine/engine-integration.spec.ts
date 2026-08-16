@@ -106,6 +106,18 @@ describe.skipIf(!built)('engine boundary', () => {
     }
   });
 
+  it('hands over elevation and projection for the isometric renderer', () => {
+    const instance = loaded();
+    const view = JSON.parse(instance.worldView('demo_world')) as WorldView;
+    const elevation = instance.elevationBuffer('demo_world');
+
+    expect(view.projection).toBe('isometric');
+    expect(elevation).toBeInstanceOf(Int8Array);
+    expect(elevation.length).toBe(view.cellCount);
+    // The demo has relief, and it lines up with the terrain buffer cell for cell.
+    expect(Math.max(...elevation)).toBeGreaterThan(0);
+  });
+
   it('advances exactly one tick per accepted move, and moves the monsters', () => {
     const instance = loaded();
     const start = JSON.parse(instance.createGame('demo_world', 2026)) as GameSnapshot;

@@ -29,6 +29,27 @@ pub enum HexOrientation {
     Flat,
 }
 
+/// How the hex plane is projected onto the screen.
+///
+/// This is *presentation* carried by content: the simulation never reads it, and
+/// no rule may depend on it. The renderer turns it into an affine transform of
+/// world-space points (`docs/adr/ADR-0016-isometric-projection.md`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ProjectionMode {
+    /// Straight down: the hex plane is the drawing plane.
+    #[default]
+    TopDown,
+    /// Vertically foreshortened, with elevation lifting a cell off its row.
+    Isometric,
+}
+
+/// Lowest authored elevation. Elevation is packed as one signed byte per cell.
+pub const MIN_ELEVATION: i32 = i8::MIN as i32;
+
+/// Highest authored elevation. Elevation is packed as one signed byte per cell.
+pub const MAX_ELEVATION: i32 = i8::MAX as i32;
+
 /// An authored hexagonal world.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -47,6 +68,9 @@ pub struct WorldDefinition {
     /// Hex orientation.
     #[serde(default)]
     pub orientation: HexOrientation,
+    /// How the renderer projects this map. Never read by the simulation.
+    #[serde(default)]
+    pub projection: ProjectionMode,
     /// Id of the [`crate::TileSetDefinition`] this world paints with.
     pub tile_set_id: String,
     /// Tile id used for every cell not listed in [`tiles`](Self::tiles).
@@ -84,7 +108,11 @@ pub struct PlacedTile {
     pub at: OffsetCoord,
     /// Referenced [`crate::TileDefinition::id`].
     pub tile: String,
-    /// Authored elevation. Carried through but unused by the MVP rules.
+    /// Authored elevation, in whole steps.
+    ///
+    /// Unused by the MVP rules; the renderer lifts the cell by this much in
+    /// isometric mode. Validation constrains it to [`MIN_ELEVATION`] ..=
+    /// [`MAX_ELEVATION`] so it can be packed as one signed byte per cell.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub elevation: i32,
     /// Per-cell gameplay tags, in addition to the tile's own tags.
@@ -170,6 +198,7 @@ mod tests {
     fn optional_fields_default_sensibly() {
         let world: WorldDefinition = serde_json::from_str(MINIMAL).expect("parse");
         assert_eq!(world.orientation, HexOrientation::Pointy);
+        assert_eq!(world.projection, ProjectionMode::TopDown);
         assert_eq!(world.cell_count(), 6);
         assert!(world.locations.is_empty());
         assert_eq!(world.metadata, WorldMetadata::default());
@@ -192,5 +221,18 @@ mod tests {
         let serialised = serde_json::to_string(&world).expect("serialise");
         assert!(!serialised.contains("\"elevation\""));
         assert!(!serialised.contains("\"properties\""));
+    }
+
+    #[test]
+    fn projection_round_trips_by_its_camel_case_name() {
+        let world: WorldDefinition = serde_json::from_str(&MINIMAL.replace(
+            r#""width": 3,"#,
+            r#""width": 3, "projection": "isometric","#,
+        ))
+        .expect("parse");
+        assert_eq!(world.projection, ProjectionMode::Isometric);
+
+        let serialised = serde_json::to_string(&world).expect("serialise");
+        assert!(serialised.contains(r#""projection":"isometric""#));
     }
 }

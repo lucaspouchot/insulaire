@@ -47,7 +47,8 @@ states the contract by hand instead, which is also what this document specifies.
 **Structured payloads** cross as JSON strings. Payloads are a few hundred bytes,
 so parse cost is irrelevant and the boundary stays inspectable from devtools.
 
-**Bulk data** does not use JSON: `terrainBuffer` returns a `Uint8Array`.
+**Bulk data** does not use JSON: `terrainBuffer` returns a `Uint8Array` and
+`elevationBuffer` an `Int8Array`.
 
 **Failures** throw a JSON string:
 
@@ -132,7 +133,7 @@ this build knows.
 
 ### `worldView(worldId: string): WorldView`
 
-Everything the renderer needs about a world **except** the tile indices.
+Everything the renderer needs about a world **except** the per-cell buffers.
 
 ```json
 {
@@ -141,6 +142,7 @@ Everything the renderer needs about a world **except** the tile indices.
   "width": 20,
   "height": 20,
   "orientation": "pointy",
+  "projection": "isometric",
   "tileSetId": "mvp_terrain",
   "palette": [
     { "index": 0, "id": "grass", "name": "Grass", "terrain": "grass",
@@ -154,15 +156,27 @@ Everything the renderer needs about a world **except** the tile indices.
 
 Fetched **once per world**.
 
+`projection` is `"topDown"` or `"isometric"`, republished from the authored
+world. The engine transports it and never interprets it — it has no notion of
+pixels (ADR-0014, ADR-0016).
+
 ### `terrainBuffer(worldId: string): Uint8Array`
 
 One byte per cell — an index into `worldView().palette` — row-major in offset
 coordinates, so cell `[col, row]` is at `row * width + col`.
 
-This is the only bulk transfer in the API and the reason the renderer never
-calls into WASM per tile. A 2048x2048 world costs one 4 MiB copy instead of four
-million calls. Fetched **once per world**; terrain is authored and immutable
+This is one of the two bulk transfers in the API and the reason the renderer
+never calls into WASM per tile. A 2048x2048 world costs one 4 MiB copy instead of
+four million calls. Fetched **once per world**; terrain is authored and immutable
 during play.
+
+### `elevationBuffer(worldId: string): Int8Array`
+
+One **signed** byte per cell, in exactly the same layout and of exactly the same
+length as `terrainBuffer` — cell `[col, row]` is at `row * width + col`.
+
+Presentation only: the renderer lifts cells by this much in isometric mode and
+draws their side faces (ADR-0016). No rule reads it. Fetched **once per world**.
 
 ### `createGame(worldId: string, seed: number): GameSnapshot`
 

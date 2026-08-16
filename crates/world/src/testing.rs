@@ -5,8 +5,8 @@
 //! The feature is off by default, so none of this reaches the WASM bundle.
 
 use crate::definition::{
-    EntityDefinition, HexOrientation, LocationDefinition, PlacedTile, WorldDefinition,
-    WorldMetadata, WORLD_SCHEMA_VERSION,
+    EntityDefinition, HexOrientation, LocationDefinition, PlacedTile, ProjectionMode,
+    WorldDefinition, WorldMetadata, WORLD_SCHEMA_VERSION,
 };
 use crate::hex::OffsetCoord;
 use crate::tileset::{TileDefinition, TileSetDefinition, TileVisual, TILE_SET_SCHEMA_VERSION};
@@ -19,6 +19,12 @@ pub const PLAYER_START: OffsetCoord = OffsetCoord::new(2, 2);
 
 /// Where [`sample_world`] places the monster.
 pub const MONSTER_START: OffsetCoord = OffsetCoord::new(7, 2);
+
+/// The single raised cell in [`sample_world`], used to exercise elevation.
+pub const RAISED_CELL: OffsetCoord = OffsetCoord::new(6, 6);
+
+/// Elevation of [`RAISED_CELL`].
+pub const RAISED_ELEVATION: i32 = 3;
 
 fn tile(id: &str, terrain: &str, movement_cost: u32, color: &str) -> TileDefinition {
     TileDefinition {
@@ -50,7 +56,7 @@ pub fn sample_tile_set() -> TileSetDefinition {
     }
 }
 
-/// A 10x10 world with one water cell, one player and one monster.
+/// A 10x10 world with one water cell, one raised rock, one player, one monster.
 #[must_use]
 pub fn sample_world() -> WorldDefinition {
     WorldDefinition {
@@ -60,14 +66,23 @@ pub fn sample_world() -> WorldDefinition {
         width: 10,
         height: 10,
         orientation: HexOrientation::Pointy,
+        projection: ProjectionMode::TopDown,
         tile_set_id: "mvp_terrain".to_owned(),
         default_tile: "grass".to_owned(),
-        tiles: vec![PlacedTile {
-            at: WATER_CELL,
-            tile: "water".to_owned(),
-            elevation: 0,
-            tags: Vec::new(),
-        }],
+        tiles: vec![
+            PlacedTile {
+                at: WATER_CELL,
+                tile: "water".to_owned(),
+                elevation: 0,
+                tags: Vec::new(),
+            },
+            PlacedTile {
+                at: RAISED_CELL,
+                tile: "rock".to_owned(),
+                elevation: RAISED_ELEVATION,
+                tags: Vec::new(),
+            },
+        ],
         entities: vec![
             EntityDefinition {
                 id: "player_1".to_owned(),

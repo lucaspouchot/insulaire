@@ -50,7 +50,7 @@ The MVP implements the marked parts. Unmarked entries are the planned shape.
 │       └── src/
 │           ├── core/hex/        # coordinate transforms + pixel layout       [MVP]
 │           ├── content/         # authored document model + serialiser       [MVP]
-│           ├── renderer/        # framework-free Canvas renderer             [MVP]
+│           ├── renderer/        # framework-free Canvas renderer + projection [MVP]
 │           ├── engine/          # boundary types + WASM loader               [MVP]
 │           └── app/             # Angular shell, services, feature pages     [MVP]
 ├── crates/

@@ -48,8 +48,8 @@ pub mod testing;
 mod testing;
 
 pub use definition::{
-    EntityDefinition, HexOrientation, LocationDefinition, PlacedTile, WorldDefinition,
-    WorldMetadata, WORLD_SCHEMA_VERSION,
+    EntityDefinition, HexOrientation, LocationDefinition, PlacedTile, ProjectionMode,
+    WorldDefinition, WorldMetadata, MAX_ELEVATION, MIN_ELEVATION, WORLD_SCHEMA_VERSION,
 };
 pub use grid::{GridError, ResolvedTile, WorldGrid};
 pub use hex::{Hex, HexDirection, OffsetCoord, DIRECTIONS};

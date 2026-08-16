@@ -36,10 +36,18 @@ export interface TileSetDefinition {
   tiles: TileDefinition[];
 }
 
+/** How the renderer projects a world; mirrors the engine's `ProjectionMode`. */
+export type ProjectionMode = 'topDown' | 'isometric';
+
+/** Authored elevation is packed as one signed byte per cell for the renderer. */
+export const MIN_ELEVATION = -128;
+export const MAX_ELEVATION = 127;
+
 /** A cell whose tile differs from {@link WorldDefinition.defaultTile}. */
 export interface PlacedTile {
   at: OffsetPair;
   tile: string;
+  /** Whole steps of relief, `MIN_ELEVATION`..`MAX_ELEVATION`. Omitted when `0`. */
   elevation?: number;
   tags?: string[];
 }
@@ -73,6 +81,8 @@ export interface WorldDefinition {
   width: number;
   height: number;
   orientation?: 'pointy' | 'flat';
+  /** Presentation only; defaults to `topDown` when absent. */
+  projection?: ProjectionMode;
   tileSetId: string;
   defaultTile: string;
   tiles?: PlacedTile[];

@@ -39,7 +39,8 @@ import { EntitySnapshot, GameSnapshot, SimEvent, WorldView } from '../../../engi
 import { Camera } from '../../../renderer/camera';
 import { CanvasView } from '../../../renderer/canvas-view';
 import { HexMapRenderer } from '../../../renderer/hex-map-renderer';
-import { RenderModel } from '../../../renderer/render-model';
+import { toProjectionMode } from '../../../renderer/projection';
+import { RenderModel, elevationRangeOf } from '../../../renderer/render-model';
 import { EngineService } from '../../services/engine.service';
 import { WorldStoreService } from '../../services/world-store.service';
 
@@ -144,13 +145,14 @@ export class PlayPage implements AfterViewInit, OnDestroy {
 
       const view = this.engine.worldView(outcome.id);
       const terrain = this.engine.terrainBuffer(outcome.id);
+      const elevation = this.engine.elevationBuffer(outcome.id);
       const snapshot = this.engine.createGame(outcome.id, seed);
 
       this.worldView.set(view);
       this.snapshot.set(snapshot);
       this.selected.set(null);
 
-      this.attachRenderer(view, terrain);
+      this.attachRenderer(view, terrain, elevation);
       this.pushLog(0, `Game started on "${view.name}" with seed ${seed}.`, 'tick');
       this.busy.set(false);
     } catch (cause) {
@@ -205,7 +207,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
 
   // -------------------------------------------------------------- rendering
 
-  private attachRenderer(view: WorldView, terrain: Uint8Array): void {
+  private attachRenderer(view: WorldView, terrain: Uint8Array, elevation: Int8Array): void {
     this.view?.dispose();
 
     const context = this.canvasRef().nativeElement.getContext('2d');
@@ -215,7 +217,8 @@ export class PlayPage implements AfterViewInit, OnDestroy {
     }
 
     this.renderer = new HexMapRenderer(context, new HexLayout(HEX_SIZE), new Camera());
-    this.renderer.setModel(this.buildModel(view, terrain));
+    // The elevation range is scanned once per loaded world, never per frame.
+    this.renderer.setModel(this.buildModel(view, terrain, elevation, elevationRangeOf(elevation)));
 
     this.view = new CanvasView(this.canvasRef().nativeElement, this.renderer, {
       onHover: (cell) => {
@@ -251,23 +254,35 @@ export class PlayPage implements AfterViewInit, OnDestroy {
   private refresh(): void {
     const view = this.worldView();
     if (view !== null && this.renderer !== null) {
-      // Terrain is authored and immutable during play, so the existing buffer is
-      // reused instead of being pulled across the boundary again.
-      this.renderer.setModel(this.buildModel(view, this.renderer.currentModel.terrain));
+      // Terrain and elevation are authored and immutable during play, so the
+      // existing buffers are reused instead of crossing the boundary again.
+      const current = this.renderer.currentModel;
+      this.renderer.setModel(
+        this.buildModel(view, current.terrain, current.elevation, current.elevationRange),
+      );
     }
     this.revision.update((value) => value + 1);
     this.view?.invalidate();
   }
 
-  private buildModel(view: WorldView, terrain: Uint8Array): RenderModel {
+  private buildModel(
+    view: WorldView,
+    terrain: Uint8Array,
+    elevation: Int8Array,
+    elevationRange: { min: number; max: number },
+  ): RenderModel {
     const snapshot = this.snapshot();
     const legal: Offset[] = (snapshot?.legalMoves ?? []).map(([col, row]) => ({ col, row }));
 
     return {
       width: view.width,
       height: view.height,
+      // Authored by the world, transported by the engine, applied here.
+      projection: toProjectionMode(view.projection),
       palette: view.palette,
       terrain,
+      elevation,
+      elevationRange,
       entities: (snapshot?.entities ?? []).map((entity) => ({
         id: entity.contentId,
         at: { col: entity.at[0], row: entity.at[1] },

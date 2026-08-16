@@ -27,6 +27,7 @@ const SCALAR_KEYS = [
   'width',
   'height',
   'orientation',
+  'projection',
   'tileSetId',
   'defaultTile',
 ] as const;

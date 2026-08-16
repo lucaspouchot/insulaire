@@ -26,10 +26,13 @@ import {
   EntityDefinition,
   LocationDefinition,
   PlacedTile,
+  ProjectionMode,
   TileDefinition,
   TileSetDefinition,
   WorldDefinition,
   WorldMetadata,
+  MAX_ELEVATION,
+  MIN_ELEVATION,
   WORLD_SCHEMA_VERSION,
 } from './content-types';
 
@@ -69,6 +72,7 @@ export interface WorldDocumentInit {
   height: number;
   tileSet: TileSetDefinition;
   defaultTile?: string;
+  projection?: ProjectionMode;
 }
 
 /** Thrown when a document cannot be built from the given content. */
@@ -84,10 +88,17 @@ export class WorldDocument {
     readonly palette: readonly DocumentTile[],
     private defaultTileIndex: number,
     private readonly cells: Uint8Array,
+    /** One elevation per cell, in the same layout as {@link cells}. */
+    private readonly elevations: Int8Array,
     private entities: DocumentEntity[],
     private locations: DocumentLocation[],
     public metadata: WorldMetadata,
+    /** How the runtime and the editor render this world. */
+    public projection: ProjectionMode,
   ) {}
+
+  private minElevation = 0;
+  private maxElevation = 0;
 
   // ---------------------------------------------------------------- creation
 
@@ -118,9 +129,11 @@ export class WorldDocument {
       palette,
       defaultIndex,
       cells,
+      new Int8Array(init.width * init.height),
       [],
       [],
       {},
+      init.projection ?? 'topDown',
     );
   }
 
@@ -139,6 +152,7 @@ export class WorldDocument {
       height: definition.height,
       tileSet,
       defaultTile: definition.defaultTile,
+      projection: definition.projection,
     });
 
     for (const placed of definition.tiles ?? []) {
@@ -153,6 +167,8 @@ export class WorldDocument {
         );
       }
       document.cells[cell] = index;
+      // Through `raise` rather than the buffer, so the elevation range tracks.
+      document.raise({ col: placed.at[0], row: placed.at[1] }, placed.elevation ?? 0);
     }
 
     document.entities = (definition.entities ?? []).map((entity) => ({
@@ -177,6 +193,47 @@ export class WorldDocument {
   /** The packed palette indices; the renderer reads this directly. */
   get terrain(): Uint8Array {
     return this.cells;
+  }
+
+  /** The packed elevations; the renderer reads this directly. */
+  get elevation(): Int8Array {
+    return this.elevations;
+  }
+
+  /**
+   * Bounds on the packed elevations — widened on every edit, never narrowed.
+   *
+   * Narrowing would mean rescanning the buffer on each stroke; the renderer only
+   * needs a bound, and a stale-but-wider one costs a few extra hit tests.
+   */
+  get elevationRange(): { min: number; max: number } {
+    return { min: this.minElevation, max: this.maxElevation };
+  }
+
+  /** Authored elevation at a cell, or `0` when out of bounds. */
+  elevationAt(cell: Offset): number {
+    const index = indexIn(cell, this.width, this.height);
+    return index < 0 ? 0 : (this.elevations[index] ?? 0);
+  }
+
+  /**
+   * Raises (or lowers) a cell by `delta` steps, clamped to the schema range.
+   *
+   * @returns `true` when the cell changed.
+   */
+  raise(cell: Offset, delta: number): boolean {
+    const index = indexIn(cell, this.width, this.height);
+    if (index < 0) {
+      return false;
+    }
+    const next = clampElevation((this.elevations[index] ?? 0) + delta);
+    if (next === this.elevations[index]) {
+      return false;
+    }
+    this.elevations[index] = next;
+    this.minElevation = Math.min(this.minElevation, next);
+    this.maxElevation = Math.max(this.maxElevation, next);
+    return true;
   }
 
   /** The tile every unpainted cell falls back to on export. */
@@ -293,13 +350,15 @@ export class WorldDocument {
    * Produces the authored world file.
    *
    * Cells matching {@link defaultTile} are omitted, which is what keeps a large
-   * map's file small and its diffs meaningful.
+   * map's file small and its diffs meaningful — unless they carry elevation,
+   * which has nowhere else to be written.
    */
   toDefinition(now: () => Date = () => new Date()): WorldDefinition {
     const tiles: PlacedTile[] = [];
     for (let index = 0; index < this.cells.length; index += 1) {
       const paletteIndex = this.cells[index] as number;
-      if (paletteIndex === this.defaultTileIndex) {
+      const elevation = this.elevations[index] ?? 0;
+      if (paletteIndex === this.defaultTileIndex && elevation === 0) {
         continue;
       }
       const tile = this.palette[paletteIndex];
@@ -309,6 +368,7 @@ export class WorldDocument {
       tiles.push({
         at: [index % this.width, Math.floor(index / this.width)],
         tile: tile.id,
+        ...(elevation === 0 ? {} : { elevation }),
       });
     }
 
@@ -333,6 +393,7 @@ export class WorldDocument {
       width: this.width,
       height: this.height,
       orientation: 'pointy',
+      projection: this.projection,
       tileSetId: this.tileSetId,
       defaultTile: this.defaultTile.id,
       tiles,
@@ -353,6 +414,11 @@ export class WorldDocument {
     }
     return counts;
   }
+}
+
+/** Keeps an authored elevation inside what the packed buffer can hold. */
+function clampElevation(value: number): number {
+  return Math.max(MIN_ELEVATION, Math.min(MAX_ELEVATION, Math.trunc(value)));
 }
 
 function buildPalette(tileSet: TileSetDefinition): DocumentTile[] {

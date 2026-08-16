@@ -13,6 +13,7 @@ An authored world contains at minimum:
 - `width`
 - `height`
 - `orientation`
+- `projection` — presentation only; carried, never interpreted by the engine
 - `tileSetId`
 - `defaultTile`
 - `tiles`
@@ -37,8 +38,9 @@ A tile is a palette entry living in a `TileSetDefinition`, not a map cell:
 - gameplay properties
 - *(planned)* render layer
 
-Map cells (`PlacedTile`) carry only a position and a reference to one of these
-ids.
+Map cells (`PlacedTile`) carry a position, a reference to one of these ids, and
+an `elevation` — relief the renderer draws in isometric mode and the rules
+ignore (ADR-0016).
 
 ## EntityDefinition
 
@@ -93,9 +95,11 @@ The flattened runtime view of a world:
 - `palette: Vec<ResolvedTile>` — the tile set, flattened
 - `cells: Vec<u8>` — one palette index per cell, row-major in offset
   coordinates
+- `elevations: Vec<i8>` — one elevation per cell, in the same layout
 
-`cells` is exactly the buffer handed to JavaScript as a `Uint8Array`, so the
-file coordinate, the buffer index and the rendered position all agree.
+`cells` and `elevations` are exactly the buffers handed to JavaScript as a
+`Uint8Array` and an `Int8Array`, so the file coordinate, the buffer index and the
+rendered position all agree.
 
 ### EntityStore
 
@@ -108,8 +112,9 @@ stably.
 The editor owns a third model, `WorldDocument`
 (`apps/web/src/content/world-document.ts`), and it is neither of the above: a
 world being *authored* has no tick, no RNG and no entity handles, and every
-cell is freely mutable. It holds a dense `Uint8Array` of palette indices — the
-same layout the runtime and the renderer use — and re-sparsifies on export.
+cell is freely mutable. It holds a dense `Uint8Array` of palette indices and a
+dense `Int8Array` of elevations — the same layout the runtime and the renderer
+use — plus the authored `projection`, and re-sparsifies on export.
 
 Editor state and runtime state never mix. The only thing that crosses between
 them is a `WorldDefinition`: a file.

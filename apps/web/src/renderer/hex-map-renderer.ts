@@ -5,7 +5,7 @@
  * class a {@link RenderModel}, but nothing here knows Angular exists
  * (`CLAUDE.md`, "Keep rendering code separate from Angular components").
  *
- * # Two properties that matter at scale
+ * # Three properties that matter at scale
  *
  * **Viewport culling.** Only the cells returned by
  * {@link HexLayout.visibleRange} are touched. Drawing cost follows the window,
@@ -15,12 +15,26 @@
  * entry and issuing a single `fill()` for each. A six-tile palette costs six
  * fills regardless of how many hexes are on screen, instead of one state change
  * per hex.
+ *
+ * **Two draw paths.** A top-down world is one band covering the whole viewport,
+ * which is the single-batch case above. An isometric world is drawn a row at a
+ * time from back to front, because elevated cells overlap the row behind them —
+ * batching is then per row, and everything standing on a row (overlays,
+ * entities, labels) is drawn with it so terrain in front can occlude it
+ * (`docs/adr/ADR-0016-isometric-projection.md`).
  */
 
 import { Offset, fromIndex, indexIn, sameOffset } from '../core/hex/hex-coords';
 import { HexLayout, Point } from '../core/hex/hex-layout';
 import { Camera } from './camera';
-import { RenderModel, emptyRenderModel } from './render-model';
+import { Projection } from './projection';
+import {
+  RenderEntity,
+  RenderLocation,
+  RenderModel,
+  RenderOverlay,
+  emptyRenderModel,
+} from './render-model';
 import { SpriteRegistry } from './sprite-registry';
 
 /** Colours that belong to the tool, not to the content. */
@@ -35,7 +49,23 @@ const CHROME = {
   entityOutline: 'rgba(10, 12, 16, 0.85)',
   entityText: '#11161d',
   coordinates: 'rgba(255, 255, 255, 0.55)',
+  /** Darkens the side of an elevated tile, so relief reads as relief. */
+  wallShade: 'rgba(6, 8, 12, 0.42)',
+  /** Separates a cliff face from the tile top above it. */
+  wallEdge: 'rgba(6, 8, 12, 0.55)',
+  /** Grounds a token standing on a tile in isometric mode. */
+  entityShadow: 'rgba(6, 8, 12, 0.35)',
 } as const;
+
+/**
+ * Rows searched either side of the band hit-testing computes.
+ *
+ * The band comes from `cellAt`, which snaps to the *nearest* hex centre — worth
+ * half a row — and a hexagon reaches `size` beyond its centre, which is another
+ * two thirds of a row. Two rows of slack covers both; without it, the top of a
+ * tall cell stops responding to the pointer.
+ */
+const ROW_SEARCH_SLACK = 2;
 
 /** Statistics from the last frame, surfaced in the UI to make culling visible. */
 export interface FrameStats {
@@ -51,23 +81,33 @@ export interface FrameStats {
 
 export class HexMapRenderer {
   private model: RenderModel = emptyRenderModel();
+  private projection: Projection;
   private stats: FrameStats = { cellsDrawn: 0, cellsTotal: 0, terrainBatches: 0, lastFrameMs: 0 };
+  private batchCount = 0;
 
   constructor(
     private readonly context: CanvasRenderingContext2D,
     readonly layout: HexLayout,
     readonly camera: Camera,
     private readonly sprites: SpriteRegistry = new SpriteRegistry(),
-  ) {}
+  ) {
+    this.projection = Projection.for(this.model.projection, layout.size);
+  }
 
   /** Replaces the model drawn by the next {@link draw}. */
   setModel(model: RenderModel): void {
     this.model = model;
+    this.projection = Projection.for(model.projection, this.layout.size);
   }
 
   /** The model currently being drawn. */
   get currentModel(): RenderModel {
     return this.model;
+  }
+
+  /** The transform the current model implies. */
+  get currentProjection(): Projection {
+    return this.projection;
   }
 
   /** Statistics from the last frame. */
@@ -80,10 +120,46 @@ export class HexMapRenderer {
     return this.sprites;
   }
 
-  /** The offset cell under a screen-space point, or `null` when off the map. */
+  /**
+   * The offset cell under a screen-space point, or `null` when off the map.
+   *
+   * Top-down inverts the layout directly. Isometric has to respect what the
+   * viewer sees: an elevated cell covers part of the row behind it, so the
+   * search runs front-to-back — the *last* cell drawn that contains the point is
+   * the one the pointer is on — and a cell counts as hit through its side face
+   * as well as its top.
+   */
   cellAtScreen(point: Point, model: RenderModel = this.model): Offset | null {
-    const cell = this.layout.cellAt(this.camera.toWorld(point));
-    return indexIn(cell, model.width, model.height) >= 0 ? cell : null;
+    const drawing = this.camera.toWorld(point);
+    const projection =
+      model === this.model ? this.projection : Projection.for(model.projection, this.layout.size);
+
+    if (projection.isIdentity) {
+      const cell = this.layout.cellAt(drawing);
+      return indexIn(cell, model.width, model.height) >= 0 ? cell : null;
+    }
+
+    const { min, max } = model.elevationRange;
+    const frontRow = this.layout.cellAt(projection.unproject(drawing, max)).row + ROW_SEARCH_SLACK;
+    const backRow = this.layout.cellAt(projection.unproject(drawing, min)).row - ROW_SEARCH_SLACK;
+
+    for (let row = Math.min(frontRow, model.height - 1); row >= Math.max(backRow, 0); row -= 1) {
+      // Which columns can reach `drawing.x` on this row: odd rows are shifted
+      // half a hex right, so the centre of `col` sits at `hexWidth * col`.
+      const shift = row % 2 === 0 ? 0 : 0.5;
+      const approximate = Math.round(drawing.x / this.layout.hexWidth - shift);
+
+      for (const col of [approximate, approximate - 1, approximate + 1]) {
+        const cell = { col, row };
+        if (indexIn(cell, model.width, model.height) < 0) {
+          continue;
+        }
+        if (this.cellCovers(model, projection, cell, drawing)) {
+          return cell;
+        }
+      }
+    }
+    return null;
   }
 
   /** Frames the whole map in a `width x height` viewport. */
@@ -91,7 +167,9 @@ export class HexMapRenderer {
     if (this.model.width === 0 || this.model.height === 0) {
       return;
     }
-    this.camera.fit(this.layout.boundsOf(this.model.width, this.model.height), width, height);
+    const plane = this.layout.boundsOf(this.model.width, this.model.height);
+    const { min, max } = this.model.elevationRange;
+    this.camera.fit(this.projection.projectRect(plane, min, max), width, height);
   }
 
   /**
@@ -118,45 +196,113 @@ export class HexMapRenderer {
     ctx.translate(this.camera.pan.x, this.camera.pan.y);
     ctx.scale(this.camera.zoom, this.camera.zoom);
 
+    // Cull in the hex plane, which is where `visibleRange` works: the visible
+    // drawing-plane rectangle covers a taller slice of the plane once tiles can
+    // be lifted out of their row.
     const view = this.camera.visibleWorldRect(width, height);
-    const range = this.layout.visibleRange(view, model.width, model.height);
+    const { min, max } = model.elevationRange;
+    const range = this.layout.visibleRange(
+      this.projection.unprojectRect(view, min, max),
+      model.width,
+      model.height,
+    );
 
-    const cellsDrawn = this.drawTerrain(model, range);
-    if (model.showGrid) {
-      this.drawGrid(model, range);
-    }
-    this.drawOverlays(model);
-    this.drawLocations(model);
-    this.drawHighlight(model.hover, CHROME.hover, 2);
-    this.drawHighlight(model.selected, CHROME.selection, 3);
-    this.drawEntities(model);
-    if (model.showCoordinates) {
-      this.drawCoordinates(model, range);
-    }
+    this.batchCount = 0;
+    const cellsDrawn = this.projection.isIdentity
+      ? this.drawFlat(model, range)
+      : this.drawLayered(model, range);
 
     ctx.restore();
 
     this.stats = {
       cellsDrawn,
       cellsTotal: model.width * model.height,
-      terrainBatches: this.lastBatchCount,
+      terrainBatches: this.batchCount,
       lastFrameMs: performance.now() - startedAt,
     };
   }
 
-  private lastBatchCount = 0;
+  // ------------------------------------------------------------- draw paths
+
+  /** One band for the whole viewport: no cell can overlap another. */
+  private drawFlat(model: RenderModel, range: VisibleRange): number {
+    const cellsDrawn = this.drawTerrainBand(model, range, range.minRow, range.maxRow);
+    if (model.showGrid) {
+      this.drawGrid(model, range, range.minRow, range.maxRow);
+    }
+    this.drawOverlays(model, model.overlays.map((overlay) => ({ overlay, cells: overlay.cells })));
+    this.drawHighlight(model, model.hover, CHROME.hover, 2);
+    this.drawHighlight(model, model.selected, CHROME.selection, 3);
+    this.drawLocations(model, model.locations);
+    this.drawEntities(model, model.entities);
+    if (model.showCoordinates) {
+      this.drawCoordinates(model, range, range.minRow, range.maxRow);
+    }
+    return cellsDrawn;
+  }
 
   /**
-   * Draws terrain, one `fill()` per palette entry present on screen.
+   * One band per row, back to front.
+   *
+   * Everything that belongs to a row is drawn with that row, so a hill in front
+   * hides what stands behind it. Within a row nothing overlaps, so batching
+   * still holds — it is simply per row rather than per viewport.
+   */
+  private drawLayered(model: RenderModel, range: VisibleRange): number {
+    const overlaysByRow = model.overlays.map((overlay) => ({
+      overlay,
+      byRow: groupByRow(overlay.cells, (cell) => cell),
+    }));
+    const locationsByRow = groupByRow(model.locations, (location) => location.at);
+    const entitiesByRow = groupByRow(model.entities, (entity) => entity.at);
+
+    let cellsDrawn = 0;
+    for (let row = range.minRow; row <= range.maxRow; row += 1) {
+      cellsDrawn += this.drawTerrainBand(model, range, row, row);
+      if (model.showGrid) {
+        this.drawGrid(model, range, row, row);
+      }
+      this.drawOverlays(
+        model,
+        overlaysByRow
+          .map(({ overlay, byRow }) => ({ overlay, cells: byRow.get(row) ?? [] }))
+          .filter(({ cells }) => cells.length > 0),
+      );
+      if (model.hover?.row === row) {
+        this.drawHighlight(model, model.hover, CHROME.hover, 2);
+      }
+      if (model.selected?.row === row) {
+        this.drawHighlight(model, model.selected, CHROME.selection, 3);
+      }
+      this.drawLocations(model, locationsByRow.get(row) ?? []);
+      this.drawEntities(model, entitiesByRow.get(row) ?? []);
+      if (model.showCoordinates) {
+        this.drawCoordinates(model, range, row, row);
+      }
+    }
+    return cellsDrawn;
+  }
+
+  // -------------------------------------------------------------- primitives
+
+  /**
+   * Draws the terrain of rows `minRow..maxRow`, one `fill()` per palette entry
+   * present — plus, in isometric mode, the side faces of elevated cells.
    *
    * Returns the number of cells visited.
    */
-  private drawTerrain(model: RenderModel, range: VisibleRange): number {
+  private drawTerrainBand(
+    model: RenderModel,
+    range: VisibleRange,
+    minRow: number,
+    maxRow: number,
+  ): number {
     const ctx = this.context;
-    const paths = new Map<number, Path2D>();
+    const tops = new Map<number, Path2D>();
+    const walls = new Map<number, Path2D>();
     let visited = 0;
 
-    for (let row = range.minRow; row <= range.maxRow; row += 1) {
+    for (let row = minRow; row <= maxRow; row += 1) {
       for (let col = range.minCol; col <= range.maxCol; col += 1) {
         const index = row * model.width + col;
         const paletteIndex = model.terrain[index];
@@ -165,34 +311,56 @@ export class HexMapRenderer {
         }
         visited += 1;
 
-        let path = paths.get(paletteIndex);
-        if (path === undefined) {
-          path = new Path2D();
-          paths.set(paletteIndex, path);
+        const cell = { col, row };
+        const elevation = this.elevationAt(model, index);
+        if (elevation > 0) {
+          this.addWallTo(pathFor(walls, paletteIndex), cell, elevation);
         }
-        this.addHexTo(path, { col, row });
+        this.addHexTo(pathFor(tops, paletteIndex), cell, elevation);
       }
     }
 
-    for (const [paletteIndex, path] of paths) {
-      const tile = model.palette[paletteIndex];
-      ctx.fillStyle = tile
-        ? this.sprites.resolve(tile.visualId, tile.fallbackColor)
-        : CHROME.outOfBounds;
+    // Side faces first: they hang below the tile they belong to, and the tops of
+    // the row are painted over them.
+    for (const [paletteIndex, path] of walls) {
+      ctx.fillStyle = this.fillFor(model, paletteIndex);
       ctx.fill(path);
+      this.batchCount += 1;
+    }
+    if (walls.size > 0) {
+      ctx.fillStyle = CHROME.wallShade;
+      for (const path of walls.values()) {
+        ctx.fill(path);
+      }
+      ctx.lineWidth = 1 / this.camera.zoom;
+      ctx.strokeStyle = CHROME.wallEdge;
+      for (const path of walls.values()) {
+        ctx.stroke(path);
+      }
     }
 
-    this.lastBatchCount = paths.size;
+    for (const [paletteIndex, path] of tops) {
+      ctx.fillStyle = this.fillFor(model, paletteIndex);
+      ctx.fill(path);
+      this.batchCount += 1;
+    }
+
     return visited;
   }
 
   /** Draws hex outlines as a single stroked path. */
-  private drawGrid(model: RenderModel, range: VisibleRange): void {
+  private drawGrid(
+    model: RenderModel,
+    range: VisibleRange,
+    minRow: number,
+    maxRow: number,
+  ): void {
     const ctx = this.context;
     const grid = new Path2D();
-    for (let row = range.minRow; row <= range.maxRow; row += 1) {
+    for (let row = minRow; row <= maxRow; row += 1) {
       for (let col = range.minCol; col <= range.maxCol; col += 1) {
-        this.addHexTo(grid, { col, row });
+        const cell = { col, row };
+        this.addHexTo(grid, cell, this.elevationOf(model, cell));
       }
     }
     ctx.lineWidth = 1 / this.camera.zoom;
@@ -200,15 +368,18 @@ export class HexMapRenderer {
     ctx.stroke(grid);
   }
 
-  private drawOverlays(model: RenderModel): void {
+  private drawOverlays(
+    model: RenderModel,
+    parts: readonly { overlay: RenderOverlay; cells: readonly Offset[] }[],
+  ): void {
     const ctx = this.context;
-    for (const overlay of model.overlays) {
-      if (overlay.cells.length === 0) {
+    for (const { overlay, cells } of parts) {
+      if (cells.length === 0) {
         continue;
       }
       const path = new Path2D();
-      for (const cell of overlay.cells) {
-        this.addHexTo(path, cell);
+      for (const cell of cells) {
+        this.addHexTo(path, cell, this.elevationOf(model, cell));
       }
       ctx.fillStyle = overlay.fill;
       ctx.fill(path);
@@ -218,14 +389,14 @@ export class HexMapRenderer {
     }
   }
 
-  private drawLocations(model: RenderModel): void {
+  private drawLocations(model: RenderModel, locations: readonly RenderLocation[]): void {
     const ctx = this.context;
     const radius = this.layout.size * 0.22;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    for (const location of model.locations) {
-      const center = this.layout.centerOf(location.at);
+    for (const location of locations) {
+      const center = this.centerOf(model, location.at);
       ctx.beginPath();
       ctx.arc(center.x, center.y - this.layout.size * 0.15, radius, 0, Math.PI * 2);
       ctx.fillStyle = CHROME.locationFill;
@@ -243,27 +414,52 @@ export class HexMapRenderer {
     }
   }
 
-  private drawHighlight(cell: Offset | null, color: string, width: number): void {
+  private drawHighlight(
+    model: RenderModel,
+    cell: Offset | null,
+    color: string,
+    width: number,
+  ): void {
     if (cell === null) {
       return;
     }
     const ctx = this.context;
+    const elevation = this.elevationOf(model, cell);
     const path = new Path2D();
-    this.addHexTo(path, cell);
+    this.addHexTo(path, cell, elevation);
+    if (elevation > 0) {
+      this.addWallTo(path, cell, elevation);
+    }
     ctx.lineWidth = width / this.camera.zoom;
     ctx.strokeStyle = color;
     ctx.stroke(path);
   }
 
-  private drawEntities(model: RenderModel): void {
+  /**
+   * Draws entity tokens.
+   *
+   * In isometric mode a token stands *on* its tile rather than lying flat: an
+   * elliptical shadow marks the hex it occupies and the disc sits above it.
+   */
+  private drawEntities(model: RenderModel, entities: readonly RenderEntity[]): void {
     const ctx = this.context;
     const radius = this.layout.size * 0.52;
+    const standing = !this.projection.isIdentity;
+    const lift = standing ? radius * this.projection.tilt : 0;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    for (const entity of model.entities) {
-      const center = this.layout.centerOf(entity.at);
+    for (const entity of entities) {
+      const base = this.centerOf(model, entity.at);
 
+      if (standing) {
+        ctx.beginPath();
+        ctx.ellipse(base.x, base.y, radius * 0.9, radius * 0.9 * this.projection.tilt, 0, 0, Math.PI * 2);
+        ctx.fillStyle = CHROME.entityShadow;
+        ctx.fill();
+      }
+
+      const center = { x: base.x, y: base.y - lift };
       ctx.beginPath();
       ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
       ctx.fillStyle = this.sprites.resolve(entity.visualId, entity.fallbackColor);
@@ -278,7 +474,12 @@ export class HexMapRenderer {
     }
   }
 
-  private drawCoordinates(model: RenderModel, range: VisibleRange): void {
+  private drawCoordinates(
+    model: RenderModel,
+    range: VisibleRange,
+    minRow: number,
+    maxRow: number,
+  ): void {
     if (this.camera.zoom < 0.6) {
       return;
     }
@@ -288,31 +489,107 @@ export class HexMapRenderer {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    for (let row = range.minRow; row <= range.maxRow; row += 1) {
+    for (let row = minRow; row <= maxRow; row += 1) {
       for (let col = range.minCol; col <= range.maxCol; col += 1) {
-        if (indexIn({ col, row }, model.width, model.height) < 0) {
+        const cell = { col, row };
+        if (indexIn(cell, model.width, model.height) < 0) {
           continue;
         }
-        const center = this.layout.centerOf({ col, row });
+        const center = this.centerOf(model, cell);
         ctx.fillText(`${col},${row}`, center.x, center.y - this.layout.size * 0.55);
       }
     }
   }
 
-  private addHexTo(path: Path2D, cell: Offset): void {
-    const corners = this.layout.corners(this.layout.centerOf(cell));
-    const first = corners[0];
-    if (first === undefined) {
+  // ------------------------------------------------------------- geometry
+
+  /** The authored elevation of a cell by buffer index, or `0`. */
+  private elevationAt(model: RenderModel, index: number): number {
+    return model.elevation[index] ?? 0;
+  }
+
+  /** The authored elevation of a cell, or `0` when out of bounds. */
+  private elevationOf(model: RenderModel, cell: Offset): number {
+    const index = indexIn(cell, model.width, model.height);
+    return index < 0 ? 0 : this.elevationAt(model, index);
+  }
+
+  /** The projected centre of a cell, on top of whatever it is standing on. */
+  private centerOf(model: RenderModel, cell: Offset): Point {
+    return this.projection.project(this.layout.centerOf(cell), this.elevationOf(model, cell));
+  }
+
+  /** The projected corners of a cell's top face. */
+  private cornersOf(cell: Offset, elevation: number): Point[] {
+    return this.layout
+      .corners(this.layout.centerOf(cell))
+      .map((corner) => this.projection.project(corner, elevation));
+  }
+
+  private addHexTo(path: Path2D, cell: Offset, elevation: number): void {
+    addPolygon(path, this.cornersOf(cell, elevation));
+  }
+
+  /**
+   * Adds the side face of an elevated cell: the three front edges of its top
+   * face, dropped back down to the cell's own row.
+   *
+   * Corners 1, 2 and 3 are the near ones — a pointy-top hexagon puts its corners
+   * at `60i - 30` degrees, so those three are the ones below the centre.
+   */
+  private addWallTo(path: Path2D, cell: Offset, elevation: number): void {
+    const lift = this.projection.liftOf(elevation);
+    if (lift <= 0) {
       return;
     }
-    path.moveTo(first.x, first.y);
-    for (let i = 1; i < corners.length; i += 1) {
-      const corner = corners[i];
-      if (corner !== undefined) {
-        path.lineTo(corner.x, corner.y);
-      }
+    const corners = this.cornersOf(cell, elevation);
+    const front = [corners[1], corners[2], corners[3]].filter(
+      (corner): corner is Point => corner !== undefined,
+    );
+    if (front.length < 3) {
+      return;
     }
-    path.closePath();
+    addPolygon(path, [
+      ...front,
+      ...front.map((corner) => ({ x: corner.x, y: corner.y + lift })).reverse(),
+    ]);
+  }
+
+  /** `true` when `drawing` lands on a cell's top face or its exposed side. */
+  private cellCovers(
+    model: RenderModel,
+    projection: Projection,
+    cell: Offset,
+    drawing: Point,
+  ): boolean {
+    const elevation = this.elevationOf(model, cell);
+    const corners = this.layout
+      .corners(this.layout.centerOf(cell))
+      .map((corner) => projection.project(corner, elevation));
+
+    if (containsPoint(corners, drawing)) {
+      return true;
+    }
+
+    const lift = projection.liftOf(elevation);
+    if (lift <= 0) {
+      return false;
+    }
+    const front = [corners[1], corners[2], corners[3]].filter(
+      (corner): corner is Point => corner !== undefined,
+    );
+    return (
+      front.length === 3 &&
+      containsPoint(
+        [...front, ...front.map((corner) => ({ x: corner.x, y: corner.y + lift })).reverse()],
+        drawing,
+      )
+    );
+  }
+
+  private fillFor(model: RenderModel, paletteIndex: number): string | CanvasPattern | CanvasGradient {
+    const tile = model.palette[paletteIndex];
+    return tile ? this.sprites.resolve(tile.visualId, tile.fallbackColor) : CHROME.outOfBounds;
   }
 }
 
@@ -321,6 +598,68 @@ interface VisibleRange {
   maxCol: number;
   minRow: number;
   maxRow: number;
+}
+
+function pathFor(paths: Map<number, Path2D>, key: number): Path2D {
+  let path = paths.get(key);
+  if (path === undefined) {
+    path = new Path2D();
+    paths.set(key, path);
+  }
+  return path;
+}
+
+function addPolygon(path: Path2D, points: readonly Point[]): void {
+  const first = points[0];
+  if (first === undefined) {
+    return;
+  }
+  path.moveTo(first.x, first.y);
+  for (let i = 1; i < points.length; i += 1) {
+    const point = points[i];
+    if (point !== undefined) {
+      path.lineTo(point.x, point.y);
+    }
+  }
+  path.closePath();
+}
+
+/** Buckets items by the row of the cell they sit on. */
+function groupByRow<T>(items: readonly T[], cellOf: (item: T) => Offset): Map<number, T[]> {
+  const byRow = new Map<number, T[]>();
+  for (const item of items) {
+    const row = cellOf(item).row;
+    const bucket = byRow.get(row);
+    if (bucket === undefined) {
+      byRow.set(row, [item]);
+    } else {
+      bucket.push(item);
+    }
+  }
+  return byRow;
+}
+
+/**
+ * Even-odd ray casting.
+ *
+ * Deliberately not `CanvasRenderingContext2D.isPointInPath`, which compares
+ * against the context's current transform — hit-testing must not depend on
+ * whatever the last `draw` left behind.
+ */
+function containsPoint(polygon: readonly Point[], point: Point): boolean {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1) {
+    const a = polygon[i];
+    const b = polygon[j];
+    if (a === undefined || b === undefined) {
+      continue;
+    }
+    const straddles = a.y > point.y !== b.y > point.y;
+    if (straddles && point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x) {
+      inside = !inside;
+    }
+  }
+  return inside;
 }
 
 /** Re-exported so callers can build models without importing two modules. */

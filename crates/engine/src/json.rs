@@ -131,6 +131,17 @@ impl JsonEngine {
             .map_err(|error| err(&error))
     }
 
+    /// Returns the packed elevation buffer: one signed byte per cell.
+    ///
+    /// # Errors
+    ///
+    /// `unknownContent` when the world is not registered.
+    pub fn elevation_buffer(&self, world_id: &str) -> JsonResult<Vec<i8>> {
+        self.inner
+            .elevation_buffer(world_id)
+            .map_err(|error| err(&error))
+    }
+
     /// Starts a game; returns the initial [`GameSnapshot`](crate::GameSnapshot).
     ///
     /// # Errors
@@ -247,6 +258,43 @@ mod tests {
         assert_eq!(result["accepted"], true);
         assert_eq!(result["state"]["tick"], 1);
         assert_eq!(result["state"]["player"]["at"], *target);
+    }
+
+    #[test]
+    fn projection_and_elevation_cross_the_boundary_for_the_renderer() {
+        let mut engine = JsonEngine::new();
+        engine.load_tile_set(TILE_SET).expect("tile set loads");
+        engine
+            .load_world(
+                &WORLD
+                    .replace(r#""width": 8"#, r#""projection": "isometric", "width": 8"#)
+                    .replace(
+                        r#"{ "at": [4, 4], "tile": "water" }"#,
+                        r#"{ "at": [4, 4], "tile": "water" }, { "at": [1, 1], "tile": "grass", "elevation": 5 }"#,
+                    ),
+            )
+            .expect("world loads");
+
+        let view = json(&engine.world_view("w").expect("view"));
+        assert_eq!(view["projection"], "isometric");
+
+        let elevations = engine.elevation_buffer("w").expect("buffer");
+        assert_eq!(elevations.len(), 64);
+        assert_eq!(elevations[9], 5, "row 1, col 1 in an 8-wide map");
+        assert_eq!(elevations[0], 0);
+
+        assert_eq!(
+            code(&engine.elevation_buffer("nope").unwrap_err()),
+            "unknownContent"
+        );
+    }
+
+    #[test]
+    fn a_world_without_a_projection_defaults_to_top_down() {
+        assert_eq!(
+            json(&loaded().world_view("w").expect("view"))["projection"],
+            "topDown"
+        );
     }
 
     #[test]

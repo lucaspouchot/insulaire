@@ -212,9 +212,10 @@ Authored content lives at the repository root in `content/` and is specified in
   "schemaVersion": 1,
   "width": 20, "height": 20,
   "orientation": "pointy",
+  "projection": "isometric",                              // or "topDown"
   "tileSetId": "mvp_terrain",
   "defaultTile": "grass",
-  "tiles":    [ { "at": [4, 1], "tile": "mountain" } ],   // only non-default cells
+  "tiles":    [ { "at": [4, 1], "tile": "mountain", "elevation": 4 } ],  // only non-default cells
   "entities": [ { "id": "player_1", "templateId": "player", "at": [4, 10] } ],
   "locations":[ { "id": "loc_camp", "at": [3, 11], "name": "Camp" } ]
 }
@@ -251,7 +252,7 @@ No backend, no database, no content service.
 npm test
 ```
 
-**Rust (126 tests, `cargo test`)** — hex neighbours, distance and coordinate
+**Rust (134 tests, `cargo test`)** — hex neighbours, distance and coordinate
 conversion; bounds checking; world loading and validation; movement validation;
 that a valid move advances the tick and an invalid one advances nothing; that
 monsters move after each tick; deterministic monster behaviour; deterministic
@@ -261,9 +262,11 @@ RNG; and the boundary's string contract.
 `content/` — so the demo world cannot silently rot, and a terrain edit that
 walls the monsters off from the player fails the build.
 
-**TypeScript (46 tests, Vitest)** — coordinate transforms mirrored against the
-Rust suite; pixel ↔ hex round trips and viewport culling; the editor's document
-model and its sparse export; and `engine-integration.spec.ts`, which drives the
+**TypeScript (61 tests, Vitest)** — coordinate transforms mirrored against the
+Rust suite; pixel ↔ hex round trips and viewport culling; the isometric
+projection and the hit-testing that has to survive it, including which cell wins
+when a hill covers the one behind it; the editor's document model and its sparse
+export; and `engine-integration.spec.ts`, which drives the
 **real** `wasm-pack` output with the **real** authored content through the same
 types the application uses.
 
@@ -281,6 +284,14 @@ types the application uses.
 - **No undo/redo**, no layers, no copy/paste in the editor.
 - **Only `pointy` orientation** is implemented; `flat` is in the schema and
   rejected by validation.
+- **Isometric relief is drawn, not simulated.** `elevation` lifts a cell and
+  gives it a side face; no rule reads it — movement cost, passability and
+  adjacency are unaffected (ADR-0016).
+- **Isometric entities are ordered against terrain, not against each other.**
+  Two entities on the same row with very different elevations can overlap in the
+  wrong order.
+- **Isometric mode gives up whole-viewport terrain batching**: it batches per
+  visible row, because elevated cells overlap the row behind them.
 - **Palette limit of 256 tiles**, because the packed buffer is one byte per cell.
 - **No save/load of a game in progress.** The RNG state is serialisable and
   travels in every snapshot, but no save system is built on it yet.
@@ -307,6 +318,7 @@ Read in order:
 13. **ADR-0013 — engine API: commands and compact snapshots**
 14. **ADR-0014 — hex coordinate model**
 15. **ADR-0015 — shared content validation**
+16. **ADR-0016 — isometric projection**
 
 `CLAUDE.md` contains project-level instructions for Claude Code and other coding
 agents.

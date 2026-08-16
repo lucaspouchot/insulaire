@@ -111,8 +111,8 @@ impl HexEngine {
     /// Returns the packed terrain buffer as a `Uint8Array`: one palette index
     /// per cell, row-major in offset coordinates.
     ///
-    /// This is the only bulk transfer in the API, and the reason the renderer
-    /// never calls into WASM per tile.
+    /// This is one of the two bulk transfers in the API, and the reason the
+    /// renderer never calls into WASM per tile.
     ///
     /// # Errors
     ///
@@ -120,6 +120,20 @@ impl HexEngine {
     #[wasm_bindgen(js_name = terrainBuffer)]
     pub fn terrain_buffer(&self, world_id: &str) -> Result<Vec<u8>, JsValue> {
         self.inner.terrain_buffer(world_id).map_err(to_js)
+    }
+
+    /// Returns the packed elevation buffer as an `Int8Array`: one signed byte
+    /// per cell, in the same layout as `terrainBuffer`.
+    ///
+    /// Presentation only; the renderer uses it in isometric mode
+    /// (`docs/adr/ADR-0016-isometric-projection.md`).
+    ///
+    /// # Errors
+    ///
+    /// `unknownContent`.
+    #[wasm_bindgen(js_name = elevationBuffer)]
+    pub fn elevation_buffer(&self, world_id: &str) -> Result<Vec<i8>, JsValue> {
+        self.inner.elevation_buffer(world_id).map_err(to_js)
     }
 
     /// Starts a game on a registered world. Returns the initial `GameSnapshot`.

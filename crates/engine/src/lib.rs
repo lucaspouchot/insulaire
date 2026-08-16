@@ -12,7 +12,8 @@
 //! load_world(json)     ─┴─> content registry ──> create_game(worldId, seed)
 //!                                                      │
 //!                       world_view(worldId) ───────────┤  once per world
-//!                       terrain_buffer(worldId) ───────┘  (packed Uint8Array)
+//!                       terrain_buffer(worldId) ───────┤  (packed Uint8Array)
+//!                       elevation_buffer(worldId) ─────┘  (packed Int8Array)
 //!                                                      │
 //!                       dispatch(command) ─────────────┴─> CommandResult
 //! ```
@@ -58,7 +59,7 @@ pub mod json;
 pub mod registry;
 
 use hex_simulation::{rules, tick, GameState};
-use hex_world::{Hex, WorldDefinition, WorldGrid};
+use hex_world::{Hex, ProjectionMode, WorldDefinition, WorldGrid};
 
 pub use dto::{
     AxialDto, Command, CommandResult, ContentSummary, EngineInfo, EntitySnapshot, GameSnapshot,
@@ -179,6 +180,20 @@ impl Engine {
         Ok(self.prepare(world_id)?.grid.cells().to_vec())
     }
 
+    /// The packed elevations of a world: one signed byte per cell, row-major in
+    /// offset coordinates and the same length as
+    /// [`terrain_buffer`](Self::terrain_buffer).
+    ///
+    /// Presentation only — the renderer lifts cells by this much in isometric
+    /// mode (`docs/adr/ADR-0016-isometric-projection.md`). No rule reads it.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::UnknownContent`] when `world_id` is not registered.
+    pub fn elevation_buffer(&self, world_id: &str) -> Result<Vec<i8>, EngineError> {
+        Ok(self.prepare(world_id)?.grid.elevations().to_vec())
+    }
+
     fn prepare(&self, world_id: &str) -> Result<PreparedWorld, EngineError> {
         let world = self.world_or_err(world_id)?;
         let tile_set =
@@ -212,6 +227,11 @@ impl Engine {
             width: grid.width(),
             height: grid.height(),
             orientation: "pointy".to_owned(),
+            projection: match world.projection {
+                ProjectionMode::TopDown => "topDown",
+                ProjectionMode::Isometric => "isometric",
+            }
+            .to_owned(),
             tile_set_id: world.tile_set_id.clone(),
             palette: grid
                 .palette()
@@ -367,6 +387,7 @@ mod tests {
         assert_eq!(view.height, 10);
         assert_eq!(view.cell_count, 100);
         assert_eq!(view.orientation, "pointy");
+        assert_eq!(view.projection, "topDown");
         assert_eq!(view.palette.len(), 3);
         assert_eq!(view.locations.len(), 1);
 
@@ -375,6 +396,43 @@ mod tests {
             json.len() < 2_000,
             "the view must stay small, got {} bytes",
             json.len()
+        );
+    }
+
+    #[test]
+    fn the_view_republishes_the_authored_projection() {
+        let mut world = testing::sample_world();
+        world.id = "iso_world".to_owned();
+        world.projection = ProjectionMode::Isometric;
+
+        let mut engine = engine();
+        engine
+            .load_world(&serde_json::to_string(&world).expect("serialise"))
+            .expect("world loads");
+
+        assert_eq!(
+            engine.world_view("iso_world").expect("view").projection,
+            "isometric"
+        );
+    }
+
+    #[test]
+    fn the_elevation_buffer_matches_the_terrain_buffer_cell_for_cell() {
+        let engine = engine();
+        let elevations = engine.elevation_buffer("sample_world").expect("buffer");
+        let view = engine.world_view("sample_world").expect("view");
+
+        assert_eq!(elevations.len(), view.cell_count as usize);
+
+        let raised = testing::RAISED_CELL
+            .index_in(view.width, view.height)
+            .expect("in bounds");
+        assert_eq!(elevations[raised], testing::RAISED_ELEVATION as i8);
+        assert_eq!(elevations.iter().filter(|value| **value != 0).count(), 1);
+
+        assert_eq!(
+            engine.elevation_buffer("nope").unwrap_err().code(),
+            "unknownContent"
         );
     }
 
