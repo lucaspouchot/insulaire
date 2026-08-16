@@ -1,0 +1,169 @@
+<div class="workspace">
+  <section class="stage">
+    <canvas #canvas></canvas>
+
+    <div class="viewport-tools">
+      <button type="button" (click)="zoom(1.2)" title="Zoom in">＋</button>
+      <button type="button" (click)="zoom(1 / 1.2)" title="Zoom out">－</button>
+      <button type="button" (click)="fitView()" title="Fit the map to the window">Fit</button>
+      <button type="button" (click)="toggleGrid()" [class.on]="showGrid()" title="Toggle grid">Grid</button>
+      <button
+        type="button"
+        (click)="toggleCoordinates()"
+        [class.on]="showCoordinates()"
+        title="Toggle coordinates"
+      >
+        col,row
+      </button>
+    </div>
+
+    @let cell = hover();
+    <div class="overlay-note">
+      @if (cell !== null) {
+        hex [{{ cell.col }}, {{ cell.row }}]
+        @let tile = hoveredTile();
+        @if (tile !== null) {
+          · {{ tile.name }} · cost {{ tile.movementCost }}{{ tile.passable ? '' : ' (impassable)' }}
+        }
+      } @else {
+        drag with the left button to paint · right-drag or middle-drag to pan · wheel to zoom
+      }
+    </div>
+  </section>
+
+  <aside class="sidebar">
+    @if (error(); as failure) {
+      <div class="banner error">
+        {{ failure }}
+        <button type="button" class="dismiss" (click)="dismissError()">Dismiss</button>
+      </div>
+    }
+
+    @let doc = document();
+    @if (doc === null) {
+      <p class="hint">Loading authored content…</p>
+    } @else {
+      <section class="panel">
+        <h2>World</h2>
+        <div class="rows">
+          <div class="row"><span>id</span><span>{{ doc.id }}</span></div>
+          <div class="row"><span>name</span><span>{{ doc.name }}</span></div>
+          <div class="row"><span>size</span><span>{{ doc.width }} × {{ doc.height }}</span></div>
+          <div class="row"><span>tile set</span><span>{{ doc.tileSetId }}</span></div>
+          <div class="row"><span>source</span><span>{{ source() }}{{ dirty() ? ' · edited' : '' }}</span></div>
+          <div class="row">
+            <span>entities</span>
+            <span>{{ entityCounts().players }} player · {{ entityCounts().monsters }} monster</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Tool</h2>
+        <div class="tools">
+          <button type="button" [class.on]="tool() === 'paint'" (click)="selectTool('paint')">Paint</button>
+          <button type="button" [class.on]="tool() === 'player'" (click)="selectTool('player')">Player</button>
+          <button type="button" [class.on]="tool() === 'monster'" (click)="selectTool('monster')">Monster</button>
+          <button type="button" [class.on]="tool() === 'erase'" (click)="selectTool('erase')">Erase entity</button>
+        </div>
+        <p class="hint">
+          @switch (tool()) {
+            @case ('paint') { Click or drag to paint the selected terrain. }
+            @case ('player') { Click a hex to move the player start. A world has exactly one. }
+            @case ('monster') { Click hexes to add hunters. }
+            @case ('erase') { Click a hex to remove the entity standing on it. }
+          }
+        </p>
+      </section>
+
+      <section class="panel">
+        <h2>Terrain palette</h2>
+        <div class="palette">
+          @for (tile of palette(); track tile.id) {
+            <button
+              type="button"
+              class="swatch"
+              [class.on]="selectedTile() === tile.id"
+              (click)="selectTile(tile.id)"
+              [title]="tile.name + ' · movement cost ' + tile.movementCost"
+            >
+              <span class="chip" [style.background]="tile.fallbackColor"></span>
+              <span class="label">{{ tile.name }}</span>
+              <span class="cost">{{ tile.passable ? tile.movementCost : '×' }}</span>
+            </button>
+          }
+        </div>
+        <p class="hint">Movement cost 0 means impassable. Colours are placeholders resolved from visualId.</p>
+      </section>
+
+      <section class="panel">
+        <h2>Content</h2>
+        <div class="button-row">
+          <button type="button" (click)="validate()">Validate</button>
+          <button type="button" (click)="exportWorld()">Export JSON</button>
+          <label class="file-button">
+            Import JSON
+            <input type="file" accept="application/json,.json" (change)="importWorld($event)" hidden />
+          </label>
+          <button type="button" (click)="resetToDemo()">Reload demo</button>
+        </div>
+        <div class="button-row play-row">
+          <button type="button" class="primary" (click)="playWorld()">Validate &amp; Play ▸</button>
+        </div>
+
+        @if (message(); as note) {
+          <p class="hint note">{{ note }}</p>
+        }
+
+        @let validation = report();
+        @if (validation !== null) {
+          @if (validation.valid && validation.issues.length === 0) {
+            <div class="banner ok">Valid — the runtime will load this world as-is.</div>
+          } @else {
+            <div class="banner" [class.error]="!validation.valid" [class.warn]="validation.valid">
+              {{ validation.valid ? 'Valid, with warnings' : 'Invalid' }}
+            </div>
+            <ul class="issues">
+              @for (issue of validation.issues; track issue.code + issue.path) {
+                <li [class.error]="issue.severity === 'error'" [class.warn]="issue.severity === 'warning'">
+                  <code>{{ issue.path }}</code>
+                  <span>{{ issue.message }}</span>
+                </li>
+              }
+            </ul>
+          }
+        }
+      </section>
+
+      <section class="panel">
+        <h2>New world</h2>
+        <div class="new-world">
+          <input #newName type="text" placeholder="Name" value="New World" />
+          <div class="dims">
+            <input #newWidth type="number" min="1" max="256" value="20" aria-label="Width" />
+            <span>×</span>
+            <input #newHeight type="number" min="1" max="256" value="20" aria-label="Height" />
+          </div>
+          <button type="button" (click)="createWorld(newWidth.value, newHeight.value, newName.value)">
+            Create
+          </button>
+        </div>
+        <p class="hint">Replaces the current document. Export first if you want to keep it.</p>
+      </section>
+
+      @if (stats(); as frame) {
+        <section class="panel">
+          <h2>Renderer</h2>
+          <div class="rows">
+            <div class="row">
+              <span>cells drawn</span><span>{{ frame.cellsDrawn }} / {{ frame.cellsTotal }}</span>
+            </div>
+            <div class="row"><span>terrain fills</span><span>{{ frame.terrainBatches }}</span></div>
+            <div class="row"><span>last frame</span><span>{{ frame.lastFrameMs.toFixed(2) }} ms</span></div>
+          </div>
+          <p class="hint">Culling and batching: cost tracks the window, not the map.</p>
+        </section>
+      }
+    }
+  </aside>
+</div>

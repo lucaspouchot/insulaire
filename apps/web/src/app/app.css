@@ -1,0 +1,104 @@
+:host {
+  display: grid;
+  grid-template-rows: 48px 1fr;
+  height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.brand .mark {
+  color: var(--accent);
+  font-size: 18px;
+}
+
+.tag {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
+nav {
+  display: flex;
+  gap: 4px;
+}
+
+nav a {
+  color: var(--text-dim);
+  text-decoration: none;
+  padding: 5px 12px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+}
+
+nav a:hover {
+  color: var(--text);
+  background: var(--bg-raised);
+}
+
+nav a.active {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+  background: var(--bg-raised);
+}
+
+.engine {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.engine .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+
+.engine.ready .dot {
+  background: var(--ok);
+}
+
+.engine.failed {
+  color: var(--error);
+}
+
+.engine.failed .dot {
+  background: var(--error);
+}
+
+.engine.loading .dot {
+  background: var(--warn);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+main {
+  min-height: 0;
+  overflow: hidden;
+}

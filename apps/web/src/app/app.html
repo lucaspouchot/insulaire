@@ -1,0 +1,38 @@
+<header class="topbar">
+  <div class="brand">
+    <span class="mark">⬢</span>
+    <span>Hex Engine</span>
+    <span class="tag">MVP</span>
+  </div>
+
+  <nav>
+    <a routerLink="/editor" routerLinkActive="active">Editor</a>
+    <a routerLink="/play" routerLinkActive="active">Play</a>
+  </nav>
+
+  @let info = engine.info();
+  @switch (engine.status()) {
+    @case ('ready') {
+      <div class="engine ready" [title]="'hex-engine ' + info?.version + ' running as WebAssembly'">
+        <span class="dot"></span>
+        <span>Rust engine · {{ info?.targetArch }} · {{ info?.pointerWidth }}-bit · v{{ info?.version }}</span>
+      </div>
+    }
+    @case ('failed') {
+      <div class="engine failed" [title]="engine.failure() ?? ''">
+        <span class="dot"></span>
+        <span>Engine failed — run <code>npm run wasm:build</code></span>
+      </div>
+    }
+    @default {
+      <div class="engine loading">
+        <span class="dot"></span>
+        <span>Loading engine…</span>
+      </div>
+    }
+  }
+</header>
+
+<main>
+  <router-outlet />
+</main>

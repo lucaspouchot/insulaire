@@ -1,3 +1,22 @@
-node_modules
-target
-apps/web/dist
+# Rust
+/target/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Angular build output
+/apps/web/dist/
+/apps/web/.angular/
+/apps/web/out-tsc/
+
+# Generated: the WASM package, produced by `npm run wasm:build`
+/apps/web/public/wasm/
+
+# Generated: content mirrored from /content by scripts/sync-content.mjs
+/apps/web/public/content/
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+*.swp

@@ -1,0 +1,139 @@
+:host {
+  display: block;
+  height: 100%;
+}
+
+.viewport-tools {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  gap: 6px;
+}
+
+.viewport-tools button {
+  padding: 4px 9px;
+  font-size: 12px;
+  background: rgba(21, 27, 36, 0.9);
+}
+
+.viewport-tools button.on {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+}
+
+.tick-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  background: rgba(13, 17, 23, 0.88);
+  border: 1px solid var(--accent-dim);
+  border-radius: var(--radius);
+  padding: 6px 14px;
+}
+
+.tick-badge .label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.tick-badge .value {
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.refusal {
+  position: absolute;
+  left: 50%;
+  bottom: 52px;
+  transform: translateX(-50%);
+  background: rgba(240, 115, 106, 0.14);
+  border: 1px solid rgba(240, 115, 106, 0.45);
+  color: var(--error);
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.row .strong {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.restart {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.restart input {
+  flex: 1;
+  min-width: 0;
+}
+
+.log-panel {
+  min-height: 0;
+}
+
+.log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 260px;
+  overflow-y: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.log li {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0 2px 7px;
+  border-left: 2px solid var(--border);
+}
+
+.log li.move {
+  border-left-color: var(--ok);
+}
+
+.log li.hold {
+  border-left-color: var(--warn);
+}
+
+.log li.reject {
+  border-left-color: var(--error);
+}
+
+.log li.empty {
+  border-left-color: transparent;
+  color: var(--text-dim);
+}
+
+.log .tick {
+  color: var(--text-dim);
+  min-width: 22px;
+  text-align: right;
+}
+
+.log .text {
+  flex: 1;
+}
+
+.banner .dismiss {
+  display: block;
+  margin-top: 8px;
+  padding: 3px 8px;
+  font-size: 12px;
+}

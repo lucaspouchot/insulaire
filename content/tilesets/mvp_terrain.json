@@ -1,0 +1,55 @@
+{
+  "id": "mvp_terrain",
+  "schemaVersion": 1,
+  "name": "MVP Terrain",
+  "tiles": [
+    {
+      "id": "grass",
+      "name": "Grass",
+      "terrain": "grass",
+      "movementCost": 1,
+      "tags": ["open"],
+      "visual": { "visualId": "terrain.grass", "fallbackColor": "#4a7c3f" }
+    },
+    {
+      "id": "sand",
+      "name": "Sand",
+      "terrain": "sand",
+      "movementCost": 1,
+      "tags": ["open", "shore"],
+      "visual": { "visualId": "terrain.sand", "fallbackColor": "#cbb178" }
+    },
+    {
+      "id": "forest",
+      "name": "Forest",
+      "terrain": "forest",
+      "movementCost": 2,
+      "tags": ["cover", "difficult"],
+      "visual": { "visualId": "terrain.forest", "fallbackColor": "#2d5c34" }
+    },
+    {
+      "id": "rock",
+      "name": "Rocky Ground",
+      "terrain": "rock",
+      "movementCost": 2,
+      "tags": ["difficult"],
+      "visual": { "visualId": "terrain.rock", "fallbackColor": "#8a8078" }
+    },
+    {
+      "id": "mountain",
+      "name": "Mountain",
+      "terrain": "mountain",
+      "movementCost": 0,
+      "tags": ["blocking"],
+      "visual": { "visualId": "terrain.mountain", "fallbackColor": "#57514c" }
+    },
+    {
+      "id": "water",
+      "name": "Water",
+      "terrain": "water",
+      "movementCost": 0,
+      "tags": ["blocking", "liquid"],
+      "visual": { "visualId": "terrain.water", "fallbackColor": "#20567f" }
+    }
+  ]
+}

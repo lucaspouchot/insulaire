@@ -1,0 +1,131 @@
+<div class="workspace">
+  <section class="stage">
+    <canvas #canvas></canvas>
+
+    <div class="viewport-tools">
+      <button type="button" (click)="zoom(1.2)" title="Zoom in">＋</button>
+      <button type="button" (click)="zoom(1 / 1.2)" title="Zoom out">－</button>
+      <button type="button" (click)="fitView()" title="Fit the map to the window">Fit</button>
+      <button type="button" (click)="toggleGrid()" [class.on]="showGrid()" title="Toggle grid">Grid</button>
+    </div>
+
+    @let snap = snapshot();
+    @if (snap !== null) {
+      <div class="tick-badge">
+        <span class="label">tick</span>
+        <span class="value">{{ snap.tick }}</span>
+      </div>
+    }
+
+    @let cell = hover();
+    <div class="overlay-note">
+      @if (cell !== null) {
+        hex [{{ cell.col }}, {{ cell.row }}] — click a highlighted hex to move
+      } @else {
+        highlighted hexes are the engine's legalMoves · right-drag to pan · wheel to zoom
+      }
+    </div>
+
+    @if (lastRejection(); as refusal) {
+      <div class="refusal">{{ refusal }} — the tick did not advance.</div>
+    }
+  </section>
+
+  <aside class="sidebar">
+    @if (error(); as failure) {
+      <div class="banner error">
+        {{ failure }}
+        <button type="button" class="dismiss" (click)="dismissError()">Dismiss</button>
+      </div>
+    }
+
+    @if (busy()) {
+      <p class="hint">Starting the game…</p>
+    }
+
+    @let snapshotValue = snapshot();
+    @let world = worldView();
+    @if (snapshotValue !== null && world !== null) {
+      <section class="panel">
+        <h2>Simulation</h2>
+        <div class="rows">
+          <div class="row"><span>world</span><span>{{ world.name }} ({{ world.worldId }})</span></div>
+          <div class="row"><span>tick</span><span class="strong">{{ snapshotValue.tick }}</span></div>
+          <div class="row"><span>seed</span><span>{{ snapshotValue.seed }}</span></div>
+          <div class="row"><span>legal moves</span><span>{{ snapshotValue.legalMoves.length }}</span></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Positions</h2>
+        <div class="rows">
+          @let hero = player();
+          @if (hero !== null) {
+            <div class="row">
+              <span>{{ hero.contentId }}</span>
+              <span class="strong">[{{ hero.at[0] }}, {{ hero.at[1] }}]</span>
+            </div>
+          }
+          @for (monster of monsterDistances(); track monster.id) {
+            <div class="row">
+              <span>{{ monster.id }}</span>
+              <span>[{{ monster.at[0] }}, {{ monster.at[1] }}] · {{ monster.distance }} away</span>
+            </div>
+          }
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Controls</h2>
+        <div class="button-row">
+          <button type="button" (click)="wait()" [disabled]="busy()">Wait (1 tick)</button>
+        </div>
+        <div class="restart">
+          <input #seedInput type="number" min="0" [value]="seed()" aria-label="Seed" />
+          <button type="button" (click)="restart(seedInput.value)">Restart</button>
+        </div>
+        <p class="hint">
+          Same seed plus the same clicks always replays identically — the RNG lives in Rust, never in
+          <code>Math.random()</code>.
+        </p>
+      </section>
+
+      <section class="panel">
+        <h2>Engine RNG</h2>
+        <div class="rows">
+          <div class="row"><span>state</span><span>{{ snapshotValue.rng.state }}</span></div>
+          <div class="row"><span>stream</span><span>{{ snapshotValue.rng.increment }}</span></div>
+          <div class="row"><span>draws</span><span>{{ snapshotValue.rng.draws }}</span></div>
+        </div>
+        <p class="hint">Drawn only when several monsters need an acting order.</p>
+      </section>
+
+      <section class="panel log-panel">
+        <h2>Events from the engine</h2>
+        <ul class="log">
+          @for (entry of log(); track entry.id) {
+            <li [class]="entry.kind">
+              <span class="tick">{{ entry.tick }}</span>
+              <span class="text">{{ entry.text }}</span>
+            </li>
+          } @empty {
+            <li class="empty">No events yet.</li>
+          }
+        </ul>
+      </section>
+
+      @if (stats(); as frame) {
+        <section class="panel">
+          <h2>Renderer</h2>
+          <div class="rows">
+            <div class="row">
+              <span>cells drawn</span><span>{{ frame.cellsDrawn }} / {{ frame.cellsTotal }}</span>
+            </div>
+            <div class="row"><span>terrain fills</span><span>{{ frame.terrainBatches }}</span></div>
+            <div class="row"><span>last frame</span><span>{{ frame.lastFrameMs.toFixed(2) }} ms</span></div>
+          </div>
+        </section>
+      }
+    }
+  </aside>
+</div>

@@ -1,0 +1,21 @@
+[package]
+name = "hex-simulation"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+description = "Deterministic tick-based simulation: game state, movement rules, monster AI and RNG."
+keywords.workspace = true
+categories.workspace = true
+
+[lints.rust]
+missing_docs = "warn"
+
+[dependencies]
+hex-world = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+hex-world = { workspace = true, features = ["testing"] }
+serde_json = { workspace = true }

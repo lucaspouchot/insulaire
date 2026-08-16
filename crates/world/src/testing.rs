@@ -1,0 +1,116 @@
+//! Shared content fixtures.
+//!
+//! Enabled by the `testing` feature so that `hex-simulation` and `hex-engine`
+//! can build their tests on the same small world instead of each inventing one.
+//! The feature is off by default, so none of this reaches the WASM bundle.
+
+use crate::definition::{
+    EntityDefinition, HexOrientation, LocationDefinition, PlacedTile, WorldDefinition,
+    WorldMetadata, WORLD_SCHEMA_VERSION,
+};
+use crate::hex::OffsetCoord;
+use crate::tileset::{TileDefinition, TileSetDefinition, TileVisual, TILE_SET_SCHEMA_VERSION};
+
+/// The single impassable cell in [`sample_world`].
+pub const WATER_CELL: OffsetCoord = OffsetCoord::new(4, 4);
+
+/// Where [`sample_world`] places the player.
+pub const PLAYER_START: OffsetCoord = OffsetCoord::new(2, 2);
+
+/// Where [`sample_world`] places the monster.
+pub const MONSTER_START: OffsetCoord = OffsetCoord::new(7, 2);
+
+fn tile(id: &str, terrain: &str, movement_cost: u32, color: &str) -> TileDefinition {
+    TileDefinition {
+        id: id.to_owned(),
+        name: id.to_owned(),
+        terrain: terrain.to_owned(),
+        movement_cost,
+        tags: Vec::new(),
+        visual: TileVisual {
+            visual_id: format!("terrain.{id}"),
+            fallback_color: color.to_owned(),
+            hints: Default::default(),
+        },
+    }
+}
+
+/// A three-tile palette: passable grass and rock, impassable water.
+#[must_use]
+pub fn sample_tile_set() -> TileSetDefinition {
+    TileSetDefinition {
+        id: "mvp_terrain".to_owned(),
+        schema_version: TILE_SET_SCHEMA_VERSION,
+        name: "MVP Terrain".to_owned(),
+        tiles: vec![
+            tile("grass", "grass", 1, "#4f7a3a"),
+            tile("rock", "rock", 2, "#7a7169"),
+            tile("water", "water", 0, "#1d4e79"),
+        ],
+    }
+}
+
+/// A 10x10 world with one water cell, one player and one monster.
+#[must_use]
+pub fn sample_world() -> WorldDefinition {
+    WorldDefinition {
+        id: "sample_world".to_owned(),
+        schema_version: WORLD_SCHEMA_VERSION,
+        name: "Sample World".to_owned(),
+        width: 10,
+        height: 10,
+        orientation: HexOrientation::Pointy,
+        tile_set_id: "mvp_terrain".to_owned(),
+        default_tile: "grass".to_owned(),
+        tiles: vec![PlacedTile {
+            at: WATER_CELL,
+            tile: "water".to_owned(),
+            elevation: 0,
+            tags: Vec::new(),
+        }],
+        entities: vec![
+            EntityDefinition {
+                id: "player_1".to_owned(),
+                template_id: "player".to_owned(),
+                at: PLAYER_START,
+                tags: Vec::new(),
+                properties: Default::default(),
+            },
+            EntityDefinition {
+                id: "monster_1".to_owned(),
+                template_id: "monster".to_owned(),
+                at: MONSTER_START,
+                tags: Vec::new(),
+                properties: Default::default(),
+            },
+        ],
+        locations: vec![LocationDefinition {
+            id: "loc_camp".to_owned(),
+            at: OffsetCoord::new(1, 1),
+            name: "Camp".to_owned(),
+            tags: vec!["start".to_owned()],
+        }],
+        metadata: WorldMetadata::default(),
+    }
+}
+
+/// A world with a wall of water separating the player from the monster.
+///
+/// Used to check that blocked chasers hold their position instead of walking
+/// into impassable terrain.
+#[must_use]
+pub fn walled_world() -> WorldDefinition {
+    let mut world = sample_world();
+    world.id = "walled_world".to_owned();
+    world.entities[0].at = OffsetCoord::new(1, 3);
+    world.entities[1].at = OffsetCoord::new(5, 3);
+    world.tiles = (0..10)
+        .map(|row| PlacedTile {
+            at: OffsetCoord::new(3, row),
+            tile: "water".to_owned(),
+            elevation: 0,
+            tags: Vec::new(),
+        })
+        .collect();
+    world
+}

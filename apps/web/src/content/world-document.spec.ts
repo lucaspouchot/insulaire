@@ -1,0 +1,196 @@
+import { describe, expect, it } from 'vitest';
+
+import { offset } from '../core/hex/hex-coords';
+import { TileSetDefinition, WorldDefinition } from './content-types';
+import { WorldDocument, WorldDocumentError } from './world-document';
+
+const tileSet: TileSetDefinition = {
+  id: 'mvp_terrain',
+  schemaVersion: 1,
+  name: 'Test Terrain',
+  tiles: [
+    {
+      id: 'grass',
+      name: 'Grass',
+      terrain: 'grass',
+      movementCost: 1,
+      visual: { visualId: 'terrain.grass', fallbackColor: '#4a7c3f' },
+    },
+    {
+      id: 'water',
+      name: 'Water',
+      terrain: 'water',
+      movementCost: 0,
+      visual: { visualId: 'terrain.water', fallbackColor: '#20567f' },
+    },
+  ],
+};
+
+const world: WorldDefinition = {
+  id: 'tiny',
+  schemaVersion: 1,
+  name: 'Tiny',
+  width: 4,
+  height: 3,
+  orientation: 'pointy',
+  tileSetId: 'mvp_terrain',
+  defaultTile: 'grass',
+  tiles: [{ at: [1, 1], tile: 'water' }],
+  entities: [
+    { id: 'player_1', templateId: 'player', at: [0, 0], tags: ['hero'] },
+    { id: 'monster_1', templateId: 'monster', at: [3, 2] },
+  ],
+  locations: [{ id: 'loc_a', at: [2, 0], name: 'Somewhere' }],
+  metadata: { author: 'tests' },
+};
+
+function documentFor(): WorldDocument {
+  return WorldDocument.fromDefinition(world, tileSet);
+}
+
+describe('WorldDocument', () => {
+  it('expands a sparse definition into a dense grid', () => {
+    const document = documentFor();
+
+    expect(document.terrain).toHaveLength(12);
+    expect(document.tileAt(offset(1, 1))?.id).toBe('water');
+    expect(document.tileAt(offset(0, 0))?.id).toBe('grass');
+    expect(document.tileAt(offset(9, 9))).toBeNull();
+    expect(document.defaultTile.id).toBe('grass');
+  });
+
+  it('carries entities, locations and metadata across', () => {
+    const document = documentFor();
+
+    expect(document.placedEntities).toHaveLength(2);
+    expect(document.entityAt(offset(0, 0))?.id).toBe('player_1');
+    expect(document.entityAt(offset(0, 0))?.tags).toEqual(['hero']);
+    expect(document.placedLocations[0]?.name).toBe('Somewhere');
+    expect(document.metadata['author']).toBe('tests');
+  });
+
+  it('round-trips definition -> document -> definition', () => {
+    const exported = documentFor().toDefinition(() => new Date('2026-01-01T00:00:00Z'));
+
+    expect(exported.id).toBe(world.id);
+    expect(exported.width).toBe(world.width);
+    expect(exported.height).toBe(world.height);
+    expect(exported.defaultTile).toBe('grass');
+    expect(exported.tiles).toEqual(world.tiles);
+    expect(exported.entities).toEqual(world.entities);
+    expect(exported.locations).toEqual([{ id: 'loc_a', at: [2, 0], name: 'Somewhere' }]);
+    expect(exported.metadata?.updatedAt).toBe('2026-01-01T00:00:00.000Z');
+
+    // Re-importing the export must produce an identical grid.
+    const reimported = WorldDocument.fromDefinition(exported, tileSet);
+    expect(Array.from(reimported.terrain)).toEqual(Array.from(documentFor().terrain));
+  });
+
+  it('exports sparsely: only cells differing from the default tile', () => {
+    const document = documentFor();
+    document.paint(offset(2, 2), 'water');
+
+    const exported = document.toDefinition();
+    expect(exported.tiles).toEqual([
+      { at: [1, 1], tile: 'water' },
+      { at: [2, 2], tile: 'water' },
+    ]);
+
+    // Painting a cell back to the default removes it from the file entirely.
+    document.paint(offset(1, 1), 'grass');
+    expect(document.toDefinition().tiles).toEqual([{ at: [2, 2], tile: 'water' }]);
+  });
+
+  it('reports whether a paint actually changed anything', () => {
+    const document = documentFor();
+    expect(document.paint(offset(0, 0), 'water')).toBe(true);
+    expect(document.paint(offset(0, 0), 'water')).toBe(false);
+    expect(document.paint(offset(0, 0), 'lava')).toBe(false);
+    expect(document.paint(offset(99, 0), 'water')).toBe(false);
+  });
+
+  it('keeps exactly one player and at most one entity per hex', () => {
+    const document = documentFor();
+
+    document.placeEntity(offset(2, 1), 'player', true);
+    const players = document.placedEntities.filter((entity) => entity.templateId === 'player');
+    expect(players).toHaveLength(1);
+    expect(players[0]?.at).toEqual(offset(2, 1));
+
+    // Placing on an occupied hex replaces the occupant.
+    document.placeEntity(offset(2, 1), 'monster', false);
+    expect(document.entityAt(offset(2, 1))?.templateId).toBe('monster');
+    expect(document.placedEntities.filter((entity) => entity.templateId === 'player')).toHaveLength(0);
+  });
+
+  it('generates unique entity ids', () => {
+    const document = WorldDocument.create({ id: 'w', name: 'W', width: 5, height: 5, tileSet });
+    document.placeEntity(offset(0, 0), 'monster', false);
+    document.placeEntity(offset(1, 0), 'monster', false);
+    document.placeEntity(offset(2, 0), 'monster', false);
+
+    const ids = document.placedEntities.map((entity) => entity.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toEqual(['monster_1', 'monster_2', 'monster_3']);
+  });
+
+  it('refuses placements outside the map', () => {
+    const document = documentFor();
+    expect(document.placeEntity(offset(-1, 0), 'monster', false)).toBeNull();
+    expect(document.placeEntity(offset(0, 99), 'monster', false)).toBeNull();
+  });
+
+  it('removes entities and locations by cell', () => {
+    const document = documentFor();
+    expect(document.removeEntityAt(offset(0, 0))).toBe(true);
+    expect(document.removeEntityAt(offset(0, 0))).toBe(false);
+    expect(document.entityAt(offset(0, 0))).toBeNull();
+
+    expect(document.removeLocationAt(offset(2, 0))).toBe(true);
+    expect(document.placedLocations).toHaveLength(0);
+  });
+
+  it('creates an empty world filled with the default tile', () => {
+    const document = WorldDocument.create({
+      id: 'blank',
+      name: 'Blank',
+      width: 6,
+      height: 4,
+      tileSet,
+      defaultTile: 'water',
+    });
+
+    expect(document.terrain).toHaveLength(24);
+    expect(document.defaultTile.id).toBe('water');
+    expect(document.toDefinition().tiles).toEqual([]);
+    expect(document.placedEntities).toEqual([]);
+  });
+
+  it('rejects content it cannot represent', () => {
+    expect(() =>
+      WorldDocument.create({ id: 'x', name: 'X', width: 0, height: 4, tileSet }),
+    ).toThrow(WorldDocumentError);
+
+    expect(() =>
+      WorldDocument.create({ id: 'x', name: 'X', width: 4, height: 4, tileSet, defaultTile: 'lava' }),
+    ).toThrow(WorldDocumentError);
+
+    expect(() => WorldDocument.fromDefinition({ ...world, tileSetId: 'other' }, tileSet)).toThrow(
+      WorldDocumentError,
+    );
+
+    expect(() =>
+      WorldDocument.fromDefinition({ ...world, tiles: [{ at: [1, 1], tile: 'lava' }] }, tileSet),
+    ).toThrow(WorldDocumentError);
+
+    expect(() =>
+      WorldDocument.fromDefinition({ ...world, tiles: [{ at: [99, 1], tile: 'water' }] }, tileSet),
+    ).toThrow(WorldDocumentError);
+  });
+
+  it('counts painted tiles for the status bar', () => {
+    const histogram = documentFor().tileHistogram();
+    expect(histogram.get('water')).toBe(1);
+    expect(histogram.get('grass')).toBe(11);
+  });
+});

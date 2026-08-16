@@ -1,0 +1,156 @@
+:host {
+  display: block;
+  height: 100%;
+}
+
+.viewport-tools {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  gap: 6px;
+}
+
+.viewport-tools button {
+  padding: 4px 9px;
+  font-size: 12px;
+  background: rgba(21, 27, 36, 0.9);
+}
+
+.viewport-tools button.on {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+}
+
+.tools {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.tools button.on {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--bg-raised);
+}
+
+.palette {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.swatch {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 8px;
+  text-align: left;
+}
+
+.swatch.on {
+  border-color: var(--accent);
+}
+
+.swatch .chip {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.45);
+  flex: none;
+}
+
+.swatch .label {
+  flex: 1;
+  font-size: 13px;
+}
+
+.swatch .cost {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.file-button {
+  display: inline-flex;
+  align-items: center;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.file-button:hover {
+  border-color: var(--accent-dim);
+}
+
+.play-row {
+  margin-top: 8px;
+}
+
+.play-row button {
+  width: 100%;
+}
+
+.note {
+  margin: 8px 0 0;
+}
+
+.issues {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.issues li {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 12px;
+  border-left: 2px solid var(--border);
+  padding-left: 8px;
+}
+
+.issues li.error {
+  border-left-color: var(--error);
+}
+
+.issues li.warn {
+  border-left-color: var(--warn);
+}
+
+.issues code {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.new-world {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dims {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dims input {
+  width: 100%;
+  min-width: 0;
+}
+
+.banner .dismiss {
+  display: block;
+  margin-top: 8px;
+  padding: 3px 8px;
+  font-size: 12px;
+}
