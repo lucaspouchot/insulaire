@@ -34,6 +34,7 @@
     { "at": [17, 8], "tile": "rock", "elevation": 2 },
     { "at": [18, 8], "tile": "rock", "elevation": 2 },
     { "at": [17, 9], "tile": "rock", "elevation": 2 },
+    { "at": [3, 10], "tile": "rock" },
     { "at": [8, 14], "tile": "sand" },
     { "at": [9, 14], "tile": "sand" },
     { "at": [10, 14], "tile": "sand" },
@@ -101,6 +102,9 @@
     { "id": "loc_camp", "at": [3, 11], "name": "Camp", "tags": ["start", "safe"] },
     { "id": "loc_lake", "at": [10, 14], "name": "Still Lake", "tags": ["landmark"] },
     { "id": "loc_pass", "at": [5, 7], "name": "Stone Pass", "tags": ["landmark"] }
+  ],
+  "links": [
+    { "id": "link_refuge_door", "at": [3, 10], "targetWorld": "demo_refuge", "targetAt": [3, 4], "name": "Refuge", "tags": ["door"] }
   ],
   "metadata": {
     "author": "hex-engine",

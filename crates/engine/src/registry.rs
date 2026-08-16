@@ -8,8 +8,8 @@
 use std::collections::BTreeMap;
 
 use hex_world::{
-    validate_tile_set, validate_world, TemplateRegistry, TileSetDefinition, ValidationReport,
-    WorldDefinition,
+    validate_project, validate_project_links, validate_tile_set, validate_world, ProjectDefinition,
+    TemplateRegistry, TileSetDefinition, ValidationReport, WorldDefinition,
 };
 
 use crate::error::EngineError;
@@ -20,6 +20,7 @@ pub struct ContentRegistry {
     tile_sets: BTreeMap<String, TileSetDefinition>,
     worlds: BTreeMap<String, WorldDefinition>,
     templates: TemplateRegistry,
+    project: Option<ProjectDefinition>,
 }
 
 impl ContentRegistry {
@@ -94,6 +95,70 @@ impl ContentRegistry {
     pub fn validate_world_json(&self, json: &str) -> Result<ValidationReport, EngineError> {
         let world = Self::parse_world(json)?;
         Ok(self.validate(&world))
+    }
+
+    /// Parses and registers the project manifest.
+    ///
+    /// Load it **after** the content it lists: the project is validated against
+    /// what is actually in the registry, so that a bundle missing a file fails
+    /// at load time rather than when a player walks through a door
+    /// (`docs/adr/ADR-0018-client-delivery-build.md`).
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Parse`] when the JSON is malformed, or
+    /// [`EngineError::Invalid`] when the manifest references content that is not
+    /// loaded.
+    pub fn load_project(&mut self, json: &str) -> Result<(String, ValidationReport), EngineError> {
+        let project: ProjectDefinition =
+            serde_json::from_str(json).map_err(|source| EngineError::Parse {
+                what: "project".to_owned(),
+                message: source.to_string(),
+            })?;
+
+        let report = validate_project(&project, &self.world_ids(), &self.tile_set_ids());
+        if !report.valid {
+            return Err(EngineError::Invalid {
+                what: format!("project `{}`", project.id),
+                report: Box::new(report),
+            });
+        }
+
+        let id = project.id.clone();
+        self.project = Some(project);
+        Ok((id, report))
+    }
+
+    /// The registered project manifest, if one was loaded.
+    #[must_use]
+    pub const fn project(&self) -> Option<&ProjectDefinition> {
+        self.project.as_ref()
+    }
+
+    /// Forgets every loaded tile set, world and project.
+    ///
+    /// Loading is otherwise additive — a world stays registered under its id
+    /// until something replaces it — which is wrong for a *set* of content: an
+    /// editor that removed a map, or a client that switched project, would keep
+    /// validating links against worlds that no longer exist. Callers that
+    /// re-load a whole project start from here.
+    ///
+    /// A game already in progress is unaffected: it holds its own `Arc` to the
+    /// grid it is playing.
+    pub fn clear(&mut self) {
+        self.tile_sets.clear();
+        self.worlds.clear();
+        self.project = None;
+    }
+
+    /// Resolves every map link across all registered worlds.
+    ///
+    /// Single-world validation cannot do this — a link's target lives in another
+    /// file — so this is the check that says a *set* of maps hangs together
+    /// (`docs/adr/ADR-0017-map-links.md`).
+    #[must_use]
+    pub fn validate_links(&self) -> ValidationReport {
+        validate_project_links(self.worlds.values(), |id| self.tile_sets.get(id))
     }
 
     fn parse_world(json: &str) -> Result<WorldDefinition, EngineError> {
@@ -234,6 +299,92 @@ mod tests {
         assert_eq!(
             registry.world("sample_world").expect("world").name,
             "Renamed"
+        );
+    }
+
+    fn project_json(start_world: &str) -> String {
+        format!(
+            r#"{{"id":"demo","schemaVersion":1,"name":"Demo","startWorld":"{start_world}",
+               "tileSets":[{{"id":"mvp_terrain","path":"tilesets/mvp_terrain.json"}}],
+               "worlds":[{{"id":"linked_world","path":"worlds/linked_world.json"}},
+                         {{"id":"interior_world","path":"worlds/interior_world.json"}}]}}"#
+        )
+    }
+
+    fn linked_registry() -> ContentRegistry {
+        let mut registry = ContentRegistry::new();
+        registry
+            .load_tile_set(&tile_set_json())
+            .expect("tile set loads");
+        for world in [
+            hex_world::testing::linked_world(),
+            hex_world::testing::interior_world(),
+        ] {
+            registry
+                .load_world(&serde_json::to_string(&world).expect("serialise"))
+                .expect("world loads");
+        }
+        registry
+    }
+
+    #[test]
+    fn links_resolve_once_every_world_is_registered() {
+        let mut registry = ContentRegistry::new();
+        registry
+            .load_tile_set(&tile_set_json())
+            .expect("tile set loads");
+        registry
+            .load_world(&serde_json::to_string(&hex_world::testing::linked_world()).expect("json"))
+            .expect("a world with an unresolved link still loads on its own");
+
+        let report = registry.validate_links();
+        assert!(!report.valid, "the target world is missing");
+        assert!(report
+            .issues
+            .iter()
+            .any(|issue| issue.code == "link.unknownTargetWorld"));
+
+        assert!(linked_registry().validate_links().valid);
+    }
+
+    #[test]
+    fn a_project_is_validated_against_what_is_loaded() {
+        let mut registry = linked_registry();
+        let (id, report) = registry
+            .load_project(&project_json("linked_world"))
+            .expect("project loads");
+        assert_eq!(id, "demo");
+        assert!(report.valid);
+        assert_eq!(
+            registry
+                .project()
+                .map(|project| project.start_world.as_str()),
+            Some("linked_world")
+        );
+
+        let error = registry
+            .load_project(&project_json("absent_world"))
+            .expect_err("an unknown start world must be refused");
+        assert_eq!(error.code(), "invalidContent");
+    }
+
+    #[test]
+    fn clearing_forgets_every_piece_of_content() {
+        // Loading is additive, so re-loading a project that dropped a map has to
+        // start from an empty registry or the removed map keeps answering.
+        let mut registry = linked_registry();
+        registry
+            .load_project(&project_json("linked_world"))
+            .expect("project loads");
+
+        registry.clear();
+
+        assert!(registry.world_ids().is_empty());
+        assert!(registry.tile_set_ids().is_empty());
+        assert!(registry.project().is_none());
+        assert!(
+            registry.validate_links().valid,
+            "no worlds means no unresolved links"
         );
     }
 

@@ -19,6 +19,7 @@ An authored world contains at minimum:
 - `tiles`
 - `locations`
 - `entities`
+- `links` — cells that send the player to another map (ADR-0017)
 - `metadata`
 - *(planned)* `scenarioId`
 
@@ -26,6 +27,15 @@ The map is not derived from a seed.
 
 Cells are stored **sparsely**: `tiles` lists only the cells that differ from
 `defaultTile`. The runtime expands this once, at load, into a dense buffer.
+
+## ProjectDefinition
+
+A world knows its tile set and the maps its doors lead to, but nothing in a
+world says which files make up a *game* or where a session starts. That is the
+project manifest (`content/project.json`): `id`, `schemaVersion`, `startWorld`,
+and the `tileSets` and `worlds` it ships, each as `{ id, path }`. A delivered
+client build boots from it (ADR-0018); the editor regenerates it whenever the
+set of maps changes.
 
 ## TileDefinition
 
@@ -78,6 +88,7 @@ GameState                        crates/simulation/src/state.rs
 ├── worldId                      which authored world is being played
 ├── seed                         owned by the engine, never by JavaScript
 ├── grid          ── Arc ──────> WorldGrid   (immutable authored reference data)
+├── links                        the current map's doors, copied from content
 ├── entities                     EntityStore: compact handles + positions
 ├── rngState                     serialisable PCG32
 ├── scenarioState?               (planned)
@@ -86,6 +97,12 @@ GameState                        crates/simulation/src/state.rs
 
 The authored `WorldGrid` is shared behind an `Arc` rather than copied: it is
 reference data, so a play session borrows it instead of owning a duplicate.
+
+`worldId`, `grid` and `links` change together when the player walks through a
+door: `GameState::enter_world` rebuilds the state from the target world and
+carries `tick`, the RNG stream and the arrival position across. The player
+entity is the one the target map authors, so every map stays independently
+playable (ADR-0017).
 
 ### WorldGrid
 
@@ -116,8 +133,16 @@ cell is freely mutable. It holds a dense `Uint8Array` of palette indices and a
 dense `Int8Array` of elevations — the same layout the runtime and the renderer
 use — plus the authored `projection`, and re-sparsifies on export.
 
-Editor state and runtime state never mix. The only thing that crosses between
-them is a `WorldDefinition`: a file.
+The editor holds **one document per map**, not one document
+(`ProjectStoreService`, `apps/web/src/app/services/project-store.service.ts`),
+together with the manifest and the loaded tile sets. Map links require it: a
+door names another map, so authoring one means having the others in hand, and
+the whole set is what `validateLinks` judges. The store also owns which map is
+open, whether anything is dirty, and the `localStorage` mirror — which only the
+dev build writes (ADR-0018).
+
+Editor state and runtime state never mix. The only things that cross between
+them are a `WorldDefinition` and a `ProjectDefinition`: files.
 
 ## Why
 

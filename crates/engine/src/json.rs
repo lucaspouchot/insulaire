@@ -84,6 +84,37 @@ impl JsonEngine {
         ok(&outcome)
     }
 
+    /// Registers the project manifest; returns a
+    /// [`LoadOutcome`](crate::LoadOutcome).
+    ///
+    /// Call it after loading the content it lists.
+    ///
+    /// # Errors
+    ///
+    /// `parse` for malformed JSON, `invalidContent` when it references content
+    /// that is not loaded.
+    pub fn load_project(&mut self, json: &str) -> JsonResult {
+        let outcome = self.inner.load_project(json).map_err(|error| err(&error))?;
+        ok(&outcome)
+    }
+
+    /// Forgets every loaded tile set, world and project.
+    ///
+    /// Call it before re-loading a whole project; a running game is unaffected.
+    pub fn reset_content(&mut self) {
+        self.inner.reset_content();
+    }
+
+    /// Resolves every map link across the loaded worlds; returns a
+    /// `ValidationReport`.
+    ///
+    /// # Errors
+    ///
+    /// Only on serialisation failure.
+    pub fn validate_links(&self) -> JsonResult {
+        ok(&self.inner.validate_links())
+    }
+
     /// Validates a world without registering it; returns a `ValidationReport`.
     ///
     /// # Errors
@@ -375,6 +406,138 @@ mod tests {
         assert_eq!(summary["worlds"].as_array().expect("worlds").len(), 0);
         assert_eq!(summary["tileSets"].as_array().expect("tileSets").len(), 1);
         assert_eq!(summary["templates"].as_array().expect("templates").len(), 2);
+    }
+
+    const LINKED_WORLD: &str = r#"{
+        "id": "outside", "schemaVersion": 1, "width": 8, "height": 8,
+        "tileSetId": "t", "defaultTile": "grass",
+        "entities": [
+            { "id": "p", "templateId": "player", "at": [2, 2] },
+            { "id": "m", "templateId": "monster", "at": [6, 6] }
+        ],
+        "links": [
+            { "id": "door", "at": [3, 2], "targetWorld": "house",
+              "targetAt": [1, 1], "name": "House" }
+        ]}"#;
+
+    const HOUSE_WORLD: &str = r#"{
+        "id": "house", "schemaVersion": 1, "width": 5, "height": 5,
+        "tileSetId": "t", "defaultTile": "grass",
+        "entities": [{ "id": "p", "templateId": "player", "at": [2, 2] }],
+        "links": [
+            { "id": "door_out", "at": [1, 0], "targetWorld": "outside",
+              "targetAt": [2, 2] }
+        ]}"#;
+
+    const PROJECT: &str = r#"{
+        "id": "demo", "schemaVersion": 1, "name": "Demo", "startWorld": "outside",
+        "tileSets": [{ "id": "t", "path": "tilesets/t.json" }],
+        "worlds": [
+            { "id": "outside", "path": "worlds/outside.json" },
+            { "id": "house", "path": "worlds/house.json" }
+        ]}"#;
+
+    fn linked() -> JsonEngine {
+        let mut engine = JsonEngine::new();
+        engine.load_tile_set(TILE_SET).expect("tile set loads");
+        engine.load_world(LINKED_WORLD).expect("outside loads");
+        engine.load_world(HOUSE_WORLD).expect("house loads");
+        engine
+    }
+
+    #[test]
+    fn walking_through_a_door_changes_map_across_the_boundary() {
+        let mut engine = linked();
+
+        let view = json(&engine.world_view("outside").expect("view"));
+        assert_eq!(view["links"][0]["id"], "door");
+        assert_eq!(view["links"][0]["targetWorld"], "house");
+        assert_eq!(view["links"][0]["targetAt"], json("[1,1]"));
+        assert_eq!(view["links"][0]["trigger"], "enter");
+
+        engine.create_game("outside", 5).expect("game");
+        let result = json(
+            &engine
+                .dispatch(r#"{"type":"moveTo","to":[3,2]}"#)
+                .expect("dispatch"),
+        );
+
+        assert_eq!(result["accepted"], true);
+        assert_eq!(result["state"]["worldId"], "house");
+        assert_eq!(result["state"]["player"]["at"], json("[1,1]"));
+
+        let types: Vec<&str> = result["events"]
+            .as_array()
+            .expect("events")
+            .iter()
+            .filter_map(|event| event["type"].as_str())
+            .collect();
+        assert!(types.contains(&"linkTriggered"), "got {types:?}");
+        assert!(types.contains(&"worldEntered"), "got {types:?}");
+
+        // And back out again through the house's own door.
+        let back = json(
+            &engine
+                .dispatch(r#"{"type":"moveTo","to":[1,0]}"#)
+                .expect("dispatch"),
+        );
+        assert_eq!(back["state"]["worldId"], "outside");
+        assert_eq!(back["state"]["tick"], 2, "each map change costs one tick");
+    }
+
+    #[test]
+    fn link_and_project_validation_cross_the_boundary() {
+        let mut engine = JsonEngine::new();
+        engine.load_tile_set(TILE_SET).expect("tile set loads");
+        engine.load_world(LINKED_WORLD).expect("outside loads");
+
+        let report = json(&engine.validate_links().expect("report"));
+        assert_eq!(report["valid"], false);
+        assert_eq!(report["issues"][0]["code"], "link.unknownTargetWorld");
+
+        // The project cannot load while one of its worlds is missing …
+        let payload = json(&engine.load_project(PROJECT).unwrap_err());
+        assert_eq!(payload["code"], "invalidContent");
+        assert_eq!(
+            payload["report"]["issues"][0]["code"],
+            "project.unloadedWorld"
+        );
+
+        // … and both go valid once it is.
+        engine.load_world(HOUSE_WORLD).expect("house loads");
+        assert_eq!(
+            json(&engine.validate_links().expect("report"))["valid"],
+            true
+        );
+        let outcome = json(&engine.load_project(PROJECT).expect("project loads"));
+        assert_eq!(outcome["id"], "demo");
+
+        let summary = json(&engine.content_summary().expect("summary"));
+        assert_eq!(summary["project"]["startWorld"], "outside");
+        assert_eq!(code(&engine.load_project("{").unwrap_err()), "parse");
+    }
+
+    #[test]
+    fn resetting_content_leaves_a_running_game_alone() {
+        let mut engine = linked();
+        engine.create_game("outside", 5).expect("game");
+
+        engine.reset_content();
+
+        let summary = json(&engine.content_summary().expect("summary"));
+        assert_eq!(summary["worlds"].as_array().expect("worlds").len(), 0);
+        assert_eq!(summary["project"], Value::Null);
+        assert!(engine.has_game(), "the session survives a content reload");
+        assert_eq!(
+            json(&engine.snapshot().expect("snapshot"))["worldId"],
+            "outside"
+        );
+        // The map it is on can no longer be re-fetched, which is exactly why a
+        // host resets only when it is about to load content again.
+        assert_eq!(
+            code(&engine.world_view("outside").unwrap_err()),
+            "unknownContent"
+        );
     }
 
     #[test]

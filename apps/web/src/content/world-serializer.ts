@@ -17,7 +17,7 @@
  * from the editor diffs cleanly against a hand-edited one.
  */
 
-import { WorldDefinition } from './content-types';
+import { ProjectDefinition, WorldDefinition } from './content-types';
 
 /** Keys written before the record arrays, in this order. */
 const SCALAR_KEYS = [
@@ -46,7 +46,36 @@ export function serializeWorld(world: WorldDefinition): string {
   lines.push(...recordArray('tiles', world.tiles ?? []));
   lines.push(...recordArray('entities', world.entities ?? []));
   lines.push(...recordArray('locations', world.locations ?? []));
+  lines.push(...recordArray('links', world.links ?? []));
   lines.push(...metadataBlock(world.metadata ?? {}));
+
+  lines.push('}');
+  return `${lines.join('\n')}\n`;
+}
+
+/**
+ * Serialises a project manifest in the same one-record-per-line layout.
+ *
+ * The editor writes this file whenever the set of maps changes, so a delivered
+ * bundle can be produced from exported content alone
+ * (`docs/adr/ADR-0018-client-delivery-build.md`).
+ */
+export function serializeProject(project: ProjectDefinition): string {
+  const lines = [
+    '{',
+    `  "id": ${JSON.stringify(project.id)},`,
+    `  "schemaVersion": ${JSON.stringify(project.schemaVersion)},`,
+  ];
+  if (project.name !== undefined) {
+    lines.push(`  "name": ${JSON.stringify(project.name)},`);
+  }
+  lines.push(`  "startWorld": ${JSON.stringify(project.startWorld)},`);
+  lines.push(...recordArray('tileSets', project.tileSets));
+
+  const worlds = recordArray('worlds', project.worlds);
+  const last = worlds.length - 1;
+  worlds[last] = (worlds[last] as string).replace(/,$/, '');
+  lines.push(...worlds);
 
   lines.push('}');
   return `${lines.join('\n')}\n`;

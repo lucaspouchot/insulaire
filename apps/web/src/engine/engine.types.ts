@@ -63,7 +63,13 @@ export type SimEvent =
   | { type: 'actionRejected'; reason: Rejection }
   | { type: 'entityMoved'; entity: number; contentId: string; from: OffsetWire; to: OffsetWire }
   | { type: 'entityHeld'; entity: number; contentId: string; at: OffsetWire }
-  | { type: 'tickAdvanced'; tick: number };
+  | { type: 'tickAdvanced'; tick: number }
+  /** The player entered a hex carrying a map link; the map is about to change. */
+  | { type: 'linkTriggered'; link: string; toWorld: string; to: OffsetWire }
+  /** The session moved to another map. */
+  | { type: 'worldEntered'; fromWorld: string; toWorld: string; at: OffsetWire }
+  /** A door could not be followed, so the map did not change. */
+  | { type: 'linkUnresolved'; link: string; toWorld: string; reason: string };
 
 export interface Rejection {
   code: string;
@@ -96,6 +102,18 @@ export interface LocationView {
   tags: string[];
 }
 
+/** An authored door, republished so the client can draw it and name its target. */
+export interface LinkView {
+  id: string;
+  name: string;
+  at: OffsetWire;
+  targetWorld: string;
+  targetAt: OffsetWire;
+  /** Currently always `"enter"`. */
+  trigger: string;
+  tags: string[];
+}
+
 export interface WorldView {
   worldId: string;
   name: string;
@@ -107,6 +125,7 @@ export interface WorldView {
   tileSetId: string;
   palette: PaletteEntry[];
   locations: LocationView[];
+  links: LinkView[];
   cellCount: number;
 }
 
@@ -127,10 +146,19 @@ export interface WorldSummary {
   valid: boolean;
 }
 
+/** The loaded project manifest. */
+export interface ProjectView {
+  id: string;
+  name: string;
+  startWorld: string;
+  worldIds: string[];
+}
+
 export interface ContentSummary {
   tileSets: string[];
   worlds: WorldSummary[];
   templates: TemplateView[];
+  project: ProjectView | null;
 }
 
 export type Severity = 'error' | 'warning';
@@ -213,6 +241,9 @@ export interface RawHexEngine {
   engineInfo(): string;
   loadTileSet(json: string): string;
   loadWorld(json: string): string;
+  loadProject(json: string): string;
+  resetContent(): void;
+  validateLinks(): string;
   validateWorld(json: string): string;
   contentSummary(): string;
   worldView(worldId: string): string;

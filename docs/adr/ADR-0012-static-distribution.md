@@ -1,7 +1,10 @@
 # ADR-0012 — Distribute as a Static Web Application
 
 ## Status
-Accepted with caveat
+Accepted with caveat. Amended by ADR-0020: the caveat below came true, and the
+**client** delivery is now a desktop executable. The static bundle remains what
+development, the editor and any web hosting use, and the architectural
+invariant — no backend, no application server — is unchanged.
 
 ## Context
 

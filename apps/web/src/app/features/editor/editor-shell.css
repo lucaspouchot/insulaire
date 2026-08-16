@@ -1,0 +1,52 @@
+:host {
+  display: grid;
+  grid-template-rows: 36px 1fr;
+  height: 100%;
+  min-height: 0;
+}
+
+.module-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+.module-tabs a {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+  text-decoration: none;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+}
+
+.module-tabs a:hover {
+  color: var(--text);
+  background: var(--bg-raised);
+}
+
+.module-tabs a.active {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+  background: var(--bg-raised);
+}
+
+.module-tabs a.planned {
+  opacity: 0.7;
+}
+
+.module-tabs .badge {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 4px;
+}

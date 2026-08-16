@@ -19,9 +19,17 @@
     "test:rust": "cargo test --workspace",
     "test:web": "npm run test --workspace web -- --no-watch",
     "lint:rust": "cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all -- --check",
-    "check": "npm run lint:rust && npm run test"
+    "check": "npm run lint:rust && npm run test",
+    "build:deliver": "npm run build:deliver --workspace web",
+    "desktop:dev": "node scripts/tauri.mjs dev",
+    "desktop:build": "node scripts/tauri.mjs build",
+    "desktop:icons": "node scripts/tauri.mjs icon icons/icon.svg --output icons",
+    "lint:desktop": "cd apps/desktop && cargo clippy --all-targets -- -D warnings && cargo fmt -- --check",
+    "test:desktop": "cd apps/desktop && cargo test",
+    "check:desktop": "npm run lint:desktop && npm run test:desktop"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
     "wasm-pack": "0.15.0"
   }
 }

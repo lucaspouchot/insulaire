@@ -1,5 +1,9 @@
 # Rust
 /target/
+/apps/desktop/target/
+
+# Generated: Tauri's permission and capability schemas, written by tauri-build
+/apps/desktop/gen/
 
 # Node
 node_modules/
@@ -20,3 +24,6 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 *.swp
+
+# Client deliveries produced by `just deliver`
+/deliveries/

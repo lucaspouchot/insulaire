@@ -47,6 +47,42 @@ pub enum SimEvent {
         /// The new tick value.
         tick: u64,
     },
+    /// The player ended a move on a map link, which will change the map.
+    ///
+    /// Emitted by the tick pipeline, which knows the link exists but cannot
+    /// reach the target world — only the host's content registry can. The swap
+    /// itself is reported by [`SimEvent::WorldEntered`]
+    /// (`docs/adr/ADR-0017-map-links.md`).
+    LinkTriggered {
+        /// Authored id of the link.
+        link: String,
+        /// Id of the world the player is being sent to.
+        to_world: String,
+        /// Where the player will arrive in that world.
+        to: OffsetCoord,
+    },
+    /// The session moved to another map.
+    WorldEntered {
+        /// Id of the map that was left.
+        from_world: String,
+        /// Id of the map now being played.
+        to_world: String,
+        /// Where the player arrived.
+        at: OffsetCoord,
+    },
+    /// A triggered link could not be followed, so the map did not change.
+    ///
+    /// Content validation is meant to make this unreachable
+    /// (`link.unknownTargetWorld`); it is an event rather than an error so that
+    /// a partially loaded project degrades instead of ending the session.
+    LinkUnresolved {
+        /// Authored id of the link.
+        link: String,
+        /// Id of the world that could not be entered.
+        to_world: String,
+        /// Why it could not be entered.
+        reason: String,
+    },
 }
 
 #[cfg(test)]

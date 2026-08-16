@@ -2,11 +2,15 @@
   <div class="brand">
     <span class="mark">⬢</span>
     <span>Hex Engine</span>
-    <span class="tag">MVP</span>
+    @if (features.label) {
+      <span class="tag">{{ features.label }}</span>
+    }
   </div>
 
   <nav>
-    <a routerLink="/editor" routerLinkActive="active">Editor</a>
+    @if (features.editor) {
+      <a routerLink="/editor" routerLinkActive="active">Editor</a>
+    }
     <a routerLink="/play" routerLinkActive="active">Play</a>
   </nav>
 

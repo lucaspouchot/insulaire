@@ -20,11 +20,15 @@
  * `docs/wasm-api.md` documents.
  */
 
+import { assetUrl } from '../core/asset-url';
 import { HexEngineModule } from './engine.types';
 
-/** Where `npm run wasm:build` writes the generated package. */
-export const ENGINE_MODULE_URL = '/wasm/hex_engine.js';
-export const ENGINE_WASM_URL = '/wasm/hex_engine_bg.wasm';
+/**
+ * Where `npm run wasm:build` writes the generated package, relative to the
+ * document base — so a delivered bundle works from any subdirectory.
+ */
+export const ENGINE_MODULE_PATH = 'wasm/hex_engine.js';
+export const ENGINE_WASM_PATH = 'wasm/hex_engine_bg.wasm';
 
 let cached: Promise<HexEngineModule> | null = null;
 
@@ -40,14 +44,14 @@ export function loadEngineModule(): Promise<HexEngineModule> {
 
 async function importAndInit(): Promise<HexEngineModule> {
   // Held in a variable so the bundler treats this as an external runtime import.
-  const specifier = ENGINE_MODULE_URL;
+  const specifier = assetUrl(ENGINE_MODULE_PATH);
 
   let module: HexEngineModule;
   try {
     module = (await import(/* @vite-ignore */ specifier)) as HexEngineModule;
   } catch (cause) {
     throw new Error(
-      `Could not load the WebAssembly engine from ${ENGINE_MODULE_URL}. ` +
+      `Could not load the WebAssembly engine from ${specifier}. ` +
         'Build it first with "npm run wasm:build".',
       { cause },
     );
@@ -55,7 +59,7 @@ async function importAndInit(): Promise<HexEngineModule> {
 
   // Passing the URL explicitly keeps initialisation working no matter how the
   // glue was served or rewritten.
-  await module.default({ module_or_path: ENGINE_WASM_URL });
+  await module.default({ module_or_path: assetUrl(ENGINE_WASM_PATH) });
   return module;
 }
 

@@ -87,6 +87,37 @@ export class EngineService {
   }
 
   /**
+   * Registers the project manifest, after the content it lists.
+   *
+   * The engine validates it against what is actually loaded, so a bundle
+   * missing a file fails here rather than when a player walks through a door.
+   */
+  loadProject(json: string): LoadOutcome {
+    return this.parse<LoadOutcome>(() => this.engine().loadProject(json));
+  }
+
+  /**
+   * Forgets every loaded tile set, world and project.
+   *
+   * Loading is additive, so a host re-loading a whole project calls this first
+   * — otherwise content deleted in the editor keeps answering for itself. A
+   * running game is unaffected.
+   */
+  resetContent(): void {
+    this.engine().resetContent();
+  }
+
+  /**
+   * Resolves every map link across the loaded worlds.
+   *
+   * The check no single world file can make: a door's target lives in another
+   * file (`docs/adr/ADR-0017-map-links.md`).
+   */
+  validateLinks(): ValidationReport {
+    return this.parse<ValidationReport>(() => this.engine().validateLinks());
+  }
+
+  /**
    * Validates a world without registering it.
    *
    * This is the editor's pre-export check, and it is deliberately the *same*

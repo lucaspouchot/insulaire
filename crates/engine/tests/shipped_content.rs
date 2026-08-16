@@ -26,14 +26,20 @@ fn read(relative: &str) -> String {
         .unwrap_or_else(|error| panic!("cannot read {}: {error}", path.display()))
 }
 
+/// Loads everything `content/project.json` lists, in the order a client does.
 fn engine_with_shipped_content() -> Engine {
     let mut engine = Engine::new();
     engine
         .load_tile_set(&read("content/tilesets/mvp_terrain.json"))
         .expect("the shipped tile set must load");
+    for world in ["demo_world", "demo_refuge"] {
+        engine
+            .load_world(&read(&format!("content/worlds/{world}.json")))
+            .unwrap_or_else(|error| panic!("the shipped world `{world}` must load: {error}"));
+    }
     engine
-        .load_world(&read("content/worlds/demo_world.json"))
-        .expect("the shipped demo world must load");
+        .load_project(&read("content/project.json"))
+        .expect("the shipped project must load");
     engine
 }
 
@@ -56,15 +62,67 @@ fn the_shipped_content_loads_without_errors_or_warnings() {
         tile_set.report.issues
     );
 
-    let world = engine
-        .load_world(&read("content/worlds/demo_world.json"))
-        .expect("world loads");
-    assert_eq!(world.id, "demo_world");
-    assert!(
-        world.report.issues.is_empty(),
-        "the shipped world should not even warn: {:?}",
-        world.report.issues
+    for id in ["demo_world", "demo_refuge"] {
+        let world = engine
+            .load_world(&read(&format!("content/worlds/{id}.json")))
+            .expect("world loads");
+        assert_eq!(world.id, id);
+        assert!(
+            world.report.issues.is_empty(),
+            "the shipped world `{id}` should not even warn: {:?}",
+            world.report.issues
+        );
+    }
+
+    let project = engine
+        .load_project(&read("content/project.json"))
+        .expect("project loads");
+    assert_eq!(project.id, "insulaire");
+    assert!(project.report.issues.is_empty());
+}
+
+#[test]
+fn every_shipped_map_link_resolves() {
+    // The check no single world file can make: the doors in `content/` lead
+    // somewhere that exists, in bounds, on a cell the player can stand on.
+    let engine = engine_with_shipped_content();
+    let report = engine.validate_links();
+    assert!(report.valid, "unresolved links: {:?}", report.issues);
+
+    let view = engine.world_view("demo_world").expect("view");
+    assert_eq!(view.links.len(), 1);
+    assert_eq!(view.links[0].target_world, "demo_refuge");
+}
+
+#[test]
+fn walking_through_the_shipped_door_changes_map_and_comes_back() {
+    let mut engine = engine_with_shipped_content();
+    let start = engine.create_game("demo_world", 2026).expect("game starts");
+    let door = engine.world_view("demo_world").expect("view").links[0].at;
+    assert_eq!(
+        distance(start.player.as_ref().expect("player").at, door),
+        1,
+        "the demo player must start next to the door so the loop is one move"
     );
+
+    let inside = engine
+        .dispatch(Command::MoveTo { to: door })
+        .expect("dispatch");
+    assert!(inside.accepted);
+    assert_eq!(inside.state.world_id, "demo_refuge");
+
+    // The way back is the interior's own door, and it lands where we came from.
+    let exit = engine.world_view("demo_refuge").expect("view").links[0].at;
+    let outside = engine
+        .dispatch(Command::MoveTo { to: exit })
+        .expect("dispatch");
+    assert!(outside.accepted);
+    assert_eq!(outside.state.world_id, "demo_world");
+    assert_eq!(outside.state.player.as_ref().expect("player").at, door);
+
+    // Standing on the door we arrived on must not send us straight back in.
+    let waited = engine.dispatch(Command::Wait).expect("dispatch");
+    assert_eq!(waited.state.world_id, "demo_world");
 }
 
 #[test]

@@ -87,6 +87,10 @@ pub struct WorldDefinition {
     /// Authored points of interest.
     #[serde(default)]
     pub locations: Vec<LocationDefinition>,
+    /// Cells that send the player to another map
+    /// (`docs/adr/ADR-0017-map-links.md`).
+    #[serde(default)]
+    pub links: Vec<MapLinkDefinition>,
     /// Free-form authoring metadata; never read by the simulation.
     #[serde(default)]
     pub metadata: WorldMetadata,
@@ -97,6 +101,16 @@ impl WorldDefinition {
     #[must_use]
     pub fn cell_count(&self) -> usize {
         self.width as usize * self.height as usize
+    }
+
+    /// The link triggered by entering `at`, if any.
+    ///
+    /// Validation rejects two links on the same cell, so at most one can match.
+    #[must_use]
+    pub fn link_entered_at(&self, at: OffsetCoord) -> Option<&MapLinkDefinition> {
+        self.links
+            .iter()
+            .find(|link| link.at == at && link.trigger == LinkTrigger::Enter)
     }
 }
 
@@ -148,6 +162,61 @@ pub struct LocationDefinition {
     pub at: OffsetCoord,
     /// Display name.
     #[serde(default)]
+    pub name: String,
+    /// Free-form gameplay tags.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+}
+
+/// What makes a [`MapLinkDefinition`] fire.
+///
+/// Only [`LinkTrigger::Enter`] is implemented. [`LinkTrigger::Interact`] is
+/// reserved so that adding an interaction command later is a content-format
+/// addition rather than a breaking change; validation rejects it until then, on
+/// the same principle as [`HexOrientation::Flat`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LinkTrigger {
+    /// Fires when the player's move ends on the link's cell.
+    #[default]
+    Enter,
+    /// Reserved: fires on an explicit interaction. Rejected by validation.
+    Interact,
+}
+
+impl LinkTrigger {
+    /// Whether this is the value a file may leave out.
+    #[must_use]
+    pub fn is_default(&self) -> bool {
+        *self == Self::Enter
+    }
+}
+
+/// A cell that sends the player to another authored map.
+///
+/// This is the only cross-file reference in the world schema, so it is also the
+/// only one whose target a single-world validation pass cannot resolve: bounds
+/// and duplicates are checked per world, and the target is checked by
+/// [`crate::validate_project_links`] once every world is loaded
+/// (`docs/adr/ADR-0017-map-links.md`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MapLinkDefinition {
+    /// Stable content id, unique within the world.
+    pub id: String,
+    /// The cell that triggers the link, in offset coordinates.
+    pub at: OffsetCoord,
+    /// Id of the [`WorldDefinition`] the player is sent to.
+    ///
+    /// May be this world's own id, which makes the link an intra-map teleport.
+    pub target_world: String,
+    /// Where the player arrives in the target world, in offset coordinates.
+    pub target_at: OffsetCoord,
+    /// What makes the link fire. Omitted from files when it is the default.
+    #[serde(default, skip_serializing_if = "LinkTrigger::is_default")]
+    pub trigger: LinkTrigger,
+    /// Display name, e.g. `"Door"`. Presentation only.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
     /// Free-form gameplay tags.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

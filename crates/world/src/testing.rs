@@ -5,8 +5,8 @@
 //! The feature is off by default, so none of this reaches the WASM bundle.
 
 use crate::definition::{
-    EntityDefinition, HexOrientation, LocationDefinition, PlacedTile, ProjectionMode,
-    WorldDefinition, WorldMetadata, WORLD_SCHEMA_VERSION,
+    EntityDefinition, HexOrientation, LinkTrigger, LocationDefinition, MapLinkDefinition,
+    PlacedTile, ProjectionMode, WorldDefinition, WorldMetadata, WORLD_SCHEMA_VERSION,
 };
 use crate::hex::OffsetCoord;
 use crate::tileset::{TileDefinition, TileSetDefinition, TileVisual, TILE_SET_SCHEMA_VERSION};
@@ -105,8 +105,66 @@ pub fn sample_world() -> WorldDefinition {
             name: "Camp".to_owned(),
             tags: vec!["start".to_owned()],
         }],
+        links: Vec::new(),
         metadata: WorldMetadata::default(),
     }
+}
+
+/// Where [`linked_world`] puts the door leading to [`interior_world`].
+pub const DOOR_CELL: OffsetCoord = OffsetCoord::new(3, 2);
+
+/// Where a player entering [`interior_world`] through the door arrives.
+pub const INTERIOR_ARRIVAL: OffsetCoord = OffsetCoord::new(1, 1);
+
+/// [`sample_world`] with a door on [`DOOR_CELL`] leading to [`interior_world`].
+///
+/// The door sits next to the player start, so one legal move reaches it.
+#[must_use]
+pub fn linked_world() -> WorldDefinition {
+    let mut world = sample_world();
+    world.id = "linked_world".to_owned();
+    world.links = vec![MapLinkDefinition {
+        id: "door_house".to_owned(),
+        at: DOOR_CELL,
+        target_world: "interior_world".to_owned(),
+        target_at: INTERIOR_ARRIVAL,
+        trigger: LinkTrigger::Enter,
+        name: "House".to_owned(),
+        tags: Vec::new(),
+    }];
+    world
+}
+
+/// A small interior map, the target of [`linked_world`]'s door.
+///
+/// It carries its own player start — every map stays independently playable
+/// (`docs/adr/ADR-0017-map-links.md`) — plus a link back out.
+#[must_use]
+pub fn interior_world() -> WorldDefinition {
+    let mut world = sample_world();
+    world.id = "interior_world".to_owned();
+    world.name = "Interior".to_owned();
+    world.width = 5;
+    world.height = 5;
+    world.tiles = Vec::new();
+    world.locations = Vec::new();
+    world.entities = vec![EntityDefinition {
+        id: "player_1".to_owned(),
+        template_id: "player".to_owned(),
+        at: OffsetCoord::new(2, 2),
+        tags: Vec::new(),
+        properties: Default::default(),
+    }];
+    world.links = vec![MapLinkDefinition {
+        id: "door_out".to_owned(),
+        at: OffsetCoord::new(0, 0),
+        target_world: "linked_world".to_owned(),
+        target_at: PLAYER_START,
+        trigger: LinkTrigger::Enter,
+        name: "Outside".to_owned(),
+        tags: Vec::new(),
+    }];
+    world
 }
 
 /// A world with a wall of water separating the player from the monster.

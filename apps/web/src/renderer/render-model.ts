@@ -43,6 +43,19 @@ export interface RenderLocation {
   readonly name: string;
 }
 
+/**
+ * A door: a cell that sends the player to another map.
+ *
+ * Drawn as its own marker rather than as a location, because it is not a place
+ * — it is a way out (`docs/adr/ADR-0017-map-links.md`).
+ */
+export interface RenderLink {
+  readonly id: string;
+  readonly at: Offset;
+  /** What to write under the marker; usually the door's name or its target. */
+  readonly label: string;
+}
+
 /** A set of hexes drawn with a coloured overlay. */
 export interface RenderOverlay {
   readonly cells: readonly Offset[];
@@ -76,6 +89,7 @@ export interface RenderModel {
   readonly elevationRange: { readonly min: number; readonly max: number };
   readonly entities: readonly RenderEntity[];
   readonly locations: readonly RenderLocation[];
+  readonly links: readonly RenderLink[];
   readonly overlays: readonly RenderOverlay[];
   readonly hover: Offset | null;
   readonly selected: Offset | null;
@@ -95,6 +109,7 @@ export function emptyRenderModel(): RenderModel {
     elevationRange: { min: 0, max: 0 },
     entities: [],
     locations: [],
+    links: [],
     overlays: [],
     hover: null,
     selected: null,

@@ -1,6 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 
+import { BUILD_FEATURES } from './build-features';
 import { EngineService } from './services/engine.service';
 
 /**
@@ -20,6 +21,8 @@ import { EngineService } from './services/engine.service';
 })
 export class App {
   protected readonly engine = inject(EngineService);
+  /** What this build contains; the client delivery has no editor. */
+  protected readonly features = BUILD_FEATURES;
 
   constructor() {
     // Start loading the engine as early as possible: both modes need it, and

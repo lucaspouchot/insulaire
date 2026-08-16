@@ -25,6 +25,7 @@ import { Offset, indexIn } from '../core/hex/hex-coords';
 import {
   EntityDefinition,
   LocationDefinition,
+  MapLink,
   PlacedTile,
   ProjectionMode,
   TileDefinition,
@@ -65,6 +66,24 @@ export interface DocumentLocation {
   tags: string[];
 }
 
+/**
+ * A door placed by the author: step on `at`, arrive at `targetAt` in
+ * `targetWorld`.
+ *
+ * The document deliberately does *not* check that `targetWorld` exists — a map
+ * knows nothing about its siblings. Resolving the target is the project's job,
+ * and the verdict comes from the Rust validator through
+ * `EngineService.validateLinks` (`docs/adr/ADR-0017-map-links.md`).
+ */
+export interface DocumentLink {
+  id: string;
+  at: Offset;
+  targetWorld: string;
+  targetAt: Offset;
+  name: string;
+  tags: string[];
+}
+
 export interface WorldDocumentInit {
   id: string;
   name: string;
@@ -92,6 +111,7 @@ export class WorldDocument {
     private readonly elevations: Int8Array,
     private entities: DocumentEntity[],
     private locations: DocumentLocation[],
+    private links: DocumentLink[],
     public metadata: WorldMetadata,
     /** How the runtime and the editor render this world. */
     public projection: ProjectionMode,
@@ -130,6 +150,7 @@ export class WorldDocument {
       defaultIndex,
       cells,
       new Int8Array(init.width * init.height),
+      [],
       [],
       [],
       {},
@@ -182,6 +203,14 @@ export class WorldDocument {
       at: { col: location.at[0], row: location.at[1] },
       name: location.name ?? location.id,
       tags: [...(location.tags ?? [])],
+    }));
+    document.links = (definition.links ?? []).map((link) => ({
+      id: link.id,
+      at: { col: link.at[0], row: link.at[1] },
+      targetWorld: link.targetWorld,
+      targetAt: { col: link.targetAt[0], row: link.targetAt[1] },
+      name: link.name ?? '',
+      tags: [...(link.tags ?? [])],
     }));
     document.metadata = { ...(definition.metadata ?? {}) };
 
@@ -334,10 +363,89 @@ export class WorldDocument {
     return this.locations.length !== before;
   }
 
+  // ------------------------------------------------------------------ links
+
+  /** Every door leaving this map. */
+  get placedLinks(): readonly DocumentLink[] {
+    return this.links;
+  }
+
+  /** The link on a cell, if any. */
+  linkAt(cell: Offset): DocumentLink | null {
+    return this.links.find((link) => link.at.col === cell.col && link.at.row === cell.row) ?? null;
+  }
+
+  /**
+   * Puts a door on `cell`, or returns the one already there.
+   *
+   * A new link points at `targetWorld` with an arrival of `[0, 0]`; the editor
+   * asks the author where it actually lands. One link per cell, because two
+   * doors on one hex have no defined winner — the validator rejects it too
+   * (`link.duplicatePosition`).
+   *
+   * @returns the link, or `null` when the cell is out of bounds.
+   */
+  placeLink(cell: Offset, targetWorld: string): DocumentLink | null {
+    if (indexIn(cell, this.width, this.height) < 0) {
+      return null;
+    }
+    const existing = this.linkAt(cell);
+    if (existing !== null) {
+      return existing;
+    }
+
+    const link: DocumentLink = {
+      id: this.nextId(this.links, 'link'),
+      at: { col: cell.col, row: cell.row },
+      targetWorld,
+      targetAt: { col: 0, row: 0 },
+      name: '',
+      tags: [],
+    };
+    this.links.push(link);
+    return link;
+  }
+
+  /** Applies an edit to the link on `cell`. */
+  updateLink(cell: Offset, patch: Partial<Omit<DocumentLink, 'id' | 'at'>>): boolean {
+    const link = this.linkAt(cell);
+    if (link === null) {
+      return false;
+    }
+    Object.assign(link, patch);
+    return true;
+  }
+
+  /** Removes whatever link sits on `cell`. */
+  removeLinkAt(cell: Offset): boolean {
+    const before = this.links.length;
+    this.links = this.links.filter(
+      (link) => !(link.at.col === cell.col && link.at.row === cell.row),
+    );
+    return this.links.length !== before;
+  }
+
+  /** Rewrites every link that pointed at `previousId`, after a map is renamed. */
+  retargetLinks(previousId: string, nextId: string): boolean {
+    let changed = false;
+    for (const link of this.links) {
+      if (link.targetWorld === previousId) {
+        link.targetWorld = nextId;
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
   private nextEntityId(templateId: string): string {
-    const taken = new Set(this.entities.map((entity) => entity.id));
+    return this.nextId(this.entities, templateId);
+  }
+
+  /** The first free `<prefix>_<n>` id among `existing`. */
+  private nextId(existing: readonly { id: string }[], prefix: string): string {
+    const taken = new Set(existing.map((item) => item.id));
     for (let n = 1; ; n += 1) {
-      const candidate = `${templateId}_${n}`;
+      const candidate = `${prefix}_${n}`;
       if (!taken.has(candidate)) {
         return candidate;
       }
@@ -386,6 +494,15 @@ export class WorldDocument {
       ...(location.tags.length > 0 ? { tags: [...location.tags] } : {}),
     }));
 
+    const links: MapLink[] = this.links.map((link) => ({
+      id: link.id,
+      at: [link.at.col, link.at.row],
+      targetWorld: link.targetWorld,
+      targetAt: [link.targetAt.col, link.targetAt.row],
+      ...(link.name.length > 0 ? { name: link.name } : {}),
+      ...(link.tags.length > 0 ? { tags: [...link.tags] } : {}),
+    }));
+
     return {
       id: this.id,
       schemaVersion: WORLD_SCHEMA_VERSION,
@@ -399,6 +516,7 @@ export class WorldDocument {
       tiles,
       entities,
       locations,
+      links,
       metadata: { ...this.metadata, updatedAt: now().toISOString() },
     };
   }

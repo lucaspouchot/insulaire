@@ -255,6 +255,54 @@ describe.skipIf(!built)('engine boundary', () => {
     expect(snapshot.entities.filter((entity) => entity.kind === 'monster')).toHaveLength(3);
   });
 
+  /**
+   * The whole map-link loop across the real boundary: the client loads the
+   * project, walks onto a door, and the engine hands back a snapshot on the
+   * other map (`docs/adr/ADR-0017-map-links.md`).
+   */
+  it('changes map when the player walks onto a door', () => {
+    const instance = engine();
+    instance.loadTileSet(tileSetJson());
+    instance.loadWorld(worldJson());
+    instance.loadWorld(readText('content/worlds/demo_refuge.json'));
+    const project = JSON.parse(instance.loadProject(readText('content/project.json'))) as LoadOutcome;
+    expect(project.id).toBe('insulaire');
+
+    expect((JSON.parse(instance.validateLinks()) as ValidationReport).valid).toBe(true);
+
+    const view = JSON.parse(instance.worldView('demo_world')) as WorldView;
+    expect(view.links).toHaveLength(1);
+    const door = view.links[0] as WorldView['links'][number];
+    expect(door.targetWorld).toBe('demo_refuge');
+
+    instance.createGame('demo_world', 2026);
+    const result = JSON.parse(
+      instance.dispatch(JSON.stringify({ type: 'moveTo', to: door.at })),
+    ) as CommandResult;
+
+    expect(result.accepted).toBe(true);
+    expect(result.state.worldId).toBe('demo_refuge');
+    expect(result.state.player?.at).toEqual(door.targetAt);
+    expect(result.events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['linkTriggered', 'worldEntered']),
+    );
+
+    // The map the session moved to is drawable without another load.
+    const inside = JSON.parse(instance.worldView(result.state.worldId)) as WorldView;
+    expect(instance.terrainBuffer(inside.worldId).length).toBe(inside.cellCount);
+  });
+
+  it('refuses a project whose worlds are not loaded', () => {
+    const instance = engine();
+    instance.loadTileSet(tileSetJson());
+    instance.loadWorld(worldJson());
+
+    expect(() => instance.loadProject(readText('content/project.json'))).toThrow();
+    const report = JSON.parse(instance.validateLinks()) as ValidationReport;
+    expect(report.valid).toBe(false);
+    expect(report.issues.map((issue) => issue.code)).toContain('link.unknownTargetWorld');
+  });
+
   it('rejects a world with no player, listing the reason', () => {
     const definition = readJson<WorldDefinition>('content/worlds/demo_world.json');
     definition.entities = (definition.entities ?? []).filter((entity) => entity.templateId !== 'player');

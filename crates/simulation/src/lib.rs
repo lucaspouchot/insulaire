@@ -46,4 +46,4 @@ pub use entity::{EntityId, EntityRuntime, EntityStore};
 pub use event::SimEvent;
 pub use rng::Rng;
 pub use state::{GameSetupError, GameState};
-pub use tick::ActionOutcome;
+pub use tick::{ActionOutcome, PendingTransition};

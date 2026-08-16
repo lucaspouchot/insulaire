@@ -19,13 +19,17 @@ stack to prove the architecture works end to end, and nothing more.
 - Load an authored hex world from a JSON file.
 - Render it to a Canvas with pan, zoom, hover, selection and viewport culling.
 - Paint terrain, place a player and monsters, validate, export and import.
-- Start a playable test game **from the world the editor is holding**.
+- Author a **project of several maps** and link them: a door on a hex sends the
+  player to another map, and the engine follows it during play.
+- Start a playable test game **from the maps the editor is holding**.
 - Click an adjacent hex: the engine validates it, moves the player, advances
   the tick by one, moves every monster one step towards the player, and returns
   what changed.
 - An invalid move changes nothing — no movement, no tick, no randomness.
 - Live display of the tick, every entity position, the engine's RNG state and
   the event stream coming out of Rust.
+- Produce a **client delivery** with `just deliver`: the game without the
+  editor, as a desktop executable for Windows, macOS and Linux.
 
 Deliberately **not** implemented yet: scenarios, combat, deckbuilding,
 pathfinding, procedural generation, save/load UI, an asset pipeline, a backend.
@@ -39,6 +43,7 @@ pathfinding, procedural generation, save/load UI, an asset pipeline, a backend.
 | **Node.js** | ≥ 20.19, or ≥ 22.12 | `node --version`. Angular 21 requires this. |
 | **Rust** | ≥ 1.82 (stable) | Install from <https://rustup.rs>. |
 | **wasm32 target** | — | `rustup target add wasm32-unknown-unknown` |
+| **GTK/WebKit dev packages** | — | Linux only, and only to build the desktop shell — see *Delivering the game*. |
 
 `wasm-pack` is **not** a manual install: it comes in as a dev dependency of this
 repository, so `npm install` provides it.
@@ -83,15 +88,37 @@ identifying itself, not a label.
    wheel zooms, `Fit` re-frames.
 4. Switch the tool to **Player** or **Monster** and click a hex to place one. A
    world has exactly one player; placing a new one moves it.
-5. **Erase entity** removes whatever stands on a hex.
+5. **Erase** removes whatever entity, door or location stands on a hex.
 6. Press **Validate**. The report comes from Rust — the same validator the
    runtime runs at load time — and points at the exact field, e.g.
    `entities[3].at · entity 'monster_3' stands on an impassable tile at [5, 5]`.
-7. **Export JSON** downloads the world. Drop it into `content/worlds/` to make
-   it part of the repository, or re-load it later with **Import JSON**.
+7. **Export map** downloads the open map; **Export project** downloads every map
+   plus `project.json`. Drop them into `content/` to make them part of the
+   repository, or re-load one later with **Import JSON**.
 
 Edits are mirrored into `localStorage`, so a refresh does not lose work.
-**Reload demo** throws that away and re-reads the file from `content/`.
+**Reload content/** throws that away and re-reads the files from `content/`.
+
+### Link two maps
+
+1. Pick the map to leave in the **Maps** panel.
+2. Switch the tool to **Door** and click a passable hex.
+3. In **Doors**, choose the map it leads to and the arrival `col, row`.
+4. Press **Validate doors**. A door's target lives in another file, so this is a
+   whole-project check in Rust — it reports `link.unknownTargetWorld`,
+   `link.targetOutOfBounds` or `link.targetImpassable`.
+
+In Play mode, walking onto the door changes map in the same tick, and the event
+log shows `linkTriggered` then `worldEntered`. The demo ships two maps:
+`demo_world` has a door at `[3, 10]`, one step from the player start, leading
+into `demo_refuge` — whose own door leads back out.
+
+### Other editors
+
+`/editor` is a shell with one tab per module (ADR-0019). **Maps** is
+implemented; **Characters**, **Assets** and **Scenario** are registered and
+route to a placeholder describing what they will own. Adding one is an entry in
+`editor-modules.ts` plus a component.
 
 ### Play it
 
@@ -119,12 +146,17 @@ In Play mode:
 | `npm run wasm:build` | Build the engine to `apps/web/public/wasm/` (release). |
 | `npm run wasm:build:dev` | Same, unoptimised — faster to build, slower to run. |
 | `npm run dev` | Mirror `content/`, then start the Angular dev server. |
-| `npm run build` | Production bundle into `apps/web/dist/web/browser/`. |
+| `npm run build` | Production bundle into `apps/web/dist/web/browser/` (with the editor). |
+| `just deliver` | Client delivery: the desktop executable and its installers, collected in `deliveries/`. |
+| `just desktop` | Run the desktop shell against the dev server. |
+| `just icons` | Regenerate the icon set from `apps/desktop/icons/icon.svg`. |
+| `npm run build:deliver` | Just the editor-free web bundle, without the shell. |
 | `npm test` | Rust tests, then TypeScript tests. |
-| `npm run test:rust` | `cargo test --workspace` (126 tests, no browser needed). |
-| `npm run test:web` | Vitest (46 tests, including real WASM integration). |
+| `npm run test:rust` | `cargo test --workspace` (162 tests, no browser needed). |
+| `npm run test:web` | Vitest (69 tests, including real WASM integration). |
 | `npm run lint:rust` | `cargo clippy -D warnings` and `cargo fmt --check`. |
 | `npm run check` | Lint plus every test. |
+| `just check-desktop` | The desktop shell's own clippy, rustfmt and tests. |
 
 After changing Rust code, re-run `npm run wasm:build` and refresh the browser —
 Angular does not need rebuilding, because the engine is served as a static
@@ -180,11 +212,14 @@ apps/web/src/
   content/         authored document model + canonical serialiser
   renderer/        framework-free Canvas renderer, camera, sprite registry
   engine/          boundary types + runtime WASM loader
-  app/             Angular shell, services, editor page, play page
+  app/             Angular shell, services, editor modules, play page
+    features/editor/  shell + map editor + placeholder modules (ADR-0019)
+    build-features*.ts, app.routes*.ts   dev vs client build seam (ADR-0018)
 
 content/
+  project.json     which files make one game, and where it starts
   tilesets/        mvp_terrain.json
-  worlds/          demo_world.json
+  worlds/          demo_world.json, demo_refuge.json
 
 docs/
   content-format.md   the authored file schema
@@ -192,12 +227,22 @@ docs/
   data-model.md       definitions vs. runtime state
   architecture.md     crate boundaries and seams
   adr/                architecture decisions
+apps/desktop/
+  src/main.rs      the window, and nothing else
+  src/steam.rs     the Steam seam, off by default (ADR-0020)
+  tauri.conf.json  window, bundle targets, webview CSP
+  icons/icon.svg   source of every generated icon
+
 scripts/
-  sync-content.mjs    mirrors content/ into apps/web/public/
+  sync-content.mjs         mirrors content/ into apps/web/public/
+  tauri.mjs                runs the Tauri CLI on apps/desktop (and fixes WSL's PATH)
+  verify-client-build.mjs  proves the shipped bundle has no editor
+  collect-bundles.mjs      gathers installers and the bare executable
+deliveries/             `just deliver` output
 ```
 
-`apps/web/public/wasm/` and `apps/web/public/content/` are generated and
-git-ignored.
+`apps/web/public/wasm/`, `apps/web/public/content/` and `deliveries/` are
+generated and git-ignored.
 
 ---
 
@@ -217,7 +262,22 @@ Authored content lives at the repository root in `content/` and is specified in
   "defaultTile": "grass",
   "tiles":    [ { "at": [4, 1], "tile": "mountain", "elevation": 4 } ],  // only non-default cells
   "entities": [ { "id": "player_1", "templateId": "player", "at": [4, 10] } ],
-  "locations":[ { "id": "loc_camp", "at": [3, 11], "name": "Camp" } ]
+  "locations":[ { "id": "loc_camp", "at": [3, 11], "name": "Camp" } ],
+  "links":    [ { "id": "link_refuge_door", "at": [3, 10],                // a door
+                  "targetWorld": "demo_refuge", "targetAt": [3, 4] } ]
+}
+```
+
+`content/project.json` says which files make up the game and where it starts:
+
+```jsonc
+{
+  "id": "insulaire",
+  "schemaVersion": 1,
+  "startWorld": "demo_world",
+  "tileSets": [ { "id": "mvp_terrain", "path": "tilesets/mvp_terrain.json" } ],
+  "worlds":   [ { "id": "demo_world",  "path": "worlds/demo_world.json" },
+                { "id": "demo_refuge", "path": "worlds/demo_refuge.json" } ]
 }
 ```
 
@@ -246,29 +306,92 @@ No backend, no database, no content service.
 
 ---
 
+## Delivering the game to a client
+
+The client receives an **executable**: a Tauri 2 desktop application that hosts
+the same web bundle and the same WASM engine in a native window
+(**ADR-0020**). No browser, no server, no installation ritual.
+
+```bash
+just deliver
+```
+
+It builds the engine, mirrors `content/`, builds the Angular app with the
+`deliver` configuration, wraps it in the desktop shell, verifies what went in
+and collects the result into `deliveries/` (git-ignored).
+
+That build is the **game only**: `app.routes.deliver.ts` replaces
+`app.routes.ts`, so the editor is not merely hidden — it is absent from the
+bundle, and `scripts/verify-client-build.mjs` fails the delivery if any chunk
+still contains it (ADR-0018). The app starts on `/play`, loads
+`content/project.json` and begins on its `startWorld`.
+
+**One platform per machine.** Tauri cannot cross-compile, so `just deliver`
+produces what the machine it runs on can produce:
+
+| Platform | Built on | Artefacts |
+|---|---|---|
+| Windows | Windows | `.msi`, `.exe` (NSIS) |
+| macOS | macOS (arm64 and x86_64 separately) | `.app`, `.dmg` |
+| Ubuntu, Debian | `ubuntu-22.04` — the oldest supported glibc | `.deb` |
+| Fedora and relatives | same | `.rpm` |
+| Arch and everything else | same | `.AppImage` |
+
+`.github/workflows/release.yml` builds that matrix on a tag and drafts a
+release. `deliveries/` also receives the **bare executable**, which is a
+complete build — the interface and the engine are embedded in it — and is what a
+Steam depot takes.
+
+Steam itself is a seam, not an integration: `apps/desktop/src/steam.rs` is
+inert unless the crate is built `--features steam`, because the Steamworks SDK
+is not redistributable (ADR-0020).
+
+Building on Linux needs the GTK and WebKit development packages:
+
+```bash
+sudo apt install libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
+  libsoup-3.0-dev libgtk-3-dev librsvg2-dev patchelf
+```
+
+Under WSL, `scripts/tauri.mjs` drops the Windows `/mnt/…` entries from `PATH`
+before invoking the CLI. Without that, `linuxdeploy` — which walks every `PATH`
+entry while building the AppImage — hits a `Permission denied` inside
+`/mnt/c/WINDOWS/...` and the bundling fails with a bare
+`failed to run linuxdeploy`. Nothing to do by hand.
+
+The web build has not gone anywhere: it is what `npm run dev` serves, what the
+editor runs in, and it still hosts fine on any static host, `<base href>`
+relative, with an `index.html` fallback for `/play`.
+
+---
+
 ## Testing
 
 ```bash
 npm test
 ```
 
-**Rust (134 tests, `cargo test`)** — hex neighbours, distance and coordinate
+**Rust (162 tests, `cargo test`)** — hex neighbours, distance and coordinate
 conversion; bounds checking; world loading and validation; movement validation;
 that a valid move advances the tick and an invalid one advances nothing; that
 monsters move after each tick; deterministic monster behaviour; deterministic
-RNG; and the boundary's string contract.
+RNG; map links, including that a door fires on entry and never on presence, that
+entering a world carries the tick and the RNG stream, and that an unresolved
+door degrades instead of ending the session; and the boundary's string contract.
 
 `crates/engine/tests/shipped_content.rs` runs against the **real files** in
-`content/` — so the demo world cannot silently rot, and a terrain edit that
-walls the monsters off from the player fails the build.
+`content/` — so the demo world cannot silently rot, a terrain edit that walls
+the monsters off from the player fails the build, and the shipped door is walked
+through in both directions.
 
-**TypeScript (61 tests, Vitest)** — coordinate transforms mirrored against the
+**TypeScript (69 tests, Vitest)** — coordinate transforms mirrored against the
 Rust suite; pixel ↔ hex round trips and viewport culling; the isometric
 projection and the hit-testing that has to survive it, including which cell wins
-when a hill covers the one behind it; the editor's document model and its sparse
-export; and `engine-integration.spec.ts`, which drives the
+when a hill covers the one behind it; the editor's document model, its link
+editing and its sparse export; that both shipped worlds and `project.json` round
+trip byte for byte; and `engine-integration.spec.ts`, which drives the
 **real** `wasm-pack` output with the **real** authored content through the same
-types the application uses.
+types the application uses — including the whole change-map loop.
 
 ---
 
@@ -281,6 +404,14 @@ types the application uses.
   them by id, so moving them into `content/` later needs no world change.
 - **One tile set.** The editor cannot author tile sets; it consumes
   `mvp_terrain.json`.
+- **A map link carries the session, not the character.** Tick and RNG survive a
+  door; the player entity is the one the target map authors, so future per-player
+  state (health, inventory, deck) will need `GameState::enter_world` to carry it
+  (ADR-0017).
+- **Only the `enter` trigger** for map links; `interact` is in the schema and
+  rejected by validation.
+- **The character, asset and scenario editors are placeholders** — registered
+  tabs describing what they will own, with no implementation (ADR-0019).
 - **No undo/redo**, no layers, no copy/paste in the editor.
 - **Only `pointy` orientation** is implemented; `flat` is in the schema and
   rejected by validation.
@@ -319,6 +450,10 @@ Read in order:
 14. **ADR-0014 — hex coordinate model**
 15. **ADR-0015 — shared content validation**
 16. **ADR-0016 — isometric projection**
+17. **ADR-0017 — map links and multi-map sessions**
+18. **ADR-0018 — client delivery build**
+19. **ADR-0019 — editor modules**
+20. **ADR-0020 — desktop executable (Tauri 2), Steam seam**
 
 `CLAUDE.md` contains project-level instructions for Claude Code and other coding
 agents.

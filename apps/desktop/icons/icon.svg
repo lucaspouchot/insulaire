@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Source of truth for the application icon; every PNG, .ico and .icns in this
+  folder is generated from it by `just icons` (`npx tauri icon`), so the icon is
+  editable text in the repository rather than a binary no one can change.
+
+  A flat-top hexagon ring around a token, in the interface's own palette
+  (background #0d1117, accent #ffd166): a tile and the thing standing on it,
+  which is the whole game at 32 pixels.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" rx="184" ry="184" fill="#0d1117" />
+  <rect x="8" y="8" width="1008" height="1008" rx="178" ry="178" fill="none" stroke="#2a3441" stroke-width="16" />
+  <path d="M842 512 677 226.2 347 226.2 182 512 347 797.8 677 797.8 Z" fill="#ffd166" />
+  <path d="M672 512 592 373.4 432 373.4 352 512 432 650.6 592 650.6 Z" fill="#0d1117" />
+  <path d="M594 512 553 441 471 441 430 512 471 583 553 583 Z" fill="#ffd166" />
+</svg>

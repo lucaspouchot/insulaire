@@ -49,6 +49,40 @@
               "optimization": false,
               "extractLicenses": false,
               "sourceMap": true
+            },
+            "deliver": {
+              "optimization": {
+                "scripts": true,
+                "fonts": true,
+                "styles": {
+                  "minify": true,
+                  "inlineCritical": false
+                }
+              },
+              "budgets": [
+                {
+                  "type": "initial",
+                  "maximumWarning": "500kB",
+                  "maximumError": "1MB"
+                },
+                {
+                  "type": "anyComponentStyle",
+                  "maximumWarning": "4kB",
+                  "maximumError": "8kB"
+                }
+              ],
+              "outputHashing": "all",
+              "fileReplacements": [
+                {
+                  "replace": "src/app/app.routes.ts",
+                  "with": "src/app/app.routes.deliver.ts"
+                },
+                {
+                  "replace": "src/app/build-features.ts",
+                  "with": "src/app/build-features.deliver.ts"
+                }
+              ],
+              "baseHref": "./"
             }
           },
           "defaultConfiguration": "production"
@@ -61,6 +95,9 @@
             },
             "development": {
               "buildTarget": "web:build:development"
+            },
+            "deliver": {
+              "buildTarget": "web:build:deliver"
             }
           },
           "defaultConfiguration": "development"

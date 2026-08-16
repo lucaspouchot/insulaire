@@ -10,8 +10,11 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 
 use crate::definition::{
-    HexOrientation, WorldDefinition, MAX_ELEVATION, MIN_ELEVATION, WORLD_SCHEMA_VERSION,
+    HexOrientation, LinkTrigger, WorldDefinition, MAX_ELEVATION, MIN_ELEVATION,
+    WORLD_SCHEMA_VERSION,
 };
+use crate::hex::OffsetCoord;
+use crate::project::{ProjectDefinition, PROJECT_SCHEMA_VERSION};
 use crate::template::{EntityKind, TemplateRegistry};
 use crate::tileset::{TileSetDefinition, TILE_SET_SCHEMA_VERSION};
 
@@ -199,6 +202,7 @@ pub fn validate_world(
     validate_tiles(world, tile_set, &mut issues);
     validate_entities(world, tile_set, templates, &mut issues);
     validate_locations(world, &mut issues);
+    validate_links(world, tile_set, &mut issues);
 
     ValidationReport::from_issues(issues)
 }
@@ -343,7 +347,7 @@ fn validate_entities(
                     entity.id, entity.at
                 ),
             ));
-        } else if !tile_at_is_passable(world, tile_set, entity) {
+        } else if !tile_at_is_passable(world, tile_set, entity.at) {
             issues.push(ValidationIssue::error(
                 "entity.onImpassableTile",
                 format!("{path}.at"),
@@ -429,15 +433,281 @@ fn validate_locations(world: &WorldDefinition, issues: &mut Vec<ValidationIssue>
     }
 }
 
+/// Validates the links of one world, as far as a single file allows.
+///
+/// Everything here is intra-file: ids, bounds, duplicates, trigger support. The
+/// *target* of a link lives in another file and is checked by
+/// [`validate_project_links`] once every world is loaded
+/// (`docs/adr/ADR-0017-map-links.md`).
+fn validate_links(
+    world: &WorldDefinition,
+    tile_set: &TileSetDefinition,
+    issues: &mut Vec<ValidationIssue>,
+) {
+    let mut ids: BTreeSet<&str> = BTreeSet::new();
+    let mut positions: BTreeSet<(i32, i32)> = BTreeSet::new();
+
+    for (index, link) in world.links.iter().enumerate() {
+        let path = format!("links[{index}]");
+
+        if link.id.trim().is_empty() {
+            issues.push(ValidationIssue::error(
+                "link.missingId",
+                format!("{path}.id"),
+                "link id must not be empty",
+            ));
+        } else if !ids.insert(link.id.as_str()) {
+            issues.push(ValidationIssue::error(
+                "link.duplicateId",
+                format!("{path}.id"),
+                format!("duplicate link id `{}`", link.id),
+            ));
+        }
+
+        if !link.at.is_within(world.width, world.height) {
+            issues.push(ValidationIssue::error(
+                "link.outOfBounds",
+                format!("{path}.at"),
+                format!("link `{}` is outside the map at {}", link.id, link.at),
+            ));
+        } else {
+            if !positions.insert((link.at.col, link.at.row)) {
+                issues.push(ValidationIssue::error(
+                    "link.duplicatePosition",
+                    format!("{path}.at"),
+                    format!("two links share the position {}", link.at),
+                ));
+            }
+            // An `enter` link on an impassable cell can never fire: the player
+            // is not allowed to step there in the first place.
+            if !tile_at_is_passable(world, tile_set, link.at) {
+                issues.push(ValidationIssue::error(
+                    "link.onImpassableTile",
+                    format!("{path}.at"),
+                    format!(
+                        "link `{}` sits on an impassable tile at {}, so it can never be entered",
+                        link.id, link.at
+                    ),
+                ));
+            }
+        }
+
+        if link.target_world.trim().is_empty() {
+            issues.push(ValidationIssue::error(
+                "link.missingTarget",
+                format!("{path}.targetWorld"),
+                format!("link `{}` names no target world", link.id),
+            ));
+        } else if link.target_world == world.id
+            && !link.target_at.is_within(world.width, world.height)
+        {
+            // Only a self-link can be resolved here; cross-world targets wait
+            // for `validate_project_links`.
+            issues.push(ValidationIssue::error(
+                "link.targetOutOfBounds",
+                format!("{path}.targetAt"),
+                format!(
+                    "link `{}` arrives at {}, outside its own {}x{} map",
+                    link.id, link.target_at, world.width, world.height
+                ),
+            ));
+        }
+
+        if link.trigger != LinkTrigger::Enter {
+            issues.push(ValidationIssue::error(
+                "link.unsupportedTrigger",
+                format!("{path}.trigger"),
+                format!(
+                    "link `{}` uses trigger `{:?}`, which this build does not implement",
+                    link.id, link.trigger
+                ),
+            ));
+        }
+    }
+}
+
+/// Resolves every map link across a whole set of loaded worlds.
+///
+/// This is the half of link validation that no single file can perform: it
+/// checks that each `targetWorld` exists and that each `targetAt` lands on a
+/// cell the player can occupy. Call it after loading a project's worlds; the
+/// engine exposes it as `validateLinks` (`docs/wasm-api.md`).
+///
+/// `worlds` and `tile_sets` are lookups over everything currently loaded.
+#[must_use]
+pub fn validate_project_links<'a>(
+    worlds: impl IntoIterator<Item = &'a WorldDefinition>,
+    tile_set_for: impl Fn(&str) -> Option<&'a TileSetDefinition>,
+) -> ValidationReport {
+    let worlds: Vec<&WorldDefinition> = worlds.into_iter().collect();
+    let mut issues = Vec::new();
+
+    for world in &worlds {
+        for (index, link) in world.links.iter().enumerate() {
+            let path = format!("{}.links[{index}]", world.id);
+            let Some(target) = worlds
+                .iter()
+                .find(|candidate| candidate.id == link.target_world)
+            else {
+                issues.push(ValidationIssue::error(
+                    "link.unknownTargetWorld",
+                    format!("{path}.targetWorld"),
+                    format!(
+                        "link `{}` targets world `{}`, which is not loaded",
+                        link.id, link.target_world
+                    ),
+                ));
+                continue;
+            };
+
+            if !link.target_at.is_within(target.width, target.height) {
+                issues.push(ValidationIssue::error(
+                    "link.targetOutOfBounds",
+                    format!("{path}.targetAt"),
+                    format!(
+                        "link `{}` arrives at {}, outside the {}x{} map `{}`",
+                        link.id, link.target_at, target.width, target.height, target.id
+                    ),
+                ));
+                continue;
+            }
+
+            if let Some(tile_set) = tile_set_for(&target.tile_set_id) {
+                if !tile_at_is_passable(target, tile_set, link.target_at) {
+                    issues.push(ValidationIssue::error(
+                        "link.targetImpassable",
+                        format!("{path}.targetAt"),
+                        format!(
+                            "link `{}` arrives on an impassable tile at {} in `{}`",
+                            link.id, link.target_at, target.id
+                        ),
+                    ));
+                    continue;
+                }
+            }
+
+            // The arriving player takes the cell it lands on, so an authored
+            // entity standing there would end up sharing a hex with it.
+            if let Some(occupant) = target
+                .entities
+                .iter()
+                .find(|entity| entity.at == link.target_at && entity.template_id != "player")
+            {
+                issues.push(ValidationIssue::error(
+                    "link.targetOccupied",
+                    format!("{path}.targetAt"),
+                    format!(
+                        "link `{}` arrives at {} in `{}`, where entity `{}` is placed",
+                        link.id, link.target_at, target.id, occupant.id
+                    ),
+                ));
+            }
+        }
+    }
+
+    ValidationReport::from_issues(issues)
+}
+
+/// Validates a project file, given the ids of everything currently loaded.
+///
+/// The project only *names* files; whether they exist on disk is the host's
+/// business, so this checks the shape of the manifest and that its start world
+/// and referenced ids are among the loaded content.
+#[must_use]
+pub fn validate_project(
+    project: &ProjectDefinition,
+    loaded_world_ids: &[String],
+    loaded_tile_set_ids: &[String],
+) -> ValidationReport {
+    let mut issues = Vec::new();
+
+    if project.id.trim().is_empty() {
+        issues.push(ValidationIssue::error(
+            "project.missingId",
+            "id",
+            "project id must not be empty",
+        ));
+    }
+    if project.schema_version == 0 || project.schema_version > PROJECT_SCHEMA_VERSION {
+        issues.push(ValidationIssue::error(
+            "project.unsupportedSchemaVersion",
+            "schemaVersion",
+            format!(
+                "unsupported project schemaVersion {}; this build supports up to {PROJECT_SCHEMA_VERSION}",
+                project.schema_version
+            ),
+        ));
+    }
+    if project.worlds.is_empty() {
+        issues.push(ValidationIssue::error(
+            "project.noWorlds",
+            "worlds",
+            "a project must list at least one world",
+        ));
+    }
+
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    for (index, entry) in project.worlds.iter().enumerate() {
+        if !seen.insert(entry.id.as_str()) {
+            issues.push(ValidationIssue::error(
+                "project.duplicateWorld",
+                format!("worlds[{index}].id"),
+                format!("world `{}` is listed twice", entry.id),
+            ));
+        }
+        if !loaded_world_ids.iter().any(|id| id == &entry.id) {
+            issues.push(ValidationIssue::error(
+                "project.unloadedWorld",
+                format!("worlds[{index}].id"),
+                format!(
+                    "world `{}` (`{}`) is listed by the project but not loaded",
+                    entry.id, entry.path
+                ),
+            ));
+        }
+    }
+
+    for (index, entry) in project.tile_sets.iter().enumerate() {
+        if !loaded_tile_set_ids.iter().any(|id| id == &entry.id) {
+            issues.push(ValidationIssue::error(
+                "project.unloadedTileSet",
+                format!("tileSets[{index}].id"),
+                format!(
+                    "tile set `{}` (`{}`) is listed by the project but not loaded",
+                    entry.id, entry.path
+                ),
+            ));
+        }
+    }
+
+    if !project
+        .worlds
+        .iter()
+        .any(|entry| entry.id == project.start_world)
+    {
+        issues.push(ValidationIssue::error(
+            "project.unknownStartWorld",
+            "startWorld",
+            format!(
+                "startWorld `{}` is not among the project's worlds",
+                project.start_world
+            ),
+        ));
+    }
+
+    ValidationReport::from_issues(issues)
+}
+
+/// Whether the cell at `at` can be stood on, as far as the tile set says.
 fn tile_at_is_passable(
     world: &WorldDefinition,
     tile_set: &TileSetDefinition,
-    entity: &crate::definition::EntityDefinition,
+    at: OffsetCoord,
 ) -> bool {
     let tile_id = world
         .tiles
         .iter()
-        .find(|placed| placed.at == entity.at)
+        .find(|placed| placed.at == at)
         .map_or(world.default_tile.as_str(), |placed| placed.tile.as_str());
     // An unknown tile reference is reported separately; do not double-report here.
     tile_set
@@ -645,5 +915,194 @@ mod tests {
         let mut empty = testing::sample_tile_set();
         empty.tiles.clear();
         assert!(codes(&validate_tile_set(&empty)).contains(&"tileSet.empty"));
+    }
+
+    // ------------------------------------------------------------------ links
+
+    fn validate_linked(world: &WorldDefinition) -> ValidationReport {
+        validate_world(
+            world,
+            Some(&testing::sample_tile_set()),
+            &TemplateRegistry::builtin(),
+        )
+    }
+
+    #[test]
+    fn a_world_with_a_link_is_valid_on_its_own() {
+        // The target lives in another file, so a single-world pass must not
+        // complain about it — that is `validate_project_links`' job.
+        let report = validate_linked(&testing::linked_world());
+        assert!(report.valid, "unexpected issues: {:?}", report.issues);
+    }
+
+    #[test]
+    fn links_outside_the_map_or_on_impassable_tiles_are_errors() {
+        let mut world = testing::linked_world();
+        world.links[0].at = OffsetCoord::new(99, 0);
+        assert!(codes(&validate_linked(&world)).contains(&"link.outOfBounds"));
+
+        let mut world = testing::linked_world();
+        world.links[0].at = testing::WATER_CELL;
+        assert!(codes(&validate_linked(&world)).contains(&"link.onImpassableTile"));
+    }
+
+    #[test]
+    fn duplicate_link_ids_and_positions_are_errors() {
+        let mut world = testing::linked_world();
+        let duplicate = world.links[0].clone();
+        world.links.push(duplicate);
+        let report = validate_linked(&world);
+        assert!(codes(&report).contains(&"link.duplicateId"));
+        assert!(codes(&report).contains(&"link.duplicatePosition"));
+    }
+
+    #[test]
+    fn a_self_link_has_its_arrival_checked_immediately() {
+        let mut world = testing::linked_world();
+        world.links[0].target_world = world.id.clone();
+        world.links[0].target_at = OffsetCoord::new(50, 50);
+        assert!(codes(&validate_linked(&world)).contains(&"link.targetOutOfBounds"));
+    }
+
+    #[test]
+    fn a_missing_target_world_and_a_reserved_trigger_are_errors() {
+        let mut world = testing::linked_world();
+        world.links[0].target_world = String::new();
+        assert!(codes(&validate_linked(&world)).contains(&"link.missingTarget"));
+
+        let mut world = testing::linked_world();
+        world.links[0].trigger = LinkTrigger::Interact;
+        assert!(codes(&validate_linked(&world)).contains(&"link.unsupportedTrigger"));
+    }
+
+    #[test]
+    fn project_links_resolve_when_every_world_is_loaded() {
+        let tile_set = testing::sample_tile_set();
+        let worlds = [testing::linked_world(), testing::interior_world()];
+        let report =
+            validate_project_links(worlds.iter(), |id| (id == tile_set.id).then_some(&tile_set));
+        assert!(report.valid, "unexpected issues: {:?}", report.issues);
+    }
+
+    #[test]
+    fn a_link_to_a_world_that_is_not_loaded_is_an_error() {
+        let tile_set = testing::sample_tile_set();
+        let worlds = [testing::linked_world()];
+        let report =
+            validate_project_links(worlds.iter(), |id| (id == tile_set.id).then_some(&tile_set));
+        assert!(!report.valid);
+        assert!(codes(&report).contains(&"link.unknownTargetWorld"));
+    }
+
+    #[test]
+    fn a_link_arriving_outside_or_inside_a_wall_is_an_error() {
+        let tile_set = testing::sample_tile_set();
+        let lookup = |id: &str| (id == tile_set.id).then_some(&tile_set);
+
+        let mut linked = testing::linked_world();
+        linked.links[0].target_at = OffsetCoord::new(9, 9);
+        let worlds = [linked, testing::interior_world()];
+        assert!(codes(&validate_project_links(worlds.iter(), lookup))
+            .contains(&"link.targetOutOfBounds"));
+
+        let mut linked = testing::linked_world();
+        let mut interior = testing::interior_world();
+        interior.tiles.push(crate::definition::PlacedTile {
+            at: OffsetCoord::new(1, 1),
+            tile: "water".to_owned(),
+            elevation: 0,
+            tags: Vec::new(),
+        });
+        linked.links[0].target_at = OffsetCoord::new(1, 1);
+        let worlds = [linked, interior];
+        assert!(codes(&validate_project_links(worlds.iter(), lookup))
+            .contains(&"link.targetImpassable"));
+    }
+
+    #[test]
+    fn a_link_arriving_on_an_authored_entity_is_an_error() {
+        // The arriving player takes the cell it lands on, so a monster standing
+        // there would end up sharing a hex with it.
+        let tile_set = testing::sample_tile_set();
+        let lookup = |id: &str| (id == tile_set.id).then_some(&tile_set);
+
+        let mut interior = testing::interior_world();
+        interior.entities.push(crate::definition::EntityDefinition {
+            id: "monster_1".to_owned(),
+            template_id: "monster".to_owned(),
+            at: testing::INTERIOR_ARRIVAL,
+            tags: Vec::new(),
+            properties: Default::default(),
+        });
+
+        let worlds = [testing::linked_world(), interior];
+        assert!(
+            codes(&validate_project_links(worlds.iter(), lookup)).contains(&"link.targetOccupied")
+        );
+    }
+
+    // --------------------------------------------------------------- projects
+
+    fn project() -> ProjectDefinition {
+        ProjectDefinition {
+            id: "demo".to_owned(),
+            schema_version: PROJECT_SCHEMA_VERSION,
+            name: "Demo".to_owned(),
+            start_world: "linked_world".to_owned(),
+            tile_sets: vec![crate::project::ContentRef {
+                id: "mvp_terrain".to_owned(),
+                path: "tilesets/mvp_terrain.json".to_owned(),
+            }],
+            worlds: vec![
+                crate::project::ContentRef {
+                    id: "linked_world".to_owned(),
+                    path: "worlds/linked_world.json".to_owned(),
+                },
+                crate::project::ContentRef {
+                    id: "interior_world".to_owned(),
+                    path: "worlds/interior_world.json".to_owned(),
+                },
+            ],
+        }
+    }
+
+    fn loaded() -> (Vec<String>, Vec<String>) {
+        (
+            vec!["linked_world".to_owned(), "interior_world".to_owned()],
+            vec!["mvp_terrain".to_owned()],
+        )
+    }
+
+    #[test]
+    fn a_project_listing_loaded_content_is_valid() {
+        let (worlds, tile_sets) = loaded();
+        let report = validate_project(&project(), &worlds, &tile_sets);
+        assert!(report.valid, "unexpected issues: {:?}", report.issues);
+    }
+
+    #[test]
+    fn a_project_start_world_must_be_one_of_its_worlds() {
+        let (worlds, tile_sets) = loaded();
+        let mut project = project();
+        project.start_world = "elsewhere".to_owned();
+        assert!(codes(&validate_project(&project, &worlds, &tile_sets))
+            .contains(&"project.unknownStartWorld"));
+    }
+
+    #[test]
+    fn a_project_referencing_content_that_never_loaded_is_an_error() {
+        let mut project = project();
+        project.worlds.push(crate::project::ContentRef {
+            id: "ghost".to_owned(),
+            path: "worlds/ghost.json".to_owned(),
+        });
+        let (worlds, tile_sets) = loaded();
+        let report = validate_project(&project, &worlds, &tile_sets);
+        assert!(codes(&report).contains(&"project.unloadedWorld"));
+
+        project.worlds.pop();
+        project.tile_sets[0].id = "absent".to_owned();
+        assert!(codes(&validate_project(&project, &worlds, &tile_sets))
+            .contains(&"project.unloadedTileSet"));
     }
 }

@@ -1,0 +1,50 @@
+{
+  "id": "demo_refuge",
+  "schemaVersion": 1,
+  "name": "The Refuge",
+  "width": 7,
+  "height": 6,
+  "orientation": "pointy",
+  "projection": "isometric",
+  "tileSetId": "mvp_terrain",
+  "defaultTile": "sand",
+  "tiles": [
+    { "at": [0, 0], "tile": "mountain", "elevation": 2 },
+    { "at": [1, 0], "tile": "mountain", "elevation": 2 },
+    { "at": [2, 0], "tile": "mountain", "elevation": 2 },
+    { "at": [3, 0], "tile": "mountain", "elevation": 2 },
+    { "at": [4, 0], "tile": "mountain", "elevation": 2 },
+    { "at": [5, 0], "tile": "mountain", "elevation": 2 },
+    { "at": [6, 0], "tile": "mountain", "elevation": 2 },
+    { "at": [0, 1], "tile": "mountain", "elevation": 2 },
+    { "at": [6, 1], "tile": "mountain", "elevation": 2 },
+    { "at": [0, 2], "tile": "mountain", "elevation": 2 },
+    { "at": [6, 2], "tile": "mountain", "elevation": 2 },
+    { "at": [0, 3], "tile": "mountain", "elevation": 2 },
+    { "at": [6, 3], "tile": "mountain", "elevation": 2 },
+    { "at": [0, 4], "tile": "mountain", "elevation": 2 },
+    { "at": [6, 4], "tile": "mountain", "elevation": 2 },
+    { "at": [0, 5], "tile": "mountain", "elevation": 2 },
+    { "at": [1, 5], "tile": "mountain", "elevation": 2 },
+    { "at": [2, 5], "tile": "mountain", "elevation": 2 },
+    { "at": [3, 5], "tile": "rock" },
+    { "at": [4, 5], "tile": "mountain", "elevation": 2 },
+    { "at": [5, 5], "tile": "mountain", "elevation": 2 },
+    { "at": [6, 5], "tile": "mountain", "elevation": 2 }
+  ],
+  "entities": [
+    { "id": "player_1", "templateId": "player", "at": [3, 4], "tags": ["hero"] },
+    { "id": "monster_1", "templateId": "monster", "at": [2, 2], "tags": ["hunter"] }
+  ],
+  "locations": [
+    { "id": "loc_hearth", "at": [3, 2], "name": "Hearth", "tags": ["landmark"] }
+  ],
+  "links": [
+    { "id": "link_refuge_exit", "at": [3, 5], "targetWorld": "demo_world", "targetAt": [3, 10], "name": "Valley", "tags": ["door"] }
+  ],
+  "metadata": {
+    "author": "hex-engine",
+    "description": "Interior reached through the valley door; walking onto the exit returns outside.",
+    "updatedAt": "2026-08-16T00:00:00.000Z"
+  }
+}

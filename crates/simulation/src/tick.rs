@@ -7,11 +7,29 @@
 //! the scenario runtime and the trigger system will plug in, and their position
 //! in the order is the decision, not their contents.
 
+use hex_world::{Hex, OffsetCoord};
+
 use crate::action::{Action, ActionError, Rejection};
 use crate::ai;
 use crate::event::SimEvent;
 use crate::rules;
 use crate::state::GameState;
+
+/// A map link the player stepped on during this tick.
+///
+/// The simulation cannot follow it: the target world lives in the host's
+/// content registry, which this crate has no access to by design
+/// (`docs/adr/ADR-0017-map-links.md`). The tick therefore *reports* the
+/// transition and the host resolves it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingTransition {
+    /// Authored id of the link that fired.
+    pub link_id: String,
+    /// Id of the world to enter.
+    pub target_world: String,
+    /// Where the player arrives in that world.
+    pub target_at: OffsetCoord,
+}
 
 /// What resolving an action produced.
 #[derive(Debug, Clone, PartialEq)]
@@ -22,6 +40,8 @@ pub struct ActionOutcome {
     pub rejection: Option<ActionError>,
     /// Ordered, observable state changes.
     pub events: Vec<SimEvent>,
+    /// A map change the host must carry out once the tick is complete.
+    pub transition: Option<PendingTransition>,
 }
 
 impl ActionOutcome {
@@ -32,6 +52,7 @@ impl ActionOutcome {
             events: vec![SimEvent::ActionRejected {
                 reason: Rejection::from(reason),
             }],
+            transition: None,
         }
     }
 }
@@ -49,10 +70,11 @@ pub fn apply(state: &mut GameState, action: Action) -> ActionOutcome {
     let mut events = Vec::new();
 
     // Phase 2 — apply the player action.
-    apply_player_action(state, action, &mut events);
+    let entered = apply_player_action(state, action, &mut events);
 
     // Phase 3 — resolve immediate effects.
-    // Nothing in the MVP: no traps, no reactions, no damage.
+    // The only one the MVP has: entering a hex that carries a map link.
+    let transition = entered.and_then(|hex| triggered_link(state, hex, &mut events));
 
     // Phase 4 — advance world systems.
     state.advance_tick();
@@ -70,27 +92,60 @@ pub fn apply(state: &mut GameState, action: Action) -> ActionOutcome {
         accepted: true,
         rejection: None,
         events,
+        transition,
     }
 }
 
-fn apply_player_action(state: &mut GameState, action: Action, events: &mut Vec<SimEvent>) {
+/// Reports the link on the hex the player just entered, if any.
+///
+/// The tick is *not* cut short when one fires: phases 4 to 6 still run on the
+/// map being left, so the pipeline's order stays the same whether or not a link
+/// is involved (ADR-0004). The host applies the map change afterwards.
+fn triggered_link(
+    state: &GameState,
+    entered: Hex,
+    events: &mut Vec<SimEvent>,
+) -> Option<PendingTransition> {
+    let link = state.link_entered_at(entered)?;
+
+    events.push(SimEvent::LinkTriggered {
+        link: link.id.clone(),
+        to_world: link.target_world.clone(),
+        to: link.target_at,
+    });
+
+    Some(PendingTransition {
+        link_id: link.id.clone(),
+        target_world: link.target_world.clone(),
+        target_at: link.target_at,
+    })
+}
+
+/// Applies the player's action, returning the hex it moved the player *into*.
+///
+/// The return value is what phase 3 keys off: a link fires when the player
+/// enters its cell, not while standing on it, so arriving next to a door — or
+/// waiting on one — cannot bounce the session between two maps.
+fn apply_player_action(
+    state: &mut GameState,
+    action: Action,
+    events: &mut Vec<SimEvent>,
+) -> Option<Hex> {
     let Action::MoveTo(destination) = action else {
-        return; // `Wait` spends the tick without touching the map.
+        return None; // `Wait` spends the tick without touching the map.
     };
-    let Some(player) = state.player() else {
-        return; // Unreachable: validation already required a player.
-    };
+    let player = state.player()?; // Unreachable: validation already required one.
 
     let id = player.id();
     let content_id = player.content_id().to_owned();
-    if let Some(from) = state.entities_mut().move_to(id, destination) {
-        events.push(SimEvent::EntityMoved {
-            entity: id.raw(),
-            content_id,
-            from: from.to_offset(),
-            to: destination.to_offset(),
-        });
-    }
+    let from = state.entities_mut().move_to(id, destination)?;
+    events.push(SimEvent::EntityMoved {
+        entity: id.raw(),
+        content_id,
+        from: from.to_offset(),
+        to: destination.to_offset(),
+    });
+    Some(destination)
 }
 
 /// Runs every engine-driven entity once, in initiative order.
@@ -140,6 +195,71 @@ mod tests {
         assert_eq!(outcome.rejection, None);
         assert_eq!(state.tick(), 1);
         assert_eq!(state.player_position(), Some(target));
+    }
+
+    #[test]
+    fn stepping_on_a_link_reports_a_transition_without_following_it() {
+        // The simulation names the target; only the host can reach it.
+        let mut state = game(&testing::linked_world(), 1);
+        let door = Hex::from_offset(testing::DOOR_CELL);
+
+        let outcome = apply(&mut state, Action::MoveTo(door));
+
+        assert!(outcome.accepted);
+        assert_eq!(
+            outcome.transition,
+            Some(PendingTransition {
+                link_id: "door_house".to_owned(),
+                target_world: "interior_world".to_owned(),
+                target_at: testing::INTERIOR_ARRIVAL,
+            })
+        );
+        assert!(outcome.events.iter().any(|event| matches!(
+            event,
+            SimEvent::LinkTriggered { link, .. } if link == "door_house"
+        )));
+        assert_eq!(
+            state.world_id(),
+            "linked_world",
+            "the tick must not change the map by itself"
+        );
+    }
+
+    #[test]
+    fn a_move_that_misses_the_link_reports_nothing() {
+        let mut state = game(&testing::linked_world(), 1);
+        let elsewhere = legal_moves(&state)
+            .into_iter()
+            .find(|hex| hex.to_offset() != testing::DOOR_CELL)
+            .expect("another legal move");
+
+        let outcome = apply(&mut state, Action::MoveTo(elsewhere));
+
+        assert!(outcome.accepted);
+        assert_eq!(outcome.transition, None);
+    }
+
+    #[test]
+    fn standing_on_a_link_does_not_retrigger_it() {
+        // A link fires on entry. Arriving on a door — which is exactly what the
+        // door on the other side sends you to — must not bounce the session.
+        let mut state = game(&testing::linked_world(), 1);
+        let door = Hex::from_offset(testing::DOOR_CELL);
+        apply(&mut state, Action::MoveTo(door));
+
+        let outcome = apply(&mut state, Action::Wait);
+
+        assert!(outcome.accepted);
+        assert_eq!(outcome.transition, None);
+    }
+
+    #[test]
+    fn a_rejected_move_onto_a_link_triggers_nothing() {
+        let mut state = game(&testing::linked_world(), 1);
+        // Two hexes away: the move is refused, so phase 3 never runs.
+        let outcome = apply(&mut state, Action::MoveTo(hex(9, 9)));
+        assert!(!outcome.accepted);
+        assert_eq!(outcome.transition, None);
     }
 
     #[test]

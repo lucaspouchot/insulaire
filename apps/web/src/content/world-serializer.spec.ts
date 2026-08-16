@@ -2,9 +2,9 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { TileSetDefinition, WorldDefinition } from './content-types';
+import { ProjectDefinition, TileSetDefinition, WorldDefinition } from './content-types';
 import { WorldDocument } from './world-document';
-import { serializeWorld } from './world-serializer';
+import { serializeProject, serializeWorld } from './world-serializer';
 
 // Vitest runs with `apps/web` as its root, so the repository root is two levels up.
 const repoRoot = resolve(process.cwd(), '../..');
@@ -56,10 +56,27 @@ describe('serializeWorld', () => {
       ],
       entities: [{ id: 'p', templateId: 'player', at: [1, 1], tags: ['hero'] }],
       locations: [{ id: 'l', at: [0, 2], name: 'Here', tags: ['a', 'b'] }],
+      links: [{ id: 'door', at: [2, 0], targetWorld: 'inside', targetAt: [1, 1], name: 'Door' }],
       metadata: { author: 'tests', description: 'quotes " and \\ backslashes' },
     };
 
     expect(JSON.parse(serializeWorld(world))).toEqual(world);
+  });
+
+  it('writes a link as one line', () => {
+    const json = serializeWorld({
+      id: 'w',
+      schemaVersion: 1,
+      width: 4,
+      height: 4,
+      tileSetId: 't',
+      defaultTile: 'grass',
+      links: [{ id: 'door', at: [1, 2], targetWorld: 'house', targetAt: [0, 3] }],
+    });
+
+    expect(json).toContain(
+      '    { "id": "door", "at": [1, 2], "targetWorld": "house", "targetAt": [0, 3] }\n',
+    );
   });
 
   it('handles an empty metadata block', () => {
@@ -91,5 +108,31 @@ describe('serializeWorld', () => {
     );
 
     expect(exported).toBe(original);
+  });
+
+  /**
+   * Same guarantee for the second shipped map: the one reached through a door,
+   * so the link round-trips through the editor's document model too.
+   */
+  it('reproduces the shipped refuge byte for byte', () => {
+    const tileSet = readJson<TileSetDefinition>('content/tilesets/mvp_terrain.json');
+    const original = readText('content/worlds/demo_refuge.json');
+    const definition = JSON.parse(original) as WorldDefinition;
+
+    const document = WorldDocument.fromDefinition(definition, tileSet);
+    const exported = serializeWorld(
+      document.toDefinition(() => new Date(definition.metadata?.updatedAt as string)),
+    );
+
+    expect(exported).toBe(original);
+  });
+});
+
+describe('serializeProject', () => {
+  it('reproduces the shipped project manifest byte for byte', () => {
+    const original = readText('content/project.json');
+    const project = JSON.parse(original) as ProjectDefinition;
+
+    expect(serializeProject(project)).toBe(original);
   });
 });

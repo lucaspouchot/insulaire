@@ -30,6 +30,7 @@ import { Camera } from './camera';
 import { Projection } from './projection';
 import {
   RenderEntity,
+  RenderLink,
   RenderLocation,
   RenderModel,
   RenderOverlay,
@@ -46,6 +47,10 @@ const CHROME = {
   selection: '#ffd166',
   locationFill: 'rgba(255, 255, 255, 0.85)',
   locationText: '#11161d',
+  /** Doors read as a way out, so they get their own colour rather than a star. */
+  linkFill: '#7ec8e3',
+  linkText: '#0b1620',
+  linkLabel: 'rgba(126, 200, 227, 0.9)',
   entityOutline: 'rgba(10, 12, 16, 0.85)',
   entityText: '#11161d',
   coordinates: 'rgba(255, 255, 255, 0.55)',
@@ -234,6 +239,7 @@ export class HexMapRenderer {
     this.drawHighlight(model, model.hover, CHROME.hover, 2);
     this.drawHighlight(model, model.selected, CHROME.selection, 3);
     this.drawLocations(model, model.locations);
+    this.drawLinks(model, model.links);
     this.drawEntities(model, model.entities);
     if (model.showCoordinates) {
       this.drawCoordinates(model, range, range.minRow, range.maxRow);
@@ -254,6 +260,7 @@ export class HexMapRenderer {
       byRow: groupByRow(overlay.cells, (cell) => cell),
     }));
     const locationsByRow = groupByRow(model.locations, (location) => location.at);
+    const linksByRow = groupByRow(model.links, (link) => link.at);
     const entitiesByRow = groupByRow(model.entities, (entity) => entity.at);
 
     let cellsDrawn = 0;
@@ -275,6 +282,7 @@ export class HexMapRenderer {
         this.drawHighlight(model, model.selected, CHROME.selection, 3);
       }
       this.drawLocations(model, locationsByRow.get(row) ?? []);
+      this.drawLinks(model, linksByRow.get(row) ?? []);
       this.drawEntities(model, entitiesByRow.get(row) ?? []);
       if (model.showCoordinates) {
         this.drawCoordinates(model, range, row, row);
@@ -410,6 +418,43 @@ export class HexMapRenderer {
         ctx.fillStyle = CHROME.locationFill;
         ctx.font = `${Math.round(this.layout.size * 0.28)}px system-ui, sans-serif`;
         ctx.fillText(location.name, center.x, center.y + this.layout.size * 0.5);
+      }
+    }
+  }
+
+  /**
+   * Draws a door on every cell that carries a map link.
+   *
+   * A diamond rather than the locations' star: a door is a transition, not a
+   * place, and the two must stay tellable apart on a crowded map.
+   */
+  private drawLinks(model: RenderModel, links: readonly RenderLink[]): void {
+    const ctx = this.context;
+    const radius = this.layout.size * 0.24;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    for (const link of links) {
+      const center = this.centerOf(model, link.at);
+      const y = center.y - this.layout.size * 0.15;
+
+      ctx.beginPath();
+      ctx.moveTo(center.x, y - radius);
+      ctx.lineTo(center.x + radius, y);
+      ctx.lineTo(center.x, y + radius);
+      ctx.lineTo(center.x - radius, y);
+      ctx.closePath();
+      ctx.fillStyle = CHROME.linkFill;
+      ctx.fill();
+
+      ctx.fillStyle = CHROME.linkText;
+      ctx.font = `${Math.round(radius * 1.1)}px system-ui, sans-serif`;
+      ctx.fillText('\u25B8', center.x, y);
+
+      if (this.camera.zoom > 0.7 && link.label.length > 0) {
+        ctx.fillStyle = CHROME.linkLabel;
+        ctx.font = `${Math.round(this.layout.size * 0.28)}px system-ui, sans-serif`;
+        ctx.fillText(link.label, center.x, center.y + this.layout.size * 0.5);
       }
     }
   }

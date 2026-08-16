@@ -67,6 +67,27 @@ export interface LocationDefinition {
   tags?: string[];
 }
 
+/** What makes a {@link MapLink} fire. Only `enter` is implemented. */
+export type LinkTrigger = 'enter' | 'interact';
+
+/**
+ * A cell that sends the player to another map.
+ *
+ * The only cross-file reference in the world schema: `targetWorld` names a
+ * world that lives in another file, so the editor can only check it once the
+ * whole project is loaded (`docs/adr/ADR-0017-map-links.md`).
+ */
+export interface MapLink {
+  id: string;
+  at: OffsetPair;
+  targetWorld: string;
+  targetAt: OffsetPair;
+  /** Omitted when `enter`, which is the default. */
+  trigger?: LinkTrigger;
+  name?: string;
+  tags?: string[];
+}
+
 export interface WorldMetadata {
   author?: string;
   description?: string;
@@ -88,5 +109,31 @@ export interface WorldDefinition {
   tiles?: PlacedTile[];
   entities?: EntityDefinition[];
   locations?: LocationDefinition[];
+  links?: MapLink[];
   metadata?: WorldMetadata;
+}
+
+export const PROJECT_SCHEMA_VERSION = 1;
+
+/** One content file a project ships, by id and path under the content root. */
+export interface ContentRef {
+  id: string;
+  path: string;
+}
+
+/**
+ * The manifest of one game: which content files it is made of, and where a
+ * session starts.
+ *
+ * It is what lets a client build boot with no editor and no backend — it reads
+ * this file and loads exactly what it lists
+ * (`docs/adr/ADR-0018-client-delivery-build.md`).
+ */
+export interface ProjectDefinition {
+  id: string;
+  schemaVersion: number;
+  name?: string;
+  startWorld: string;
+  tileSets: ContentRef[];
+  worlds: ContentRef[];
 }

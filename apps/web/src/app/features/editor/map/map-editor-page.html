@@ -53,10 +53,22 @@
       <p class="hint">Loading authored content…</p>
     } @else {
       <section class="panel">
-        <h2>World</h2>
+        <h2>Maps</h2>
+        <div class="map-list">
+          @for (map of maps(); track map.id) {
+            <button
+              type="button"
+              class="map"
+              [class.on]="map.id === activeWorldId()"
+              (click)="switchMap(map.id)"
+              [title]="map.id"
+            >
+              <span class="label">{{ map.name }}</span>
+              <span class="id">{{ map.id }}</span>
+            </button>
+          }
+        </div>
         <div class="rows">
-          <div class="row"><span>id</span><span>{{ doc.id }}</span></div>
-          <div class="row"><span>name</span><span>{{ doc.name }}</span></div>
           <div class="row"><span>size</span><span>{{ doc.width }} × {{ doc.height }}</span></div>
           <div class="row"><span>tile set</span><span>{{ doc.tileSetId }}</span></div>
           <div class="row"><span>projection</span><span>{{ projection() }}</span></div>
@@ -64,6 +76,14 @@
           <div class="row">
             <span>entities</span>
             <span>{{ entityCounts().players }} player · {{ entityCounts().monsters }} monster</span>
+          </div>
+        </div>
+        <div class="new-world">
+          <input #mapId type="text" [value]="doc.id" aria-label="Map id" />
+          <input #mapName type="text" [value]="doc.name" aria-label="Map name" />
+          <div class="button-row">
+            <button type="button" (click)="renameWorld(mapId.value, mapName.value)">Rename</button>
+            <button type="button" (click)="removeWorld()">Remove map</button>
           </div>
         </div>
       </section>
@@ -76,7 +96,8 @@
           <button type="button" [class.on]="tool() === 'lower'" (click)="selectTool('lower')">Lower</button>
           <button type="button" [class.on]="tool() === 'player'" (click)="selectTool('player')">Player</button>
           <button type="button" [class.on]="tool() === 'monster'" (click)="selectTool('monster')">Monster</button>
-          <button type="button" [class.on]="tool() === 'erase'" (click)="selectTool('erase')">Erase entity</button>
+          <button type="button" [class.on]="tool() === 'link'" (click)="selectTool('link')">Door</button>
+          <button type="button" [class.on]="tool() === 'erase'" (click)="selectTool('erase')">Erase</button>
         </div>
         <p class="hint">
           @switch (tool()) {
@@ -85,8 +106,86 @@
             @case ('lower') { Click or drag to lower cells by one step. Visible in isometric. }
             @case ('player') { Click a hex to move the player start. A world has exactly one. }
             @case ('monster') { Click hexes to add hunters. }
-            @case ('erase') { Click a hex to remove the entity standing on it. }
+            @case ('link') { Click a hex to put a door on it, then set where it leads below. }
+            @case ('erase') { Click a hex to remove the entity, door or location on it. }
           }
+        </p>
+      </section>
+
+      <section class="panel">
+        <h2>Doors</h2>
+        @let link = selectedLink();
+        @if (link === null) {
+          <p class="hint">Select a door on the canvas, or pick one below, to edit where it leads.</p>
+        } @else {
+          <div class="link-editor">
+            <div class="row"><span>id</span><span>{{ link.id }}</span></div>
+            <div class="row"><span>on hex</span><span>[{{ link.at.col }}, {{ link.at.row }}]</span></div>
+
+            <label>
+              <span>leads to</span>
+              <select [value]="link.targetWorld" (change)="setLinkTarget($any($event.target).value)">
+                @for (map of maps(); track map.id) {
+                  <option [value]="map.id" [selected]="map.id === link.targetWorld">{{ map.id }}</option>
+                }
+              </select>
+            </label>
+
+            <label>
+              <span>arrives at</span>
+              <span class="dims">
+                <input
+                  #arrivalCol
+                  type="number"
+                  min="0"
+                  [value]="link.targetAt.col"
+                  aria-label="Arrival column"
+                  (change)="setLinkArrival(arrivalCol.value, arrivalRow.value)"
+                />
+                <input
+                  #arrivalRow
+                  type="number"
+                  min="0"
+                  [value]="link.targetAt.row"
+                  aria-label="Arrival row"
+                  (change)="setLinkArrival(arrivalCol.value, arrivalRow.value)"
+                />
+              </span>
+            </label>
+
+            <label>
+              <span>label</span>
+              <input
+                #linkName
+                type="text"
+                [value]="link.name"
+                placeholder="Door"
+                (change)="setLinkName(linkName.value)"
+              />
+            </label>
+
+            <button type="button" (click)="removeSelectedLink()">Remove this door</button>
+          </div>
+        }
+
+        @if (links().length > 0) {
+          <ul class="link-list">
+            @for (entry of links(); track entry.id) {
+              <li>
+                <button type="button" (click)="selectLink(entry)">
+                  [{{ entry.at.col }}, {{ entry.at.row }}] → {{ entry.targetWorld }} [{{
+                    entry.targetAt.col
+                  }}, {{ entry.targetAt.row }}]
+                </button>
+              </li>
+            }
+          </ul>
+        }
+        <div class="button-row">
+          <button type="button" (click)="validateLinks()">Validate doors</button>
+        </div>
+        <p class="hint">
+          A door's target lives in another file, so only a whole-project check can resolve it.
         </p>
       </section>
 
@@ -114,12 +213,13 @@
         <h2>Content</h2>
         <div class="button-row">
           <button type="button" (click)="validate()">Validate</button>
-          <button type="button" (click)="exportWorld()">Export JSON</button>
+          <button type="button" (click)="exportWorld()">Export map</button>
+          <button type="button" (click)="exportProject()">Export project</button>
           <label class="file-button">
             Import JSON
             <input type="file" accept="application/json,.json" (change)="importWorld($event)" hidden />
           </label>
-          <button type="button" (click)="resetToDemo()">Reload demo</button>
+          <button type="button" (click)="resetToShipped()">Reload content/</button>
         </div>
         <div class="button-row play-row">
           <button type="button" class="primary" (click)="playWorld()">Validate &amp; Play ▸</button>
@@ -132,7 +232,7 @@
         @let validation = report();
         @if (validation !== null) {
           @if (validation.valid && validation.issues.length === 0) {
-            <div class="banner ok">Valid — the runtime will load this world as-is.</div>
+            <div class="banner ok">Valid — the runtime will load this content as-is.</div>
           } @else {
             <div class="banner" [class.error]="!validation.valid" [class.warn]="validation.valid">
               {{ validation.valid ? 'Valid, with warnings' : 'Invalid' }}
@@ -150,19 +250,19 @@
       </section>
 
       <section class="panel">
-        <h2>New world</h2>
+        <h2>New map</h2>
         <div class="new-world">
-          <input #newName type="text" placeholder="Name" value="New World" />
+          <input #newName type="text" placeholder="Name" value="New Map" />
           <div class="dims">
             <input #newWidth type="number" min="1" max="256" value="20" aria-label="Width" />
             <span>×</span>
             <input #newHeight type="number" min="1" max="256" value="20" aria-label="Height" />
           </div>
           <button type="button" (click)="createWorld(newWidth.value, newHeight.value, newName.value)">
-            Create
+            Add to project
           </button>
         </div>
-        <p class="hint">Replaces the current document. Export first if you want to keep it.</p>
+        <p class="hint">Adds a map alongside the others; doors can point at it right away.</p>
       </section>
 
       @if (stats(); as frame) {

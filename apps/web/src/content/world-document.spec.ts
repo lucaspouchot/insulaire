@@ -241,4 +241,54 @@ describe('WorldDocument', () => {
     expect(histogram.get('water')).toBe(1);
     expect(histogram.get('grass')).toBe(11);
   });
+
+  describe('map links', () => {
+    it('places at most one link per cell and exports it', () => {
+      const document = documentFor();
+
+      const link = document.placeLink(offset(2, 1), 'inside');
+      expect(link?.id).toBe('link_1');
+      expect(link?.targetWorld).toBe('inside');
+      expect(document.placeLink(offset(2, 1), 'elsewhere')).toBe(link);
+      expect(document.placedLinks).toHaveLength(1);
+      expect(document.placeLink(offset(99, 9), 'inside')).toBeNull();
+
+      document.updateLink(offset(2, 1), { targetAt: offset(1, 1), name: 'Door' });
+      const exported = document.toDefinition().links ?? [];
+      expect(exported).toEqual([
+        {
+          id: 'link_1',
+          at: [2, 1],
+          targetWorld: 'inside',
+          targetAt: [1, 1],
+          name: 'Door',
+        },
+      ]);
+    });
+
+    it('round-trips links through a definition', () => {
+      const withLink: WorldDefinition = {
+        ...world,
+        links: [{ id: 'door', at: [3, 0], targetWorld: 'inside', targetAt: [0, 1], tags: ['door'] }],
+      };
+      const document = WorldDocument.fromDefinition(withLink, tileSet);
+
+      expect(document.linkAt(offset(3, 0))?.targetWorld).toBe('inside');
+      expect(document.linkAt(offset(0, 0))).toBeNull();
+      expect(document.toDefinition().links).toEqual(withLink.links);
+    });
+
+    it('removes a link and retargets links when a map is renamed', () => {
+      const document = documentFor();
+      document.placeLink(offset(2, 1), 'inside');
+
+      expect(document.retargetLinks('inside', 'refuge')).toBe(true);
+      expect(document.linkAt(offset(2, 1))?.targetWorld).toBe('refuge');
+      expect(document.retargetLinks('absent', 'other')).toBe(false);
+
+      expect(document.removeLinkAt(offset(2, 1))).toBe(true);
+      expect(document.removeLinkAt(offset(2, 1))).toBe(false);
+      expect(document.placedLinks).toHaveLength(0);
+    });
+  });
 });

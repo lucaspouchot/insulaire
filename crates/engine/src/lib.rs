@@ -58,12 +58,13 @@ pub mod error;
 pub mod json;
 pub mod registry;
 
-use hex_simulation::{rules, tick, GameState};
+use hex_simulation::{rules, tick, GameState, PendingTransition, SimEvent};
 use hex_world::{Hex, ProjectionMode, WorldDefinition, WorldGrid};
 
 pub use dto::{
     AxialDto, Command, CommandResult, ContentSummary, EngineInfo, EntitySnapshot, GameSnapshot,
-    LoadOutcome, LocationView, PaletteEntry, RngSnapshot, TemplateView, WorldSummary, WorldView,
+    LinkView, LoadOutcome, LocationView, PaletteEntry, ProjectView, RngSnapshot, TemplateView,
+    WorldSummary, WorldView,
 };
 pub use error::{EngineError, EngineErrorPayload};
 pub use json::{JsonEngine, JsonResult};
@@ -116,6 +117,25 @@ impl Engine {
         Ok(LoadOutcome { id, report })
     }
 
+    /// Parses, validates and registers the project manifest.
+    ///
+    /// # Errors
+    ///
+    /// See [`ContentRegistry::load_project`].
+    pub fn load_project(&mut self, json: &str) -> Result<LoadOutcome, EngineError> {
+        let (id, report) = self.content.load_project(json)?;
+        Ok(LoadOutcome { id, report })
+    }
+
+    /// Forgets every loaded tile set, world and project.
+    ///
+    /// Call it before re-loading a whole project, so content that was removed
+    /// in the editor stops answering for itself. A running game survives: it
+    /// holds its own handle on the world it is playing.
+    pub fn reset_content(&mut self) {
+        self.content.clear();
+    }
+
     /// Validates a world without registering it — the editor's pre-export check.
     ///
     /// # Errors
@@ -123,6 +143,17 @@ impl Engine {
     /// [`EngineError::Parse`] when the JSON is malformed.
     pub fn validate_world(&self, json: &str) -> Result<hex_world::ValidationReport, EngineError> {
         self.content.validate_world_json(json)
+    }
+
+    /// Resolves every map link across the loaded worlds.
+    ///
+    /// A world validates on its own without its link targets existing, so this
+    /// is the check that a *set* of maps is coherent — the editor runs it after
+    /// loading a project, the client runs it at boot
+    /// (`docs/adr/ADR-0017-map-links.md`).
+    #[must_use]
+    pub fn validate_links(&self) -> hex_world::ValidationReport {
+        self.content.validate_links()
     }
 
     /// What the registry currently holds.
@@ -155,6 +186,7 @@ impl Engine {
                     fallback_color: template.fallback_color.clone(),
                 })
                 .collect(),
+            project: self.content.project().map(Into::into),
         }
     }
 
@@ -249,6 +281,7 @@ impl Engine {
                     tags: location.tags.clone(),
                 })
                 .collect(),
+            links: world.links.iter().map(Into::into).collect(),
             cell_count: grid.cells().len() as u32,
         }
     }
@@ -320,12 +353,60 @@ impl Engine {
     pub fn dispatch(&mut self, command: Command) -> Result<CommandResult, EngineError> {
         let state = self.game.as_mut().ok_or(EngineError::NoGame)?;
         let outcome = tick::apply(state, command.into());
+        let mut events = outcome.events;
+
+        if let Some(transition) = outcome.transition {
+            events.push(self.follow_link(&transition));
+        }
+
+        let state = self.game.as_ref().ok_or(EngineError::NoGame)?;
         Ok(CommandResult {
             accepted: outcome.accepted,
             rejection: outcome.rejection.map(Into::into),
-            events: outcome.events,
+            events,
             state: Self::snapshot_of(state),
         })
+    }
+
+    /// Carries out a map change the tick asked for.
+    ///
+    /// The simulation names the target world; only the registry can produce it,
+    /// which is why this step lives in the facade rather than in the tick
+    /// pipeline (`docs/adr/ADR-0017-map-links.md`). A target that cannot be
+    /// resolved leaves the session exactly where it was and comes back as a
+    /// `linkUnresolved` event: content validation is supposed to have caught it
+    /// (`link.unknownTargetWorld`), and a broken door must not end a session.
+    fn follow_link(&mut self, transition: &PendingTransition) -> SimEvent {
+        let unresolved = |reason: String| SimEvent::LinkUnresolved {
+            link: transition.link_id.clone(),
+            to_world: transition.target_world.clone(),
+            reason,
+        };
+
+        let Some(target) = self.content.world(&transition.target_world).cloned() else {
+            return unresolved(format!("world `{}` is not loaded", transition.target_world));
+        };
+        let Some(tile_set) = self.content.tile_set_for(&target).cloned() else {
+            return unresolved(format!("tile set `{}` is not loaded", target.tile_set_id));
+        };
+        let Some(state) = self.game.as_mut() else {
+            return unresolved("no game is running".to_owned());
+        };
+
+        let from_world = state.world_id().to_owned();
+        match state.enter_world(
+            &target,
+            &tile_set,
+            self.content.templates(),
+            Hex::from_offset(transition.target_at),
+        ) {
+            Ok(()) => SimEvent::WorldEntered {
+                from_world,
+                to_world: target.id,
+                at: transition.target_at,
+            },
+            Err(source) => unresolved(source.to_string()),
+        }
     }
 
     fn snapshot_of(state: &GameState) -> GameSnapshot {
@@ -601,6 +682,116 @@ mod tests {
         };
 
         assert_eq!(run(), run());
+    }
+
+    /// An engine holding both linked maps, playing the outdoor one.
+    fn linked() -> Engine {
+        let mut engine = Engine::new();
+        engine
+            .load_tile_set(&serde_json::to_string(&testing::sample_tile_set()).expect("serialise"))
+            .expect("tile set loads");
+        for world in [testing::linked_world(), testing::interior_world()] {
+            engine
+                .load_world(&serde_json::to_string(&world).expect("serialise"))
+                .expect("world loads");
+        }
+        engine.create_game("linked_world", 7).expect("game starts");
+        engine
+    }
+
+    #[test]
+    fn walking_onto_a_door_moves_the_session_to_the_other_map() {
+        let mut engine = linked();
+        let result = engine
+            .dispatch(Command::MoveTo {
+                to: testing::DOOR_CELL,
+            })
+            .expect("dispatch");
+
+        assert!(result.accepted);
+        assert_eq!(result.state.world_id, "interior_world");
+        assert_eq!(
+            result.state.player.as_ref().map(|player| player.at),
+            Some(testing::INTERIOR_ARRIVAL)
+        );
+        assert_eq!(result.state.tick, 1, "a map change costs the same one tick");
+        assert!(result.events.iter().any(|event| matches!(
+            event,
+            hex_simulation::SimEvent::WorldEntered { to_world, .. } if to_world == "interior_world"
+        )));
+
+        // The new map is the one the renderer will ask for, and it is loaded.
+        let view = engine.world_view(&result.state.world_id).expect("view");
+        assert_eq!(view.width, 5);
+        assert_eq!(view.links.len(), 1);
+        assert_eq!(view.links[0].target_world, "linked_world");
+        assert_eq!(view.links[0].trigger, "enter");
+    }
+
+    #[test]
+    fn a_door_to_an_unloaded_map_leaves_the_session_where_it_is() {
+        // Validation is supposed to prevent this (`link.unknownTargetWorld`);
+        // the runtime must degrade rather than end the session.
+        let mut engine = Engine::new();
+        engine
+            .load_tile_set(&serde_json::to_string(&testing::sample_tile_set()).expect("serialise"))
+            .expect("tile set loads");
+        engine
+            .load_world(&serde_json::to_string(&testing::linked_world()).expect("serialise"))
+            .expect("world loads");
+        engine.create_game("linked_world", 7).expect("game starts");
+
+        let result = engine
+            .dispatch(Command::MoveTo {
+                to: testing::DOOR_CELL,
+            })
+            .expect("dispatch");
+
+        assert!(result.accepted);
+        assert_eq!(result.state.world_id, "linked_world");
+        assert_eq!(
+            result.state.player.as_ref().map(|player| player.at),
+            Some(testing::DOOR_CELL)
+        );
+        assert!(result.events.iter().any(|event| matches!(
+            event,
+            hex_simulation::SimEvent::LinkUnresolved { link, .. } if link == "door_house"
+        )));
+    }
+
+    #[test]
+    fn cross_world_links_are_only_resolvable_once_every_world_is_loaded() {
+        let mut engine = Engine::new();
+        engine
+            .load_tile_set(&serde_json::to_string(&testing::sample_tile_set()).expect("serialise"))
+            .expect("tile set loads");
+        engine
+            .load_world(&serde_json::to_string(&testing::linked_world()).expect("serialise"))
+            .expect("a world with an outbound link is valid on its own");
+        assert!(!engine.validate_links().valid);
+
+        engine
+            .load_world(&serde_json::to_string(&testing::interior_world()).expect("serialise"))
+            .expect("world loads");
+        assert!(engine.validate_links().valid);
+    }
+
+    #[test]
+    fn a_project_manifest_names_the_start_world() {
+        let mut engine = linked();
+        let outcome = engine
+            .load_project(
+                r#"{"id":"demo","schemaVersion":1,"name":"Demo","startWorld":"linked_world",
+                    "tileSets":[{"id":"mvp_terrain","path":"tilesets/mvp_terrain.json"}],
+                    "worlds":[{"id":"linked_world","path":"worlds/linked_world.json"},
+                              {"id":"interior_world","path":"worlds/interior_world.json"}]}"#,
+            )
+            .expect("project loads");
+
+        assert_eq!(outcome.id, "demo");
+        let project = engine.content_summary().project.expect("project");
+        assert_eq!(project.start_world, "linked_world");
+        assert_eq!(project.world_ids.len(), 2);
     }
 
     #[test]

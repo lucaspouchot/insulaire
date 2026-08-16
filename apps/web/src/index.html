@@ -13,5 +13,50 @@
   </head>
   <body>
     <app-root></app-root>
+
+    <!--
+      Opened as a file:// URL, nothing below the shell can run: module imports,
+      the WebAssembly glue and content fetches are all cross-origin from an
+      opaque origin, so the page would just stay black. The players' build is the
+      desktop application (ADR-0020), which never hits this; what this catches is
+      a developer double-clicking a `dist/` build. Plain inline markup and a
+      classic script, the only things a file: page still runs.
+    -->
+    <!--
+      Hidden with `display: none`, not with the `hidden` attribute: an inline
+      `display` would override the attribute's own `display: none` and paint this
+      over a perfectly working game.
+    -->
+    <div
+      id="file-protocol-notice"
+      style="
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background: #10141c;
+        color: #e6e9ef;
+        font:
+          16px/1.6 system-ui,
+          sans-serif;
+      "
+    >
+      <div style="max-width: 44em">
+        <h1 style="margin: 0 0 0.6em; font-size: 1.4em">This build needs a server</h1>
+        <p style="margin: 0">
+          A page opened straight from a folder cannot load its own modules, its WebAssembly engine
+          or its content. Serve this folder over HTTP instead — <strong>npm run dev</strong> during
+          development — or run the desktop application, which hosts it for you.
+        </p>
+      </div>
+    </div>
+    <script>
+      if (location.protocol === 'file:') {
+        document.getElementById('file-protocol-notice').style.display = 'flex';
+      }
+    </script>
   </body>
 </html>

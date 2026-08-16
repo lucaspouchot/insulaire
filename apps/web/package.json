@@ -7,6 +7,8 @@
     "start": "ng serve",
     "prebuild": "node ../../scripts/sync-content.mjs",
     "build": "ng build",
+    "prebuild:deliver": "node ../../scripts/sync-content.mjs",
+    "build:deliver": "ng build --configuration deliver",
     "watch": "ng build --watch --configuration development",
     "pretest": "node ../../scripts/sync-content.mjs",
     "test": "ng test"

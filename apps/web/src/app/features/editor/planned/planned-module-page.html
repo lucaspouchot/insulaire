@@ -1,0 +1,23 @@
+@let entry = module();
+<section class="placeholder">
+  @if (entry === undefined) {
+    <h2>Unknown editor module</h2>
+  } @else {
+    <h2>{{ entry.title }}</h2>
+    <p class="summary">{{ entry.summary }}</p>
+
+    @if (entry.plans?.length) {
+      <h3>Planned</h3>
+      <ul>
+        @for (plan of entry.plans; track plan) {
+          <li>{{ plan }}</li>
+        }
+      </ul>
+    }
+
+    <p class="hint">
+      Not implemented yet. The tab exists so the editor's shape is visible: modules are declared in
+      <code>editor-modules.ts</code>, and each one adds a route without touching the others.
+    </p>
+  }
+</section>

@@ -77,6 +77,40 @@ impl HexEngine {
         self.inner.load_world(json).map_err(to_js)
     }
 
+    /// Parses, validates and registers the project manifest — the list of
+    /// content files that make up the game, and the world it starts on. Returns
+    /// a `LoadOutcome`.
+    ///
+    /// Call it after the content it lists has been loaded.
+    ///
+    /// # Errors
+    ///
+    /// `parse` or `invalidContent`.
+    #[wasm_bindgen(js_name = loadProject)]
+    pub fn load_project(&mut self, json: &str) -> Result<String, JsValue> {
+        self.inner.load_project(json).map_err(to_js)
+    }
+
+    /// Forgets every loaded tile set, world and project.
+    ///
+    /// Hosts call this before re-loading a whole project, so content removed in
+    /// the editor stops answering for itself. A running game is unaffected.
+    #[wasm_bindgen(js_name = resetContent)]
+    pub fn reset_content(&mut self) {
+        self.inner.reset_content();
+    }
+
+    /// Resolves every map link across the loaded worlds. Returns a
+    /// `ValidationReport`.
+    ///
+    /// # Errors
+    ///
+    /// A JSON error payload on serialisation failure.
+    #[wasm_bindgen(js_name = validateLinks)]
+    pub fn validate_links(&self) -> Result<String, JsValue> {
+        self.inner.validate_links().map_err(to_js)
+    }
+
     /// Validates a world *without* registering it — the editor's pre-export
     /// check. Returns a `ValidationReport`.
     ///

@@ -107,6 +107,51 @@ with the same id. Throws `parse` or `invalidContent`.
 Same, for a `WorldDefinition`, validated against its already-registered tile
 set. Only registered on success; warnings do not block.
 
+### `loadProject(json: string): LoadOutcome`
+
+Registers the `ProjectDefinition` manifest — which content files make up the
+game, and its `startWorld`. Call it **after** the content it lists: it is
+validated against what is actually in the registry, so a bundle missing a file
+fails here rather than when a player walks through a door (ADR-0018).
+
+Errors: `parse`, `invalidContent` (`project.unloadedWorld`,
+`project.unknownStartWorld`, …).
+
+### `resetContent(): void`
+
+Forgets every loaded tile set, world and project. Loading is otherwise additive
+— a world stays registered under its id until something replaces it — so a host
+re-loading a whole project calls this first, or content the author deleted keeps
+satisfying the doors that point at it.
+
+A running game is unaffected: it holds its own handle on the world it is
+playing. Its map can no longer be re-fetched with `worldView` until the content
+is loaded again, so reset only when you are about to.
+
+### `validateLinks(): ValidationReport`
+
+Resolves every map link across the loaded worlds. This is the check no single
+world file can make: a link's `targetWorld` lives in another file, so
+`loadWorld` and `validateWorld` deliberately accept a world whose doors do not
+resolve yet (ADR-0017).
+
+```json
+{
+  "valid": false,
+  "issues": [
+    {
+      "code": "link.unknownTargetWorld",
+      "severity": "error",
+      "path": "demo_world.links[0].targetWorld",
+      "message": "link `link_refuge_door` targets world `demo_refuge`, which is not loaded"
+    }
+  ]
+}
+```
+
+Codes: `link.unknownTargetWorld`, `link.targetOutOfBounds`,
+`link.targetImpassable`.
+
 ### `validateWorld(json: string): ValidationReport`
 
 Validates **without registering**. This is the editor's pre-export check, and it
@@ -128,8 +173,9 @@ is the same validator `loadWorld` runs (ADR-0015).
 
 ### `contentSummary(): ContentSummary`
 
-What the registry holds: tile set ids, world summaries, and the entity templates
-this build knows.
+What the registry holds: tile set ids, world summaries, the entity templates
+this build knows, and `project` — the loaded manifest as
+`{ id, name, startWorld, worldIds }`, or `null` when none was loaded.
 
 ### `worldView(worldId: string): WorldView`
 
@@ -150,6 +196,10 @@ Everything the renderer needs about a world **except** the per-cell buffers.
       "visualId": "terrain.grass", "fallbackColor": "#4a7c3f", "tags": ["open"] }
   ],
   "locations": [ { "id": "loc_camp", "name": "Camp", "at": [3, 11], "tags": ["start"] } ],
+  "links": [
+    { "id": "link_refuge_door", "name": "Refuge", "at": [3, 10],
+      "targetWorld": "demo_refuge", "targetAt": [3, 4], "trigger": "enter", "tags": ["door"] }
+  ],
   "cellCount": 400
 }
 ```
@@ -251,8 +301,37 @@ Rejection codes: `noPlayer`, `sameHex`, `outOfBounds`, `notAdjacent`,
 `impassable`, `occupied`.
 
 Event types: `entityMoved`, `entityHeld` (a chaser had nowhere closer to go),
-`tickAdvanced`, `actionRejected`. Events are ordered causally: the player's
-move, then the clock, then the monsters.
+`tickAdvanced`, `actionRejected`, plus the map-link events below. Events are
+ordered causally: the player's move, then the clock, then the monsters.
+
+#### Changing map
+
+When the player's move ends on a hex carrying a map link, the same
+`CommandResult` reports the transition **and** comes back with `state.worldId`
+already set to the new map (ADR-0017):
+
+```json
+{
+  "accepted": true,
+  "events": [
+    { "type": "entityMoved", "entity": 0, "contentId": "player_1", "from": [4, 10], "to": [3, 10] },
+    { "type": "linkTriggered", "link": "link_refuge_door", "toWorld": "demo_refuge", "to": [3, 4] },
+    { "type": "tickAdvanced", "tick": 1 },
+    { "type": "worldEntered", "fromWorld": "demo_world", "toWorld": "demo_refuge", "at": [3, 4] }
+  ],
+  "state": { "worldId": "demo_refuge", … }
+}
+```
+
+A host that sees `state.worldId` change must fetch `worldView`,
+`terrainBuffer` and `elevationBuffer` for the new map; the snapshot never
+carries a map.
+
+If the target cannot be reached — it was never loaded, or it fails setup — the
+result carries `{ "type": "linkUnresolved", "link", "toWorld", "reason" }`
+instead of `worldEntered`, and the session stays on its current map. Content
+validation is meant to make that unreachable; it is an event rather than an
+error so a partially loaded project degrades instead of ending the session.
 
 ### `endGame(): void` / `hasGame(): boolean`
 
@@ -267,11 +346,16 @@ One accepted command == one tick. The pipeline is implemented literally in
 
 1. validate
 2. apply the player action
-3. resolve immediate effects — *empty in the MVP*
+3. resolve immediate effects — a map link on the hex just entered is recorded
+   here as a pending transition; nothing else in the MVP
 4. advance world systems: `tick += 1`, then every chaser acts once
 5. advance the scenario — *empty; ADR-0005 plugs in here*
 6. resolve triggers and events — *empty*
 7. emit observable changes
+
+A pending transition is carried out by `Engine::dispatch` **after** phase 7, so
+the pipeline's order is identical whether or not a link fired, and the tick
+count of a move is the same either way.
 
 **A rejected command changes nothing**: not the tick, not a position, not the
 RNG. Asserted in `tick.rs`, `lib.rs`, `shipped_content.rs` and

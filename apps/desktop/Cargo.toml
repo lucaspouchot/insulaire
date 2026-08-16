@@ -1,0 +1,45 @@
+[package]
+name = "insulaire-desktop"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+publish = false
+description = "Desktop shell for Insulaire: hosts the game bundle in a native window."
+
+# Deliberately its own workspace, not a member of the engine's.
+#
+# This crate depends on nothing in `crates/` — the engine still runs as WASM
+# inside the webview (`docs/adr/ADR-0020-desktop-executable.md`), so the shell
+# and the engine share content, not code. Keeping it separate means
+# `cargo clippy --workspace` and `cargo test --workspace` stay what they are
+# today: a fast, headless gate that needs no GTK or WebKit development packages
+# on a machine that only works on the simulation.
+[workspace]
+
+[[bin]]
+name = "insulaire"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+
+# The Steamworks SDK is not redistributable, so this is opt-in and off by
+# default: `cargo build` works on a machine that has never heard of Steam, and
+# `--features steam` is what a store build adds (see `src/steam.rs`).
+steamworks = { version = "0.13", optional = true }
+
+[features]
+default = []
+steam = ["dep:steamworks"]
+
+# A shell around a webview: small matters, speed does not — the simulation runs
+# in WASM, not here.
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

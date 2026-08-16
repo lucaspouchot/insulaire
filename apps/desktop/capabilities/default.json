@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "What the game window is allowed to ask of the shell: nothing beyond Tauri's own core. The game plays entirely inside the webview, so no filesystem, shell, HTTP or dialog permission is granted — a capability is added the day a feature needs it, not before.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

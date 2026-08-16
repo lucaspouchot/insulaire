@@ -1,0 +1,17 @@
+<nav class="module-tabs">
+  @for (module of modules; track module.id) {
+    <a
+      [routerLink]="['/editor', module.id]"
+      routerLinkActive="active"
+      [title]="module.summary"
+      [class.planned]="module.status === 'planned'"
+    >
+      {{ module.title }}
+      @if (module.status === 'planned') {
+        <span class="badge">soon</span>
+      }
+    </a>
+  }
+</nav>
+
+<router-outlet />

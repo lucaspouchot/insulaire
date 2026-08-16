@@ -1,0 +1,13 @@
+{
+  "id": "insulaire",
+  "schemaVersion": 1,
+  "name": "Insulaire",
+  "startWorld": "demo_world",
+  "tileSets": [
+    { "id": "mvp_terrain", "path": "tilesets/mvp_terrain.json" }
+  ],
+  "worlds": [
+    { "id": "demo_world", "path": "worlds/demo_world.json" },
+    { "id": "demo_refuge", "path": "worlds/demo_refuge.json" }
+  ]
+}

@@ -10,7 +10,9 @@
 //! entity snapshots as a convenience for renderers, never as the primary key.
 
 use hex_simulation::{EntityRuntime, Rng, SimEvent};
-use hex_world::{EntityKind, Hex, OffsetCoord, ResolvedTile};
+use hex_world::{
+    EntityKind, Hex, LinkTrigger, MapLinkDefinition, OffsetCoord, ProjectDefinition, ResolvedTile,
+};
 use serde::{Deserialize, Serialize};
 
 /// A command sent from the host to the engine.
@@ -219,6 +221,47 @@ pub struct LocationView {
     pub tags: Vec<String>,
 }
 
+/// An authored map link, as the UI sees it.
+///
+/// Republished so the client can draw the door and name where it leads without
+/// re-reading the world file (`docs/adr/ADR-0017-map-links.md`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkView {
+    /// Stable id.
+    pub id: String,
+    /// Display name.
+    pub name: String,
+    /// The cell that triggers it, in offset coordinates.
+    pub at: OffsetCoord,
+    /// Id of the world it leads to.
+    pub target_world: String,
+    /// Where the player arrives there, in offset coordinates.
+    pub target_at: OffsetCoord,
+    /// What makes it fire; currently always `"enter"`.
+    pub trigger: String,
+    /// Gameplay tags.
+    pub tags: Vec<String>,
+}
+
+impl From<&MapLinkDefinition> for LinkView {
+    fn from(link: &MapLinkDefinition) -> Self {
+        Self {
+            id: link.id.clone(),
+            name: link.name.clone(),
+            at: link.at,
+            target_world: link.target_world.clone(),
+            target_at: link.target_at,
+            trigger: match link.trigger {
+                LinkTrigger::Enter => "enter",
+                LinkTrigger::Interact => "interact",
+            }
+            .to_owned(),
+            tags: link.tags.clone(),
+        }
+    }
+}
+
 /// Everything the renderer needs about a loaded world *except* the per-cell
 /// buffers, which travel separately as packed typed arrays.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -245,6 +288,8 @@ pub struct WorldView {
     pub palette: Vec<PaletteEntry>,
     /// Authored points of interest.
     pub locations: Vec<LocationView>,
+    /// Authored map links leaving this world.
+    pub links: Vec<LinkView>,
     /// Length of the packed terrain and elevation buffers, i.e. `width * height`.
     pub cell_count: u32,
 }
@@ -283,6 +328,35 @@ pub struct WorldSummary {
     pub valid: bool,
 }
 
+/// The loaded project manifest, as the UI sees it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectView {
+    /// Stable project id.
+    pub id: String,
+    /// Display name.
+    pub name: String,
+    /// World a new session starts on.
+    pub start_world: String,
+    /// Ids of every world the project ships, in listed order.
+    pub world_ids: Vec<String>,
+}
+
+impl From<&ProjectDefinition> for ProjectView {
+    fn from(project: &ProjectDefinition) -> Self {
+        Self {
+            id: project.id.clone(),
+            name: project.name.clone(),
+            start_world: project.start_world.clone(),
+            world_ids: project
+                .worlds
+                .iter()
+                .map(|entry| entry.id.clone())
+                .collect(),
+        }
+    }
+}
+
 /// What the content registry currently holds.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -293,6 +367,8 @@ pub struct ContentSummary {
     pub worlds: Vec<WorldSummary>,
     /// Known entity templates.
     pub templates: Vec<TemplateView>,
+    /// The project manifest, when one has been loaded.
+    pub project: Option<ProjectView>,
 }
 
 /// The outcome of loading one content file.

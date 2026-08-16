@@ -113,6 +113,10 @@ drawn while a texture loads. Rendering *logic* never appears in content.
   "locations": [
     { "id": "loc_camp", "at": [3, 11], "name": "Camp", "tags": ["start", "safe"] }
   ],
+  "links": [
+    { "id": "link_refuge_door", "at": [3, 10], "targetWorld": "demo_refuge",
+      "targetAt": [3, 4], "name": "Refuge", "tags": ["door"] }
+  ],
   "metadata": {
     "author": "hex-engine",
     "description": "…",
@@ -134,6 +138,7 @@ drawn while a texture loads. Rendering *logic* never appears in content.
 | `tiles` | PlacedTile[] | no | Only the cells that differ from `defaultTile`. |
 | `entities` | EntityDefinition[] | no | Placed entities. Exactly one player is required to play. |
 | `locations` | LocationDefinition[] | no | Points of interest. |
+| `links` | MapLink[] | no | Cells that send the player to another map. |
 | `metadata` | object | no | Free text; never read by the simulation. |
 
 ### Sparse storage
@@ -192,6 +197,65 @@ stored.
 | `name` | string | no | Display name. |
 | `tags` | string[] | no | Free-form tags. |
 
+### MapLink
+
+A cell that sends the player to another map (ADR-0017). It is the only
+cross-file reference in the world schema.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `id` | string | yes | Stable id, unique within the world. |
+| `at` | `[col, row]` | yes | The cell that triggers it. Must be in bounds and passable. |
+| `targetWorld` | string | yes | Id of the world to enter. May be this world's own id. |
+| `targetAt` | `[col, row]` | yes | Where the player arrives there. |
+| `trigger` | `"enter"` \| `"interact"` | no | Defaults to `"enter"`. `"interact"` is reserved and currently rejected. |
+| `name` | string | no | Display name, drawn under the door marker. |
+| `tags` | string[] | no | Free-form tags. |
+
+A link fires when the player's move **ends on** `at` — not while standing there,
+so arriving on a door (which is what the door on the other side does) does not
+send the player straight back. The target map supplies its own player entity;
+the arriving player takes its place at `targetAt`, and the session's tick and
+RNG stream carry over.
+
+Because `targetWorld` names another file, a single world validates without it
+(see `validateLinks` in `docs/wasm-api.md`).
+
+---
+
+## ProjectDefinition
+
+`content/project.json` says which files make up one game and where a session
+starts. It is what a delivered client build boots from (ADR-0018).
+
+```json
+{
+  "id": "insulaire",
+  "schemaVersion": 1,
+  "name": "Insulaire",
+  "startWorld": "demo_world",
+  "tileSets": [
+    { "id": "mvp_terrain", "path": "tilesets/mvp_terrain.json" }
+  ],
+  "worlds": [
+    { "id": "demo_world", "path": "worlds/demo_world.json" },
+    { "id": "demo_refuge", "path": "worlds/demo_refuge.json" }
+  ]
+}
+```
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `id` | string | yes | Stable id. |
+| `schemaVersion` | integer | yes | `1`. |
+| `name` | string | no | Display name. |
+| `startWorld` | string | yes | Id of the world a new session starts on. Must be listed in `worlds`. |
+| `tileSets` | `{ id, path }[]` | no | Tile sets to load; `path` is relative to the content root. |
+| `worlds` | `{ id, path }[]` | yes | Worlds to load. Every world reachable through a link must be listed. |
+
+Paths are content-root-relative so the same manifest works served from a
+subdirectory.
+
 ---
 
 ## Entity templates
@@ -219,6 +283,13 @@ Run by `hex_world::validate_world`, used identically by the editor and the
 runtime (ADR-0015). Each issue carries a stable `code`, a `severity`, a `path`
 such as `entities[3].at`, and a message.
 
+Two checks span more than one file and therefore have their own entry points:
+`validate_project_links` resolves every link across the loaded worlds
+(`link.unknownTargetWorld`, `link.targetOutOfBounds`, `link.targetImpassable`,
+`link.targetOccupied`), and `validate_project` checks the manifest against what
+is loaded. Both are
+exposed across the boundary as `validateLinks()` and `loadProject()`.
+
 **Errors** (content will not load):
 
 | Code | Meaning |
@@ -241,6 +312,20 @@ such as `entities[3].at`, and a message.
 | `entity.unknownTemplate` | `templateId` is not in the registry. |
 | `entity.overlappingPlacement` | Two blocking entities on one hex. |
 | `location.missingId` / `location.duplicateId` / `location.outOfBounds` | As above, for locations. |
+| `link.missingId` / `link.duplicateId` | Link ids must exist and be unique within the world. |
+| `link.outOfBounds` | A link is outside the map. |
+| `link.duplicatePosition` | Two links on one cell. |
+| `link.onImpassableTile` | A link sits on `movementCost: 0`, so it can never be entered. |
+| `link.missingTarget` | `targetWorld` is empty. |
+| `link.unsupportedTrigger` | `trigger` is not `"enter"`. |
+| `link.targetOutOfBounds` | `targetAt` is outside the target map. Reported for a self-link by `validateWorld`, otherwise by `validateLinks`. |
+| `link.unknownTargetWorld` | `targetWorld` is not loaded. Reported by `validateLinks` only. |
+| `link.targetImpassable` | `targetAt` is an impassable cell in the target map. Reported by `validateLinks` only. |
+| `link.targetOccupied` | `targetAt` holds an authored non-player entity in the target map; the arriving player would share its hex. Reported by `validateLinks` only. |
+| `project.missingId` / `project.unsupportedSchemaVersion` | Manifest header problems. |
+| `project.noWorlds` / `project.duplicateWorld` | The manifest lists no worlds, or one twice. |
+| `project.unloadedWorld` / `project.unloadedTileSet` | The manifest references content that is not loaded. |
+| `project.unknownStartWorld` | `startWorld` is not among the manifest's worlds. |
 | `tileSet.empty` / `tileSet.paletteTooLarge` / `tile.duplicateId` / `tile.missingVisualId` | Tile set problems. |
 
 **Warnings** (content loads):
@@ -263,9 +348,13 @@ The editor writes worlds through
   ],
 ```
 
-`content/worlds/demo_world.json` is written the same way, so an exported world
-diffs cleanly against a hand-edited one. A test asserts the two agree byte for
-byte (`world-serializer.spec.ts`).
+`content/worlds/*.json` are written the same way, so an exported world diffs
+cleanly against a hand-edited one. Tests assert that both shipped worlds and
+`content/project.json` agree byte for byte with what the editor writes
+(`world-serializer.spec.ts`).
+
+Every world file carries all four record arrays — `tiles`, `entities`,
+`locations`, `links` — even when empty.
 
 Plain `JSON.stringify(world, null, 2)` is still valid input — the format
 requirement is on writing, not reading.
