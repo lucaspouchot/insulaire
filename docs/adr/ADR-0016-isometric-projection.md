@@ -46,7 +46,7 @@ unchanged and still the only place hex↔pixel maths lives. `Projection`
   y' = y * tilt - z * elevationStep      z = the cell's authored elevation
 
   top-down    tilt = 1,    elevationStep = 0     (identity)
-  isometric   tilt = 0.55, elevationStep = 0.30 * hex size
+  isometric   tilt = 0.55, elevationStep = 0.15 * hex size
 ```
 
 The transform is diagonal, so it inverts exactly: `cellAtScreen` unprojects and

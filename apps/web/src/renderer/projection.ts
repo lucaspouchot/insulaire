@@ -33,7 +33,7 @@ export type ProjectionMode = 'topDown' | 'isometric';
 export const ISOMETRIC_TILT = 0.55;
 
 /** Pixels a cell rises per elevation step, as a fraction of the hex size. */
-export const ISOMETRIC_ELEVATION_RATIO = 0.3;
+export const ISOMETRIC_ELEVATION_RATIO = 0.15;
 
 /** `true` when `value` is one of the modes this renderer understands. */
 export function isProjectionMode(value: unknown): value is ProjectionMode {

@@ -20,8 +20,9 @@
  * which is the single-batch case above. An isometric world is drawn a row at a
  * time from back to front, because elevated cells overlap the row behind them —
  * batching is then per row, and everything standing on a row (overlays,
- * entities, labels) is drawn with it so terrain in front can occlude it
- * (`docs/adr/ADR-0016-isometric-projection.md`).
+ * entities, markers) is drawn with it so terrain in front can occlude it
+ * (`docs/adr/ADR-0016-isometric-projection.md`). Captions are the exception and
+ * come last, unoccluded; see {@link HexMapRenderer.drawLayered}.
  */
 
 import { Offset, fromIndex, indexIn, sameOffset } from '../core/hex/hex-coords';
@@ -285,6 +286,7 @@ export class HexMapRenderer {
     this.drawLocations(model, model.locations);
     this.drawLinks(model, model.links);
     this.drawEntities(model, model.entities);
+    this.drawLabels(model, model.locations, model.links);
     if (model.showCoordinates) {
       this.drawCoordinates(model, range, range.minRow, range.maxRow);
     }
@@ -297,6 +299,12 @@ export class HexMapRenderer {
    * Everything that belongs to a row is drawn with that row, so a hill in front
    * hides what stands behind it. Within a row nothing overlaps, so batching
    * still holds — it is simply per row rather than per viewport.
+   *
+   * Names are the one exception: a caption is written *below* the marker it
+   * belongs to, which is where the next row is about to be painted, so drawing
+   * it with its own row leaves it sliced in half by whatever stands in front. A
+   * caption is chrome rather than scenery — it labels the map for the reader
+   * instead of standing in it — so all of them are written after the last row.
    */
   private drawLayered(model: RenderModel, range: VisibleRange): number {
     const overlaysByRow = model.overlays.map((overlay) => ({
@@ -332,6 +340,7 @@ export class HexMapRenderer {
         this.drawCoordinates(model, range, row, row);
       }
     }
+    this.drawLabels(model, model.locations, model.links);
     return cellsDrawn;
   }
 
@@ -458,12 +467,6 @@ export class HexMapRenderer {
       ctx.fillStyle = CHROME.locationText;
       ctx.font = `${Math.round(radius * 1.3)}px system-ui, sans-serif`;
       ctx.fillText('★', center.x, center.y - this.layout.size * 0.13);
-
-      if (this.camera.zoom > 0.7) {
-        ctx.fillStyle = CHROME.locationFill;
-        ctx.font = `${Math.round(this.layout.size * 0.28)}px system-ui, sans-serif`;
-        ctx.fillText(location.name, center.x, center.y + this.layout.size * 0.5);
-      }
     }
   }
 
@@ -495,12 +498,41 @@ export class HexMapRenderer {
       ctx.fillStyle = CHROME.linkText;
       ctx.font = `${Math.round(radius * 1.1)}px system-ui, sans-serif`;
       ctx.fillText('\u25B8', center.x, y);
+    }
+  }
 
-      if (this.camera.zoom > 0.7 && link.label.length > 0) {
-        ctx.fillStyle = CHROME.linkLabel;
-        ctx.font = `${Math.round(this.layout.size * 0.28)}px system-ui, sans-serif`;
-        ctx.fillText(link.label, center.x, center.y + this.layout.size * 0.5);
+  /**
+   * Writes the names of locations and doors, on top of everything already drawn.
+   *
+   * Deliberately its own pass rather than part of {@link drawLocations} and
+   * {@link drawLinks}: see {@link drawLayered}.
+   */
+  private drawLabels(
+    model: RenderModel,
+    locations: readonly RenderLocation[],
+    links: readonly RenderLink[],
+  ): void {
+    if (this.camera.zoom <= 0.7) {
+      return;
+    }
+    const ctx = this.context;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `${Math.round(this.layout.size * 0.28)}px system-ui, sans-serif`;
+
+    ctx.fillStyle = CHROME.locationFill;
+    for (const location of locations) {
+      const center = this.centerOf(model, location.at);
+      ctx.fillText(location.name, center.x, center.y + this.layout.size * 0.5);
+    }
+
+    ctx.fillStyle = CHROME.linkLabel;
+    for (const link of links) {
+      if (link.label.length === 0) {
+        continue;
       }
+      const center = this.centerOf(model, link.at);
+      ctx.fillText(link.label, center.x, center.y + this.layout.size * 0.5);
     }
   }
 
