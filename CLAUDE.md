@@ -111,6 +111,27 @@ Prefer:
 - texture caching
 - batched rendering
 
+## Versioning
+
+The project is **pre-1.0**. Until a 1.x release, a breaking change is the
+preferred answer, not a last resort: rename crates and types, change a schema,
+move a storage key, drop a field. Do not write migration shims, dual readers,
+deprecation aliases or fallbacks to keep old names, old files or old browser
+state working — that compatibility has no users yet, and carrying it is what
+makes the eventual 1.0 shape worse.
+
+What this does **not** excuse:
+
+- a schema change still bumps `WORLD_SCHEMA_VERSION` / `TILE_SET_SCHEMA_VERSION`
+  and is still written down in `docs/content-format.md` (`.claude/rules/specs.md`);
+- every caller, test and document still moves in the same change — "breaking" is
+  not "leaving it inconsistent";
+- the gates and the smoke run still have to pass.
+
+Say plainly in the commit message what breaks and what is discarded, so the
+change is legible later. Once 1.x ships, this section is void and compatibility
+becomes a real constraint.
+
 ## Rules for Claude
 
 Before changing an architectural decision:
