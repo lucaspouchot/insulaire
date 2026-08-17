@@ -1,0 +1,34 @@
+{
+  "name": "mvp-vertical-slice",
+  "world": "demo_world",
+  "seed": 2026,
+  "viewport": { "width": 1440, "height": 900 },
+
+  "steps": [
+    { "label": "wait one tick", "cmd": { "type": "wait" } },
+    { "label": "first legal move", "legal": 0 },
+    { "label": "second legal move", "legal": 1 },
+    { "label": "third legal move", "legal": 2 },
+    { "label": "wait again", "cmd": { "type": "wait" } },
+    { "label": "illegal: distant hex", "cmd": { "type": "moveTo", "to": [0, 0] } },
+    { "label": "illegal: off the map", "cmd": { "type": "moveTo", "to": [-1, -1] } },
+    { "label": "legal move after refusals", "legal": 0 },
+    { "label": "keep walking", "legal": 0 },
+    { "label": "keep walking", "legal": 0 },
+    { "label": "keep walking", "legal": 0 },
+    { "label": "final wait", "cmd": { "type": "wait" } }
+  ],
+
+  "pages": [
+    { "name": "editor-map", "path": "/editor/map", "settleMs": 2000 },
+    {
+      "name": "play",
+      "path": "/play",
+      "settleMs": 2000,
+      "clicks": [
+        [0.268, 0.511],
+        [0.52, 0.52]
+      ]
+    }
+  ]
+}

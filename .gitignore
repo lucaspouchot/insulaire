@@ -27,3 +27,8 @@ Thumbs.db
 
 # Client deliveries produced by `just deliver`
 /deliveries/
+
+# Smoke-test runs and their local baseline, written by the verify-no-regression
+# skill. The baseline is per-machine on purpose: it holds screenshots taken by
+# this machine's browser and fonts.
+/.smoke/
