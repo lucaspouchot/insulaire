@@ -19,9 +19,19 @@ const CLICK_SLOP_PX = 4;
 export interface CanvasViewHandlers {
   /** The hex under the cursor changed (or the cursor left the map). */
   onHover?(cell: Offset | null): void;
-  /** A hex was clicked without dragging. */
+  /**
+   * A hex was clicked without dragging — on release, never on press.
+   *
+   * A press that turns into a stroke reports through {@link onDragPaint} only,
+   * so a consumer that implements both never sees the same press twice.
+   */
   onClick?(cell: Offset, event: PointerEvent): void;
-  /** The pointer was dragged across a hex with the primary button held. */
+  /**
+   * The pointer was dragged across a hex with the primary button held.
+   *
+   * The cell the press started on is reported here too, but only once the press
+   * has become a stroke — a press and release on a single hex is a click.
+   */
   onDragPaint?(cell: Offset): void;
   /** The viewport was resized, in CSS pixels. */
   onResize?(width: number, height: number): void;
@@ -38,8 +48,11 @@ export class CanvasView {
   private viewportHeight = 0;
 
   private pointerDownAt: Point | null = null;
+  private pointerDownCell: Offset | null = null;
   private panning = false;
   private painting = false;
+  /** Set once a press has left the hex it started on, making it a stroke. */
+  private stroking = false;
   private lastPaintedCell: Offset | null = null;
   private hovered: Offset | null = null;
 
@@ -150,6 +163,14 @@ export class CanvasView {
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
   }
 
+  /**
+   * Arms a press without acting on it.
+   *
+   * Nothing is reported here on purpose: a press whose tool is not idempotent —
+   * raise, lower — would otherwise be applied twice, once now and once as the
+   * click on release. The press only becomes a stroke when the pointer leaves
+   * the hex it started on, and until then the release decides.
+   */
   private handlePointerDown(event: PointerEvent): void {
     this.canvas.setPointerCapture(event.pointerId);
     this.pointerDownAt = this.pointAt(event);
@@ -158,15 +179,9 @@ export class CanvasView {
     // button paints or selects.
     this.panning = event.button === 1 || event.button === 2;
     this.painting = event.button === 0 && this.handlers.onDragPaint !== undefined;
-    this.lastPaintedCell = null;
-
-    if (this.painting) {
-      const cell = this.renderer.cellAtScreen(this.pointerDownAt);
-      if (cell !== null) {
-        this.lastPaintedCell = cell;
-        this.handlers.onDragPaint?.(cell);
-      }
-    }
+    this.stroking = false;
+    this.pointerDownCell = this.renderer.cellAtScreen(this.pointerDownAt);
+    this.lastPaintedCell = this.pointerDownCell;
   }
 
   private handlePointerMove(event: PointerEvent): void {
@@ -186,6 +201,14 @@ export class CanvasView {
     }
 
     if (this.painting && cell !== null && !sameOffset(cell, this.lastPaintedCell)) {
+      // Leaving the first hex is what turns a press into a stroke; that hex is
+      // reported now, since the release will no longer count as a click.
+      if (!this.stroking) {
+        this.stroking = true;
+        if (this.pointerDownCell !== null) {
+          this.handlers.onDragPaint?.(this.pointerDownCell);
+        }
+      }
       this.lastPaintedCell = cell;
       this.handlers.onDragPaint?.(cell);
     }
@@ -193,7 +216,10 @@ export class CanvasView {
 
   private handlePointerUp(event: PointerEvent): void {
     const start = this.pointerDownAt;
+    const from = this.pointerDownCell;
+    const wasStroking = this.stroking;
     this.pointerDownAt = null;
+    this.pointerDownCell = null;
 
     if (this.canvas.hasPointerCapture(event.pointerId)) {
       this.canvas.releasePointerCapture(event.pointerId);
@@ -202,22 +228,30 @@ export class CanvasView {
     const wasPanning = this.panning;
     this.panning = false;
     this.painting = false;
+    this.stroking = false;
     this.lastPaintedCell = null;
 
-    if (wasPanning || start === null || event.button !== 0) {
+    // A stroke has already reported every hex it crossed, including the first.
+    if (wasPanning || wasStroking || start === null || event.button !== 0) {
       return;
     }
 
     const end = this.pointAt(event);
+    const cell = this.renderer.cellAtScreen(end);
+    if (cell === null) {
+      return;
+    }
+
+    // Releasing on the hex the press started on is a click however far the
+    // pointer wandered inside it — hex identity is the real threshold, and a
+    // hexagon is far wider than the pixel slop. The slop still decides presses
+    // that started off the map, where there is no hex to compare against.
     const travelled = Math.hypot(end.x - start.x, end.y - start.y);
-    if (travelled > CLICK_SLOP_PX) {
+    if (travelled > CLICK_SLOP_PX && !sameOffset(cell, from)) {
       return; // a drag, not a click
     }
 
-    const cell = this.renderer.cellAtScreen(end);
-    if (cell !== null) {
-      this.handlers.onClick?.(cell, event);
-    }
+    this.handlers.onClick?.(cell, event);
   }
 
   private handlePointerLeave(): void {

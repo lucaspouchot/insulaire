@@ -102,6 +102,41 @@ describe('HexMapRenderer hit-testing', () => {
     expect(rendererFor(model('isometric')).cellAtScreen(screen)).toEqual(behind);
   });
 
+  /**
+   * A cell dug *below* its neighbours exposes their side faces just as a raised
+   * cell exposes its own — the drop is the same drop, seen from the other end.
+   * The renderer used to anchor every side face at elevation `0`, so nothing was
+   * drawn here and the background showed through the gap.
+   */
+  it('picks the cell above a dug neighbour by the side face the drop exposes', () => {
+    const width = 10;
+    const height = 10;
+    const above = offset(4, 5);
+    const depth = 3;
+    const elevation = new Int8Array(width * height);
+    // The cell the *front-right* edge of `above` faces: odd rows lean right.
+    elevation[(above.row + 1) * width + above.col + 1] = -depth;
+
+    const renderer = rendererFor({
+      ...emptyRenderModel(),
+      width,
+      height,
+      projection: 'isometric',
+      terrain: new Uint8Array(width * height),
+      elevation,
+      elevationRange: { min: -depth, max: 0 },
+    });
+    const projection = Projection.for('isometric', HEX_SIZE);
+    const center = renderer.layout.centerOf(above);
+
+    // Halfway down the exposed face, on the front-right edge — right of the
+    // bottom corner, where the cell in front no longer covers anything.
+    const edge = projection.project({ x: center.x + HEX_SIZE * 0.4, y: center.y + HEX_SIZE * 0.8 });
+    expect(renderer.cellAtScreen({ x: edge.x, y: edge.y + projection.liftOf(depth) / 2 })).toEqual(
+      above,
+    );
+  });
+
   it('returns null outside the map', () => {
     const renderer = rendererFor(model('isometric', true));
     expect(renderer.cellAtScreen({ x: -500, y: -500 })).toBeNull();

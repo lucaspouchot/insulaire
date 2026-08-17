@@ -321,8 +321,9 @@ export class HexMapRenderer {
 
         const cell = { col, row };
         const elevation = this.elevationAt(model, index);
-        if (elevation > 0) {
-          this.addWallTo(pathFor(walls, paletteIndex), cell, elevation);
+        const base = this.wallBaseOf(model, cell);
+        if (elevation > base) {
+          this.addWallTo(pathFor(walls, paletteIndex), cell, elevation, base);
         }
         this.addHexTo(pathFor(tops, paletteIndex), cell, elevation);
       }
@@ -470,10 +471,11 @@ export class HexMapRenderer {
     }
     const ctx = this.context;
     const elevation = this.elevationOf(model, cell);
+    const base = this.wallBaseOf(model, cell);
     const path = new Path2D();
     this.addHexTo(path, cell, elevation);
-    if (elevation > 0) {
-      this.addWallTo(path, cell, elevation);
+    if (elevation > base) {
+      this.addWallTo(path, cell, elevation, base);
     }
     ctx.lineWidth = width / this.camera.zoom;
     ctx.strokeStyle = color;
@@ -564,6 +566,31 @@ export class HexMapRenderer {
     return this.projection.project(this.layout.centerOf(cell), this.elevationOf(model, cell));
   }
 
+  /**
+   * The elevation a cell's side face has to reach down to.
+   *
+   * A cliff is only needed where something in *front* of the cell sits lower.
+   * The two cells its front edges face — SE and SW, both in the next row — cover
+   * everything below their own top faces, so the face has to span exactly the
+   * drop to the lower of the two; a cell off the map counts as ground, which is
+   * what gives the map a skirt along its front edge.
+   *
+   * Anchoring the face at `0` instead, as this used to, is wrong in both
+   * directions: it extrudes further than anything can see when the neighbours
+   * are raised, and — the visible bug — it draws *nothing* for a cell standing
+   * at or below `0` next to a cell dug below it, leaving the background showing
+   * through the gap the drop opens.
+   */
+  private wallBaseOf(model: RenderModel, cell: Offset): number {
+    // odd-r: even rows put their SW neighbour a column left, odd rows lean right
+    // (`docs/adr/ADR-0014-hex-coordinate-model.md`).
+    const west = cell.row % 2 === 0 ? cell.col - 1 : cell.col;
+    return Math.min(
+      this.elevationOf(model, { col: west, row: cell.row + 1 }),
+      this.elevationOf(model, { col: west + 1, row: cell.row + 1 }),
+    );
+  }
+
   /** The projected corners of a cell's top face. */
   private cornersOf(cell: Offset, elevation: number): Point[] {
     return this.layout
@@ -576,14 +603,14 @@ export class HexMapRenderer {
   }
 
   /**
-   * Adds the side face of an elevated cell: the three front edges of its top
-   * face, dropped back down to the cell's own row.
+   * Adds the side face of an elevated cell: the near edges of its top face,
+   * dropped down to `base` (see {@link wallBaseOf}).
    *
    * Corners 1, 2 and 3 are the near ones — a pointy-top hexagon puts its corners
    * at `60i - 30` degrees, so those three are the ones below the centre.
    */
-  private addWallTo(path: Path2D, cell: Offset, elevation: number): void {
-    const lift = this.projection.liftOf(elevation);
+  private addWallTo(path: Path2D, cell: Offset, elevation: number, base: number): void {
+    const lift = this.projection.liftOf(elevation - base);
     if (lift <= 0) {
       return;
     }
@@ -600,7 +627,13 @@ export class HexMapRenderer {
     ]);
   }
 
-  /** `true` when `drawing` lands on a cell's top face or its exposed side. */
+  /**
+   * `true` when `drawing` lands on a cell's top face or its exposed side.
+   *
+   * The side is measured with {@link wallBaseOf}, the same way it is drawn: the
+   * pointer must agree with the picture, so a cliff face that is painted is
+   * clickable and one that is not is transparent to the search behind it.
+   */
   private cellCovers(
     model: RenderModel,
     projection: Projection,
@@ -616,7 +649,7 @@ export class HexMapRenderer {
       return true;
     }
 
-    const lift = projection.liftOf(elevation);
+    const lift = projection.liftOf(elevation - this.wallBaseOf(model, cell));
     if (lift <= 0) {
       return false;
     }
