@@ -1,6 +1,6 @@
 //! Shared content fixtures.
 //!
-//! Enabled by the `testing` feature so that `hex-simulation` and `hex-engine`
+//! Enabled by the `testing` feature so that `insulaire-simulation` and `insulaire-engine`
 //! can build their tests on the same small world instead of each inventing one.
 //! The feature is off by default, so none of this reaches the WASM bundle.
 

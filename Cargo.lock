@@ -25,37 +25,37 @@ dependencies = [
 ]
 
 [[package]]
-name = "hex-engine"
+name = "insulaire-engine"
 version = "0.1.0"
 dependencies = [
- "hex-simulation",
- "hex-world",
+ "insulaire-simulation",
+ "insulaire-world",
  "serde",
  "serde_json",
  "thiserror",
 ]
 
 [[package]]
-name = "hex-simulation"
+name = "insulaire-simulation"
 version = "0.1.0"
 dependencies = [
- "hex-world",
+ "insulaire-world",
  "serde",
  "serde_json",
  "thiserror",
 ]
 
 [[package]]
-name = "hex-wasm"
+name = "insulaire-wasm"
 version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
- "hex-engine",
+ "insulaire-engine",
  "wasm-bindgen",
 ]
 
 [[package]]
-name = "hex-world"
+name = "insulaire-world"
 version = "0.1.0"
 dependencies = [
  "serde",

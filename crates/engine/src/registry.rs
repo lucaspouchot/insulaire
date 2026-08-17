@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use hex_world::{
+use insulaire_world::{
     validate_project, validate_project_links, validate_project_zones, validate_tile_set,
     validate_world, ProjectDefinition, TemplateRegistry, TileSetDefinition, ValidationReport,
     WorldDefinition,
@@ -221,11 +221,11 @@ mod tests {
     use super::*;
 
     fn tile_set_json() -> String {
-        serde_json::to_string(&hex_world::testing::sample_tile_set()).expect("serialise")
+        serde_json::to_string(&insulaire_world::testing::sample_tile_set()).expect("serialise")
     }
 
     fn world_json() -> String {
-        serde_json::to_string(&hex_world::testing::sample_world()).expect("serialise")
+        serde_json::to_string(&insulaire_world::testing::sample_world()).expect("serialise")
     }
 
     fn loaded() -> ContentRegistry {
@@ -293,7 +293,7 @@ mod tests {
     #[test]
     fn reloading_a_world_replaces_the_previous_definition() {
         let mut registry = loaded();
-        let mut world = hex_world::testing::sample_world();
+        let mut world = insulaire_world::testing::sample_world();
         world.name = "Renamed".into();
         registry
             .load_world(&serde_json::to_string(&world).expect("serialise"))
@@ -321,8 +321,8 @@ mod tests {
             .load_tile_set(&tile_set_json())
             .expect("tile set loads");
         for world in [
-            hex_world::testing::linked_world(),
-            hex_world::testing::interior_world(),
+            insulaire_world::testing::linked_world(),
+            insulaire_world::testing::interior_world(),
         ] {
             registry
                 .load_world(&serde_json::to_string(&world).expect("serialise"))
@@ -338,7 +338,9 @@ mod tests {
             .load_tile_set(&tile_set_json())
             .expect("tile set loads");
         registry
-            .load_world(&serde_json::to_string(&hex_world::testing::linked_world()).expect("json"))
+            .load_world(
+                &serde_json::to_string(&insulaire_world::testing::linked_world()).expect("json"),
+            )
             .expect("a world with an unresolved link still loads on its own");
 
         let report = registry.validate_links();
@@ -382,14 +384,15 @@ mod tests {
             .load_tile_set(&tile_set_json())
             .expect("tile set loads");
 
-        let mut world = hex_world::testing::linked_world();
+        let mut world = insulaire_world::testing::linked_world();
         world.zone = "caves".to_owned();
         registry
             .load_world(&serde_json::to_string(&world).expect("serialise"))
             .expect("a world validates on its own whatever zone it names");
         registry
             .load_world(
-                &serde_json::to_string(&hex_world::testing::interior_world()).expect("serialise"),
+                &serde_json::to_string(&insulaire_world::testing::interior_world())
+                    .expect("serialise"),
             )
             .expect("world loads");
 
@@ -433,7 +436,7 @@ mod tests {
             .load_tile_set(&tile_set_json())
             .expect("tile set loads");
 
-        let mut world = hex_world::testing::sample_world();
+        let mut world = insulaire_world::testing::sample_world();
         world
             .entities
             .retain(|entity| entity.template_id == "player");

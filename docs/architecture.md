@@ -89,10 +89,10 @@ browser. `cargo test` runs the entire simulation without WASM.
 
 | Crate | Owns | Does not know about |
 |---|---|---|
-| `hex-world` | Hex coordinates, `WorldDefinition`, `TileSetDefinition`, entity templates, validation, the flattened `WorldGrid`. | Ticks, rules, entities in motion. |
-| `hex-simulation` | `GameState`, the tick pipeline, movement rules, monster AI, the deterministic RNG. | Serialisation for hosts, JSON, JavaScript. |
-| `hex-engine` | The facade, the content registry, the DTOs, the string contract. | `wasm-bindgen`. |
-| `hex-wasm` | `#[wasm_bindgen]` declarations. | Everything else — it holds no logic. |
+| `insulaire-world` | Hex coordinates, `WorldDefinition`, `TileSetDefinition`, entity templates, validation, the flattened `WorldGrid`. | Ticks, rules, entities in motion. |
+| `insulaire-simulation` | `GameState`, the tick pipeline, movement rules, monster AI, the deterministic RNG. | Serialisation for hosts, JSON, JavaScript. |
+| `insulaire-engine` | The facade, the content registry, the DTOs, the string contract. | `wasm-bindgen`. |
+| `insulaire-wasm` | `#[wasm_bindgen]` declarations. | Everything else — it holds no logic. |
 
 ## Where the seams are
 

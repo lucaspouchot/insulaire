@@ -22,9 +22,9 @@ import {
   CommandResult,
   EngineInfo,
   GameSnapshot,
-  HexEngineModule,
+  InsulaireEngineModule,
   LoadOutcome,
-  RawHexEngine,
+  RawInsulaireEngine,
   ValidationReport,
   WorldView,
 } from './engine.types';
@@ -32,8 +32,8 @@ import {
 // Vitest runs with `apps/web` as its root, so the repository root is two levels up.
 const repoRoot = resolve(process.cwd(), '../..');
 const pkgDir = resolve(process.cwd(), 'public/wasm');
-const glueUrl = pathToFileURL(resolve(pkgDir, 'hex_engine.js')).href;
-const wasmPath = resolve(pkgDir, 'hex_engine_bg.wasm');
+const glueUrl = pathToFileURL(resolve(pkgDir, 'insulaire_engine.js')).href;
+const wasmPath = resolve(pkgDir, 'insulaire_engine_bg.wasm');
 
 const built = existsSync(wasmPath);
 
@@ -46,22 +46,22 @@ function readJson<T>(relativePath: string): T {
 }
 
 describe.skipIf(!built)('engine boundary', () => {
-  let module: HexEngineModule;
+  let module: InsulaireEngineModule;
   const tileSetJson = () => readText('content/tilesets/mvp_terrain.json');
   const worldJson = () => readText('content/worlds/demo_world.json');
 
   beforeAll(async () => {
-    module = (await import(/* @vite-ignore */ glueUrl)) as HexEngineModule;
+    module = (await import(/* @vite-ignore */ glueUrl)) as InsulaireEngineModule;
     // Node cannot `fetch` a file:// URL, so the bytes are handed over directly.
     // wasm-bindgen accepts a BufferSource in place of a URL.
     await module.default({ module_or_path: readFileSync(wasmPath) as unknown as string });
   });
 
-  function engine(): RawHexEngine {
-    return new module.HexEngine();
+  function engine(): RawInsulaireEngine {
+    return new module.InsulaireEngine();
   }
 
-  function loaded(): RawHexEngine {
+  function loaded(): RawInsulaireEngine {
     const instance = engine();
     instance.loadTileSet(tileSetJson());
     instance.loadWorld(worldJson());
@@ -71,7 +71,7 @@ describe.skipIf(!built)('engine boundary', () => {
   it('reports that it is running as WebAssembly', () => {
     const info = JSON.parse(engine().engineInfo()) as EngineInfo;
 
-    expect(info.name).toBe('hex-engine');
+    expect(info.name).toBe('insulaire-engine');
     expect(info.targetArch).toBe('wasm32');
     expect(info.pointerWidth).toBe(32);
     expect(info.worldSchemaVersion).toBe(1);

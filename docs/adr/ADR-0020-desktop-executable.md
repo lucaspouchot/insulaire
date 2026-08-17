@@ -47,7 +47,7 @@ single game rule. `frontendDist` points at the `deliver` build, so what ships is
 still the editor-free bundle ADR-0018 defines, produced by the same file
 replacement.
 
-**The engine stays WebAssembly inside the webview.** Linking `hex-engine`
+**The engine stays WebAssembly inside the webview.** Linking `insulaire-engine`
 natively and calling it over Tauri's IPC was rejected for now: the editor's
 browser build needs the WASM boundary anyway, so a native path would mean two
 boundaries to keep in step, and every tick would pay a serialisation it does not

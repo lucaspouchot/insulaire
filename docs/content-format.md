@@ -119,7 +119,7 @@ drawn while a texture loads. Rendering *logic* never appears in content.
       "targetAt": [3, 4], "name": "Refuge", "tags": ["door"] }
   ],
   "metadata": {
-    "author": "hex-engine",
+    "author": "insulaire",
     "description": "…",
     "updatedAt": "2026-08-16T00:00:00.000Z"
   }
@@ -309,7 +309,7 @@ single world file, because worlds only ever reference an id.
 
 ## Validation
 
-Run by `hex_world::validate_world`, used identically by the editor and the
+Run by `insulaire_world::validate_world`, used identically by the editor and the
 runtime (ADR-0015). Each issue carries a stable `code`, a `severity`, a `path`
 such as `entities[3].at`, and a message.
 

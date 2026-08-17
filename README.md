@@ -1,4 +1,4 @@
-# Hex Engine
+# Insulaire
 
 A browser-based turn-based game engine with an **authored** hexagonal world, an
 Angular UI/editor, and a Rust/WebAssembly simulation.

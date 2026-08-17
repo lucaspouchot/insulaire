@@ -141,7 +141,7 @@ export interface ContentRef {
 /**
  * Id of the zone a project falls back on when it declares none.
  *
- * Mirrors `hex_world::DEFAULT_ZONE_ID`.
+ * Mirrors `insulaire_world::DEFAULT_ZONE_ID`.
  */
 export const DEFAULT_ZONE_ID = 'default';
 

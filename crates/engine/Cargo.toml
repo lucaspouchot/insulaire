@@ -1,5 +1,5 @@
 [package]
-name = "hex-engine"
+name = "insulaire-engine"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,11 +12,11 @@ categories.workspace = true
 missing_docs = "warn"
 
 [dependencies]
-hex-simulation = { workspace = true }
-hex-world = { workspace = true }
+insulaire-simulation = { workspace = true }
+insulaire-world = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-hex-world = { workspace = true, features = ["testing"] }
+insulaire-world = { workspace = true, features = ["testing"] }

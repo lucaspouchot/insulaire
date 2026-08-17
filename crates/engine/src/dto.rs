@@ -9,8 +9,8 @@
 //! space authored files and the editor use. Axial coordinates are included on
 //! entity snapshots as a convenience for renderers, never as the primary key.
 
-use hex_simulation::{EntityRuntime, Rng, SimEvent};
-use hex_world::{
+use insulaire_simulation::{EntityRuntime, Rng, SimEvent};
+use insulaire_world::{
     EntityKind, Hex, LinkTrigger, MapLinkDefinition, OffsetCoord, ProjectDefinition, ResolvedTile,
 };
 use serde::{Deserialize, Serialize};
@@ -30,11 +30,11 @@ pub enum Command {
     Wait,
 }
 
-impl From<Command> for hex_simulation::Action {
+impl From<Command> for insulaire_simulation::Action {
     fn from(command: Command) -> Self {
         match command {
-            Command::MoveTo { to } => hex_simulation::Action::MoveTo(Hex::from_offset(to)),
-            Command::Wait => hex_simulation::Action::Wait,
+            Command::MoveTo { to } => insulaire_simulation::Action::MoveTo(Hex::from_offset(to)),
+            Command::Wait => insulaire_simulation::Action::Wait,
         }
     }
 }
@@ -156,7 +156,7 @@ pub struct CommandResult {
     /// `true` when the command was applied and the tick advanced.
     pub accepted: bool,
     /// Present only on rejection.
-    pub rejection: Option<hex_simulation::Rejection>,
+    pub rejection: Option<insulaire_simulation::Rejection>,
     /// Ordered observable changes.
     pub events: Vec<SimEvent>,
     /// The state after the command; unchanged when `accepted` is `false`.
@@ -378,7 +378,7 @@ pub struct LoadOutcome {
     /// Id of the loaded content.
     pub id: String,
     /// Validation findings; the content is registered only when `valid`.
-    pub report: hex_world::ValidationReport,
+    pub report: insulaire_world::ValidationReport,
 }
 
 /// Build identity of the engine, so the UI can prove which binary it is talking
@@ -409,8 +409,8 @@ impl EngineInfo {
             version: env!("CARGO_PKG_VERSION").to_owned(),
             target_arch: std::env::consts::ARCH.to_owned(),
             pointer_width: usize::BITS,
-            world_schema_version: hex_world::WORLD_SCHEMA_VERSION,
-            tile_set_schema_version: hex_world::TILE_SET_SCHEMA_VERSION,
+            world_schema_version: insulaire_world::WORLD_SCHEMA_VERSION,
+            tile_set_schema_version: insulaire_world::TILE_SET_SCHEMA_VERSION,
         }
     }
 }
@@ -430,8 +430,8 @@ mod tests {
             }
         );
         assert_eq!(
-            hex_simulation::Action::from(command),
-            hex_simulation::Action::MoveTo(Hex::from_offset(OffsetCoord::new(3, 4)))
+            insulaire_simulation::Action::from(command),
+            insulaire_simulation::Action::MoveTo(Hex::from_offset(OffsetCoord::new(3, 4)))
         );
 
         let wait: Command = serde_json::from_str(r#"{"type":"wait"}"#).expect("parse");
@@ -449,8 +449,11 @@ mod tests {
     #[test]
     fn engine_info_reports_the_compiled_target() {
         let info = EngineInfo::current();
-        assert_eq!(info.name, "hex-engine");
-        assert_eq!(info.world_schema_version, hex_world::WORLD_SCHEMA_VERSION);
+        assert_eq!(info.name, "insulaire-engine");
+        assert_eq!(
+            info.world_schema_version,
+            insulaire_world::WORLD_SCHEMA_VERSION
+        );
         assert!(info.pointer_width == 32 || info.pointer_width == 64);
     }
 }

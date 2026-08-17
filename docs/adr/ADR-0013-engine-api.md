@@ -12,7 +12,7 @@ ADR-0001 and ADR-0002 put the GameState in Rust and the UI in Angular, but did n
 
 ## Decision
 
-The engine exposes one facade — `hex_engine::Engine` — with an explicit, small API:
+The engine exposes one facade — `insulaire_engine::Engine` — with an explicit, small API:
 
 ```text
 loadTileSet(json)    -> LoadOutcome
@@ -37,7 +37,7 @@ Structured payloads cross as JSON strings; the terrain buffer does not use JSON.
 
 An *illegal* command is not an error: `dispatch` returns `accepted: false` with a `rejection`, and the state is untouched.
 
-The string contract lives in `hex_engine::JsonEngine` rather than in the WASM crate, so it is covered by ordinary `cargo test`. `hex-wasm` is a pass-through with no logic of its own.
+The string contract lives in `insulaire_engine::JsonEngine` rather than in the WASM crate, so it is covered by ordinary `cargo test`. `insulaire-wasm` is a pass-through with no logic of its own.
 
 ## Consequences
 

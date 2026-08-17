@@ -1,4 +1,4 @@
-# CLAUDE.md — Hex Engine
+# CLAUDE.md — Insulaire
 
 ## Mission
 

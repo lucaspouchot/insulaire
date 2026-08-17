@@ -19,12 +19,12 @@ export const EDITOR_ROUTES: Routes = [
       { path: '', pathMatch: 'full', redirectTo: 'map' },
       {
         path: 'map',
-        title: 'Hex Engine — Map editor',
+        title: 'Insulaire — Map editor',
         loadComponent: () => import('./map/map-editor-page').then((m) => m.MapEditorPage),
       },
       ...EDITOR_MODULES.filter((module) => module.status === 'planned').map((module) => ({
         path: module.id,
-        title: `Hex Engine — ${module.title}`,
+        title: `Insulaire — ${module.title}`,
         data: { moduleId: module.id },
         loadComponent: () => import('./planned/planned-module-page').then((m) => m.PlannedModulePage),
       })),

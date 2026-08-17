@@ -1,5 +1,5 @@
 ---
-description: "Create a new Architecture Decision Record (ADR) for the Hex Engine project."
+description: "Create a new Architecture Decision Record (ADR) for the Insulaire project."
 ---
 
 Create an Architecture Decision Record in `docs/adr/`.

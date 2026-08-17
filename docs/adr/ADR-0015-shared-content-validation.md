@@ -9,10 +9,10 @@ ADR-0008 requires that the editor "must not implement a second version of game r
 
 ## Decision
 
-There is exactly one validator, `hex_world::validate_world`, written in Rust.
+There is exactly one validator, `insulaire_world::validate_world`, written in Rust.
 
 - The **runtime** runs it inside `Engine::load_world`. A world is registered only if it has no errors.
-- The **editor** runs it through WASM via `HexEngine.validateWorld(json)`, which validates without registering anything.
+- The **editor** runs it through WASM via `InsulaireEngine.validateWorld(json)`, which validates without registering anything.
 
 Both receive the same `ValidationReport`: a `valid` flag plus a list of issues, each with a stable `code`, a `severity`, a JSON-ish `path` such as `entities[3].at`, and a human message.
 
@@ -36,4 +36,4 @@ Negative:
 
 ## Rule
 
-Any check that decides whether content is loadable belongs to `hex_world::validation`. TypeScript may check what it can *represent* (a tile id that is not in the palette, a position outside the grid), never what is *valid*.
+Any check that decides whether content is loadable belongs to `insulaire_world::validation`. TypeScript may check what it can *represent* (a tile id that is not in the palette, a position outside the grid), never what is *valid*.

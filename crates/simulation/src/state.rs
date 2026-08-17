@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use hex_world::{
+use insulaire_world::{
     validate_world, EntityKind, GridError, Hex, MapLinkDefinition, TemplateRegistry,
     TileSetDefinition, ValidationReport, WorldDefinition, WorldGrid,
 };
@@ -230,7 +230,7 @@ impl GameState {
         let at = hex.to_offset();
         self.links
             .iter()
-            .find(|link| link.at == at && link.trigger == hex_world::LinkTrigger::Enter)
+            .find(|link| link.at == at && link.trigger == insulaire_world::LinkTrigger::Enter)
     }
 
     /// Every monster currently on the map.
@@ -245,7 +245,7 @@ impl GameState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hex_world::testing;
+    use insulaire_world::testing;
 
     fn state(seed: u64) -> GameState {
         GameState::create(

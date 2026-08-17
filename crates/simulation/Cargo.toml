@@ -1,5 +1,5 @@
 [package]
-name = "hex-simulation"
+name = "insulaire-simulation"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,10 +12,10 @@ categories.workspace = true
 missing_docs = "warn"
 
 [dependencies]
-hex-world = { workspace = true }
+insulaire-world = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-hex-world = { workspace = true, features = ["testing"] }
+insulaire-world = { workspace = true, features = ["testing"] }
 serde_json = { workspace = true }

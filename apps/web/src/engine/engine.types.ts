@@ -237,7 +237,7 @@ export class EngineError extends Error {
  * Every method that can fail throws a JSON string; {@link EngineService} wraps
  * them so the rest of the app only ever sees {@link EngineError}.
  */
-export interface RawHexEngine {
+export interface RawInsulaireEngine {
   engineInfo(): string;
   loadTileSet(json: string): string;
   loadWorld(json: string): string;
@@ -258,7 +258,7 @@ export interface RawHexEngine {
 }
 
 /** The module shape produced by `wasm-pack build --target web`. */
-export interface HexEngineModule {
+export interface InsulaireEngineModule {
   default(options?: { module_or_path?: string | URL }): Promise<unknown>;
-  HexEngine: new () => RawHexEngine;
+  InsulaireEngine: new () => RawInsulaireEngine;
 }

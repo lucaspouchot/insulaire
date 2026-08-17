@@ -4,15 +4,15 @@ The engine's whole public surface. Decided in ADR-0013.
 
 ```text
 ┌─────────────────────────────────────────── Angular ───────────────────────────────────────────┐
-│  EditorPage / PlayPage        →  EngineService        →  /wasm/hex_engine.js (generated glue)  │
+│  EditorPage / PlayPage        →  EngineService        →  /wasm/insulaire_engine.js (generated glue)  │
 │  (UI, input, presentation)       (typed wrapper)                                               │
 └────────────────────────────────────────────┬───────────────────────────────────────────────────┘
                                              │  JSON strings + one Uint8Array
 ┌────────────────────────────────────────────▼───────────────────────────────────────────────────┐
-│  hex-wasm       thin #[wasm_bindgen] pass-through, no logic                                     │
-│  hex-engine     JsonEngine (string contract)  →  Engine (facade)  →  ContentRegistry            │
-│  hex-simulation GameState · tick pipeline · movement rules · monster AI · RNG                   │
-│  hex-world      hex coordinates · content definitions · validation · packed grid                │
+│  insulaire-wasm       thin #[wasm_bindgen] pass-through, no logic                                     │
+│  insulaire-engine     JsonEngine (string contract)  →  Engine (facade)  →  ContentRegistry            │
+│  insulaire-simulation GameState · tick pipeline · movement rules · monster AI · RNG                   │
+│  insulaire-world      hex coordinates · content definitions · validation · packed grid                │
 └────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -28,10 +28,10 @@ Rust types: `crates/engine/src/dto.rs`.
 it at runtime:
 
 ```ts
-const specifier = '/wasm/hex_engine.js';
+const specifier = '/wasm/insulaire_engine.js';
 const module = await import(/* @vite-ignore */ specifier);
-await module.default({ module_or_path: '/wasm/hex_engine_bg.wasm' });
-const engine = new module.HexEngine();
+await module.default({ module_or_path: '/wasm/insulaire_engine_bg.wasm' });
+const engine = new module.InsulaireEngine();
 ```
 
 Rebuilding the engine is `npm run wasm:build` plus a refresh — no Angular
@@ -80,7 +80,7 @@ Build identity of the running binary.
 
 ```json
 {
-  "name": "hex-engine",
+  "name": "insulaire-engine",
   "version": "0.1.0",
   "targetArch": "wasm32",
   "pointerWidth": 32,
@@ -369,9 +369,9 @@ RNG. Asserted in `tick.rs`, `lib.rs`, `shipped_content.rs` and
 
 ## Testing the boundary
 
-The string contract lives in `hex_engine::JsonEngine`, not in the WASM crate, so
+The string contract lives in `insulaire_engine::JsonEngine`, not in the WASM crate, so
 it is covered by plain `cargo test` — `crates/engine/src/json.rs` exercises
-every method, both success and failure. `hex-wasm` adds no logic to test.
+every method, both success and failure. `insulaire-wasm` adds no logic to test.
 
 `apps/web/src/engine/engine-integration.spec.ts` then drives the **real**
 `wasm-pack` output with the **real** files from `content/`, through the same

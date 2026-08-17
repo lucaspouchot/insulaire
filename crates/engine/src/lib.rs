@@ -2,7 +2,7 @@
 //!
 //! [`Engine`] is the whole public surface of the simulation: content in,
 //! commands in, compact snapshots out. It is host-agnostic — the WASM bindings
-//! in `hex-wasm` add no logic of their own, and the same facade drives the
+//! in `insulaire-wasm` add no logic of their own, and the same facade drives the
 //! native test suite.
 //!
 //! # Shape of the API
@@ -29,7 +29,7 @@
 //! # Example
 //!
 //! ```
-//! use hex_engine::{Command, Engine};
+//! use insulaire_engine::{Command, Engine};
 //! # let tile_set = r#"{"id":"t","schemaVersion":1,"tiles":[
 //! #   {"id":"grass","terrain":"grass","movementCost":1,
 //! #    "visual":{"visualId":"terrain.grass","fallbackColor":"green"}}]}"#;
@@ -48,7 +48,7 @@
 //! let result = engine.dispatch(Command::MoveTo { to: target })?;
 //! assert!(result.accepted);
 //! assert_eq!(result.state.tick, 1);
-//! # Ok::<(), hex_engine::EngineError>(())
+//! # Ok::<(), insulaire_engine::EngineError>(())
 //! ```
 
 #![forbid(unsafe_code)]
@@ -58,8 +58,8 @@ pub mod error;
 pub mod json;
 pub mod registry;
 
-use hex_simulation::{rules, tick, GameState, PendingTransition, SimEvent};
-use hex_world::{Hex, ProjectionMode, WorldDefinition, WorldGrid};
+use insulaire_simulation::{rules, tick, GameState, PendingTransition, SimEvent};
+use insulaire_world::{Hex, ProjectionMode, WorldDefinition, WorldGrid};
 
 pub use dto::{
     AxialDto, Command, CommandResult, ContentSummary, EngineInfo, EntitySnapshot, GameSnapshot,
@@ -141,7 +141,10 @@ impl Engine {
     /// # Errors
     ///
     /// [`EngineError::Parse`] when the JSON is malformed.
-    pub fn validate_world(&self, json: &str) -> Result<hex_world::ValidationReport, EngineError> {
+    pub fn validate_world(
+        &self,
+        json: &str,
+    ) -> Result<insulaire_world::ValidationReport, EngineError> {
         self.content.validate_world_json(json)
     }
 
@@ -152,7 +155,7 @@ impl Engine {
     /// loading a project, the client runs it at boot
     /// (`docs/adr/ADR-0017-map-links.md`).
     #[must_use]
-    pub fn validate_links(&self) -> hex_world::ValidationReport {
+    pub fn validate_links(&self) -> insulaire_world::ValidationReport {
         self.content.validate_links()
     }
 
@@ -240,7 +243,7 @@ impl Engine {
         // error is mapped rather than unwrapped so a future validation gap
         // surfaces as a message instead of a panic inside WASM.
         let grid = WorldGrid::build(world, tile_set).map_err(|source| {
-            EngineError::Setup(hex_simulation::GameSetupError::Grid {
+            EngineError::Setup(insulaire_simulation::GameSetupError::Grid {
                 world_id: world.id.clone(),
                 source,
             })
@@ -433,7 +436,7 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hex_world::{testing, OffsetCoord};
+    use insulaire_world::{testing, OffsetCoord};
 
     fn engine() -> Engine {
         let mut engine = Engine::new();
@@ -636,7 +639,7 @@ mod tests {
             let monster = snapshot
                 .entities
                 .iter()
-                .find(|entity| entity.kind == hex_world::EntityKind::Monster)
+                .find(|entity| entity.kind == insulaire_world::EntityKind::Monster)
                 .expect("monster");
             Hex::from_offset(monster.at).distance(Hex::from_offset(player))
         };
@@ -717,7 +720,7 @@ mod tests {
         assert_eq!(result.state.tick, 1, "a map change costs the same one tick");
         assert!(result.events.iter().any(|event| matches!(
             event,
-            hex_simulation::SimEvent::WorldEntered { to_world, .. } if to_world == "interior_world"
+            insulaire_simulation::SimEvent::WorldEntered { to_world, .. } if to_world == "interior_world"
         )));
 
         // The new map is the one the renderer will ask for, and it is loaded.
@@ -755,7 +758,7 @@ mod tests {
         );
         assert!(result.events.iter().any(|event| matches!(
             event,
-            hex_simulation::SimEvent::LinkUnresolved { link, .. } if link == "door_house"
+            insulaire_simulation::SimEvent::LinkUnresolved { link, .. } if link == "door_house"
         )));
     }
 

@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
-use hex_engine::{Command, Engine};
+use insulaire_engine::{Command, Engine};
 
 fn repo_root() -> PathBuf {
     // CARGO_MANIFEST_DIR is `<repo>/crates/engine`.
@@ -44,8 +44,8 @@ fn engine_with_shipped_content() -> Engine {
 }
 
 /// Hex distance between two offset positions, mirroring the engine's metric.
-fn distance(a: hex_world::OffsetCoord, b: hex_world::OffsetCoord) -> u32 {
-    hex_world::Hex::from_offset(a).distance(hex_world::Hex::from_offset(b))
+fn distance(a: insulaire_world::OffsetCoord, b: insulaire_world::OffsetCoord) -> u32 {
+    insulaire_world::Hex::from_offset(a).distance(insulaire_world::Hex::from_offset(b))
 }
 
 #[test]
@@ -196,11 +196,11 @@ fn chasers_reach_the_player_when_the_player_stands_still() {
     }
     assert_eq!(result.state.tick, 41);
 
-    let monsters: Vec<&hex_engine::EntitySnapshot> = result
+    let monsters: Vec<&insulaire_engine::EntitySnapshot> = result
         .state
         .entities
         .iter()
-        .filter(|entity| entity.kind == hex_world::EntityKind::Monster)
+        .filter(|entity| entity.kind == insulaire_world::EntityKind::Monster)
         .collect();
     assert_eq!(monsters.len(), 2);
 
@@ -240,7 +240,7 @@ fn illegal_moves_never_advance_the_shipped_game() {
 
     // Every hex that is *not* a legal move must be refused, and refusals must be
     // free: no tick, no monster movement, no randomness consumed.
-    let far_away = hex_world::OffsetCoord::new(19, 19);
+    let far_away = insulaire_world::OffsetCoord::new(19, 19);
     let rejected = engine
         .dispatch(Command::MoveTo { to: far_away })
         .expect("call succeeds");
@@ -260,7 +260,7 @@ fn the_shipped_world_survives_an_export_reload_round_trip() {
     // the shipped file and re-serialising it must produce content the engine
     // still accepts, which is what makes editor -> runtime safe.
     let source = read("content/worlds/demo_world.json");
-    let parsed: hex_world::WorldDefinition = serde_json::from_str(&source).expect("parse");
+    let parsed: insulaire_world::WorldDefinition = serde_json::from_str(&source).expect("parse");
     let reserialised = serde_json::to_string(&parsed).expect("serialise");
 
     let mut engine = Engine::new();
@@ -271,7 +271,7 @@ fn the_shipped_world_survives_an_export_reload_round_trip() {
         .load_world(&reserialised)
         .expect("round-tripped world loads");
 
-    let reparsed: hex_world::WorldDefinition =
+    let reparsed: insulaire_world::WorldDefinition =
         serde_json::from_str(&reserialised).expect("reparse");
     assert_eq!(parsed, reparsed, "serialisation must be lossless");
 }
@@ -281,14 +281,14 @@ fn replaying_the_demo_world_is_deterministic() {
     let script = [
         Command::Wait,
         Command::MoveTo {
-            to: hex_world::OffsetCoord::new(5, 10),
+            to: insulaire_world::OffsetCoord::new(5, 10),
         },
         Command::MoveTo {
-            to: hex_world::OffsetCoord::new(19, 19),
+            to: insulaire_world::OffsetCoord::new(19, 19),
         }, // rejected
         Command::Wait,
         Command::MoveTo {
-            to: hex_world::OffsetCoord::new(5, 11),
+            to: insulaire_world::OffsetCoord::new(5, 11),
         },
     ];
 

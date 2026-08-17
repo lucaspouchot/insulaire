@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use hex_world::{Behavior, EntityDefinition, EntityKind, EntityTemplate, Hex};
+use insulaire_world::{Behavior, EntityDefinition, EntityKind, EntityTemplate, Hex};
 use serde::{Deserialize, Serialize};
 
 /// A compact runtime handle for an entity.
@@ -120,7 +120,7 @@ impl EntityStore {
     /// Instantiates `definition` with the values from `template`.
     ///
     /// Returns the new handle. The caller is responsible for having validated
-    /// that the template exists (see `hex_world::validate_world`).
+    /// that the template exists (see `insulaire_world::validate_world`).
     pub fn spawn(&mut self, definition: &EntityDefinition, template: &EntityTemplate) -> EntityId {
         let id = EntityId(self.entities.len() as u32);
         self.entities.push(EntityRuntime {
@@ -199,7 +199,7 @@ impl EntityStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hex_world::{OffsetCoord, TemplateRegistry};
+    use insulaire_world::{OffsetCoord, TemplateRegistry};
 
     fn definition(id: &str, template_id: &str, col: i32, row: i32) -> EntityDefinition {
         EntityDefinition {

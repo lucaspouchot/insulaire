@@ -44,7 +44,7 @@ export function contentUrl(path: string): string {
   return assetUrl(`${CONTENT_ROOT}/${path}`);
 }
 
-const STORAGE_KEY = 'hex-engine.editor.project.v1';
+const STORAGE_KEY = 'insulaire.editor.project.v1';
 
 /** Where the current documents came from. */
 export type ProjectSource = 'shipped' | 'restored' | 'imported' | 'new';

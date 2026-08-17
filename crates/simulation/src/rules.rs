@@ -4,7 +4,7 @@
 //! [`validate`]. The UI never re-implements adjacency or passability checks: it
 //! asks the engine for [`legal_moves`] and highlights what comes back.
 
-use hex_world::Hex;
+use insulaire_world::Hex;
 
 use crate::action::{Action, ActionError};
 use crate::entity::EntityRuntime;
@@ -80,7 +80,9 @@ pub fn legal_moves(state: &GameState) -> Vec<Hex> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hex_world::{testing, OffsetCoord, TemplateRegistry, TileSetDefinition, WorldDefinition};
+    use insulaire_world::{
+        testing, OffsetCoord, TemplateRegistry, TileSetDefinition, WorldDefinition,
+    };
 
     use crate::state::GameState;
 

@@ -1,6 +1,6 @@
 # apps/web — Angular UI and world editor
 
-The Angular half of Hex Engine. **Build and run it from the repository root**,
+The Angular half of Insulaire. **Build and run it from the repository root**,
 not from here: the WebAssembly engine and the authored content both live
 outside this directory.
 

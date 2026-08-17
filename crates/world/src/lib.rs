@@ -12,8 +12,8 @@
 //! # Example
 //!
 //! ```
-//! use hex_world::{validate_world, TemplateRegistry, WorldGrid};
-//! # use hex_world::{TileSetDefinition, WorldDefinition};
+//! use insulaire_world::{validate_world, TemplateRegistry, WorldGrid};
+//! # use insulaire_world::{TileSetDefinition, WorldDefinition};
 //! # let tile_set: TileSetDefinition = serde_json::from_str(r#"{
 //! #   "id": "mvp_terrain", "schemaVersion": 1, "tiles": [
 //! #     { "id": "grass", "terrain": "grass", "movementCost": 1,
@@ -27,7 +27,7 @@
 //!
 //! let grid = WorldGrid::build(&world, &tile_set)?;
 //! assert_eq!(grid.cells().len(), 16);
-//! # Ok::<(), hex_world::GridError>(())
+//! # Ok::<(), insulaire_world::GridError>(())
 //! ```
 
 #![forbid(unsafe_code)]

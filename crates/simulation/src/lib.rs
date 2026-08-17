@@ -8,8 +8,8 @@
 //! # Example
 //!
 //! ```
-//! # use hex_simulation::{Action, GameState, tick, rules};
-//! # use hex_world::{TemplateRegistry, TileSetDefinition, WorldDefinition};
+//! # use insulaire_simulation::{Action, GameState, tick, rules};
+//! # use insulaire_world::{TemplateRegistry, TileSetDefinition, WorldDefinition};
 //! # let tile_set: TileSetDefinition = serde_json::from_str(r#"{
 //! #   "id": "t", "schemaVersion": 1, "tiles": [
 //! #     { "id": "grass", "terrain": "grass", "movementCost": 1,

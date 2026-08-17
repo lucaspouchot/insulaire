@@ -4,7 +4,7 @@
 //! without string-matching messages, and content errors carry the full
 //! [`ValidationReport`] so the editor can list every issue at once.
 
-use hex_world::ValidationReport;
+use insulaire_world::ValidationReport;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -40,7 +40,7 @@ pub enum EngineError {
     NoGame,
     /// A game could not be created from otherwise valid content.
     #[error("{0}")]
-    Setup(#[from] hex_simulation::GameSetupError),
+    Setup(#[from] insulaire_simulation::GameSetupError),
 }
 
 impl EngineError {
@@ -61,9 +61,10 @@ impl EngineError {
     pub fn report(&self) -> Option<&ValidationReport> {
         match self {
             EngineError::Invalid { report, .. } => Some(report),
-            EngineError::Setup(hex_simulation::GameSetupError::InvalidWorld { report, .. }) => {
-                Some(report)
-            }
+            EngineError::Setup(insulaire_simulation::GameSetupError::InvalidWorld {
+                report,
+                ..
+            }) => Some(report),
             _ => None,
         }
     }
@@ -95,7 +96,7 @@ pub struct EngineErrorPayload {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hex_world::{Severity, ValidationIssue};
+    use insulaire_world::{Severity, ValidationIssue};
 
     #[test]
     fn parse_errors_carry_no_report() {

@@ -370,9 +370,9 @@ async function recordTranscript(page, baseUrl, scenario) {
   await page.goto(`${baseUrl}/`);
   const script = `(async () => {
     const scenario = ${JSON.stringify(scenario)};
-    const module = await import('/wasm/hex_engine.js');
-    await module.default({ module_or_path: '/wasm/hex_engine_bg.wasm' });
-    const engine = new module.HexEngine();
+    const module = await import('/wasm/insulaire_engine.js');
+    await module.default({ module_or_path: '/wasm/insulaire_engine_bg.wasm' });
+    const engine = new module.InsulaireEngine();
     const parse = (json) => JSON.parse(json);
     const text = async (path) => {
       const response = await fetch(path);

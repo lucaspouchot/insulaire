@@ -23,7 +23,7 @@ because a door is a property of the *place*, not of the plot. A scenario should
 be able to lock a door; it should not have to own its existence.
 
 **Engine-side link following inside the tick** was rejected as a layering
-break. `hex-simulation` deliberately holds one `Arc<WorldGrid>` and knows
+break. `insulaire-simulation` deliberately holds one `Arc<WorldGrid>` and knows
 nothing about the content registry; letting the tick pipeline fetch another
 world would give the rules crate a dependency on content loading, which
 ADR-0001 and ADR-0013 exist to prevent.

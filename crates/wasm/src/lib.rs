@@ -2,7 +2,7 @@
 //!
 //! This crate contains **no game logic and no boundary logic**. The string
 //! contract — JSON in, JSON out, errors as serialised `EngineErrorPayload` —
-//! lives in [`hex_engine::JsonEngine`], where it is covered by ordinary
+//! lives in [`insulaire_engine::JsonEngine`], where it is covered by ordinary
 //! `cargo test`. Everything here is a one-line pass-through that converts
 //! `String` errors into `JsValue`.
 //!
@@ -12,7 +12,7 @@
 
 #![forbid(unsafe_code)]
 
-use hex_engine::JsonEngine;
+use insulaire_engine::JsonEngine;
 use wasm_bindgen::prelude::*;
 
 /// Installs a panic hook so Rust panics surface as readable console errors
@@ -33,12 +33,12 @@ fn to_js(error: String) -> JsValue {
 /// `{ "code": "...", "message": "...", "report"?: { ... } }`.
 #[wasm_bindgen]
 #[derive(Debug, Default)]
-pub struct HexEngine {
+pub struct InsulaireEngine {
     inner: JsonEngine,
 }
 
 #[wasm_bindgen]
-impl HexEngine {
+impl InsulaireEngine {
     /// Creates an engine with an empty content registry.
     #[wasm_bindgen(constructor)]
     #[must_use]

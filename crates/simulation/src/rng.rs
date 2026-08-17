@@ -21,7 +21,7 @@ const SPLITMIX_GAMMA: u64 = 0x9E37_79B9_7F4A_7C15;
 /// # Examples
 ///
 /// ```
-/// use hex_simulation::Rng;
+/// use insulaire_simulation::Rng;
 ///
 /// let mut a = Rng::from_seed(42);
 /// let mut b = Rng::from_seed(42);

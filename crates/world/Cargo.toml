@@ -1,5 +1,5 @@
 [package]
-name = "hex-world"
+name = "insulaire-world"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,7 +9,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [features]
-# Exposes `hex_world::testing` fixtures to downstream test suites.
+# Exposes `insulaire_world::testing` fixtures to downstream test suites.
 # Off by default so the fixtures never reach the WASM bundle.
 testing = []
 

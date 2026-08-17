@@ -44,7 +44,7 @@
     { "id": "link_refuge_exit", "at": [3, 5], "targetWorld": "demo_world", "targetAt": [3, 10], "name": "Valley", "tags": ["door"] }
   ],
   "metadata": {
-    "author": "hex-engine",
+    "author": "insulaire",
     "description": "Interior reached through the valley door; walking onto the exit returns outside.",
     "updatedAt": "2026-08-16T00:00:00.000Z"
   }

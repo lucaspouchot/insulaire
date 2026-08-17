@@ -18,7 +18,7 @@ export const routes: Routes = [
   },
   {
     path: 'play',
-    title: 'Hex Engine — Play',
+    title: 'Insulaire — Play',
     loadComponent: () => import('./features/play/play-page').then((m) => m.PlayPage),
   },
   { path: '**', redirectTo: 'editor' },

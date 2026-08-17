@@ -52,7 +52,7 @@ browser keeps running the old `.wasm`.
 npm run check               # clippy -D warnings, rustfmt, cargo test, web tests
 ```
 
-While iterating you may narrow it (`cargo test -p hex-simulation`, `npm run
+While iterating you may narrow it (`cargo test -p insulaire-simulation`, `npm run
 test:web`), but the full gate has to pass before anything is committed.
 
 ## 4. Run the smoke harness
@@ -63,7 +63,7 @@ node .claude/skills/verify-no-regression/scripts/smoke.mjs
 
 It starts the dev server itself (port 4399), launches headless Chromium, then:
 
-1. imports `/wasm/hex_engine.js` in the page, loads the shipped tile sets,
+1. imports `/wasm/insulaire_engine.js` in the page, loads the shipped tile sets,
    worlds and project, validates the map links;
 2. starts a game on the scenario's fixed seed and dispatches its command
    sequence — legal moves, waits, and deliberately illegal moves — recording

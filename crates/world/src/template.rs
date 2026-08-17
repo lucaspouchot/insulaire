@@ -31,7 +31,7 @@ pub enum Behavior {
     /// Never acts on its own; driven by player commands.
     PlayerControlled,
     /// Steps one hex towards the player each tick. See
-    /// `hex_simulation::ai` for the exact rule.
+    /// `insulaire_simulation::ai` for the exact rule.
     ChasePlayer,
 }
 

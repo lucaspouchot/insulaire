@@ -21,7 +21,7 @@ import {
   EngineInfo,
   GameSnapshot,
   LoadOutcome,
-  RawHexEngine,
+  RawInsulaireEngine,
   ValidationReport,
   WorldView,
 } from '../../engine/engine.types';
@@ -31,8 +31,8 @@ export type EngineStatus = 'idle' | 'loading' | 'ready' | 'failed';
 
 @Injectable({ providedIn: 'root' })
 export class EngineService {
-  private instance: RawHexEngine | null = null;
-  private initialisation: Promise<RawHexEngine> | null = null;
+  private instance: RawInsulaireEngine | null = null;
+  private initialisation: Promise<RawInsulaireEngine> | null = null;
 
   /** Lifecycle of the WASM module, for the UI to reflect. */
   readonly status = signal<EngineStatus>('idle');
@@ -46,16 +46,16 @@ export class EngineService {
    *
    * @throws Error when the WASM artefacts are missing or fail to start.
    */
-  async ready(): Promise<RawHexEngine> {
+  async ready(): Promise<RawInsulaireEngine> {
     this.initialisation ??= this.initialise();
     return this.initialisation;
   }
 
-  private async initialise(): Promise<RawHexEngine> {
+  private async initialise(): Promise<RawInsulaireEngine> {
     this.status.set('loading');
     try {
       const module = await loadEngineModule();
-      const engine = new module.HexEngine();
+      const engine = new module.InsulaireEngine();
       this.instance = engine;
       this.info.set(this.parse<EngineInfo>(() => engine.engineInfo()));
       this.status.set('ready');
@@ -193,7 +193,7 @@ export class EngineService {
 
   // ------------------------------------------------------------------ plumbing
 
-  private engine(): RawHexEngine {
+  private engine(): RawInsulaireEngine {
     if (this.instance === null) {
       throw new EngineError('notLoaded', 'The engine has not finished loading yet.');
     }

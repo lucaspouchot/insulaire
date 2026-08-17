@@ -23,7 +23,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const buildDir = join(repoRoot, 'apps', 'web', 'dist', 'web', 'browser');
 
 /** Without these, the game cannot start at all. */
-const REQUIRED = ['index.html', join('wasm', 'hex_engine_bg.wasm'), join('content', 'project.json')];
+const REQUIRED = ['index.html', join('wasm', 'insulaire_engine_bg.wasm'), join('content', 'project.json')];
 
 /**
  * Component selectors that exist only in the editor. The editor is reached from

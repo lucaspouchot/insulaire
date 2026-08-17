@@ -5,7 +5,7 @@
 //! errors as serialised [`EngineErrorPayload`]s; the one bulk payload, the
 //! terrain buffer, stays a plain byte vector.
 //!
-//! Keeping the contract here rather than in `hex-wasm` means the whole boundary
+//! Keeping the contract here rather than in `insulaire-wasm` means the whole boundary
 //! is covered by ordinary `cargo test`, and the WASM crate reduces to a pass-
 //! through that cannot hide a bug.
 //!
@@ -543,7 +543,7 @@ mod tests {
     #[test]
     fn engine_info_reports_the_build() {
         let info = json(&JsonEngine::new().engine_info().expect("info"));
-        assert_eq!(info["name"], "hex-engine");
+        assert_eq!(info["name"], "insulaire-engine");
         assert_eq!(info["worldSchemaVersion"], 1);
         assert!(info["version"].is_string());
     }

@@ -4,7 +4,7 @@
 //! rather than axial ones because they are consumed by presentation code, and
 //! offset is the coordinate space the author and the editor think in.
 
-use hex_world::OffsetCoord;
+use insulaire_world::OffsetCoord;
 use serde::{Deserialize, Serialize};
 
 use crate::action::Rejection;

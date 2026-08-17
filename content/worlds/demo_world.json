@@ -108,7 +108,7 @@
     { "id": "link_refuge_door", "at": [3, 10], "targetWorld": "demo_refuge", "targetAt": [3, 4], "name": "Refuge", "tags": ["door"] }
   ],
   "metadata": {
-    "author": "hex-engine",
+    "author": "insulaire",
     "description": "MVP demo world: a valley with a lake, a mountain ridge and two hunters.",
     "updatedAt": "2026-08-16T00:00:00.000Z"
   }

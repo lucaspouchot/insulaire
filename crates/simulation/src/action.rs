@@ -1,6 +1,6 @@
 //! Player actions and the reasons they get rejected.
 
-use hex_world::{Hex, OffsetCoord};
+use insulaire_world::{Hex, OffsetCoord};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 

@@ -1,5 +1,5 @@
 {
-  "name": "hex-engine",
+  "name": "insulaire",
   "version": "0.1.0",
   "private": true,
   "description": "Browser-based turn-based hex engine: Angular UI/editor + Rust/WASM simulation.",
@@ -10,8 +10,8 @@
     "node": ">=20.19.0 <22.0.0 || >=22.12.0"
   },
   "scripts": {
-    "wasm:build": "wasm-pack build crates/wasm --release --target web --out-dir ../../apps/web/public/wasm --out-name hex_engine",
-    "wasm:build:dev": "wasm-pack build crates/wasm --dev --target web --out-dir ../../apps/web/public/wasm --out-name hex_engine",
+    "wasm:build": "wasm-pack build crates/wasm --release --target web --out-dir ../../apps/web/public/wasm --out-name insulaire_engine",
+    "wasm:build:dev": "wasm-pack build crates/wasm --dev --target web --out-dir ../../apps/web/public/wasm --out-name insulaire_engine",
     "dev": "npm run start --workspace web",
     "start": "npm run start --workspace web",
     "build": "npm run build --workspace web",

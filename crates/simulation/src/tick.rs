@@ -7,7 +7,7 @@
 //! the scenario runtime and the trigger system will plug in, and their position
 //! in the order is the decision, not their contents.
 
-use hex_world::{Hex, OffsetCoord};
+use insulaire_world::{Hex, OffsetCoord};
 
 use crate::action::{Action, ActionError, Rejection};
 use crate::ai;
@@ -157,7 +157,7 @@ fn run_actors(state: &mut GameState, events: &mut Vec<SimEvent>) {
 
 #[cfg(test)]
 mod tests {
-    use hex_world::{testing, Hex, OffsetCoord, TemplateRegistry, WorldDefinition};
+    use insulaire_world::{testing, Hex, OffsetCoord, TemplateRegistry, WorldDefinition};
 
     use super::*;
     use crate::rules::legal_moves;

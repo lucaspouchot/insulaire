@@ -110,7 +110,7 @@ impl HexDirection {
 /// # Examples
 ///
 /// ```
-/// use hex_world::hex::Hex;
+/// use insulaire_world::hex::Hex;
 ///
 /// let origin = Hex::new(0, 0);
 /// assert_eq!(origin.distance(Hex::new(2, -1)), 2);

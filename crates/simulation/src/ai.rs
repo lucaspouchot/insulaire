@@ -2,13 +2,13 @@
 //!
 //! # The chase rule
 //!
-//! [`Behavior::ChasePlayer`](hex_world::Behavior::ChasePlayer) is intentionally
+//! [`Behavior::ChasePlayer`](insulaire_world::Behavior::ChasePlayer) is intentionally
 //! the simplest thing that produces visible, reproducible pressure on the
 //! player. Once per tick, each chaser:
 //!
 //! 1. reads the player's current hex;
 //! 2. walks its six neighbours in
-//!    [canonical direction order](hex_world::DIRECTIONS) — E, NE, NW, W, SW, SE;
+//!    [canonical direction order](insulaire_world::DIRECTIONS) — E, NE, NW, W, SW, SE;
 //! 3. keeps a neighbour only if it is inside the map, passable, free of other
 //!    blocking entities, and **strictly closer** to the player than the chaser's
 //!    current hex;
@@ -32,7 +32,7 @@
 //! later, isolated change to this module — see `docs/adr/ADR-0013-engine-api.md`
 //! for why the rule lives behind the engine facade rather than in Angular.
 
-use hex_world::Hex;
+use insulaire_world::Hex;
 
 use crate::entity::{EntityId, EntityRuntime};
 use crate::event::SimEvent;
@@ -94,7 +94,7 @@ pub(crate) fn step_chaser(state: &mut GameState, actor: EntityId, events: &mut V
 pub(crate) fn roll_initiative(state: &mut GameState) -> Vec<EntityId> {
     let mut actors = state
         .entities()
-        .with_behavior(hex_world::Behavior::ChasePlayer);
+        .with_behavior(insulaire_world::Behavior::ChasePlayer);
     state.rng_mut().shuffle(&mut actors);
     actors
 }
@@ -120,7 +120,7 @@ pub fn nearest_chaser(state: &GameState) -> Option<&EntityRuntime> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hex_world::{testing, OffsetCoord, TemplateRegistry, WorldDefinition};
+    use insulaire_world::{testing, OffsetCoord, TemplateRegistry, WorldDefinition};
 
     use crate::action::Action;
     use crate::tick;
