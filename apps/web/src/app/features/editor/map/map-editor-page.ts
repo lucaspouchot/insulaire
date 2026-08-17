@@ -25,7 +25,6 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { Router } from '@angular/router';
 
 import { Offset } from '../../../../core/hex/hex-coords';
 import { HexLayout } from '../../../../core/hex/hex-layout';
@@ -79,7 +78,6 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   private readonly canvasRef = viewChild.required<ElementRef<HTMLCanvasElement>>('canvas');
   private readonly store = inject(ProjectStoreService);
   private readonly engine = inject(EngineService);
-  private readonly router = inject(Router);
 
   private view: CanvasView | null = null;
   private renderer: HexMapRenderer | null = null;
@@ -669,19 +667,6 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     } finally {
       input.value = '';
     }
-  }
-
-  /** Validates, then hands the project to Play mode. */
-  protected async playWorld(): Promise<void> {
-    const report = this.validate();
-    if (report === null) {
-      return;
-    }
-    if (!report.valid) {
-      this.message.set('Fix the errors below before playing.');
-      return;
-    }
-    await this.router.navigate(['/play'], { queryParams: { world: this.store.requireDocument().id } });
   }
 
   /**

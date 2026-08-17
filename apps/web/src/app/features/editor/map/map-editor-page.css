@@ -62,10 +62,6 @@
   font-size: 12px;
 }
 
-.toolbar .play {
-  margin-left: auto;
-}
-
 .docks {
   display: flex;
   min-height: 0;

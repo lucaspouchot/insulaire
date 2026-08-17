@@ -64,10 +64,11 @@ npm run dev          # start Angular on http://localhost:4200
 Open <http://localhost:4200>. You land in the **Editor**, already showing
 `content/worlds/demo_world.json`.
 
-The header shows what the engine actually is:
+The header shows the open project's name on the left and, on the right, a badge
+reading **Insulaire engine** whose tooltip is what the engine actually is:
 
 ```text
-● Rust engine · wasm32 · 32-bit · v0.1.0
+Running as WebAssembly · wasm32 · 32-bit · v0.1.0
 ```
 
 That line is read out of the running WebAssembly module (`engineInfo()`
@@ -85,7 +86,7 @@ identifying itself, not a label.
 The screen is the tools on the left, the canvas in the middle, and the active
 tool's content on the right — the terrain palette under **Paint**, the project
 browser under **Map**, nothing at all for the tools that need neither. Project
-actions (validate, import, export, play) sit in the toolbar on top.
+actions (validate, import, export) sit in the toolbar on top.
 
 The **Map** tool is where a project is organised: add a map, pick one to open,
 rename it. Every map belongs to a **zone** — a group of maps declared by
@@ -135,7 +136,8 @@ route to a placeholder describing what they will own. Adding one is an entry in
 
 ### Play it
 
-Press **Validate & Play**. It refuses to navigate while the world has errors.
+Press **Validate** to check the open map, then open `/play` — the editor's own
+documents are what Play mode loads, so there is nothing to export first.
 
 In Play mode:
 

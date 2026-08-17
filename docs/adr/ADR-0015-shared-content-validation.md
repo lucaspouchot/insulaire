@@ -18,7 +18,7 @@ Both receive the same `ValidationReport`: a `valid` flag plus a list of issues, 
 
 Errors block loading; warnings do not. A world with no monsters warns (`world.noMonsters`) but plays.
 
-The editor's "Validate & Play" button calls the validator and refuses to navigate when the report has errors.
+The editor's **Validate** and **Validate doors** buttons call the validator and report every issue in place.
 
 The guarantee is checked by tests rather than asserted: `crates/engine/tests/shipped_content.rs` loads the real files from `content/`, and `apps/web/src/engine/engine-integration.spec.ts` pushes a world through the editor's document model and serialiser into the real WASM engine.
 
@@ -31,7 +31,7 @@ Positive:
 - the editor gets precise paths to the offending value for free.
 
 Negative:
-- the editor needs the WASM engine loaded before it can validate. Editing itself degrades gracefully without it — only the Validate and Play buttons stop working, and the shell reports why.
+- the editor needs the WASM engine loaded before it can validate. Editing itself degrades gracefully without it — only the Validate buttons stop working, and the shell reports why.
 - validation is a whole-world pass rather than incremental. At MVP map sizes this is immeasurable; a large map edited continuously would want an incremental path.
 
 ## Rule

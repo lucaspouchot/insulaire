@@ -1,7 +1,7 @@
 <header class="topbar">
   <div class="brand">
     <span class="mark">⬢</span>
-    <span>Hex Engine</span>
+    <span>{{ projectName() }}</span>
     @if (features.label) {
       <span class="tag">{{ features.label }}</span>
     }
@@ -17,9 +17,19 @@
   @let info = engine.info();
   @switch (engine.status()) {
     @case ('ready') {
-      <div class="engine ready" [title]="'hex-engine ' + info?.version + ' running as WebAssembly'">
+      <div
+        class="engine ready"
+        [title]="
+          'Running as WebAssembly · ' +
+          info?.targetArch +
+          ' · ' +
+          info?.pointerWidth +
+          '-bit · v' +
+          info?.version
+        "
+      >
         <span class="dot"></span>
-        <span>Rust engine · {{ info?.targetArch }} · {{ info?.pointerWidth }}-bit · v{{ info?.version }}</span>
+        <span>Insulaire engine</span>
       </div>
     }
     @case ('failed') {
