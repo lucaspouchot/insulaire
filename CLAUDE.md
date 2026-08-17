@@ -132,6 +132,10 @@ Say plainly in the commit message what breaks and what is discarded, so the
 change is legible later. Once 1.x ships, this section is void and compatibility
 becomes a real constraint.
 
+Every push that changes shipped code carries a **patch or minor** bump; the
+`commit-and-push` skill owns that step and its script writes all nine version
+sites at once. **Major bumps are the author's, by hand** — never bump it.
+
 ## Rules for Claude
 
 Before changing an architectural decision:
