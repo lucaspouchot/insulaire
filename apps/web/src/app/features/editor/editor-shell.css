@@ -1,6 +1,8 @@
 :host {
   display: grid;
-  grid-template-rows: 36px 1fr;
+  /* minmax(0, …) so the routed page may be shorter than its content and scroll
+     its own panels, rather than stretching the row past the window. */
+  grid-template-rows: 36px minmax(0, 1fr);
   height: 100%;
   min-height: 0;
 }

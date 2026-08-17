@@ -63,6 +63,7 @@ pub fn sample_world() -> WorldDefinition {
         id: "sample_world".to_owned(),
         schema_version: WORLD_SCHEMA_VERSION,
         name: "Sample World".to_owned(),
+        zone: String::new(),
         width: 10,
         height: 10,
         orientation: HexOrientation::Pointy,

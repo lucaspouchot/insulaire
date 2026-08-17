@@ -2,6 +2,7 @@
   "id": "demo_world",
   "schemaVersion": 1,
   "name": "Demo Valley",
+  "zone": "valley",
   "width": 20,
   "height": 20,
   "orientation": "pointy",

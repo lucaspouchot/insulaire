@@ -8,8 +8,9 @@
 use std::collections::BTreeMap;
 
 use hex_world::{
-    validate_project, validate_project_links, validate_tile_set, validate_world, ProjectDefinition,
-    TemplateRegistry, TileSetDefinition, ValidationReport, WorldDefinition,
+    validate_project, validate_project_links, validate_project_zones, validate_tile_set,
+    validate_world, ProjectDefinition, TemplateRegistry, TileSetDefinition, ValidationReport,
+    WorldDefinition,
 };
 
 use crate::error::EngineError;
@@ -116,7 +117,10 @@ impl ContentRegistry {
                 message: source.to_string(),
             })?;
 
-        let report = validate_project(&project, &self.world_ids(), &self.tile_set_ids());
+        // Two questions, one verdict: does the manifest hold together, and does
+        // every loaded map name a zone this project declares?
+        let report = validate_project(&project, &self.world_ids(), &self.tile_set_ids())
+            .merge(validate_project_zones(&project, self.worlds.values()));
         if !report.valid {
             return Err(EngineError::Invalid {
                 what: format!("project `{}`", project.id),
@@ -366,6 +370,40 @@ mod tests {
             .load_project(&project_json("absent_world"))
             .expect_err("an unknown start world must be refused");
         assert_eq!(error.code(), "invalidContent");
+    }
+
+    /// A zone id resolves only against the project that declares it, so loading
+    /// the manifest is where a map in a zone nobody declared is caught
+    /// (`docs/adr/ADR-0021-map-zones.md`).
+    #[test]
+    fn a_project_refuses_a_world_in_a_zone_it_does_not_declare() {
+        let mut registry = ContentRegistry::new();
+        registry
+            .load_tile_set(&tile_set_json())
+            .expect("tile set loads");
+
+        let mut world = hex_world::testing::linked_world();
+        world.zone = "caves".to_owned();
+        registry
+            .load_world(&serde_json::to_string(&world).expect("serialise"))
+            .expect("a world validates on its own whatever zone it names");
+        registry
+            .load_world(
+                &serde_json::to_string(&hex_world::testing::interior_world()).expect("serialise"),
+            )
+            .expect("world loads");
+
+        let error = registry
+            .load_project(&project_json("linked_world"))
+            .expect_err("the project declares no `caves`");
+        assert_eq!(error.code(), "invalidContent");
+
+        // Declaring it makes the same content load.
+        let declared = project_json("linked_world").replace(
+            r#""startWorld":"linked_world","#,
+            r#""startWorld":"linked_world","zones":[{"id":"caves","name":"Caves"}],"#,
+        );
+        registry.load_project(&declared).expect("project loads");
     }
 
     #[test]

@@ -1,25 +1,154 @@
 :host {
   display: block;
   height: 100%;
+  /* One row of the map picker: 21px of text, 5px of padding and a 1px border
+     each side. The list is sized in these so it holds exactly five. */
+  --map-row: 33px;
 }
 
-.viewport-tools {
-  position: absolute;
-  top: 12px;
-  left: 12px;
+/*
+ * Three columns and a toolbar.
+ *
+ * The left dock is *about the map* — which map, which tool, and the inspector
+ * that tool needs. The right dock is the active tool's content: today the
+ * terrain palette, tomorrow entity and asset browsers, all of which grow. They
+ * are kept apart so a longer palette never pushes the tool picker off screen,
+ * and the right dock closes entirely when the tool has nothing to offer.
+ *
+ * `minmax(0, 1fr)` on the body row, and `min-width: 0` on the stage: without
+ * them the canvas would be sized by its content rather than by the window, and
+ * the docks would stop scrolling.
+ */
+.editor {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+}
+
+.toolbar {
   display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+.toolbar .open-map {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  padding-right: 8px;
+  white-space: nowrap;
+}
+
+.toolbar .open-map .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.toolbar .group {
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
-.viewport-tools button {
-  padding: 4px 9px;
+.toolbar button,
+.toolbar .file-button {
+  padding: 4px 10px;
   font-size: 12px;
-  background: rgba(21, 27, 36, 0.9);
 }
 
-.viewport-tools button.on {
-  color: var(--accent);
-  border-color: var(--accent-dim);
+.toolbar .play {
+  margin-left: auto;
+}
+
+.docks {
+  display: flex;
+  min-height: 0;
+}
+
+.dock {
+  flex: none;
+}
+
+.dock.left {
+  width: 300px;
+  border-right: 1px solid var(--border);
+}
+
+.dock.right {
+  width: 260px;
+  border-left: 1px solid var(--border);
+}
+
+/* Names, ids and zones side by side need more room than a colour and a cost. */
+.dock.right.maps {
+  width: 320px;
+}
+
+.stage {
+  flex: 1;
+  min-width: 0;
+}
+
+/*
+ * Validation output floats over the canvas instead of docking: it is transient,
+ * it can be long, and it belongs to the action that produced it rather than to
+ * any one panel.
+ */
+.notices {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 320px;
+  max-height: 60%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(21, 27, 36, 0.95);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.notices .close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  padding: 0 6px;
+  font-size: 14px;
+  line-height: 1.4;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+}
+
+.notices .note {
+  margin: 0;
+  padding-right: 20px;
+}
+
+.stats-card {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  background: rgba(13, 17, 23, 0.85);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 11px;
+}
+
+.stats-card .row {
+  gap: 16px;
 }
 
 .tools {
@@ -40,7 +169,8 @@
   gap: 4px;
 }
 
-.swatch {
+.swatch,
+.brush {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -52,7 +182,7 @@
   border-color: var(--accent);
 }
 
-.swatch .chip {
+.chip {
   width: 18px;
   height: 18px;
   border-radius: 3px;
@@ -60,52 +190,32 @@
   flex: none;
 }
 
-.swatch .label {
+.swatch .label,
+.brush .label {
   flex: 1;
   font-size: 13px;
 }
 
-.swatch .cost {
+.swatch .cost,
+.brush .cost {
   font-family: var(--mono);
   font-size: 11px;
   color: var(--text-dim);
 }
 
-.file-button {
-  display: inline-flex;
-  align-items: center;
-  background: var(--bg-raised);
+.brush {
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 6px 12px;
-  cursor: pointer;
-}
-
-.file-button:hover {
-  border-color: var(--accent-dim);
-}
-
-.play-row {
-  margin-top: 8px;
-}
-
-.play-row button {
-  width: 100%;
-}
-
-.note {
-  margin: 8px 0 0;
+  background: var(--bg-raised);
 }
 
 .issues {
   list-style: none;
-  margin: 8px 0 0;
+  margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
   gap: 5px;
-  max-height: 220px;
-  overflow-y: auto;
 }
 
 .issues li {
@@ -131,6 +241,20 @@
   color: var(--text-dim);
 }
 
+.fold {
+  margin-top: 10px;
+}
+
+.fold summary {
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.fold > *:not(summary) {
+  margin-top: 8px;
+}
+
 .new-world {
   display: flex;
   flex-direction: column;
@@ -148,27 +272,65 @@
   min-width: 0;
 }
 
-.banner .dismiss {
-  display: block;
-  margin-top: 8px;
-  padding: 3px 8px;
-  font-size: 12px;
+.counts {
+  margin-top: 10px;
 }
 
+/* A labelled control on one line: "zone [select]". */
+.field,
+.zone-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.field select,
+.zone-picker select {
+  flex: 1;
+  min-width: 0;
+}
+
+.zone-picker {
+  margin-bottom: 8px;
+}
+
+/*
+ * Five rows, then scroll. A project of forty maps must not push the tool picker
+ * out of the dock, and a fixed height keeps the panels below it where the author
+ * last saw them.
+ */
 .map-list {
   display: flex;
   flex-direction: column;
   gap: 4px;
   margin-bottom: 10px;
+  max-height: calc(var(--map-row) * 5 + 4px * 4);
+  overflow-y: auto;
 }
 
 .map-list .map {
   display: flex;
+  flex: none;
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
   padding: 5px 8px;
   text-align: left;
+  white-space: nowrap;
+}
+
+/*
+ * The name is what the author reads; the id and zone beside it are the caption.
+ * Both ellipsize, but the caption gives way first — the shrink factors below are
+ * what keeps "Frozen Pass" from collapsing to "F…" next to a long zone name.
+ */
+.map-list .map .label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .map-list .map.on {
@@ -177,6 +339,10 @@
 }
 
 .map-list .map .id {
+  flex: 0 8 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-family: var(--mono);
   font-size: 11px;
   color: var(--text-dim);

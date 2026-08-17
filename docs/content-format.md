@@ -96,6 +96,7 @@ drawn while a texture loads. Rendering *logic* never appears in content.
   "id": "demo_world",
   "schemaVersion": 1,
   "name": "Demo Valley",
+  "zone": "valley",
   "width": 20,
   "height": 20,
   "orientation": "pointy",
@@ -130,6 +131,7 @@ drawn while a texture loads. Rendering *logic* never appears in content.
 | `id` | string | yes | Stable id. Loading a world replaces any world with the same id. |
 | `schemaVersion` | integer | yes | `1`. |
 | `name` | string | no | Display name. |
+| `zone` | string | no | Id of the `ZoneDefinition` this map belongs to. Absent means the project's default zone — never *no* zone; see below. |
 | `width`, `height` | integer | yes | Columns and rows. `1..2048`. |
 | `orientation` | `"pointy"` \| `"flat"` | no | Defaults to `"pointy"`. `"flat"` is reserved and currently rejected. |
 | `projection` | `"topDown"` \| `"isometric"` | no | Defaults to `"topDown"`. How the renderer draws this world; see below. |
@@ -140,6 +142,30 @@ drawn while a texture loads. Rendering *logic* never appears in content.
 | `locations` | LocationDefinition[] | no | Points of interest. |
 | `links` | MapLink[] | no | Cells that send the player to another map. |
 | `metadata` | object | no | Free text; never read by the simulation. |
+
+### Zones
+
+A zone is a group of maps that belong together, and it is the unit of *simulated
+scope*: a tick advances the maps of the player's zone, not only the map they
+stand on (ADR-0021 — the zone-wide tick is not implemented yet; the grouping it
+will read is).
+
+Zones are declared by the **project**, not by the maps: `zone` names a
+`ZoneDefinition.id` from `project.json`, exactly as `targetWorld` names another
+world. Every map belongs to exactly one:
+
+| The world file says | The map is in |
+|---|---|
+| `"zone": "valley"` | `valley`, which the project must declare |
+| nothing, or `""` | the project's **default** zone — the first it declares, or the implicit `default` when it declares none |
+
+There is no "unzoned" state. An absent zone is written out as nothing, so a file
+authored before the field existed round-trips byte for byte and lands in the
+default zone.
+
+A zone id resolves only next to the project that declares it, so it is checked
+where map links are: `world.unknownZone` comes from the project-wide validation,
+`project.duplicateZone` and `project.missingZoneId` from the manifest's own.
 
 ### Sparse storage
 
@@ -234,6 +260,9 @@ starts. It is what a delivered client build boots from (ADR-0018).
   "schemaVersion": 1,
   "name": "Insulaire",
   "startWorld": "demo_world",
+  "zones": [
+    { "id": "valley", "name": "Valley" }
+  ],
   "tileSets": [
     { "id": "mvp_terrain", "path": "tilesets/mvp_terrain.json" }
   ],
@@ -250,6 +279,7 @@ starts. It is what a delivered client build boots from (ADR-0018).
 | `schemaVersion` | integer | yes | `1`. |
 | `name` | string | no | Display name. |
 | `startWorld` | string | yes | Id of the world a new session starts on. Must be listed in `worlds`. |
+| `zones` | `{ id, name }[]` | no | Zones the maps are grouped into; the **first is the default**. Absent means one implicit `default` zone. See *Zones* above. |
 | `tileSets` | `{ id, path }[]` | no | Tile sets to load; `path` is relative to the content root. |
 | `worlds` | `{ id, path }[]` | yes | Worlds to load. Every world reachable through a link must be listed. |
 
@@ -325,6 +355,8 @@ exposed across the boundary as `validateLinks()` and `loadProject()`.
 | `project.missingId` / `project.unsupportedSchemaVersion` | Manifest header problems. |
 | `project.noWorlds` / `project.duplicateWorld` | The manifest lists no worlds, or one twice. |
 | `project.unloadedWorld` / `project.unloadedTileSet` | The manifest references content that is not loaded. |
+| `project.duplicateZone` / `project.missingZoneId` | The manifest declares a zone twice, or one without an id. |
+| `world.unknownZone` | A loaded world names a zone the project does not declare. Reported when the project is loaded. |
 | `project.unknownStartWorld` | `startWorld` is not among the manifest's worlds. |
 | `tileSet.empty` / `tileSet.paletteTooLarge` / `tile.duplicateId` / `tile.missingVisualId` | Tile set problems. |
 

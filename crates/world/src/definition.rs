@@ -61,6 +61,17 @@ pub struct WorldDefinition {
     /// Human readable name.
     #[serde(default)]
     pub name: String,
+    /// Id of the [`crate::ZoneDefinition`] this map belongs to.
+    ///
+    /// Every map belongs to exactly one zone; empty names the project's default
+    /// one rather than *no* zone (`ProjectDefinition::resolve_zone`). The field
+    /// stays optional in the file so a map authored before zones existed loads
+    /// into the default, and because a zone id only means something next to the
+    /// project that declares it — like `targetWorld`, it is a cross-file
+    /// reference the project-level validator resolves
+    /// (`docs/adr/ADR-0021-map-zones.md`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub zone: String,
     /// Number of columns.
     pub width: u32,
     /// Number of rows.
@@ -290,6 +301,24 @@ mod tests {
         let serialised = serde_json::to_string(&world).expect("serialise");
         assert!(!serialised.contains("\"elevation\""));
         assert!(!serialised.contains("\"properties\""));
+        // An unzoned map writes no zone, so files predating the field are
+        // re-exported byte for byte.
+        assert!(!serialised.contains("\"zone\""));
+    }
+
+    #[test]
+    fn zone_is_optional_and_kept_when_authored() {
+        let world: WorldDefinition = serde_json::from_str(MINIMAL).expect("parse");
+        assert_eq!(world.zone, "");
+
+        let zoned: WorldDefinition = serde_json::from_str(
+            &MINIMAL.replace(r#""width": 3,"#, r#""width": 3, "zone": "Northern Reach","#),
+        )
+        .expect("parse");
+        assert_eq!(zoned.zone, "Northern Reach");
+        assert!(serde_json::to_string(&zoned)
+            .expect("serialise")
+            .contains(r#""zone":"Northern Reach""#));
     }
 
     #[test]

@@ -3,23 +3,8 @@
   height: 100%;
 }
 
-.viewport-tools {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  display: flex;
-  gap: 6px;
-}
-
-.viewport-tools button {
-  padding: 4px 9px;
-  font-size: 12px;
-  background: rgba(21, 27, 36, 0.9);
-}
-
-.viewport-tools button.on {
-  color: var(--accent);
-  border-color: var(--accent-dim);
+.dock {
+  border-left: 1px solid var(--border);
 }
 
 .tick-badge {

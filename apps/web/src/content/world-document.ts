@@ -92,6 +92,8 @@ export interface WorldDocumentInit {
   tileSet: TileSetDefinition;
   defaultTile?: string;
   projection?: ProjectionMode;
+  /** Authoring zone; empty leaves the map unzoned. */
+  zone?: string;
 }
 
 /** Thrown when a document cannot be built from the given content. */
@@ -115,6 +117,8 @@ export class WorldDocument {
     public metadata: WorldMetadata,
     /** How the runtime and the editor render this world. */
     public projection: ProjectionMode,
+    /** Authoring zone; `''` means unzoned. Grouping only, never a rule. */
+    public zone: string,
   ) {}
 
   private minElevation = 0;
@@ -155,6 +159,7 @@ export class WorldDocument {
       [],
       {},
       init.projection ?? 'topDown',
+      init.zone ?? '',
     );
   }
 
@@ -174,6 +179,7 @@ export class WorldDocument {
       tileSet,
       defaultTile: definition.defaultTile,
       projection: definition.projection,
+      zone: definition.zone,
     });
 
     for (const placed of definition.tiles ?? []) {
@@ -507,6 +513,9 @@ export class WorldDocument {
       id: this.id,
       schemaVersion: WORLD_SCHEMA_VERSION,
       name: this.name,
+      // Omitted when unzoned, so a map that never had a zone is re-exported
+      // exactly as it was authored.
+      ...(this.zone.length > 0 ? { zone: this.zone } : {}),
       width: this.width,
       height: this.height,
       orientation: 'pointy',

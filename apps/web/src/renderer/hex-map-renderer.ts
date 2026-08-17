@@ -25,7 +25,7 @@
  */
 
 import { Offset, fromIndex, indexIn, sameOffset } from '../core/hex/hex-coords';
-import { HexLayout, Point } from '../core/hex/hex-layout';
+import { HexLayout, Point, Rect } from '../core/hex/hex-layout';
 import { Camera } from './camera';
 import { Projection } from './projection';
 import {
@@ -167,14 +167,58 @@ export class HexMapRenderer {
     return null;
   }
 
+  /**
+   * The drawing-plane rectangle the map actually covers.
+   *
+   * Deliberately not `projectRect(plane, min, max)`: that lifts the *whole*
+   * plane by the map's highest cell and drops it by its lowest, which is a
+   * bound, not the picture. A map whose back rows are flat is then framed with
+   * a band of empty sky above it — the height of its tallest peak, wherever
+   * that peak stands — and the world sits too low in the viewport.
+   *
+   * The extent is measured per row instead: a row's tops rise by that row's own
+   * peak, and only the front row's side faces hang below the plane, down to the
+   * ground the skirt is anchored on ({@link wallBaseOf}). Every other row's
+   * faces stop at the row in front of it, which already reaches lower.
+   */
+  contentBounds(model: RenderModel = this.model): Rect {
+    const plane = this.layout.boundsOf(model.width, model.height);
+    const projection =
+      model === this.model ? this.projection : Projection.for(model.projection, this.layout.size);
+    if (projection.isIdentity || model.width === 0 || model.height === 0) {
+      return projection.projectRect(plane);
+    }
+
+    let minY = Number.POSITIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    for (let row = 0; row < model.height; row += 1) {
+      let peak = 0;
+      let floor = 0;
+      for (let col = 0; col < model.width; col += 1) {
+        const elevation = this.elevationAt(model, row * model.width + col);
+        peak = Math.max(peak, elevation);
+        floor = Math.min(floor, elevation);
+      }
+      // `floor` starts at ground rather than at the row's own minimum: a face
+      // reaches down to whatever stands in front of it, and the row in front is
+      // at ground unless it is dug lower — as is everything off the map, which
+      // is what gives the front row its skirt.
+      const center = this.layout.rowStep * row;
+      const top = (center - this.layout.size) * projection.tilt - projection.liftOf(peak);
+      const bottom = (center + this.layout.size) * projection.tilt - projection.liftOf(floor);
+      minY = Math.min(minY, top);
+      maxY = Math.max(maxY, bottom);
+    }
+
+    return { minX: plane.minX, maxX: plane.maxX, minY, maxY };
+  }
+
   /** Frames the whole map in a `width x height` viewport. */
   fitToViewport(width: number, height: number): void {
     if (this.model.width === 0 || this.model.height === 0) {
       return;
     }
-    const plane = this.layout.boundsOf(this.model.width, this.model.height);
-    const { min, max } = this.model.elevationRange;
-    this.camera.fit(this.projection.projectRect(plane, min, max), width, height);
+    this.camera.fit(this.contentBounds(), width, height);
   }
 
   /**

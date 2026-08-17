@@ -110,12 +110,16 @@ set. Only registered on success; warnings do not block.
 ### `loadProject(json: string): LoadOutcome`
 
 Registers the `ProjectDefinition` manifest — which content files make up the
-game, and its `startWorld`. Call it **after** the content it lists: it is
-validated against what is actually in the registry, so a bundle missing a file
-fails here rather than when a player walks through a door (ADR-0018).
+game, its `startWorld` and its `zones`. Call it **after** the content it lists:
+it is validated against what is actually in the registry, so a bundle missing a
+file fails here rather than when a player walks through a door (ADR-0018).
+
+This is also where every loaded world's `zone` is resolved against the zones the
+project declares, since a world file alone cannot say whether its zone exists
+(ADR-0021).
 
 Errors: `parse`, `invalidContent` (`project.unloadedWorld`,
-`project.unknownStartWorld`, …).
+`project.unknownStartWorld`, `world.unknownZone`, …).
 
 ### `resetContent(): void`
 

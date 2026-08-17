@@ -20,6 +20,8 @@ An authored world contains at minimum:
 - `locations`
 - `entities`
 - `links` — cells that send the player to another map (ADR-0017)
+- `zone` — the group of maps this one is simulated with; resolves to the
+  project's default when absent (ADR-0021)
 - `metadata`
 - *(planned)* `scenarioId`
 
@@ -33,9 +35,15 @@ Cells are stored **sparsely**: `tiles` lists only the cells that differ from
 A world knows its tile set and the maps its doors lead to, but nothing in a
 world says which files make up a *game* or where a session starts. That is the
 project manifest (`content/project.json`): `id`, `schemaVersion`, `startWorld`,
-and the `tileSets` and `worlds` it ships, each as `{ id, path }`. A delivered
-client build boots from it (ADR-0018); the editor regenerates it whenever the
-set of maps changes.
+the `zones` its maps are grouped into, and the `tileSets` and `worlds` it ships,
+each as `{ id, path }`. A delivered client build boots from it (ADR-0018); the
+editor regenerates it whenever the set of maps or zones changes.
+
+A `zone` is `{ id, name }` and nothing more: the *first* declared is the default,
+and a world naming no zone belongs to it, so "unzoned" is not a state a map can
+be in (ADR-0021). Zones live here rather than on the maps because a zone has to
+exist before a map is put in it, and because a tick will advance a whole zone —
+which means resolving several maps at once, from the manifest that lists them.
 
 ## TileDefinition
 
@@ -131,7 +139,7 @@ The editor owns a third model, `WorldDocument`
 world being *authored* has no tick, no RNG and no entity handles, and every
 cell is freely mutable. It holds a dense `Uint8Array` of palette indices and a
 dense `Int8Array` of elevations — the same layout the runtime and the renderer
-use — plus the authored `projection`, and re-sparsifies on export.
+use — plus the authored `projection` and `zone`, and re-sparsifies on export.
 
 The editor holds **one document per map**, not one document
 (`ProjectStoreService`, `apps/web/src/app/services/project-store.service.ts`),

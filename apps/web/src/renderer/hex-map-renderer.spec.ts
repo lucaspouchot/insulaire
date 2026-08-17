@@ -143,3 +143,113 @@ describe('HexMapRenderer hit-testing', () => {
     expect(renderer.cellAtScreen({ x: 5_000, y: 5_000 })).toBeNull();
   });
 });
+
+/**
+ * What the camera frames. A bound that is merely *safe* is not good enough
+ * here: empty space inside the rectangle is empty space on screen, and the map
+ * then sits off-centre by however much the bound overshoots.
+ */
+describe('HexMapRenderer content bounds', () => {
+  const HEX_SIZE = 24;
+  const RAISED = offset(4, 6);
+  const ELEVATION = 4;
+
+  function rendererFor(source: RenderModel): HexMapRenderer {
+    const renderer = new HexMapRenderer(
+      {} as CanvasRenderingContext2D,
+      new HexLayout(HEX_SIZE),
+      new Camera(),
+    );
+    renderer.setModel(source);
+    return renderer;
+  }
+
+  function model(projection: 'topDown' | 'isometric', raised = false): RenderModel {
+    const width = 10;
+    const height = 10;
+    const elevation = new Int8Array(width * height);
+    if (raised) {
+      elevation[RAISED.row * width + RAISED.col] = ELEVATION;
+    }
+    return {
+      ...emptyRenderModel(),
+      width,
+      height,
+      projection,
+      terrain: new Uint8Array(width * height),
+      elevation,
+      elevationRange: { min: 0, max: raised ? ELEVATION : 0 },
+    };
+  }
+
+  it('is the plain hex plane in top-down mode', () => {
+    const flat = model('topDown');
+    expect(rendererFor(flat).contentBounds()).toEqual(
+      new HexLayout(HEX_SIZE).boundsOf(flat.width, flat.height),
+    );
+  });
+
+  it('is the flattened plane when an isometric map has no relief', () => {
+    const flat = model('isometric');
+    const plane = new HexLayout(HEX_SIZE).boundsOf(flat.width, flat.height);
+    const projection = Projection.for('isometric', HEX_SIZE);
+
+    expect(rendererFor(flat).contentBounds()).toEqual(projection.projectRect(plane));
+  });
+
+  /**
+   * The regression: lifting the whole plane by the map's peak left a band of
+   * empty sky above rows that are flat, and `fit` framed it.
+   */
+  it('lifts only the row the peak stands on', () => {
+    const relief = model('isometric', true);
+    const layout = new HexLayout(HEX_SIZE);
+    const projection = Projection.for('isometric', HEX_SIZE);
+    const plane = layout.boundsOf(relief.width, relief.height);
+    const bounds = rendererFor(relief).contentBounds();
+
+    // Row 6 carries the hill, and even lifted it does not reach above row 0.
+    const peakTop = layout.rowStep * RAISED.row * projection.tilt - projection.liftOf(ELEVATION);
+    expect(peakTop).toBeGreaterThan(plane.minY * projection.tilt);
+    expect(bounds.minY).toBeCloseTo(plane.minY * projection.tilt);
+    // Lifting the whole plane, as this used to, frames that much empty sky.
+    expect(bounds.minY - projection.projectRect(plane, 0, ELEVATION).minY).toBeCloseTo(
+      projection.liftOf(ELEVATION),
+    );
+  });
+
+  /** The front row keeps its skirt: side faces there drop to ground level. */
+  it('keeps the bottom edge the front skirt reaches', () => {
+    const relief = model('isometric', true);
+    const layout = new HexLayout(HEX_SIZE);
+    const projection = Projection.for('isometric', HEX_SIZE);
+    const bounds = rendererFor(relief).contentBounds();
+
+    const plane = layout.boundsOf(relief.width, relief.height);
+    expect(bounds.maxY).toBeCloseTo(plane.maxY * projection.tilt);
+  });
+
+  it('drops as far as the deepest cell is dug', () => {
+    const width = 10;
+    const height = 10;
+    const depth = 3;
+    const elevation = new Int8Array(width * height);
+    elevation[(height - 1) * width + 5] = -depth;
+    const projection = Projection.for('isometric', HEX_SIZE);
+    const layout = new HexLayout(HEX_SIZE);
+
+    const bounds = rendererFor({
+      ...emptyRenderModel(),
+      width,
+      height,
+      projection: 'isometric',
+      terrain: new Uint8Array(width * height),
+      elevation,
+      elevationRange: { min: -depth, max: 0 },
+    }).contentBounds();
+
+    expect(bounds.maxY).toBeCloseTo(
+      layout.boundsOf(width, height).maxY * projection.tilt + projection.liftOf(depth),
+    );
+  });
+});

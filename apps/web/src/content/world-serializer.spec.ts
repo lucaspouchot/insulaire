@@ -79,6 +79,23 @@ describe('serializeWorld', () => {
     );
   });
 
+  it('writes the zone next to the name, and only when there is one', () => {
+    const base = {
+      id: 'w',
+      schemaVersion: 1,
+      name: 'W',
+      width: 1,
+      height: 1,
+      tileSetId: 't',
+      defaultTile: 'grass',
+    } as const;
+
+    expect(serializeWorld({ ...base, zone: 'Northern Reach' })).toContain(
+      '  "name": "W",\n  "zone": "Northern Reach",\n',
+    );
+    expect(serializeWorld(base)).not.toContain('"zone"');
+  });
+
   it('handles an empty metadata block', () => {
     const json = serializeWorld({
       id: 'w',

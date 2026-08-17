@@ -99,6 +99,15 @@ export interface WorldDefinition {
   id: string;
   schemaVersion: number;
   name?: string;
+  /**
+   * Id of the {@link ZoneDefinition} this map belongs to.
+   *
+   * Every map has a zone; absent or empty names the project's default one
+   * rather than *no* zone. A zone id only resolves against the project that
+   * declares it, so the Rust validator is what checks it
+   * (`docs/adr/ADR-0021-map-zones.md`).
+   */
+  zone?: string;
   width: number;
   height: number;
   orientation?: 'pointy' | 'flat';
@@ -129,11 +138,33 @@ export interface ContentRef {
  * this file and loads exactly what it lists
  * (`docs/adr/ADR-0018-client-delivery-build.md`).
  */
+/**
+ * Id of the zone a project falls back on when it declares none.
+ *
+ * Mirrors `hex_world::DEFAULT_ZONE_ID`.
+ */
+export const DEFAULT_ZONE_ID = 'default';
+
+/**
+ * A group of maps that belong together.
+ *
+ * The unit of simulated scope: a tick advances the maps of one zone, not only
+ * the map the player stands on (`docs/adr/ADR-0021-map-zones.md`). Zones are
+ * declared by the project, and every map names exactly one.
+ */
+export interface ZoneDefinition {
+  id: string;
+  name?: string;
+}
+
 export interface ProjectDefinition {
   id: string;
   schemaVersion: number;
   name?: string;
   startWorld: string;
+  /** Zones, in author order. The first is the default; absent means one implicit
+   * {@link DEFAULT_ZONE_ID} zone. */
+  zones?: ZoneDefinition[];
   tileSets: ContentRef[];
   worlds: ContentRef[];
 }

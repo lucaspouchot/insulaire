@@ -15,6 +15,28 @@ use serde::{Deserialize, Serialize};
 /// Highest project schema version this build understands.
 pub const PROJECT_SCHEMA_VERSION: u32 = 1;
 
+/// Id of the zone a project falls back on when it declares none.
+///
+/// A project written before zones existed lists none, and every one of its maps
+/// belongs to this implicit zone — which is what keeps such a file loadable.
+pub const DEFAULT_ZONE_ID: &str = "default";
+
+/// A group of maps that belong together.
+///
+/// A zone is the unit of *simulated scope*: a tick advances the maps of one
+/// zone, not only the map the player stands on, so two maps in a zone share a
+/// clock while a map in another zone does not
+/// (`docs/adr/ADR-0021-map-zones.md`). Every map belongs to exactly one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ZoneDefinition {
+    /// Stable id, referenced by `WorldDefinition::zone`.
+    pub id: String,
+    /// Human readable name; defaults to the id in the editor.
+    #[serde(default)]
+    pub name: String,
+}
+
 /// One content file the project ships.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -38,6 +60,12 @@ pub struct ProjectDefinition {
     pub name: String,
     /// Id of the world a new session starts on.
     pub start_world: String,
+    /// Zones the project's maps are grouped into, in author order.
+    ///
+    /// The **first is the default**: a world naming no zone belongs to it. An
+    /// empty list means the single implicit [`DEFAULT_ZONE_ID`] zone.
+    #[serde(default)]
+    pub zones: Vec<ZoneDefinition>,
     /// Tile sets to load, in order.
     #[serde(default)]
     pub tile_sets: Vec<ContentRef>,
@@ -55,6 +83,36 @@ impl ProjectDefinition {
             .iter()
             .find(|entry| entry.id == world_id)
             .map(|entry| entry.path.as_str())
+    }
+
+    /// Id of the zone a world that names none belongs to.
+    #[must_use]
+    pub fn default_zone_id(&self) -> &str {
+        self.zones
+            .first()
+            .map_or(DEFAULT_ZONE_ID, |zone| zone.id.as_str())
+    }
+
+    /// The zone `zone` names, resolving an empty one to the default.
+    ///
+    /// Zones are mandatory in the model even though the field is optional in the
+    /// file: every map has one, and this is where "none authored" becomes it.
+    #[must_use]
+    pub fn resolve_zone<'a>(&'a self, zone: &'a str) -> &'a str {
+        if zone.is_empty() {
+            self.default_zone_id()
+        } else {
+            zone
+        }
+    }
+
+    /// `true` when the project declares — or implies — a zone with this id.
+    #[must_use]
+    pub fn has_zone(&self, id: &str) -> bool {
+        if self.zones.is_empty() {
+            return id == DEFAULT_ZONE_ID;
+        }
+        self.zones.iter().any(|zone| zone.id == id)
     }
 }
 
@@ -84,5 +142,33 @@ mod tests {
         let serialised = serde_json::to_string(&project).expect("serialise");
         let reparsed: ProjectDefinition = serde_json::from_str(&serialised).expect("reparse");
         assert_eq!(project, reparsed);
+    }
+
+    #[test]
+    fn a_project_without_zones_implies_the_default_one() {
+        let project: ProjectDefinition = serde_json::from_str(MINIMAL).expect("parse");
+
+        assert!(project.zones.is_empty());
+        assert_eq!(project.default_zone_id(), DEFAULT_ZONE_ID);
+        assert_eq!(project.resolve_zone(""), DEFAULT_ZONE_ID);
+        assert!(project.has_zone(DEFAULT_ZONE_ID));
+        assert!(!project.has_zone("valley"));
+    }
+
+    #[test]
+    fn the_first_declared_zone_is_the_default() {
+        let project: ProjectDefinition = serde_json::from_str(&MINIMAL.replace(
+            r#""startWorld": "demo_world","#,
+            r#""startWorld": "demo_world",
+               "zones": [{ "id": "valley", "name": "Valley" }, { "id": "caves" }],"#,
+        ))
+        .expect("parse");
+
+        assert_eq!(project.default_zone_id(), "valley");
+        assert_eq!(project.resolve_zone(""), "valley");
+        assert_eq!(project.resolve_zone("caves"), "caves");
+        assert!(project.has_zone("caves"));
+        // The implicit fallback is gone once a project declares its zones.
+        assert!(!project.has_zone(DEFAULT_ZONE_ID));
     }
 }

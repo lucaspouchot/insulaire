@@ -2,6 +2,7 @@
   "id": "demo_refuge",
   "schemaVersion": 1,
   "name": "The Refuge",
+  "zone": "valley",
   "width": 7,
   "height": 6,
   "orientation": "pointy",

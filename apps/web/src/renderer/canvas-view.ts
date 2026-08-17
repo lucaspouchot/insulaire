@@ -126,6 +126,11 @@ export class CanvasView {
    *
    * The canvas is sized in device pixels but the renderer draws in CSS pixels;
    * the DPR scale below bridges the two so lines stay crisp on retina screens.
+   *
+   * The camera is re-anchored on the viewport centre rather than left alone: a
+   * dock opening beside the canvas takes its width off one side only, and a
+   * pan-free resize would slide the world sideways under the cursor. Whatever
+   * was in the middle stays in the middle.
    */
   private resize(): void {
     const rect = this.canvas.getBoundingClientRect();
@@ -135,6 +140,13 @@ export class CanvasView {
 
     this.canvas.width = Math.floor(width * ratio);
     this.canvas.height = Math.floor(height * ratio);
+
+    if (this.viewportWidth > 0 && this.viewportHeight > 0) {
+      this.renderer.camera.panBy(
+        (width - this.viewportWidth) / 2,
+        (height - this.viewportHeight) / 2,
+      );
+    }
 
     this.viewportWidth = width;
     this.viewportHeight = height;

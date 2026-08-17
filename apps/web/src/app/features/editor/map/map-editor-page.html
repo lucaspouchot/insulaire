@@ -1,283 +1,470 @@
-<div class="workspace">
-  <section class="stage">
-    <canvas #canvas></canvas>
+<div class="editor">
+  @let doc = document();
 
-    <div class="viewport-tools">
-      <button type="button" (click)="zoom(1.2)" title="Zoom in">＋</button>
-      <button type="button" (click)="zoom(1 / 1.2)" title="Zoom out">－</button>
-      <button type="button" (click)="fitView()" title="Fit the map to the window">Fit</button>
-      <button type="button" (click)="toggleGrid()" [class.on]="showGrid()" title="Toggle grid">Grid</button>
-      <button
-        type="button"
-        (click)="toggleCoordinates()"
-        [class.on]="showCoordinates()"
-        title="Toggle coordinates"
-      >
-        col,row
-      </button>
-      <button
-        type="button"
-        (click)="toggleProjection()"
-        [class.on]="projection() === 'isometric'"
-        title="Switch the world between top-down and isometric (saved with the world)"
-      >
-        Isometric
-      </button>
-    </div>
-
-    @let cell = hover();
-    <div class="overlay-note">
-      @if (cell !== null) {
-        hex [{{ cell.col }}, {{ cell.row }}]
-        @let tile = hoveredTile();
-        @if (tile !== null) {
-          · {{ tile.name }} · cost {{ tile.movementCost }}{{ tile.passable ? '' : ' (impassable)' }}
-        }
-        · elevation {{ hoveredElevation() }}
-      } @else {
-        drag with the left button to paint · right-drag or middle-drag to pan · wheel to zoom
+  <div class="toolbar">
+    <span class="open-map">
+      {{ doc?.name ?? 'Loading…' }}
+      @if (dirty()) {
+        <span class="dot" title="Edited since the last export"></span>
       }
+    </span>
+
+    <div class="group">
+      <button type="button" (click)="validate()">Validate</button>
+      <button type="button" (click)="exportWorld()">Export map</button>
+      <button type="button" (click)="exportProject()">Export project</button>
+      <label class="file-button">
+        Import JSON
+        <input type="file" accept="application/json,.json" (change)="importWorld($event)" hidden />
+      </label>
+      <button type="button" (click)="resetToShipped()">Reload content/</button>
     </div>
-  </section>
 
-  <aside class="sidebar">
-    @if (error(); as failure) {
-      <div class="banner error">
-        {{ failure }}
-        <button type="button" class="dismiss" (click)="dismissError()">Dismiss</button>
-      </div>
-    }
+    <button type="button" class="primary play" (click)="playWorld()">Validate &amp; Play ▸</button>
+  </div>
 
-    @let doc = document();
-    @if (doc === null) {
-      <p class="hint">Loading authored content…</p>
-    } @else {
-      <section class="panel">
-        <h2>Maps</h2>
-        <div class="map-list">
-          @for (map of maps(); track map.id) {
-            <button
-              type="button"
-              class="map"
-              [class.on]="map.id === activeWorldId()"
-              (click)="switchMap(map.id)"
-              [title]="map.id"
-            >
-              <span class="label">{{ map.name }}</span>
-              <span class="id">{{ map.id }}</span>
-            </button>
-          }
-        </div>
-        <div class="rows">
-          <div class="row"><span>size</span><span>{{ doc.width }} × {{ doc.height }}</span></div>
-          <div class="row"><span>tile set</span><span>{{ doc.tileSetId }}</span></div>
-          <div class="row"><span>projection</span><span>{{ projection() }}</span></div>
-          <div class="row"><span>source</span><span>{{ source() }}{{ dirty() ? ' · edited' : '' }}</span></div>
-          <div class="row">
-            <span>entities</span>
-            <span>{{ entityCounts().players }} player · {{ entityCounts().monsters }} monster</span>
-          </div>
-        </div>
-        <div class="new-world">
-          <input #mapId type="text" [value]="doc.id" aria-label="Map id" />
-          <input #mapName type="text" [value]="doc.name" aria-label="Map name" />
-          <div class="button-row">
-            <button type="button" (click)="renameWorld(mapId.value, mapName.value)">Rename</button>
-            <button type="button" (click)="removeWorld()">Remove map</button>
-          </div>
-        </div>
-      </section>
-
-      <section class="panel">
-        <h2>Tool</h2>
-        <div class="tools">
-          <button type="button" [class.on]="tool() === 'paint'" (click)="selectTool('paint')">Paint</button>
-          <button type="button" [class.on]="tool() === 'raise'" (click)="selectTool('raise')">Raise</button>
-          <button type="button" [class.on]="tool() === 'lower'" (click)="selectTool('lower')">Lower</button>
-          <button type="button" [class.on]="tool() === 'player'" (click)="selectTool('player')">Player</button>
-          <button type="button" [class.on]="tool() === 'monster'" (click)="selectTool('monster')">Monster</button>
-          <button type="button" [class.on]="tool() === 'link'" (click)="selectTool('link')">Door</button>
-          <button type="button" [class.on]="tool() === 'erase'" (click)="selectTool('erase')">Erase</button>
-        </div>
-        <p class="hint">
-          @switch (tool()) {
-            @case ('paint') { Click or drag to paint the selected terrain. }
-            @case ('raise') { Click or drag to raise cells by one step. Visible in isometric. }
-            @case ('lower') { Click or drag to lower cells by one step. Visible in isometric. }
-            @case ('player') { Click a hex to move the player start. A world has exactly one. }
-            @case ('monster') { Click hexes to add hunters. }
-            @case ('link') { Click a hex to put a door on it, then set where it leads below. }
-            @case ('erase') { Click a hex to remove the entity, door or location on it. }
-          }
-        </p>
-      </section>
-
-      <section class="panel">
-        <h2>Doors</h2>
-        @let link = selectedLink();
-        @if (link === null) {
-          <p class="hint">Select a door on the canvas, or pick one below, to edit where it leads.</p>
-        } @else {
-          <div class="link-editor">
-            <div class="row"><span>id</span><span>{{ link.id }}</span></div>
-            <div class="row"><span>on hex</span><span>[{{ link.at.col }}, {{ link.at.row }}]</span></div>
-
-            <label>
-              <span>leads to</span>
-              <select [value]="link.targetWorld" (change)="setLinkTarget($any($event.target).value)">
-                @for (map of maps(); track map.id) {
-                  <option [value]="map.id" [selected]="map.id === link.targetWorld">{{ map.id }}</option>
-                }
-              </select>
-            </label>
-
-            <label>
-              <span>arrives at</span>
-              <span class="dims">
-                <input
-                  #arrivalCol
-                  type="number"
-                  min="0"
-                  [value]="link.targetAt.col"
-                  aria-label="Arrival column"
-                  (change)="setLinkArrival(arrivalCol.value, arrivalRow.value)"
-                />
-                <input
-                  #arrivalRow
-                  type="number"
-                  min="0"
-                  [value]="link.targetAt.row"
-                  aria-label="Arrival row"
-                  (change)="setLinkArrival(arrivalCol.value, arrivalRow.value)"
-                />
-              </span>
-            </label>
-
-            <label>
-              <span>label</span>
-              <input
-                #linkName
-                type="text"
-                [value]="link.name"
-                placeholder="Door"
-                (change)="setLinkName(linkName.value)"
-              />
-            </label>
-
-            <button type="button" (click)="removeSelectedLink()">Remove this door</button>
-          </div>
-        }
-
-        @if (links().length > 0) {
-          <ul class="link-list">
-            @for (entry of links(); track entry.id) {
-              <li>
-                <button type="button" (click)="selectLink(entry)">
-                  [{{ entry.at.col }}, {{ entry.at.row }}] → {{ entry.targetWorld }} [{{
-                    entry.targetAt.col
-                  }}, {{ entry.targetAt.row }}]
-                </button>
-              </li>
-            }
-          </ul>
-        }
-        <div class="button-row">
-          <button type="button" (click)="validateLinks()">Validate doors</button>
-        </div>
-        <p class="hint">
-          A door's target lives in another file, so only a whole-project check can resolve it.
-        </p>
-      </section>
-
-      <section class="panel">
-        <h2>Terrain palette</h2>
-        <div class="palette">
-          @for (tile of palette(); track tile.id) {
-            <button
-              type="button"
-              class="swatch"
-              [class.on]="selectedTile() === tile.id"
-              (click)="selectTile(tile.id)"
-              [title]="tile.name + ' · movement cost ' + tile.movementCost"
-            >
-              <span class="chip" [style.background]="tile.fallbackColor"></span>
-              <span class="label">{{ tile.name }}</span>
-              <span class="cost">{{ tile.passable ? tile.movementCost : '×' }}</span>
-            </button>
-          }
-        </div>
-        <p class="hint">Movement cost 0 means impassable. Colours are placeholders resolved from visualId.</p>
-      </section>
-
-      <section class="panel">
-        <h2>Content</h2>
-        <div class="button-row">
-          <button type="button" (click)="validate()">Validate</button>
-          <button type="button" (click)="exportWorld()">Export map</button>
-          <button type="button" (click)="exportProject()">Export project</button>
-          <label class="file-button">
-            Import JSON
-            <input type="file" accept="application/json,.json" (change)="importWorld($event)" hidden />
-          </label>
-          <button type="button" (click)="resetToShipped()">Reload content/</button>
-        </div>
-        <div class="button-row play-row">
-          <button type="button" class="primary" (click)="playWorld()">Validate &amp; Play ▸</button>
-        </div>
-
-        @if (message(); as note) {
-          <p class="hint note">{{ note }}</p>
-        }
-
-        @let validation = report();
-        @if (validation !== null) {
-          @if (validation.valid && validation.issues.length === 0) {
-            <div class="banner ok">Valid — the runtime will load this content as-is.</div>
-          } @else {
-            <div class="banner" [class.error]="!validation.valid" [class.warn]="validation.valid">
-              {{ validation.valid ? 'Valid, with warnings' : 'Invalid' }}
-            </div>
-            <ul class="issues">
-              @for (issue of validation.issues; track issue.code + issue.path) {
-                <li [class.error]="issue.severity === 'error'" [class.warn]="issue.severity === 'warning'">
-                  <code>{{ issue.path }}</code>
-                  <span>{{ issue.message }}</span>
-                </li>
-              }
-            </ul>
-          }
-        }
-      </section>
-
-      <section class="panel">
-        <h2>New map</h2>
-        <div class="new-world">
-          <input #newName type="text" placeholder="Name" value="New Map" />
-          <div class="dims">
-            <input #newWidth type="number" min="1" max="256" value="20" aria-label="Width" />
-            <span>×</span>
-            <input #newHeight type="number" min="1" max="256" value="20" aria-label="Height" />
-          </div>
-          <button type="button" (click)="createWorld(newWidth.value, newHeight.value, newName.value)">
-            Add to project
-          </button>
-        </div>
-        <p class="hint">Adds a map alongside the others; doors can point at it right away.</p>
-      </section>
-
-      @if (stats(); as frame) {
+  <div class="docks">
+    <aside class="dock left">
+      @if (doc === null) {
+        <p class="hint">Loading authored content…</p>
+      } @else {
         <section class="panel">
-          <h2>Renderer</h2>
-          <div class="rows">
+          <h2>Tool</h2>
+          <div class="tools">
+            <button type="button" [class.on]="tool() === 'map'" (click)="selectTool('map')">Map</button>
+            <button type="button" [class.on]="tool() === 'paint'" (click)="selectTool('paint')">Paint</button>
+            <button type="button" [class.on]="tool() === 'raise'" (click)="selectTool('raise')">Raise</button>
+            <button type="button" [class.on]="tool() === 'lower'" (click)="selectTool('lower')">Lower</button>
+            <button type="button" [class.on]="tool() === 'player'" (click)="selectTool('player')">Player</button>
+            <button type="button" [class.on]="tool() === 'monster'" (click)="selectTool('monster')">Monster</button>
+            <button type="button" [class.on]="tool() === 'link'" (click)="selectTool('link')">Door</button>
+            <button type="button" [class.on]="tool() === 'erase'" (click)="selectTool('erase')">Erase</button>
+          </div>
+          <p class="hint">
+            @switch (tool()) {
+              @case ('map') { Browse, add and rename the project's maps in the panel on the right. }
+              @case ('paint') { Click or drag to paint the selected terrain. }
+              @case ('raise') { Click or drag to raise cells by one step. Visible in isometric. }
+              @case ('lower') { Click or drag to lower cells by one step. Visible in isometric. }
+              @case ('player') { Click a hex to move the player start. A world has exactly one. }
+              @case ('monster') { Click hexes to add hunters. }
+              @case ('link') { Click a hex to put a door on it, then set where it leads below. }
+              @case ('erase') { Click a hex to remove the entity, door or location on it. }
+            }
+          </p>
+        </section>
+
+        <!--
+          One inspector at a time, chosen by the active tool: a door editor is
+          noise while painting terrain, and the panel it used to share space with
+          pushed everything else off the bottom of the dock.
+        -->
+        @switch (inspector()) {
+          @case ('brush') {
+            <section class="panel">
+              <h2>Brush</h2>
+              @let tile = brush();
+              @if (tile === null) {
+                <p class="hint">Pick a terrain in the palette on the right.</p>
+              } @else {
+                <div class="brush">
+                  <span class="chip" [style.background]="tile.fallbackColor"></span>
+                  <span class="label">{{ tile.name }}</span>
+                  <span class="cost">{{ tile.passable ? tile.movementCost : '×' }}</span>
+                </div>
+                <p class="hint">
+                  {{ tile.passable ? 'Movement cost ' + tile.movementCost : 'Impassable' }} ·
+                  <code>{{ tile.id }}</code>
+                </p>
+              }
+            </section>
+          }
+
+          @case ('elevation') {
+            <section class="panel">
+              <h2>Elevation</h2>
+              <div class="rows">
+                <div class="row">
+                  <span>range</span>
+                  <span>{{ doc.elevationRange.min }} … {{ doc.elevationRange.max }}</span>
+                </div>
+                @let under = hover();
+                <div class="row">
+                  <span>under cursor</span>
+                  <span>{{ under === null ? '—' : hoveredElevation() }}</span>
+                </div>
+              </div>
+              <p class="hint">
+                One step per click, drag to sculpt. Relief only shows in isometric projection —
+                switch it on the canvas toolbar.
+              </p>
+            </section>
+          }
+
+          @case ('placement') {
+            <section class="panel">
+              <h2>Selection</h2>
+              @let picked = selection();
+              @if (picked === null) {
+                <p class="hint">Click a hex to inspect what is authored on it.</p>
+              } @else {
+                <div class="rows">
+                  <div class="row"><span>hex</span><span>[{{ picked.at.col }}, {{ picked.at.row }}]</span></div>
+                  <div class="row"><span>terrain</span><span>{{ picked.tile?.name ?? '—' }}</span></div>
+                  <div class="row"><span>elevation</span><span>{{ picked.elevation }}</span></div>
+                  <div class="row"><span>entity</span><span>{{ picked.entity?.templateId ?? '—' }}</span></div>
+                  <div class="row"><span>door</span><span>{{ picked.link?.targetWorld ?? '—' }}</span></div>
+                  <div class="row"><span>location</span><span>{{ picked.location?.name ?? '—' }}</span></div>
+                </div>
+              }
+              <div class="rows counts">
+                <div class="row"><span>players</span><span>{{ entityCounts().players }}</span></div>
+                <div class="row"><span>monsters</span><span>{{ entityCounts().monsters }}</span></div>
+              </div>
+            </section>
+          }
+
+          @case ('doors') {
+            <section class="panel">
+              <h2>Doors</h2>
+              @let link = selectedLink();
+              @if (link === null) {
+                <p class="hint">Select a door on the canvas, or pick one below, to edit where it leads.</p>
+              } @else {
+                <div class="link-editor">
+                  <div class="row"><span>id</span><span>{{ link.id }}</span></div>
+                  <div class="row"><span>on hex</span><span>[{{ link.at.col }}, {{ link.at.row }}]</span></div>
+
+                  <label>
+                    <span>leads to</span>
+                    <select [value]="link.targetWorld" (change)="setLinkTarget($any($event.target).value)">
+                      @for (map of maps(); track map.id) {
+                        <option [value]="map.id" [selected]="map.id === link.targetWorld">{{ map.id }}</option>
+                      }
+                    </select>
+                  </label>
+
+                  <label>
+                    <span>arrives at</span>
+                    <span class="dims">
+                      <input
+                        #arrivalCol
+                        type="number"
+                        min="0"
+                        [value]="link.targetAt.col"
+                        aria-label="Arrival column"
+                        (change)="setLinkArrival(arrivalCol.value, arrivalRow.value)"
+                      />
+                      <input
+                        #arrivalRow
+                        type="number"
+                        min="0"
+                        [value]="link.targetAt.row"
+                        aria-label="Arrival row"
+                        (change)="setLinkArrival(arrivalCol.value, arrivalRow.value)"
+                      />
+                    </span>
+                  </label>
+
+                  <label>
+                    <span>label</span>
+                    <input
+                      #linkName
+                      type="text"
+                      [value]="link.name"
+                      placeholder="Door"
+                      (change)="setLinkName(linkName.value)"
+                    />
+                  </label>
+
+                  <button type="button" (click)="removeSelectedLink()">Remove this door</button>
+                </div>
+              }
+
+              @if (links().length > 0) {
+                <ul class="link-list">
+                  @for (entry of links(); track entry.id) {
+                    <li>
+                      <button type="button" (click)="selectLink(entry)">
+                        [{{ entry.at.col }}, {{ entry.at.row }}] → {{ entry.targetWorld }} [{{
+                          entry.targetAt.col
+                        }}, {{ entry.targetAt.row }}]
+                      </button>
+                    </li>
+                  }
+                </ul>
+              }
+              <div class="button-row">
+                <button type="button" (click)="validateLinks()">Validate doors</button>
+              </div>
+              <p class="hint">
+                A door's target lives in another file, so only a whole-project check can resolve it.
+              </p>
+            </section>
+          }
+        }
+      }
+    </aside>
+
+    <section class="stage">
+      <canvas #canvas></canvas>
+
+      <div class="viewport-tools">
+        <button type="button" (click)="zoom(1.2)" title="Zoom in">＋</button>
+        <button type="button" (click)="zoom(1 / 1.2)" title="Zoom out">－</button>
+        <button type="button" (click)="fitView()" title="Fit the map to the window">Fit</button>
+        <button type="button" (click)="toggleGrid()" [class.on]="showGrid()" title="Toggle grid">Grid</button>
+        <button
+          type="button"
+          (click)="toggleCoordinates()"
+          [class.on]="showCoordinates()"
+          title="Toggle coordinates"
+        >
+          col,row
+        </button>
+        <button
+          type="button"
+          (click)="toggleProjection()"
+          [class.on]="projection() === 'isometric'"
+          title="Switch the world between top-down and isometric (saved with the world)"
+        >
+          Isometric
+        </button>
+        <button
+          type="button"
+          (click)="toggleStats()"
+          [class.on]="showStats()"
+          title="Show what the renderer did on the last frame"
+        >
+          Stats
+        </button>
+      </div>
+
+      @let failure = error();
+      @let note = message();
+      @let validation = report();
+      @if (failure !== null || note !== null || validation !== null) {
+        <div class="notices">
+          <button type="button" class="close" (click)="dismissNotices()" title="Dismiss">×</button>
+
+          @if (failure !== null) {
+            <div class="banner error">{{ failure }}</div>
+          }
+          @if (note !== null) {
+            <p class="hint note">{{ note }}</p>
+          }
+          @if (validation !== null) {
+            @if (validation.valid && validation.issues.length === 0) {
+              <div class="banner ok">Valid — the runtime will load this content as-is.</div>
+            } @else {
+              <div class="banner" [class.error]="!validation.valid" [class.warn]="validation.valid">
+                {{ validation.valid ? 'Valid, with warnings' : 'Invalid' }}
+              </div>
+              <ul class="issues">
+                @for (issue of validation.issues; track issue.code + issue.path) {
+                  <li [class.error]="issue.severity === 'error'" [class.warn]="issue.severity === 'warning'">
+                    <code>{{ issue.path }}</code>
+                    <span>{{ issue.message }}</span>
+                  </li>
+                }
+              </ul>
+            }
+          }
+        </div>
+      }
+
+      @if (showStats()) {
+        @if (stats(); as frame) {
+          <div class="stats-card">
             <div class="row">
               <span>cells drawn</span><span>{{ frame.cellsDrawn }} / {{ frame.cellsTotal }}</span>
             </div>
             <div class="row"><span>terrain fills</span><span>{{ frame.terrainBatches }}</span></div>
             <div class="row"><span>last frame</span><span>{{ frame.lastFrameMs.toFixed(2) }} ms</span></div>
           </div>
-          <p class="hint">Culling and batching: cost tracks the window, not the map.</p>
-        </section>
+        }
       }
+
+      @let cell = hover();
+      <div class="overlay-note">
+        @if (cell !== null) {
+          hex [{{ cell.col }}, {{ cell.row }}]
+          @let tile = hoveredTile();
+          @if (tile !== null) {
+            · {{ tile.name }} · cost {{ tile.movementCost }}{{ tile.passable ? '' : ' (impassable)' }}
+          }
+          · elevation {{ hoveredElevation() }}
+        } @else {
+          @if (tool() !== 'map') {
+            drag with the left button to apply the tool ·
+          }
+          right-drag or middle-drag to pan · wheel to zoom
+        }
+      </div>
+    </section>
+
+    @if (resourceDock() === 'terrain') {
+      <aside class="dock right">
+        <section class="panel palette-panel">
+          <h2>Terrain palette</h2>
+          <div class="palette">
+            @for (tile of palette(); track tile.id) {
+              <button
+                type="button"
+                class="swatch"
+                [class.on]="selectedTile() === tile.id"
+                (click)="selectTile(tile.id)"
+                [title]="tile.name + ' · movement cost ' + tile.movementCost"
+              >
+                <span class="chip" [style.background]="tile.fallbackColor"></span>
+                <span class="label">{{ tile.name }}</span>
+                <span class="cost">{{ tile.passable ? tile.movementCost : '×' }}</span>
+              </button>
+            }
+          </div>
+          <p class="hint">Movement cost 0 means impassable. Colours are placeholders resolved from visualId.</p>
+        </section>
+      </aside>
     }
-  </aside>
+
+    @if (resourceDock() === 'maps' && doc !== null) {
+      <aside class="dock right maps">
+        <!--
+          Adding a map comes first: it is the one action here that is not about
+          the map already open, and burying it under a list that grows with the
+          project would push it further away with every map added.
+        -->
+        <section class="panel">
+          <h2>New map</h2>
+          <div class="new-world">
+            <input #newName type="text" placeholder="Name" value="New Map" />
+            <label class="field">
+              <span>zone</span>
+              <select #newZone aria-label="Zone of the new map">
+                @for (zone of zones(); track zone.id) {
+                  <option
+                    [value]="zone.id"
+                    [selected]="zone.id === (zoneFilter() ?? openZoneId())"
+                  >
+                    {{ zone.label }}
+                  </option>
+                }
+              </select>
+            </label>
+            <div class="dims">
+              <input #newWidth type="number" min="1" max="256" value="20" aria-label="Width" />
+              <span>×</span>
+              <input #newHeight type="number" min="1" max="256" value="20" aria-label="Height" />
+            </div>
+            <button
+              type="button"
+              (click)="createWorld(newWidth.value, newHeight.value, newName.value, newZone.value)"
+            >
+              Add to project
+            </button>
+          </div>
+          <p class="hint">Adds a map alongside the others; doors can point at it right away.</p>
+        </section>
+
+        <section class="panel">
+          <h2>Maps</h2>
+
+          <label class="zone-picker">
+            <span>zone</span>
+            <select (change)="setZoneFilter($any($event.target).value)">
+              <option value="all" [selected]="zoneFilter() === null">
+                All zones ({{ maps().length }})
+              </option>
+              @for (zone of zones(); track zone.id) {
+                <option [value]="'zone:' + zone.id" [selected]="zoneFilter() === zone.id">
+                  {{ zone.label }} ({{ zone.count }})
+                </option>
+              }
+            </select>
+          </label>
+
+          <!-- Five rows tall whatever the project holds; the rest is one scroll away. -->
+          <div class="map-list">
+            @for (map of visibleMaps(); track map.id) {
+              <button
+                type="button"
+                class="map"
+                [class.on]="map.id === activeWorldId()"
+                (click)="switchMap(map.id)"
+                [title]="map.id + ' · zone ' + zoneLabel(map.zone)"
+              >
+                <span class="label">{{ map.name }}</span>
+                <!--
+                  One caption, not two: the zone is what tells maps apart while
+                  browsing all of them, and the id once a zone is picked. Both
+                  are always in the row's tooltip.
+                -->
+                <span class="id">
+                  {{ zoneFilter() === null ? zoneLabel(map.zone) : map.id }}
+                </span>
+              </button>
+            } @empty {
+              <p class="hint">No map in this zone.</p>
+            }
+          </div>
+
+          <details class="fold">
+            <summary>Zones</summary>
+            <div class="new-world">
+              <input #zoneName type="text" placeholder="Zone name" aria-label="New zone name" />
+              <div class="button-row">
+                <button type="button" (click)="createZone(zoneName.value)">Add zone</button>
+                @if (zoneFilter() !== null) {
+                  <button type="button" (click)="removeFilteredZone()">Remove this zone</button>
+                }
+              </div>
+            </div>
+            <p class="hint">
+              The first zone is the default: a map that names none belongs to it. A zone can only be
+              removed once no map is left in it.
+            </p>
+          </details>
+        </section>
+
+        <section class="panel">
+          <h2>Open map</h2>
+          <div class="rows">
+            <div class="row"><span>size</span><span>{{ doc.width }} × {{ doc.height }}</span></div>
+            <div class="row"><span>zone</span><span>{{ zoneLabel(openZoneId()) }}</span></div>
+            <div class="row"><span>tile set</span><span>{{ doc.tileSetId }}</span></div>
+            <div class="row"><span>projection</span><span>{{ projection() }}</span></div>
+            <div class="row"><span>source</span><span>{{ source() }}{{ dirty() ? ' · edited' : '' }}</span></div>
+            <div class="row">
+              <span>entities</span>
+              <span>{{ entityCounts().players }} player · {{ entityCounts().monsters }} monster</span>
+            </div>
+          </div>
+
+          <details class="fold">
+            <summary>Map settings</summary>
+            <div class="new-world">
+              <input #mapId type="text" [value]="doc.id" aria-label="Map id" />
+              <input #mapName type="text" [value]="doc.name" aria-label="Map name" />
+              <label class="field">
+                <span>zone</span>
+                <select #mapZone aria-label="Map zone">
+                  @for (zone of zones(); track zone.id) {
+                    <option [value]="zone.id" [selected]="zone.id === openZoneId()">
+                      {{ zone.label }}
+                    </option>
+                  }
+                </select>
+              </label>
+              <div class="button-row">
+                <button type="button" (click)="applyMapSettings(mapId.value, mapName.value, mapZone.value)">
+                  Apply
+                </button>
+                <button type="button" (click)="removeWorld()">Remove map</button>
+              </div>
+            </div>
+          </details>
+        </section>
+      </aside>
+    }
+  </div>
 </div>

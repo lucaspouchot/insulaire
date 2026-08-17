@@ -82,6 +82,19 @@ identifying itself, not a label.
 
 ### Edit a world
 
+The screen is the tools on the left, the canvas in the middle, and the active
+tool's content on the right — the terrain palette under **Paint**, the project
+browser under **Map**, nothing at all for the tools that need neither. Project
+actions (validate, import, export, play) sit in the toolbar on top.
+
+The **Map** tool is where a project is organised: add a map, pick one to open,
+rename it. Every map belongs to a **zone** — a group of maps declared by
+`project.json` and picked from a list, never typed. Zones are what a tick will
+advance together, so a hunter two maps away keeps moving (ADR-0021; the
+zone-wide tick is not implemented yet). Add one under *Zones*, put maps in it
+from *Map settings* or when creating them; the picker filters on it and shows
+five maps at a time, so a project of forty stays navigable.
+
 1. Open **Editor**.
 2. Pick a terrain in the palette (movement cost `0` means impassable).
 3. Click or **drag** on the map to paint. Right-drag or middle-drag pans, the
@@ -101,7 +114,7 @@ Edits are mirrored into `localStorage`, so a refresh does not lose work.
 
 ### Link two maps
 
-1. Pick the map to leave in the **Maps** panel.
+1. With the **Map** tool, open the map to leave from.
 2. Switch the tool to **Door** and click a passable hex.
 3. In **Doors**, choose the map it leads to and the arrival `col, row`.
 4. Press **Validate doors**. A door's target lives in another file, so this is a
@@ -410,6 +423,9 @@ types the application uses — including the whole change-map loop.
   (ADR-0017).
 - **Only the `enter` trigger** for map links; `interact` is in the schema and
   rejected by validation.
+- **A tick still advances one map.** Zones are authored, validated and edited,
+  but the zone-wide tick they exist for is not written: maps outside the one the
+  player stands on stay frozen (ADR-0021).
 - **The character, asset and scenario editors are placeholders** — registered
   tabs describing what they will own, with no implementation (ADR-0019).
 - **No undo/redo**, no layers, no copy/paste in the editor.
@@ -454,6 +470,7 @@ Read in order:
 18. **ADR-0018 — client delivery build**
 19. **ADR-0019 — editor modules**
 20. **ADR-0020 — desktop executable (Tauri 2), Steam seam**
+21. **ADR-0021 — map zones** *(zone-wide ticks not implemented yet)*
 
 `CLAUDE.md` contains project-level instructions for Claude Code and other coding
 agents.

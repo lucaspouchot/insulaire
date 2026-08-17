@@ -149,6 +149,23 @@ describe('WorldDocument', () => {
     expect(documentFor().elevationRange).toEqual({ min: 0, max: 0 });
   });
 
+  /**
+   * A zone is authoring organisation, so it has to survive a round trip — and an
+   * unzoned map has to export no `zone` at all, or every file predating the
+   * field would gain a line the first time the editor re-exports it.
+   */
+  it('carries a zone through a round trip and omits it when unzoned', () => {
+    expect(documentFor().zone).toBe('');
+    expect(documentFor().toDefinition()).not.toHaveProperty('zone');
+
+    const zoned = WorldDocument.fromDefinition({ ...world, zone: 'Northern Reach' }, tileSet);
+    expect(zoned.zone).toBe('Northern Reach');
+    expect(zoned.toDefinition().zone).toBe('Northern Reach');
+
+    zoned.zone = '';
+    expect(zoned.toDefinition()).not.toHaveProperty('zone');
+  });
+
   it('reports whether a paint actually changed anything', () => {
     const document = documentFor();
     expect(document.paint(offset(0, 0), 'water')).toBe(true);

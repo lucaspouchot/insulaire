@@ -89,6 +89,17 @@ impl ValidationReport {
         Self { valid, issues }
     }
 
+    /// Combines two reports, keeping every issue and the stricter verdict.
+    ///
+    /// Loading a project runs several checks that answer different questions;
+    /// the caller reports them as one outcome.
+    #[must_use]
+    pub fn merge(mut self, other: Self) -> Self {
+        self.valid = self.valid && other.valid;
+        self.issues.extend(other.issues);
+        self
+    }
+
     /// Issues that prevent loading.
     pub fn errors(&self) -> impl Iterator<Item = &ValidationIssue> {
         self.issues
@@ -608,6 +619,36 @@ pub fn validate_project_links<'a>(
     ValidationReport::from_issues(issues)
 }
 
+/// Resolves every world's zone against the project that declares them.
+///
+/// The other half of zone validation, and the half no single file can perform:
+/// a world names a zone id, and only the project says whether that zone exists
+/// (`docs/adr/ADR-0021-map-zones.md`). A world naming none is not an error —
+/// it belongs to the project's default zone, which is what makes zones
+/// mandatory in the model without making the field mandatory in the file.
+#[must_use]
+pub fn validate_project_zones<'a>(
+    project: &ProjectDefinition,
+    worlds: impl IntoIterator<Item = &'a WorldDefinition>,
+) -> ValidationReport {
+    let mut issues = Vec::new();
+
+    for world in worlds {
+        if !world.zone.is_empty() && !project.has_zone(&world.zone) {
+            issues.push(ValidationIssue::error(
+                "world.unknownZone",
+                format!("{}.zone", world.id),
+                format!(
+                    "world `{}` is in zone `{}`, which the project does not declare",
+                    world.id, world.zone
+                ),
+            ));
+        }
+    }
+
+    ValidationReport::from_issues(issues)
+}
+
 /// Validates a project file, given the ids of everything currently loaded.
 ///
 /// The project only *names* files; whether they exist on disk is the host's
@@ -644,6 +685,23 @@ pub fn validate_project(
             "worlds",
             "a project must list at least one world",
         ));
+    }
+
+    let mut zone_ids: BTreeSet<&str> = BTreeSet::new();
+    for (index, zone) in project.zones.iter().enumerate() {
+        if zone.id.trim().is_empty() {
+            issues.push(ValidationIssue::error(
+                "project.missingZoneId",
+                format!("zones[{index}].id"),
+                "zone id must not be empty",
+            ));
+        } else if !zone_ids.insert(zone.id.as_str()) {
+            issues.push(ValidationIssue::error(
+                "project.duplicateZone",
+                format!("zones[{index}].id"),
+                format!("zone `{}` is declared twice", zone.id),
+            ));
+        }
     }
 
     let mut seen: BTreeSet<&str> = BTreeSet::new();
@@ -1049,6 +1107,10 @@ mod tests {
             schema_version: PROJECT_SCHEMA_VERSION,
             name: "Demo".to_owned(),
             start_world: "linked_world".to_owned(),
+            zones: vec![crate::project::ZoneDefinition {
+                id: "valley".to_owned(),
+                name: "Valley".to_owned(),
+            }],
             tile_sets: vec![crate::project::ContentRef {
                 id: "mvp_terrain".to_owned(),
                 path: "tilesets/mvp_terrain.json".to_owned(),
@@ -1104,5 +1166,60 @@ mod tests {
         project.tile_sets[0].id = "absent".to_owned();
         assert!(codes(&validate_project(&project, &worlds, &tile_sets))
             .contains(&"project.unloadedTileSet"));
+    }
+
+    #[test]
+    fn a_zone_declared_twice_or_without_an_id_is_an_error() {
+        let (worlds, tile_sets) = loaded();
+        let mut project = project();
+        project.zones.push(crate::project::ZoneDefinition {
+            id: "valley".to_owned(),
+            name: "Valley Again".to_owned(),
+        });
+        project.zones.push(crate::project::ZoneDefinition {
+            id: "  ".to_owned(),
+            name: "Nameless".to_owned(),
+        });
+
+        let report = validate_project(&project, &worlds, &tile_sets);
+        assert!(codes(&report).contains(&"project.duplicateZone"));
+        assert!(codes(&report).contains(&"project.missingZoneId"));
+    }
+
+    /**
+     * A zone id means nothing without the project that declares it, so this is
+     * the check no single world file can make — the mirror of a map link's
+     * `unknownTargetWorld`.
+     */
+    #[test]
+    fn a_world_in_a_zone_the_project_does_not_declare_is_an_error() {
+        let project = project();
+        let mut world = crate::testing::sample_world();
+
+        // No zone: the map belongs to the project's default one.
+        assert!(validate_project_zones(&project, [&world]).valid);
+
+        world.zone = "valley".to_owned();
+        assert!(validate_project_zones(&project, [&world]).valid);
+
+        world.zone = "caves".to_owned();
+        let report = validate_project_zones(&project, [&world]);
+        assert!(!report.valid);
+        assert!(codes(&report).contains(&"world.unknownZone"));
+    }
+
+    #[test]
+    fn a_project_declaring_no_zones_accepts_only_the_default_one() {
+        use crate::project::DEFAULT_ZONE_ID;
+
+        let mut project = project();
+        project.zones.clear();
+        let mut world = crate::testing::sample_world();
+
+        world.zone = DEFAULT_ZONE_ID.to_owned();
+        assert!(validate_project_zones(&project, [&world]).valid);
+
+        world.zone = "valley".to_owned();
+        assert!(!validate_project_zones(&project, [&world]).valid);
     }
 }

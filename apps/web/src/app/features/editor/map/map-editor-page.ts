@@ -43,7 +43,31 @@ import { ProjectStoreService } from '../../../services/project-store.service';
 /** Hex circumradius in world pixels. The camera scales from here. */
 const HEX_SIZE = 28;
 
-export type EditorTool = 'paint' | 'raise' | 'lower' | 'player' | 'monster' | 'link' | 'erase';
+/**
+ * Prefix on the zone picker's option values.
+ *
+ * A zone name is free text, so it could be anything the "every zone" option
+ * might use as its own value — including `all` and the empty string, which is
+ * the unzoned bucket. Prefixing the real zones keeps the two apart.
+ */
+const ZONE_OPTION = 'zone:';
+
+/**
+ * What a click on the canvas does — and, for the tools that need content, what
+ * the right dock offers.
+ *
+ * `map` edits nothing on the canvas: it is the project browser, and it earns a
+ * place here because the dock it opens is chosen by the tool like any other.
+ */
+export type EditorTool =
+  | 'map'
+  | 'paint'
+  | 'raise'
+  | 'lower'
+  | 'player'
+  | 'monster'
+  | 'link'
+  | 'erase';
 
 @Component({
   selector: 'app-map-editor-page',
@@ -59,6 +83,8 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
 
   private view: CanvasView | null = null;
   private renderer: HexMapRenderer | null = null;
+  /** Set once the map has been framed; see {@link frameOnce}. */
+  private framed = false;
 
   protected readonly document = this.store.document;
   protected readonly dirty = this.store.dirty;
@@ -72,11 +98,15 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   protected readonly selected = signal<Offset | null>(null);
   protected readonly showGrid = signal(true);
   protected readonly showCoordinates = signal(false);
+  /** The renderer readout, floated over the canvas rather than docked. */
+  protected readonly showStats = signal(false);
   protected readonly report = signal<ValidationReport | null>(null);
   protected readonly message = signal<string | null>(null);
   protected readonly error = signal<string | null>(null);
   /** Bumped on every document mutation so computed views recompute. */
   protected readonly revision = signal(0);
+  /** The zone whose maps the picker lists; `null` lists every map. */
+  protected readonly zoneFilter = signal<string | null>(null);
 
   protected readonly palette = computed<readonly DocumentTile[]>(() => {
     this.revision();
@@ -118,6 +148,108 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     return this.renderer?.frameStats ?? null;
   });
 
+  /**
+   * The project's zones, in author order, with how many maps each holds.
+   *
+   * Author order, not alphabetical: the first zone is the default one, and a
+   * list that reorders itself would hide which that is.
+   */
+  protected readonly zones = computed(() => {
+    const counts = new Map<string, number>();
+    for (const map of this.maps()) {
+      counts.set(map.zone, (counts.get(map.zone) ?? 0) + 1);
+    }
+    return this.store.zones().map((zone) => ({
+      id: zone.id,
+      label: zone.name === undefined || zone.name.length === 0 ? zone.id : zone.name,
+      count: counts.get(zone.id) ?? 0,
+    }));
+  });
+
+  /** The display name of a zone id, for captions. */
+  protected zoneLabel(id: string): string {
+    return this.zones().find((zone) => zone.id === id)?.label ?? id;
+  }
+
+  /** The zone the open map is in, with the default resolved. */
+  protected readonly openZoneId = computed(() => {
+    this.revision();
+    const zone = this.document()?.zone ?? '';
+    return zone.length > 0 ? zone : this.store.defaultZoneId();
+  });
+
+  /** The maps the picker lists: those of the chosen zone, or all of them. */
+  protected readonly visibleMaps = computed(() => {
+    const zone = this.zoneFilter();
+    const maps = this.maps();
+    return zone === null ? maps : maps.filter((map) => map.zone === zone);
+  });
+
+  /**
+   * Which resource palette the right dock offers, or `null` to close it.
+   *
+   * A palette is a *tool's* content: the terrain list is the paint tool's brush
+   * box and has no meaning while raising ground or placing doors. Closing the
+   * dock rather than greying it out gives the canvas the width back, which is
+   * the point — the palette will only grow (`docs/adr/ADR-0009-assets-tilesets.md`).
+   */
+  protected readonly resourceDock = computed<'terrain' | 'maps' | null>(() => {
+    switch (this.tool()) {
+      case 'paint':
+        return 'terrain';
+      case 'map':
+        return 'maps';
+      default:
+        return null;
+    }
+  });
+
+  /** Which inspector the left dock shows below the tool picker, if any. */
+  protected readonly inspector = computed<'brush' | 'elevation' | 'placement' | 'doors' | 'none'>(() => {
+    switch (this.tool()) {
+      case 'map':
+        // The map tool's whole content — browser, settings, new map — is in the
+        // right dock; repeating any of it on the left would only split it.
+        return 'none';
+      case 'paint':
+        return 'brush';
+      case 'raise':
+      case 'lower':
+        return 'elevation';
+      case 'link':
+        return 'doors';
+      default:
+        return 'placement';
+    }
+  });
+
+  /** The palette entry the paint tool is holding. */
+  protected readonly brush = computed<DocumentTile | null>(() => {
+    const id = this.selectedTile();
+    return this.palette().find((tile) => tile.id === id) ?? null;
+  });
+
+  /** Everything authored on the selected hex, for the placement inspector. */
+  protected readonly selection = computed(() => {
+    this.revision();
+    const cell = this.selected();
+    const document = this.document();
+    if (cell === null || document === null) {
+      return null;
+    }
+    return {
+      at: cell,
+      tile: document.tileAt(cell),
+      elevation: document.elevationAt(cell),
+      entity: document.entityAt(cell),
+      link: document.linkAt(cell),
+      location:
+        document.placedLocations.find(
+          (location) => location.at.col === cell.col && location.at.row === cell.row,
+        ) ?? null,
+    };
+  });
+
   async ngAfterViewInit(): Promise<void> {
     // The engine is only needed to *judge* a world, not to edit one, so a
     // failed WASM load degrades the editor rather than breaking it. The shell's
@@ -153,8 +285,29 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
         this.applyTool(cell);
       },
       onDragPaint: (cell) => this.applyTool(cell),
-      onResize: () => this.view?.fit(),
+      onResize: () => this.frameOnce(),
     });
+    this.frameOnce();
+  }
+
+  /**
+   * Frames the map the first time the canvas has a real size, and never again.
+   *
+   * The canvas may still be laid out when the view is built, so the first useful
+   * size arrives through the resize observer — but every *later* resize is a
+   * dock opening or a window being dragged, and refitting there would throw away
+   * the author's zoom and pan. `CanvasView` keeps the viewport centre steady
+   * across those instead.
+   */
+  private frameOnce(): void {
+    if (this.framed || this.view === null) {
+      return;
+    }
+    const { width, height } = this.view.viewport;
+    if (width <= 1 || height <= 1) {
+      return;
+    }
+    this.framed = true;
     this.view.fit();
   }
 
@@ -187,6 +340,9 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
 
     let changed = false;
     switch (this.tool()) {
+      case 'map':
+        // Browsing the project, not editing the map: a click only selects.
+        break;
       case 'paint': {
         const tileId = this.selectedTile();
         changed = tileId !== null && document.paint(cell, tileId);
@@ -305,6 +461,62 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
 
   // ------------------------------------------------------------------- maps
 
+  /** Points the picker at a zone, or at every map. */
+  protected setZoneFilter(option: string): void {
+    this.zoneFilter.set(option.startsWith(ZONE_OPTION) ? option.slice(ZONE_OPTION.length) : null);
+  }
+
+  /**
+   * Applies the open map's id, name and zone in one go.
+   *
+   * The zone is set first: renaming may be refused for a duplicate id, and the
+   * move it was bundled with should not be lost with it.
+   */
+  protected applyMapSettings(id: string, name: string, zone: string): void {
+    if (this.store.setZone(zone)) {
+      // Follow the map into its new zone rather than letting the picker filter
+      // out the map it is meant to be showing.
+      if (this.zoneFilter() !== null) {
+        this.zoneFilter.set(zone);
+      }
+      this.message.set(`Moved to zone "${zone}".`);
+    }
+    this.renameWorld(id, name);
+  }
+
+  /** Declares a zone, named by the author; the id is derived from the name. */
+  protected createZone(name: string): void {
+    const id = slugify(name);
+    if (!this.store.addZone(id, name)) {
+      this.error.set(
+        id.length === 0
+          ? 'Give the zone a name.'
+          : `The project already has a zone called "${id}".`,
+      );
+      return;
+    }
+    this.zoneFilter.set(id);
+    this.message.set(`Added zone "${id}". Maps can be created straight into it.`);
+    this.rebuild();
+  }
+
+  /** Removes the zone the picker is filtered on, if it is empty. */
+  protected removeFilteredZone(): void {
+    const zone = this.zoneFilter();
+    if (zone === null) {
+      return;
+    }
+    if (!this.store.removeZone(zone)) {
+      this.error.set(
+        `Zone "${zone}" still holds maps, or is the project's only zone. Move its maps first.`,
+      );
+      return;
+    }
+    this.zoneFilter.set(null);
+    this.message.set(`Removed zone "${zone}".`);
+    this.rebuild();
+  }
+
   protected switchMap(worldId: string): void {
     this.store.selectWorld(worldId);
     const document = this.store.document();
@@ -319,7 +531,12 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     this.view?.fit();
   }
 
-  protected async createWorld(widthInput: string, heightInput: string, name: string): Promise<void> {
+  protected async createWorld(
+    widthInput: string,
+    heightInput: string,
+    name: string,
+    zone: string,
+  ): Promise<void> {
     const width = clampDimension(widthInput);
     const height = clampDimension(heightInput);
     try {
@@ -329,9 +546,14 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
         width,
         height,
         tileSet: this.store.requireTileSet(),
+        zone: zone.length > 0 ? zone : this.store.defaultZoneId(),
       });
       this.store.addWorld(document);
       this.selectedTile.set(document.palette[0]?.id ?? null);
+      if (this.zoneFilter() !== null) {
+        // The map that was just opened has to be one the picker lists.
+        this.zoneFilter.set(document.zone);
+      }
       this.report.set(null);
       this.message.set(`Added a ${width}x${height} map. Place a player before playing.`);
       this.rebuild();
@@ -512,6 +734,10 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     this.rebuild();
   }
 
+  protected toggleStats(): void {
+    this.showStats.update((value) => !value);
+  }
+
   /**
    * Switches the world between top-down and isometric.
    *
@@ -546,12 +772,29 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     return cell === null || document === null ? null : document.elevationAt(cell);
   });
 
-  protected dismissError(): void {
+  /** Clears the floating notices: the error, the note and the last report. */
+  protected dismissNotices(): void {
     this.error.set(null);
+    this.message.set(null);
+    this.report.set(null);
+  }
+
+  /**
+   * Drops the zone filter when the project no longer declares that zone.
+   *
+   * An *empty* zone is not stale — a zone is created before it holds anything —
+   * so only an undeclared one resets the picker.
+   */
+  private syncZoneFilter(): void {
+    const zone = this.zoneFilter();
+    if (zone !== null && !this.zones().some((entry) => entry.id === zone)) {
+      this.zoneFilter.set(null);
+    }
   }
 
   /** Rebuilds the render model from the document and redraws. */
   private rebuild(): void {
+    this.syncZoneFilter();
     const document = this.store.document();
     if (document !== null) {
       this.renderer?.setModel(this.buildModel(document));

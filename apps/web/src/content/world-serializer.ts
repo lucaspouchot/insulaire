@@ -24,6 +24,7 @@ const SCALAR_KEYS = [
   'id',
   'schemaVersion',
   'name',
+  'zone',
   'width',
   'height',
   'orientation',
@@ -70,6 +71,7 @@ export function serializeProject(project: ProjectDefinition): string {
     lines.push(`  "name": ${JSON.stringify(project.name)},`);
   }
   lines.push(`  "startWorld": ${JSON.stringify(project.startWorld)},`);
+  lines.push(...recordArray('zones', project.zones ?? []));
   lines.push(...recordArray('tileSets', project.tileSets));
 
   const worlds = recordArray('worlds', project.worlds);

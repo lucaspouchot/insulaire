@@ -24,10 +24,12 @@
 import { Injectable, computed, signal } from '@angular/core';
 
 import {
+  DEFAULT_ZONE_ID,
   PROJECT_SCHEMA_VERSION,
   ProjectDefinition,
   TileSetDefinition,
   WorldDefinition,
+  ZoneDefinition,
 } from '../../content/content-types';
 import { WorldDocument } from '../../content/world-document';
 import { serializeProject, serializeWorld } from '../../content/world-serializer';
@@ -229,6 +231,9 @@ export class ProjectStoreService {
       schemaVersion: PROJECT_SCHEMA_VERSION,
       name: project.name,
       startWorld,
+      // Always written out, implicit default included: a map's zone id has to
+      // resolve against the manifest it ships with.
+      zones: [...this.zones()],
       tileSets: project.tileSets,
       worlds: documents.map((document) => ({
         id: document.id,
@@ -242,10 +247,32 @@ export class ProjectStoreService {
     return serializeProject(this.projectDefinition());
   }
 
-  /** Ids and names of every map, for pickers and link targets. */
-  readonly worldChoices = computed(() =>
-    this.documentsSignal().map((document) => ({ id: document.id, name: document.name })),
-  );
+  /**
+   * The project's zones, never empty.
+   *
+   * A project that declares none has one implicit zone, so the editor always
+   * has something to put a new map in — zones are mandatory in the model even
+   * where the file leaves them out (`docs/adr/ADR-0021-map-zones.md`).
+   */
+  readonly zones = computed<readonly ZoneDefinition[]>(() => {
+    const declared = this.projectSignal()?.zones ?? [];
+    return declared.length > 0 ? declared : [{ id: DEFAULT_ZONE_ID, name: 'Default' }];
+  });
+
+  /** Id of the zone a map without one belongs to: the first declared. */
+  readonly defaultZoneId = computed(() => this.zones()[0]?.id ?? DEFAULT_ZONE_ID);
+
+  /** Ids, names and zones of every map, for pickers and link targets. */
+  readonly worldChoices = computed(() => {
+    const fallback = this.defaultZoneId();
+    return this.documentsSignal().map((document) => ({
+      id: document.id,
+      name: document.name,
+      // The *resolved* zone: a map that names none is in the default one, and
+      // callers group maps without having to know that rule.
+      zone: document.zone.length > 0 ? document.zone : fallback,
+    }));
+  });
 
   // --------------------------------------------------------------- mutation
 
@@ -325,6 +352,68 @@ export class ProjectStoreService {
     // invisible to `computed`s until the array identity changes.
     this.documentsSignal.set([...documents]);
     this.activeIdSignal.set(nextId);
+    this.touch();
+    return true;
+  }
+
+  /**
+   * Declares a zone.
+   *
+   * The zones a project declares are content, not a derived list: a zone has to
+   * exist before a map can be put in it, which is the whole point of creating
+   * one. Materialising the implicit default alongside it keeps every map that
+   * named no zone exactly where it was — the default is the *first* zone.
+   *
+   * @returns `false` when the id is empty or already taken.
+   */
+  addZone(id: string, name: string): boolean {
+    if (id.length === 0 || this.zones().some((zone) => zone.id === id)) {
+      return false;
+    }
+    this.projectSignal.set({
+      ...this.requireProject(),
+      zones: [...this.zones(), { id, name: name.trim() || id }],
+    });
+    this.touch();
+    return true;
+  }
+
+  /**
+   * Removes a zone.
+   *
+   * @returns `false` when it is the last zone or a map is still in it — moving
+   * those maps somewhere is the author's decision, not this method's.
+   */
+  removeZone(id: string): boolean {
+    const zones = this.zones();
+    if (zones.length <= 1 || !zones.some((zone) => zone.id === id)) {
+      return false;
+    }
+    if (this.worldChoices().some((world) => world.zone === id)) {
+      return false;
+    }
+    this.projectSignal.set({
+      ...this.requireProject(),
+      zones: zones.filter((zone) => zone.id !== id),
+    });
+    this.touch();
+    return true;
+  }
+
+  /**
+   * Moves the open map into a zone.
+   *
+   * @returns `true` when the zone changed.
+   */
+  setZone(zone: string): boolean {
+    const document = this.requireDocument();
+    if (document.zone === zone) {
+      return false;
+    }
+    document.zone = zone;
+    // In-place edit of a document held in a signal, as in `renameWorld`: the
+    // array identity has to change for `worldChoices` to see it.
+    this.documentsSignal.set([...this.documentsSignal()]);
     this.touch();
     return true;
   }

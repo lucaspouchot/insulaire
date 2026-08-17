@@ -3,6 +3,9 @@
   "schemaVersion": 1,
   "name": "Insulaire",
   "startWorld": "demo_world",
+  "zones": [
+    { "id": "valley", "name": "Valley" }
+  ],
   "tileSets": [
     { "id": "mvp_terrain", "path": "tilesets/mvp_terrain.json" }
   ],
