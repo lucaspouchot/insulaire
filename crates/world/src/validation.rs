@@ -1282,6 +1282,13 @@ fn field_issues(path: &str, field: &ControlDefinition) -> Vec<ValidationIssue> {
 /// Content refers to text by key — a menu button, a settings label — and the
 /// key is only meaningful if some language answers it. This is what turns a
 /// typo in a `labelKey` into a validation issue instead of a blank button.
+///
+/// An unknown key is a **warning**, not an error: the resolution rule renders a
+/// key nobody defines as itself, so the content still loads and still says
+/// something on screen, and authoring a label before its text exists is the
+/// normal order of work (`docs/adr/ADR-0027-authoring-creates-keys.md`). An
+/// *empty* key stays an error — it names nothing, and nothing is what it would
+/// render.
 #[must_use]
 pub fn validate_referenced_keys<'a>(
     referenced: impl IntoIterator<Item = (&'a str, &'a str)>,
@@ -1299,7 +1306,7 @@ pub fn validate_referenced_keys<'a>(
             continue;
         }
         if !bundles.iter().any(|bundle| bundle.get(key).is_some()) {
-            issues.push(ValidationIssue::error(
+            issues.push(ValidationIssue::warning(
                 "locale.unknownKey",
                 path.to_owned(),
                 format!("`{key}` is not defined in any loaded language"),
@@ -2014,15 +2021,15 @@ mod tests {
         let report = validate_referenced_keys([("buttons[0].labelKey", "menu.play")], &bundles);
         assert!(report.valid, "unexpected issues: {:?}", report.issues);
 
-        let report = validate_referenced_keys(
-            [
-                ("buttons[0].labelKey", "menu.absent"),
-                ("buttons[1].labelKey", "  "),
-            ],
-            &bundles,
-        );
-        assert!(!report.valid);
+        // An untranslated key is reported, but the content still loads: it
+        // renders as itself until someone writes its text.
+        let report = validate_referenced_keys([("buttons[0].labelKey", "menu.absent")], &bundles);
+        assert!(report.valid, "an untranslated key must not block loading");
         assert!(codes(&report).contains(&"locale.unknownKey"));
+
+        // An empty key names nothing at all, which no language can answer.
+        let report = validate_referenced_keys([("buttons[1].labelKey", "  ")], &bundles);
+        assert!(!report.valid);
         assert!(codes(&report).contains(&"locale.missingKey"));
     }
 }

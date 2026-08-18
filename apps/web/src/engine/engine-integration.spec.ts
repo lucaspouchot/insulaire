@@ -420,6 +420,48 @@ describe.skipIf(!built)('engine boundary', () => {
     expect(report.issues.map((issue) => issue.code)).toContain('locale.missingTranslation');
   });
 
+  /**
+   * The two halves of authoring text while the editor is running: a key that
+   * exists but has no text yet behaves like a missing one, and edited files can
+   * replace the loaded ones (`docs/adr/ADR-0027-authoring-creates-keys.md`).
+   */
+  it('treats an empty translation as a gap, and takes edited files back', () => {
+    const instance = loaded();
+    instance.loadWorld(readText('content/worlds/demo_refuge.json'));
+    loadShippedTitleScreen(instance);
+
+    // The shipped languages, plus one key an author has just created: written
+    // in the default language, still empty in the other.
+    const withKey = (path: string, text: string): string => {
+      const tree = readJson<Record<string, Record<string, string>>>(path);
+      tree['settings'] = { ...tree['settings'], unwritten: text };
+      return JSON.stringify(tree);
+    };
+    instance.loadLocale('en', 'menu', readText('content/locales/en/menu.json'));
+    instance.loadLocale('fr', 'menu', readText('content/locales/fr/menu.json'));
+    instance.loadLocale('en', 'game', withKey('content/locales/en/game.json', 'Unwritten'));
+    instance.loadLocale('fr', 'game', withKey('content/locales/fr/game.json', ''));
+    // The manifest names the default language, which is what a gap falls back to.
+    instance.loadProject(readText('content/project.json'));
+
+    const fr = JSON.parse(instance.locale('fr')) as LocaleView;
+    // Created but not written: the default language answers, and the editor is
+    // told the cell is still a gap.
+    expect(fr.entries['game.settings.unwritten']).toBe('Unwritten');
+    expect(fr.fallbacks).toContain('game.settings.unwritten');
+
+    // What the language editor does after writing the files it just edited.
+    instance.resetLocales();
+    instance.loadLocale('en', 'game', withKey('content/locales/en/game.json', 'Unwritten'));
+    instance.loadLocale('fr', 'game', withKey('content/locales/fr/game.json', 'Écrit'));
+
+    const edited = JSON.parse(instance.locale('fr')) as LocaleView;
+    expect(edited.entries['game.settings.unwritten']).toBe('Écrit');
+    expect(edited.fallbacks).not.toContain('game.settings.unwritten');
+    // The worlds the registry held are untouched by a language reset.
+    expect((JSON.parse(instance.worldView('demo_world')) as WorldView).worldId).toBe('demo_world');
+  });
+
   it('rejects a world with no player, listing the reason', () => {
     const definition = readJson<WorldDefinition>('content/worlds/demo_world.json');
     definition.entities = (definition.entities ?? []).filter((entity) => entity.templateId !== 'player');

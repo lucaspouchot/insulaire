@@ -154,6 +154,12 @@ One language's text, ready to look keys up in:
 fallback of their own — this is the one place the rule lives, so every host
 answers a key identically.
 
+A key this language holds **empty** is a gap like a missing one: the default
+language answers it, and it is listed in `fallbacks`. That is what makes a key
+created before its text exists behave sensibly — the editor creates keys as
+content names them (`docs/adr/ADR-0027-authoring-creates-keys.md`), and a key no
+language gives text to renders as itself.
+
 Errors: `unknownContent` when no file was loaded for that language.
 
 ### `validateLocales(): ValidationReport`
@@ -236,6 +242,16 @@ satisfying the doors that point at it.
 A running game is unaffected: it holds its own handle on the world it is
 playing. Its map can no longer be re-fetched with `worldView` until the content
 is loaded again, so reset only when you are about to.
+
+### `resetLocales(): void`
+
+Forgets every loaded language, keeping worlds, tile sets, title screen, settings
+and project. Merging is additive and refuses a key twice, so a host that has
+*edited* a locale file cannot simply load it again; this is the narrow door for
+that, without the collateral damage of `resetContent`.
+
+The language editor calls it after writing its files, then re-registers them with
+`loadLocale` (`docs/adr/ADR-0027-authoring-creates-keys.md`).
 
 ### `validateLinks(): ValidationReport`
 

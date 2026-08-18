@@ -135,6 +135,10 @@ browser. `cargo test` runs the entire simulation without WASM.
 - **Text ↔ language** — no string is written where it is displayed: a template
   names a key, the engine flattens the project's locale files and applies the
   default-language fallback. See ADR-0023.
+- **Naming a key ↔ writing its text** — the editor creates a key, empty, in every
+  language the moment content names it (`app/services/locale-authoring.service.ts`),
+  and hands the written files back to the engine with `resetLocales`. An
+  untranslated key is a warning and renders as itself. See ADR-0027.
 - **Repository ↔ authored game** — the game's content directory is named by
   `INSULAIRE_CONTENT_DIR`; a dev-only server serves it and lets the editor write
   into it, while the game itself still reads static files. See ADR-0022.

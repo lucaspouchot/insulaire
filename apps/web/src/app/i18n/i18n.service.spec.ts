@@ -17,9 +17,15 @@ import { LocaleFile } from '../services/project-store.service';
 class FakeEngine {
   readonly loaded: LocaleFile[] = [];
   bundles: Record<string, Record<string, string>> = {};
+  resets = 0;
 
   loadLocale(language: string, namespace: string, json: string): void {
     this.loaded.push({ language, namespace, json });
+  }
+
+  resetLocales(): void {
+    this.resets += 1;
+    this.loaded.length = 0;
   }
 
   locale(language: string): LocaleView {
@@ -99,6 +105,40 @@ describe('I18nService', () => {
     // What a caller does after `resetContent()` wiped the registry.
     i18n.register();
     expect(engine.loaded).toHaveLength(4);
+  });
+
+  /**
+   * A key created but not yet written reads exactly like a key nobody defines,
+   * because that is what it is (`docs/adr/ADR-0027-authoring-creates-keys.md`).
+   */
+  it('shows the key itself when the only text for it is empty', () => {
+    const { i18n, engine } = setup();
+    engine.bundles = { en: { 'menu.buttons.credits': '' } };
+
+    i18n.adopt([], [{ id: 'en', name: 'English' }], 'en');
+    i18n.use('en');
+
+    expect(i18n.t('menu.buttons.credits')).toBe('menu.buttons.credits');
+    expect(i18n.has('menu.buttons.credits')).toBe(false);
+  });
+
+  it('re-registers edited files and answers the new text', () => {
+    const { i18n, engine } = setup();
+    engine.bundles = { en: { 'menu.play': 'Play' } };
+    i18n.adopt(
+      [{ language: 'en', namespace: 'menu', json: '{"play":"Play"}' }],
+      [{ id: 'en', name: 'English' }],
+      'en',
+    );
+    i18n.use('en');
+
+    engine.bundles = { en: { 'menu.play': 'Start' } };
+    i18n.reload([{ language: 'en', namespace: 'menu', json: '{"play":"Start"}' }]);
+
+    // Cleared first: loading is additive and would refuse the key twice.
+    expect(engine.resets).toBe(1);
+    expect(engine.loaded).toHaveLength(1);
+    expect(i18n.t('menu.play')).toBe('Start');
   });
 
   it('switches language, remembers it, and re-answers every key', () => {

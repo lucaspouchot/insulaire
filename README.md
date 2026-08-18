@@ -177,8 +177,15 @@ application implements each one (`app/settings/engine-settings.schema.ts`).
 
 **Languages** is the translation table: every key, every language, side by side,
 with a filter for what is still untranslated. Saving rewrites one file per
-language and namespace. Keys the *application* ships are listed greyed — typing
-over one overrides it for this project.
+language and namespace, declares any new namespace in `project.json`, and hands
+the files back to the engine — so a key added here is usable everywhere else
+straight away, no reload. Keys the *application* ships are listed greyed —
+typing over one overrides it for this project.
+
+Keys are **created where they are used**: type a `labelKey` in the title or
+settings editor, save, and the key exists in every language, empty, waiting for
+its text here (ADR-0027). Until someone writes it, that key shows on screen as
+itself.
 
 ### Play it
 
@@ -564,6 +571,7 @@ Read in order:
 24. **ADR-0024 — the client opens on an authored title screen**
 25. **ADR-0025 — engine settings belong to the shell, game settings are content**
 26. **ADR-0026 — the session outlives the route, and the title screen ends it**
+27. **ADR-0027 — naming a key creates it; an untranslated key is a warning**
 
 `CLAUDE.md` contains project-level instructions for Claude Code and other coding
 agents.

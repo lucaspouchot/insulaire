@@ -199,6 +199,17 @@ export class EngineService {
   }
 
   /**
+   * Forgets every loaded language, keeping worlds, tile sets and project.
+   *
+   * What the language editor calls after writing its files: loading is additive
+   * and refuses a key twice, so edited text only replaces the old text once the
+   * old bundles are gone (`docs/adr/ADR-0027-authoring-creates-keys.md`).
+   */
+  resetLocales(): void {
+    this.engine().resetLocales();
+  }
+
+  /**
    * Resolves every map link across the loaded worlds.
    *
    * The check no single world file can make: a door's target lives in another

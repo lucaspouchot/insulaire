@@ -11,8 +11,10 @@
  * authoring server (ADR-0022) — dropping a file here puts it on disk, which is
  * the whole point of having that server.
  *
- * Labels are keys: this screen picks and creates them, and the language editor
- * is where their text is written (ADR-0023).
+ * Labels are keys: this screen picks and **creates** them — saving writes every
+ * key the screen names into every language, empty — and the language editor is
+ * where their text is written (ADR-0023,
+ * `docs/adr/ADR-0027-authoring-creates-keys.md`).
  */
 
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
@@ -26,6 +28,7 @@ import { I18nService } from '../../../i18n/i18n.service';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
 import { ContentWorkspaceService, WorkspaceFile } from '../../../services/content-workspace.service';
 import { EngineService } from '../../../services/engine.service';
+import { LocaleAuthoringService } from '../../../services/locale-authoring.service';
 import { CONTENT_ROOT, ProjectStoreService } from '../../../services/project-store.service';
 import { assetUrl } from '../../../../core/asset-url';
 import { TitleScreenService } from '../../../services/title-screen.service';
@@ -50,6 +53,7 @@ export class TitleEditorPage {
   private readonly i18n = inject(I18nService);
   private readonly workspace = inject(ContentWorkspaceService);
   private readonly titleScreen = inject(TitleScreenService);
+  private readonly locales = inject(LocaleAuthoringService);
 
   /** The document being edited. */
   protected readonly screen = signal<TitleScreenDefinition | null>(null);
@@ -89,6 +93,7 @@ export class TitleEditorPage {
     try {
       await this.i18n.ensureAdopted();
       await this.workspace.ensureProbed();
+      await this.locales.ensureLoaded();
       await this.refreshFiles();
 
       const declared = this.store.project()?.titleScreen;
@@ -251,14 +256,42 @@ export class TitleEditorPage {
       // Adopting it is what makes the preview and the real title screen agree
       // from here on — and what a later content reset puts back.
       this.titleScreen.adopt(json);
+
+      // Every label this screen names now exists as a key, in every language,
+      // for the Languages tab to fill in; until then it shows as itself.
+      const created = this.locales.ensureKeys(referencedKeys(screen));
+      if (created.length > 0) {
+        await this.locales.save();
+      }
+
       this.dirty.set(false);
-      this.message.set(this.i18n.t('ui.editor.title.saved', { file: this.path() }));
+      this.validate();
+      this.message.set(
+        this.i18n.t('ui.editor.title.saved', { file: this.path() }) +
+          (created.length === 0
+            ? ''
+            : ` · ${this.i18n.t('ui.editor.locale.created', { count: created.length })}`),
+      );
     } catch (cause) {
       this.error.set(describe(cause));
     } finally {
       this.busy.set(false);
     }
   }
+}
+
+/**
+ * Every locale key a title screen names.
+ *
+ * The same set the Rust validator walks: the title, the subtitle when there is
+ * one, and every button's label.
+ */
+function referencedKeys(screen: TitleScreenDefinition): string[] {
+  return [
+    screen.titleKey,
+    screen.subtitleKey,
+    ...screen.buttons.map((button) => button.labelKey),
+  ].filter((key) => key.length > 0);
 }
 
 /** A title screen that is valid the moment it is created. */

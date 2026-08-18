@@ -208,7 +208,7 @@ const EN: StringTree = {
         preview: 'Preview — the player’s screen. Setting a control here sets its default.',
         validation: 'Validation',
         untranslated:
-          'These keys have no text yet. The file is still valid — a key with no text shows as itself — and the Languages tab is where the text is written.',
+          'These keys have no text yet. Saving creates them in every language, and the Languages tab is where the text is written; until then they show as themselves.',
         save: 'Save',
         saved: 'Saved {file}',
         invalid: 'The settings are invalid; nothing was written.',
@@ -228,6 +228,8 @@ const EN: StringTree = {
         badKey: 'A key needs at least a namespace and a name, e.g. menu.play.',
         save: 'Save languages',
         saved: 'Wrote {count} locale file(s)',
+        savedWithManifest: 'Wrote {count} locale file(s) and declared the new one(s) in project.json',
+        created: 'Created {count} key(s) — the Languages tab is where their text is written.',
         empty: 'No key matches this filter.',
         hint: 'Greyed keys come from the application; typing here overrides them for this project.',
       },
@@ -657,7 +659,7 @@ const FR: StringTree = {
         preview: 'Aperçu — l’écran du joueur. Régler un contrôle ici en fixe la valeur par défaut.',
         validation: 'Validation',
         untranslated:
-          'Ces clés n’ont pas encore de texte. Le fichier reste valide — une clé sans texte s’affiche telle quelle — et c’est dans l’onglet Langues qu’on écrit le texte.',
+          'Ces clés n’ont pas encore de texte. L’enregistrement les crée dans chaque langue, et c’est dans l’onglet Langues qu’on écrit ce texte ; en attendant elles s’affichent telles quelles.',
         save: 'Enregistrer',
         saved: '{file} enregistré',
         invalid: 'Les options sont invalides ; rien n’a été écrit.',
@@ -677,6 +679,9 @@ const FR: StringTree = {
         badKey: 'Une clé demande au moins un espace de noms et un nom, par ex. menu.play.',
         save: 'Enregistrer les langues',
         saved: '{count} fichier(s) de langue écrit(s)',
+        savedWithManifest:
+          '{count} fichier(s) de langue écrit(s), et les nouveaux déclarés dans project.json',
+        created: '{count} clé(s) créée(s) — leur texte s’écrit dans l’onglet Langues.',
         empty: 'Aucune clé ne correspond à ce filtre.',
         hint: 'Les clés grisées viennent de l’application ; les saisir ici les remplace pour ce projet.',
       },

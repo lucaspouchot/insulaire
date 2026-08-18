@@ -172,6 +172,16 @@ impl InsulaireEngine {
         self.inner.reset_content();
     }
 
+    /// Forgets every loaded language, keeping worlds, tile sets and project.
+    ///
+    /// The language editor calls this before registering the files it just
+    /// wrote: loading is additive and refuses a key twice, so edited text can
+    /// only replace the old text once the old bundles are gone.
+    #[wasm_bindgen(js_name = resetLocales)]
+    pub fn reset_locales(&mut self) {
+        self.inner.reset_locales();
+    }
+
     /// Resolves every map link across the loaded worlds. Returns a
     /// `ValidationReport`.
     ///

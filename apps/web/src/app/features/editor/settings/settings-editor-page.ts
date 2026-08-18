@@ -20,8 +20,10 @@
  * what "difficulty" means. A declaration says what a value looks like; reading
  * it is the simulation's business.
  *
- * Labels are keys: this screen picks and creates them, and the language editor
- * is where their text is written (ADR-0023).
+ * Labels are keys: this screen picks and **creates** them — saving writes every
+ * key the file names into every language, empty — and the language editor is
+ * where their text is written (ADR-0023,
+ * `docs/adr/ADR-0027-authoring-creates-keys.md`).
  */
 
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
@@ -47,6 +49,7 @@ import { TranslatePipe } from '../../../i18n/translate.pipe';
 import { ControlField } from '../../../settings/control-field';
 import { ContentWorkspaceService } from '../../../services/content-workspace.service';
 import { EngineService } from '../../../services/engine.service';
+import { LocaleAuthoringService } from '../../../services/locale-authoring.service';
 import { SettingsService } from '../../../settings/settings.service';
 import { CONTENT_ROOT, ProjectStoreService } from '../../../services/project-store.service';
 import { assetUrl } from '../../../../core/asset-url';
@@ -67,6 +70,7 @@ export class SettingsEditorPage {
   private readonly i18n = inject(I18nService);
   private readonly workspace = inject(ContentWorkspaceService);
   private readonly settings = inject(SettingsService);
+  private readonly locales = inject(LocaleAuthoringService);
 
   /** The document being edited. */
   protected readonly document = signal<SettingsDefinition | null>(null);
@@ -136,20 +140,17 @@ export class SettingsEditorPage {
   /**
    * Issues that would stop the runtime loading this file.
    *
-   * `validateSettings` also resolves every key it references, which is what
-   * makes it a useful *report* — but `loadSettings`, which is what the runtime
-   * actually does, does not. A settings file naming a key nobody has translated
-   * loads and shows the key on screen, visibly, on purpose
-   * (`docs/adr/ADR-0023-localised-content-keys.md`). Refusing to write one would
-   * mean no setting could be authored before its text existed, and text is
-   * written in the *language* editor — so the two are separated here rather
-   * than lumped together.
+   * Not the untranslated keys: naming a key is how a key comes to exist, and
+   * saving creates it in every language
+   * (`docs/adr/ADR-0027-authoring-creates-keys.md`). They are listed on their
+   * own, as work left to do in the Languages tab, rather than as something in
+   * the way of writing the file.
    */
   protected readonly blocking = computed(() =>
     (this.report()?.issues ?? []).filter((issue) => issue.code !== 'locale.unknownKey'),
   );
 
-  /** Keys this file names that no language defines yet. */
+  /** Keys this file names that no language gives text to yet. */
   protected readonly untranslated = computed(() =>
     (this.report()?.issues ?? []).filter((issue) => issue.code === 'locale.unknownKey'),
   );
@@ -168,6 +169,7 @@ export class SettingsEditorPage {
       await this.engine.ready();
       await this.i18n.ensureAdopted();
       await this.workspace.ensureProbed();
+      await this.locales.ensureLoaded();
 
       const declared = this.store.project()?.settings;
       if (declared === undefined) {
@@ -560,13 +562,37 @@ export class SettingsEditorPage {
       // file from here on, without a reload — and what a later content reset
       // puts back.
       this.settings.adopt(json);
+
+      // Every label this file names now exists as a key, in every language, so
+      // the Languages tab lists it and a translator can fill it in. Until then
+      // it shows as itself, which is what an untranslated key has always done.
+      const created = await this.createMissingKeys(document);
+
       this.dirty.set(false);
-      this.message.set(this.i18n.t('ui.editor.settings.saved', { file: this.path() }));
+      this.validate();
+      this.message.set(
+        this.i18n.t('ui.editor.settings.saved', { file: this.path() }) +
+          (created === 0 ? '' : ` · ${this.i18n.t('ui.editor.locale.created', { count: created })}`),
+      );
     } catch (cause) {
       this.error.set(describe(cause));
     } finally {
       this.busy.set(false);
     }
+  }
+
+  /**
+   * Creates every key this declaration names that no language has yet.
+   *
+   * @returns how many keys were created
+   */
+  private async createMissingKeys(document: SettingsDefinition): Promise<number> {
+    const created = this.locales.ensureKeys(referencedKeys(document));
+    if (created.length === 0) {
+      return 0;
+    }
+    await this.locales.save();
+    return created.length;
   }
 
   // ----------------------------------------------------------------- plumbing
@@ -592,6 +618,32 @@ export class SettingsEditorPage {
       }
     });
   }
+}
+
+/**
+ * Every locale key a settings declaration names.
+ *
+ * The same set the Rust validator walks, in the same order — sections, groups,
+ * fields, their help text and their options.
+ */
+function referencedKeys(document: SettingsDefinition): string[] {
+  const keys: string[] = [];
+  for (const section of document.sections) {
+    keys.push(section.labelKey);
+    for (const group of section.groups) {
+      keys.push(group.labelKey);
+      for (const field of group.fields) {
+        keys.push(field.labelKey);
+        if (field.helpKey !== undefined) {
+          keys.push(field.helpKey);
+        }
+        for (const option of field.options ?? []) {
+          keys.push(option.labelKey);
+        }
+      }
+    }
+  }
+  return keys;
 }
 
 /** A declaration that is valid the moment it is created. */

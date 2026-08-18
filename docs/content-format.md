@@ -520,7 +520,7 @@ exposed across the boundary as `validateLinks()` and `loadProject()`.
 | `locale.missingNamespace` / `locale.duplicateNamespace` / `locale.missingPath` | A locale file has no namespace id, repeats one within a language, or has no path. |
 | `locale.unknownDefaultLanguage` | `locales.default` is not among the declared languages. |
 | `locale.unloadedLanguage` | A declared language has no loaded locale file. Reported when the project is loaded. |
-| `locale.missingKey` / `locale.unknownKey` | Content references a text key that is empty, or that no language defines. |
+| `locale.missingKey` | Content references an empty text key, which names nothing. |
 | `project.unloadedTitleScreen` | The manifest names a title screen that is not loaded. |
 | `titleScreen.missingId` / `titleScreen.unsupportedSchemaVersion` | Title screen header problems. |
 | `titleScreen.missingTitleKey` / `titleScreen.missingLabelKey` | A key field is empty. |
@@ -545,7 +545,8 @@ exposed across the boundary as `validateLinks()` and `loadProject()`.
 | `world.noMonsters` | Nothing will chase the player. |
 | `locale.missingTranslation` | A key the default language defines is missing from another language; its text is served instead. |
 | `locale.orphanKey` | A language defines a key the default language does not. |
-| `locale.emptyValue` | A translation is an empty string. |
+| `locale.emptyValue` | A translation is an empty string — the state a key is created in, and a gap the default language fills. |
+| `locale.unknownKey` | Content references a key no language defines. It renders as itself until the language editor gives it text (`docs/adr/ADR-0027-authoring-creates-keys.md`). |
 | `titleScreen.instantSplash` | A splash that lasts 0 ms and cannot be skipped will never be seen. |
 | `settings.unusedOptions` | A control that does not choose from a list declares options. |
 

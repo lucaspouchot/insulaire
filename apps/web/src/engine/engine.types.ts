@@ -286,6 +286,7 @@ export interface RawInsulaireEngine {
   settings(): string;
   resolveSettings(valuesJson: string): string;
   resetContent(): void;
+  resetLocales(): void;
   validateLinks(): string;
   validateWorld(json: string): string;
   contentSummary(): string;

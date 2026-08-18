@@ -180,17 +180,25 @@ impl Engine {
                     id: language.to_owned(),
                 })?;
 
-        let authored: Vec<&str> = self
+        let own = self
             .content
             .locales()
-            .find(|bundle| bundle.language == language)
-            .map(|bundle| bundle.keys().collect())
-            .unwrap_or_default();
+            .find(|bundle| bundle.language == language);
 
+        // A fallback is a key whose text came from *elsewhere*: one this
+        // language does not have, or one it holds empty and another language
+        // answered. A key that is empty everywhere is nobody's fallback — it is
+        // this language's own, still unwritten, and an editor has to keep
+        // showing it (`docs/adr/ADR-0027-authoring-creates-keys.md`).
         let fallbacks = resolved
-            .keys()
-            .filter(|key| !authored.contains(key))
-            .map(str::to_owned)
+            .entries
+            .iter()
+            .filter(|(key, text)| match own.and_then(|bundle| bundle.get(key)) {
+                None => true,
+                Some(authored) if authored.trim().is_empty() => !text.trim().is_empty(),
+                Some(_) => false,
+            })
+            .map(|(key, _)| key.clone())
             .collect();
 
         Ok(LocaleView {
@@ -262,6 +270,15 @@ impl Engine {
     /// holds its own handle on the world it is playing.
     pub fn reset_content(&mut self) {
         self.content.clear();
+    }
+
+    /// Forgets every loaded language, keeping worlds, tile sets and project.
+    ///
+    /// What a host calls after *editing* locale files: loading is additive and
+    /// refuses a key twice, so the edited files can only go back in once the
+    /// old ones are gone (`docs/adr/ADR-0027-authoring-creates-keys.md`).
+    pub fn reset_locales(&mut self) {
+        self.content.clear_locales();
     }
 
     /// Validates a world without registering it — the editor's pre-export check.

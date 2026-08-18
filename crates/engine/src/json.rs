@@ -179,6 +179,14 @@ impl JsonEngine {
         self.inner.reset_content();
     }
 
+    /// Forgets every loaded language, keeping worlds, tile sets and project.
+    ///
+    /// Call it before registering edited locale files, which loading would
+    /// otherwise refuse as duplicate keys.
+    pub fn reset_locales(&mut self) {
+        self.inner.reset_locales();
+    }
+
     /// Resolves every map link across the loaded worlds; returns a
     /// `ValidationReport`.
     ///
@@ -871,7 +879,9 @@ mod tests {
             .expect("screen loads");
 
         let report = json(&engine.validate_title_screen(TITLE_SCREEN).expect("report"));
-        assert_eq!(report["valid"], false);
+        // Reported, but not fatal: an untranslated label renders as its key
+        // until the language editor fills it in.
+        assert_eq!(report["valid"], true);
         let codes: Vec<&str> = report["issues"]
             .as_array()
             .expect("issues")
@@ -967,6 +977,63 @@ mod tests {
         assert_eq!(code(&error), "invalidContent");
         assert!(error.contains("settings.noOptions"), "{error}");
         assert!(error.contains("settings.invalidDefault"), "{error}");
+    }
+
+    #[test]
+    fn a_key_empty_in_every_language_is_still_that_language_s_own() {
+        let mut engine = loaded();
+        engine
+            .load_locale("en", "menu", r#"{ "play": "Play", "credits": "" }"#)
+            .expect("english loads");
+        engine
+            .load_locale("fr", "menu", r#"{ "play": "Jouer", "credits": "" }"#)
+            .expect("french loads");
+        engine.load_project(LOCALISED_PROJECT).expect("project");
+
+        // Created by an editor and not written yet: nobody answered it, so it
+        // is not a fallback and the language editor still lists it.
+        let fr = json(&engine.locale("fr").expect("french bundle"));
+        assert_eq!(fr["entries"]["menu.credits"], "");
+        assert_eq!(fr["fallbacks"].as_array().expect("fallbacks").len(), 0);
+    }
+
+    #[test]
+    fn resetting_the_languages_keeps_the_rest_of_the_content() {
+        let mut engine = loaded();
+        engine
+            .load_locale("en", "menu", r#"{ "play": "Play" }"#)
+            .expect("english loads");
+
+        engine.reset_locales();
+        // The edited file goes back in where a second load would have been
+        // refused as a duplicate key.
+        engine
+            .load_locale("en", "menu", r#"{ "play": "Start", "quit": "Quit" }"#)
+            .expect("edited english loads");
+
+        let en = json(&engine.locale("en").expect("english bundle"));
+        assert_eq!(en["entries"]["menu.play"], "Start");
+        assert_eq!(en["entries"]["menu.quit"], "Quit");
+        // The worlds the registry held are untouched.
+        let summary = json(&engine.content_summary().expect("summary"));
+        assert_eq!(summary["worlds"][0]["id"], "w");
+    }
+
+    #[test]
+    fn an_empty_translation_is_a_gap_the_default_language_fills() {
+        let mut engine = loaded();
+        engine
+            .load_locale("en", "menu", r#"{ "play": "Play", "quit": "Quit" }"#)
+            .expect("english loads");
+        engine
+            .load_locale("fr", "menu", r#"{ "play": "Jouer", "quit": "" }"#)
+            .expect("french loads");
+        engine.load_project(LOCALISED_PROJECT).expect("project");
+
+        let fr = json(&engine.locale("fr").expect("french bundle"));
+        assert_eq!(fr["entries"]["menu.quit"], "Quit");
+        // Created but unwritten, so the editor shows the cell as empty.
+        assert_eq!(fr["fallbacks"][0], "menu.quit");
     }
 
     #[test]

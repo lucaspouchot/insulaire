@@ -25,6 +25,7 @@ import { Injectable, computed, signal } from '@angular/core';
 
 import {
   DEFAULT_ZONE_ID,
+  LanguageDefinition,
   PROJECT_SCHEMA_VERSION,
   ProjectDefinition,
   TileSetDefinition,
@@ -486,6 +487,54 @@ export class ProjectStoreService {
     this.localeFilesSignal.set(localeFiles);
     this.adopt(definitions, project.startWorld, 'shipped');
     this.clearStored();
+  }
+
+  /**
+   * Replaces the locale files held for the project.
+   *
+   * The language editor writes files to disk; this is what keeps the *loaded*
+   * project holding the same text, so a later content reset re-registers what
+   * was authored rather than what was fetched at boot
+   * (`docs/adr/ADR-0027-authoring-creates-keys.md`).
+   */
+  setLocaleFiles(files: readonly LocaleFile[]): void {
+    this.localeFilesSignal.set([...files]);
+  }
+
+  /**
+   * Declares a locale file in the manifest, so the namespace it provides is
+   * loaded next time the project is.
+   *
+   * A key names its namespace — `menu.title.credits` lives in `menu` — and an
+   * author writing the first key of a new namespace should not have to hand-edit
+   * `project.json` for it to exist.
+   *
+   * @returns `false` when the language already declares that namespace.
+   */
+  declareLocaleFile(language: string, namespace: string, path: string): boolean {
+    const project = this.requireProject();
+    const languages = project.locales?.languages ?? [];
+    const declared = languages.find((candidate) => candidate.id === language);
+    if (declared?.files?.some((file) => file.id === namespace)) {
+      return false;
+    }
+
+    const file = { id: namespace, path };
+    const next: LanguageDefinition[] =
+      declared === undefined
+        ? [...languages, { id: language, files: [file] }]
+        : languages.map((candidate) =>
+            candidate.id === language
+              ? { ...candidate, files: [...(candidate.files ?? []), file] }
+              : candidate,
+          );
+
+    this.projectSignal.set({
+      ...project,
+      locales: { default: project.locales?.default, languages: next },
+    });
+    this.touch();
+    return true;
   }
 
   /** Records that the project was exported to files. */

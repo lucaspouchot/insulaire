@@ -152,10 +152,18 @@ impl LocaleBundle {
     /// shows the default language's text. The gap is still reported by
     /// [`crate::validate_locales`] — falling back is a courtesy to the player,
     /// not an excuse for the author.
+    ///
+    /// A key this language holds *empty* is a gap like any other. The editor
+    /// creates a key in every language the moment content names it
+    /// (`docs/adr/ADR-0027-authoring-creates-keys.md`), so an empty value means
+    /// "nobody has written this yet", not "this language says nothing".
     #[must_use]
     pub fn with_fallback(&self, fallback: &Self) -> Self {
         let mut merged = fallback.entries.clone();
         for (key, value) in &self.entries {
+            if value.trim().is_empty() && merged.contains_key(key) {
+                continue;
+            }
             merged.insert(key.clone(), value.clone());
         }
         Self {
@@ -280,5 +288,26 @@ mod tests {
         assert_eq!(resolved.get("menu.quit"), Some("Quit"));
         assert_eq!(missing_keys(&en, &fr), vec!["menu.quit".to_owned()]);
         assert!(missing_keys(&fr, &en).is_empty());
+    }
+
+    #[test]
+    fn a_key_left_empty_falls_back_like_a_missing_one() {
+        let fr = bundle("fr", "menu", r#"{ "play": "Jouer", "quit": "" }"#);
+        let en = bundle("en", "menu", r#"{ "play": "Play", "quit": "Quit" }"#);
+
+        let resolved = fr.with_fallback(&en);
+
+        assert_eq!(resolved.get("menu.play"), Some("Jouer"));
+        // Created but not yet written: the default language still answers.
+        assert_eq!(resolved.get("menu.quit"), Some("Quit"));
+    }
+
+    #[test]
+    fn an_empty_key_nobody_translated_stays_empty() {
+        let fr = bundle("fr", "menu", r#"{ "quit": "" }"#);
+        let en = bundle("en", "menu", r#"{ "play": "Play" }"#);
+
+        // Nothing to fall back to: the host renders the key itself.
+        assert_eq!(fr.with_fallback(&en).get("menu.quit"), Some(""));
     }
 }

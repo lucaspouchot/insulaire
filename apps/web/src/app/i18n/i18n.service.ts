@@ -11,7 +11,10 @@
  *
  * Only a key nobody defines reaches the screen as itself — visible on purpose,
  * because a missing key is a bug and hiding it would let the game ship blank
- * buttons (`docs/adr/ADR-0023-localised-content-keys.md`).
+ * buttons (`docs/adr/ADR-0023-localised-content-keys.md`). A key that exists
+ * with an empty value is the same thing said differently: the editor creates a
+ * key the moment content names it, and until someone writes its text there is
+ * none (`docs/adr/ADR-0027-authoring-creates-keys.md`).
  *
  * Resolution order is what makes the application usable before any content
  * loads: the chrome answers immediately, and content refines it.
@@ -88,7 +91,11 @@ export class I18nService {
    * @param params values for the placeholders the text contains
    */
   t(key: string, params?: Readonly<Record<string, string | number>>): string {
-    const text = this.entries()[key] ?? key;
+    const defined = this.entries()[key];
+    // An empty value is a key that exists but has no text yet — the state a key
+    // is created in (`docs/adr/ADR-0027-authoring-creates-keys.md`). It reads
+    // like a key nobody defines, because that is what it is.
+    const text = defined === undefined || defined.trim().length === 0 ? key : defined;
     if (params === undefined) {
       return text;
     }
@@ -97,9 +104,9 @@ export class I18nService {
     );
   }
 
-  /** `true` when some source defines this key. */
+  /** `true` when some source gives this key actual text. */
   has(key: string): boolean {
-    return key in this.entries();
+    return (this.entries()[key] ?? '').trim().length > 0;
   }
 
   /** Switches language and remembers the choice. */
@@ -114,6 +121,22 @@ export class I18nService {
     } catch {
       // Private mode or a full store: the language still applies to this session.
     }
+  }
+
+  /**
+   * Re-registers edited locale files and re-reads every bundle.
+   *
+   * The language editor writes files to disk; this is what makes the *running*
+   * editor agree with them, without a reload. The engine's languages are
+   * cleared first because loading is additive and refuses a key twice, so the
+   * edited files could not otherwise go back in
+   * (`docs/adr/ADR-0027-authoring-creates-keys.md`).
+   *
+   * @param files every locale file, as edited
+   */
+  reload(files: readonly LocaleFile[]): void {
+    this.engine.resetLocales();
+    this.adopt(files, this.languages(), this.language());
   }
 
   /**

@@ -7,8 +7,11 @@
  * and `validateLocales` reports the gaps
  * (`docs/adr/ADR-0023-localised-content-keys.md`).
  *
- * Editing writes back **namespace by namespace**, re-nesting the flat keys into
- * the shape the file had, so a diff stays as small as the change.
+ * The text itself, the files it is written to and the re-registration that
+ * follows a save belong to {@link LocaleAuthoringService}, because the title and
+ * settings editors create keys through the same door
+ * (`docs/adr/ADR-0027-authoring-creates-keys.md`). This screen is the table over
+ * it: filtering, searching and showing what is still empty.
  *
  * The application's own `ui.` keys are listed too, greyed until they are
  * overridden: a game may rename anything the shell says, and this is where it
@@ -20,9 +23,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { APP_DEFAULT_LANGUAGE, APP_STRINGS, flattenStrings } from '../../../i18n/app-strings';
 import { I18nService } from '../../../i18n/i18n.service';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
-import { ContentWorkspaceService } from '../../../services/content-workspace.service';
-import { EngineService } from '../../../services/engine.service';
-import { ProjectStoreService } from '../../../services/project-store.service';
+import { LocaleAuthoringService, isUsableKey } from '../../../services/locale-authoring.service';
 
 /** One row of the table: a key and what each language says for it. */
 interface KeyRow {
@@ -44,15 +45,8 @@ interface KeyRow {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class LocaleEditorPage {
-  private readonly store = inject(ProjectStoreService);
-  private readonly engine = inject(EngineService);
   private readonly i18n = inject(I18nService);
-  private readonly workspace = inject(ContentWorkspaceService);
-
-  /** Content translations by language, as edited. */
-  private readonly entries = signal<Record<string, Record<string, string>>>({});
-  /** Bumped on every edit so the table recomputes. */
-  private readonly revision = signal(0);
+  private readonly locales = inject(LocaleAuthoringService);
 
   protected readonly languages = this.i18n.languages;
   protected readonly namespaceFilter = signal<string | null>(null);
@@ -61,23 +55,10 @@ export class LocaleEditorPage {
   protected readonly message = signal<string | null>(null);
   protected readonly error = signal<string | null>(null);
   protected readonly saving = signal(false);
-  /** `true` once something has been edited and not yet written. */
-  protected readonly dirty = signal(false);
-
-  /** Paths the manifest gives each `<language>/<namespace>` file. */
-  private readonly paths = computed(() => {
-    const paths = new Map<string, string>();
-    for (const language of this.store.project()?.locales?.languages ?? []) {
-      for (const file of language.files ?? []) {
-        paths.set(`${language.id}/${file.id}`, file.path);
-      }
-    }
-    return paths;
-  });
+  protected readonly dirty = this.locales.dirty;
 
   /** Every namespace the project declares, plus the application's own. */
   protected readonly namespaces = computed<readonly string[]>(() => {
-    this.revision();
     const found = new Set<string>();
     for (const key of this.allKeys()) {
       found.add(key.split('.')[0] ?? '');
@@ -87,8 +68,8 @@ export class LocaleEditorPage {
 
   /** Every row, before filtering. */
   private readonly rows = computed<readonly KeyRow[]>(() => {
-    this.revision();
-    const entries = this.entries();
+    this.locales.revision();
+    const entries = this.locales.entries();
     const application = flattenStrings(APP_STRINGS[APP_DEFAULT_LANGUAGE] ?? {});
     const languages = this.languages();
 
@@ -146,20 +127,7 @@ export class LocaleEditorPage {
 
   private async load(): Promise<void> {
     try {
-      await this.i18n.ensureAdopted();
-      await this.workspace.ensureProbed();
-
-      const entries: Record<string, Record<string, string>> = {};
-      for (const language of this.languages()) {
-        try {
-          // The *authored* entries, not the resolved ones: an editor must show
-          // what a language actually says, gaps included.
-          entries[language.id] = authoredEntries(this.engine, language.id);
-        } catch {
-          entries[language.id] = {};
-        }
-      }
-      this.entries.set(entries);
+      await this.locales.ensureLoaded();
     } catch (cause) {
       this.error.set(describe(cause));
     }
@@ -167,11 +135,12 @@ export class LocaleEditorPage {
 
   /** Every key any language or the application defines, sorted. */
   private allKeys(): string[] {
-    const keys = new Set<string>(Object.keys(flattenStrings(APP_STRINGS[APP_DEFAULT_LANGUAGE] ?? {})));
-    for (const language of Object.values(this.entries())) {
-      for (const key of Object.keys(language)) {
-        keys.add(key);
-      }
+    this.locales.revision();
+    const keys = new Set<string>(
+      Object.keys(flattenStrings(APP_STRINGS[APP_DEFAULT_LANGUAGE] ?? {})),
+    );
+    for (const key of this.locales.keys()) {
+      keys.add(key);
     }
     return [...keys].sort();
   }
@@ -181,131 +150,56 @@ export class LocaleEditorPage {
     if (row.values[language]) {
       return '';
     }
-    const application = flattenStrings(APP_STRINGS[language] ?? APP_STRINGS[APP_DEFAULT_LANGUAGE] ?? {});
+    const application = flattenStrings(
+      APP_STRINGS[language] ?? APP_STRINGS[APP_DEFAULT_LANGUAGE] ?? {},
+    );
     return application[row.key] ?? '';
   }
 
   protected edit(row: KeyRow, language: string, value: string): void {
-    this.entries.update((entries) => ({
-      ...entries,
-      [language]: { ...(entries[language] ?? {}), [row.key]: value },
-    }));
-    this.revision.update((value) => value + 1);
-    this.dirty.set(true);
+    this.locales.set(language, row.key, value);
     this.message.set(null);
   }
 
   /** Adds a key to every language, so a row exists to translate. */
   protected addKey(key: string): void {
-    const trimmed = key.trim();
-    if (trimmed.length === 0 || trimmed.split('.').length < 2) {
+    if (!isUsableKey(key)) {
       this.error.set(this.i18n.t('ui.editor.locale.badKey'));
       return;
     }
     this.error.set(null);
-    this.entries.update((entries) => {
-      const next = { ...entries };
-      for (const language of this.languages()) {
-        next[language.id] = { ...(next[language.id] ?? {}), [trimmed]: '' };
-      }
-      return next;
-    });
-    this.revision.update((value) => value + 1);
-    this.dirty.set(true);
+    this.locales.ensureKeys([key.trim()]);
   }
 
   /** Removes a key from every language. */
   protected removeKey(row: KeyRow): void {
-    this.entries.update((entries) => {
-      const next: Record<string, Record<string, string>> = {};
-      for (const [language, values] of Object.entries(entries)) {
-        const copy = { ...values };
-        delete copy[row.key];
-        next[language] = copy;
-      }
-      return next;
-    });
-    this.revision.update((value) => value + 1);
-    this.dirty.set(true);
+    this.locales.removeKey(row.key);
   }
 
   protected setNamespace(value: string): void {
     this.namespaceFilter.set(value === 'all' ? null : value);
   }
 
-  /**
-   * Writes every language's files back into the content directory.
-   *
-   * One file per `<language>/<namespace>` the manifest declares: keys are
-   * re-nested into the tree the file holds, so the diff is the change and
-   * nothing else.
-   */
+  /** Writes every language's files back into the content directory. */
   protected async save(): Promise<void> {
     this.error.set(null);
     this.message.set(null);
     this.saving.set(true);
 
     try {
-      const paths = this.paths();
-      let written = 0;
-      for (const [id, path] of paths) {
-        const [language = '', namespace = ''] = id.split('/');
-        const tree = nest(this.entries()[language] ?? {}, namespace);
-        await this.workspace.writeJson(path, `${JSON.stringify(tree, null, 2)}\n`);
-        written += 1;
-      }
-      this.dirty.set(false);
-      this.message.set(this.i18n.t('ui.editor.locale.saved', { count: written }));
+      const outcome = await this.locales.save();
+      this.message.set(
+        this.i18n.t(
+          outcome.manifestChanged ? 'ui.editor.locale.savedWithManifest' : 'ui.editor.locale.saved',
+          { count: outcome.files },
+        ),
+      );
     } catch (cause) {
       this.error.set(describe(cause));
     } finally {
       this.saving.set(false);
     }
   }
-}
-
-/** One language's authored entries, without the default-language fallback. */
-function authoredEntries(engine: EngineService, language: string): Record<string, string> {
-  const view = engine.locale(language);
-  const authored: Record<string, string> = {};
-  for (const [key, value] of Object.entries(view.entries)) {
-    if (!view.fallbacks.includes(key)) {
-      authored[key] = value;
-    }
-  }
-  return authored;
-}
-
-/**
- * Turns flat keys back into the nested object a locale file holds.
- *
- * Only the keys of `namespace`, and with the namespace segment dropped: the
- * manifest supplies it when the file is loaded.
- */
-function nest(entries: Record<string, string>, namespace: string): Record<string, unknown> {
-  const root: Record<string, unknown> = {};
-  const prefix = `${namespace}.`;
-
-  for (const [key, value] of Object.entries(entries)) {
-    if (!key.startsWith(prefix)) {
-      continue;
-    }
-    const segments = key.slice(prefix.length).split('.');
-    let node = root;
-    segments.forEach((segment, index) => {
-      if (index === segments.length - 1) {
-        node[segment] = value;
-        return;
-      }
-      const child = node[segment];
-      if (typeof child !== 'object' || child === null) {
-        node[segment] = {};
-      }
-      node = node[segment] as Record<string, unknown>;
-    });
-  }
-
-  return root;
 }
 
 function describe(cause: unknown): string {

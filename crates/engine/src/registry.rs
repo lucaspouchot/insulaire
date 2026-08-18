@@ -379,6 +379,18 @@ impl ContentRegistry {
         self.project = None;
     }
 
+    /// Forgets every loaded language, keeping the rest of the content.
+    ///
+    /// Merging is additive and refuses a key twice, so a host that has *edited*
+    /// a locale file cannot simply load it again — and dropping the worlds and
+    /// the project to get there would be collateral damage. This is the narrow
+    /// door the language editor needs: clear the languages, register the edited
+    /// files, and the same registry answers the new text
+    /// (`docs/adr/ADR-0027-authoring-creates-keys.md`).
+    pub fn clear_locales(&mut self) {
+        self.locales.clear();
+    }
+
     /// Resolves every map link across all registered worlds.
     ///
     /// Single-world validation cannot do this — a link's target lives in another
