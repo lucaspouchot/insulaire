@@ -8,7 +8,7 @@ stack to prove the architecture works end to end, and nothing more.
 
 ```text
   Editor  ──►  WorldDefinition (JSON)  ──►  Rust/WASM  ──►  Play
-   paint            export / import          validate       click a hex
+   paint            save / import            validate       click a hex
    place            content/worlds/          simulate       watch the tick
 ```
 
@@ -18,7 +18,7 @@ stack to prove the architecture works end to end, and nothing more.
 
 - Load an authored hex world from a JSON file.
 - Render it to a Canvas with pan, zoom, hover, selection and viewport culling.
-- Paint terrain, place a player and monsters, validate, export and import.
+- Paint terrain, place a player and monsters, validate, save to disk and import.
 - Author a **project of several maps** and link them: a door on a hex sends the
   player to another map, and the engine follows it during play.
 - Start a playable test game **from the maps the editor is holding**.
@@ -108,7 +108,7 @@ identifying itself, not a label.
 The screen is the tools on the left, the canvas in the middle, and the active
 tool's content on the right — the terrain palette under **Paint**, the project
 browser under **Map**, nothing at all for the tools that need neither. Project
-actions (validate, import, export) sit in the toolbar on top.
+actions (validate, save, import) sit in the toolbar on top.
 
 The **Map** tool is where a project is organised: add a map, pick one to open,
 rename it. Every map belongs to a **zone** — a group of maps declared by
@@ -128,12 +128,27 @@ five maps at a time, so a project of forty stays navigable.
 6. Press **Validate**. The report comes from Rust — the same validator the
    runtime runs at load time — and points at the exact field, e.g.
    `entities[3].at · entity 'monster_3' stands on an impassable tile at [5, 5]`.
-7. **Export map** downloads the open map; **Export project** downloads every map
-   plus `project.json`. Drop them into `content/` to make them part of the
-   repository, or re-load one later with **Import JSON**.
+7. **Save map** writes the open map into the content directory, as
+   `worlds/<id>.json`, through the authoring server `npm run dev` starts
+   (ADR-0022). **Save project** does the same for every map. Both validate
+   first, and **nothing is written when the report is not clean**: the files on
+   disk are what the runtime boots on. **Import JSON** still loads a world file
+   from anywhere on disk.
+
+   A save writes a *difference*, not a dump. Only the maps that actually changed
+   are rewritten — the timestamp alone does not count as a change, so untouched
+   files stay untouched and the diff shows what you did. `project.json` follows
+   when the manifest no longer describes the project (a map added, renamed,
+   removed, or moved between zones), and the file of a map you removed — or the
+   old file of one you renamed — is deleted. The message says which of those
+   happened.
+
+Without an authoring server — a static build of the editor — the toolbar says
+*read-only* and both buttons are disabled.
 
 Edits are mirrored into `localStorage`, so a refresh does not lose work.
-**Reload content/** throws that away and re-reads the files from `content/`.
+**Reload content/** throws that away and re-reads the files from `content/`,
+discarding anything not saved.
 
 ### Link two maps
 
@@ -190,7 +205,7 @@ itself.
 ### Play it
 
 Press **Validate** to check the open map, then open `/play` — the editor's own
-documents are what Play mode loads, so there is nothing to export first.
+documents are what Play mode loads, so there is nothing to save first.
 
 In Play mode:
 

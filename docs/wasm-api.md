@@ -279,7 +279,7 @@ Codes: `link.unknownTargetWorld`, `link.targetOutOfBounds`,
 
 ### `validateWorld(json: string): ValidationReport`
 
-Validates **without registering**. This is the editor's pre-export check, and it
+Validates **without registering**. This is the editor's pre-save check, and it
 is the same validator `loadWorld` runs (ADR-0015).
 
 ```json

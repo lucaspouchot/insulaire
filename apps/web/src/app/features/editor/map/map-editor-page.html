@@ -11,11 +11,27 @@
 
     <div class="group">
       <button type="button" (click)="validate()">{{ 'ui.editor.map.actions.validate' | t }}</button>
-      <button type="button" (click)="exportWorld()">
-        {{ 'ui.editor.map.actions.exportMap' | t }}
+      @if (!writable()) {
+        <span class="readonly" [title]="'ui.editor.workspace.readOnlyTooltip' | t">
+          {{ 'ui.editor.workspace.readOnly' | t }}
+        </span>
+      }
+      <button
+        type="button"
+        class="primary"
+        [disabled]="busy() || !writable()"
+        [title]="'ui.editor.map.actions.saveMapTooltip' | t"
+        (click)="saveWorld()"
+      >
+        {{ 'ui.editor.map.actions.saveMap' | t }}
       </button>
-      <button type="button" (click)="exportProject()">
-        {{ 'ui.editor.map.actions.exportProject' | t }}
+      <button
+        type="button"
+        [disabled]="busy() || !writable()"
+        [title]="'ui.editor.map.actions.saveProjectTooltip' | t"
+        (click)="saveProject()"
+      >
+        {{ 'ui.editor.map.actions.saveProject' | t }}
       </button>
       <label class="file-button">
         {{ 'ui.editor.map.actions.importJson' | t }}

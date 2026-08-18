@@ -45,6 +45,17 @@ export function contentUrl(path: string): string {
   return assetUrl(`${CONTENT_ROOT}/${path}`);
 }
 
+/**
+ * A map's file content, ignoring the `updatedAt` stamp.
+ *
+ * `toDefinition` takes the clock precisely so callers can pin it; pinning it to
+ * the epoch is what lets two versions of a map be compared for a *real*
+ * difference rather than for the second having been serialised later.
+ */
+function fingerprint(document: WorldDocument): string {
+  return serializeWorld(document.toDefinition(() => new Date(0)));
+}
+
 const STORAGE_KEY = 'insulaire.editor.project.v1';
 
 /** Where the current documents came from. */
@@ -64,6 +75,19 @@ export interface LocaleFile {
   readonly json: string;
 }
 
+/**
+ * One map's file as it stands in the content directory.
+ *
+ * The fingerprint is the file **as the editor would write it**, timestamp
+ * excluded: `toDefinition` stamps `updatedAt` on every call, so comparing raw
+ * output would call every map changed on every save and rewrite the lot.
+ */
+interface DiskWorld {
+  /** Path relative to the content directory, from the manifest. */
+  readonly path: string;
+  readonly fingerprint: string;
+}
+
 /** The shape mirrored into `localStorage`. */
 interface StoredProject {
   readonly project: ProjectDefinition;
@@ -81,6 +105,18 @@ export class ProjectStoreService {
   private tileSets = new Map<string, TileSetDefinition>();
   private readonly localeFilesSignal = signal<readonly LocaleFile[]>([]);
   private loading: Promise<void> | null = null;
+  /**
+   * What the content directory holds, as the editor would write it.
+   *
+   * This is the baseline every save compares against, and it is what makes a
+   * save touch **only** the files that moved: a map whose fingerprint still
+   * matches is not rewritten, and a file whose map is gone from the editor is
+   * deleted. It is read from disk at load time — never from `localStorage`,
+   * which describes edits that have *not* been written yet.
+   */
+  private diskWorlds = new Map<string, DiskWorld>();
+  /** The manifest as it stands in the content directory, canonically serialised. */
+  private diskProjectJson: string | null = null;
 
   /** The manifest, once loaded. */
   readonly project = this.projectSignal.asReadonly();
@@ -88,7 +124,7 @@ export class ProjectStoreService {
   readonly documents = this.documentsSignal.asReadonly();
   /** Id of the map currently open in the editor. */
   readonly activeWorldId = this.activeIdSignal.asReadonly();
-  /** `true` when a document has changed since the last export. */
+  /** `true` when a document has changed since the last save to disk. */
   readonly dirty = this.dirtySignal.asReadonly();
   /** Where the current documents came from. */
   readonly source = this.sourceSignal.asReadonly();
@@ -133,14 +169,65 @@ export class ProjectStoreService {
 
     this.localeFilesSignal.set(await fetchLocaleFiles(project));
 
+    // The files are read even when documents are restored: they are what a save
+    // compares against, so the baseline has to be the directory itself and not
+    // whatever was in `localStorage` when the tab was closed.
+    const onDisk = await Promise.all(
+      project.worlds.map(async (entry) => {
+        try {
+          return { entry, definition: await fetchJson<WorldDefinition>(contentUrl(entry.path)) };
+        } catch {
+          // A manifest entry with no file is broken content, not a reason to
+          // refuse to open the editor: it is simply absent from the baseline,
+          // so the first save writes it.
+          return { entry, definition: null };
+        }
+      }),
+    );
+    this.captureDiskBaseline(project, onDisk);
+
     if (BUILD_FEATURES.editor && this.restore()) {
       return;
     }
 
-    const definitions = await Promise.all(
-      project.worlds.map((entry) => fetchJson<WorldDefinition>(contentUrl(entry.path))),
-    );
+    const definitions = onDisk.map(({ entry, definition }) => {
+      if (definition === null) {
+        throw new Error(`The project declares "${entry.id}" at ${entry.path}, which is missing.`);
+      }
+      return definition;
+    });
     this.adopt(definitions, project.startWorld, 'shipped');
+  }
+
+  /**
+   * Records what the content directory holds, so a later save can write only
+   * what moved.
+   *
+   * A map whose fingerprint cannot be computed — an unknown tile set, most
+   * likely — is left out rather than guessed at: absent from the baseline it
+   * counts as changed, and a needless write is a far better failure than a
+   * skipped one.
+   */
+  private captureDiskBaseline(
+    project: ProjectDefinition,
+    onDisk: readonly { entry: { id: string; path: string }; definition: WorldDefinition | null }[],
+  ): void {
+    this.diskProjectJson = serializeProject(project);
+    this.diskWorlds = new Map();
+    for (const { entry, definition } of onDisk) {
+      if (definition === null) {
+        continue;
+      }
+      try {
+        const document = WorldDocument.fromDefinition(
+          definition,
+          this.requireTileSetFor(definition.tileSetId),
+        );
+        this.diskWorlds.set(entry.id, { path: entry.path, fingerprint: fingerprint(document) });
+      } catch {
+        continue;
+      }
+    }
   }
 
   /** Rebuilds documents from stored definitions. `false` when there are none. */
@@ -237,7 +324,7 @@ export class ProjectStoreService {
    * The manifest as it stands, regenerated from the open documents.
    *
    * Maps added or renamed in the editor are reflected here, which is what makes
-   * "export the project" produce a bundle a client build can boot.
+   * "save the project" write a manifest a client build can boot.
    */
   projectDefinition(): ProjectDefinition {
     const project = this.requireProject();
@@ -262,7 +349,7 @@ export class ProjectStoreService {
       // Carried through untouched, like the languages below: these name files
       // the editor does not hold documents for, so regenerating them from what
       // happens to be loaded would drop the title screen and the settings on
-      // the first export — and, because this is also what is mirrored into
+      // the first save — and, because this is also what is mirrored into
       // `localStorage`, on the first reload after any edit.
       titleScreen: project.titleScreen,
       settings: project.settings,
@@ -485,6 +572,10 @@ export class ProjectStoreService {
     this.tileSets = tileSets;
     this.projectSignal.set(project);
     this.localeFilesSignal.set(localeFiles);
+    this.captureDiskBaseline(
+      project,
+      project.worlds.map((entry, index) => ({ entry, definition: definitions[index] })),
+    );
     this.adopt(definitions, project.startWorld, 'shipped');
     this.clearStored();
   }
@@ -537,9 +628,104 @@ export class ProjectStoreService {
     return true;
   }
 
-  /** Records that the project was exported to files. */
-  markExported(): void {
-    this.dirtySignal.set(false);
+  // ------------------------------------------------------------------ saving
+  //
+  // What a save has to write is a *difference* between the documents and the
+  // content directory, not the documents themselves: authored content is kept
+  // under version control, and a save that rewrites forty untouched files is a
+  // diff nobody can read.
+
+  /** Where a map's file lives in the content directory. */
+  worldPath(worldId: string): string {
+    const onDisk = this.diskWorlds.get(worldId);
+    if (onDisk !== undefined) {
+      return onDisk.path;
+    }
+    const declared = this.projectSignal()?.worlds.find((entry) => entry.id === worldId);
+    return declared?.path ?? `worlds/${worldId}.json`;
+  }
+
+  /**
+   * `true` when this map's file does not match the document — including when
+   * there is no file yet, which is the case for a map just added or imported.
+   */
+  worldNeedsWriting(worldId: string): boolean {
+    const document = this.documentsSignal().find((candidate) => candidate.id === worldId);
+    if (document === undefined) {
+      return false;
+    }
+    return this.diskWorlds.get(worldId)?.fingerprint !== fingerprint(document);
+  }
+
+  /** Ids of every map whose file does not match the document, in project order. */
+  changedWorldIds(): readonly string[] {
+    return this.documentsSignal()
+      .filter((document) => this.diskWorlds.get(document.id)?.fingerprint !== fingerprint(document))
+      .map((document) => document.id);
+  }
+
+  /**
+   * Files in the content directory whose map no longer exists here — removed,
+   * or renamed, which leaves the old file behind just the same.
+   *
+   * An id the editor still holds is never orphaned, so renaming a map away and
+   * back does not queue its own file for deletion.
+   */
+  orphanedWorlds(): readonly { id: string; path: string }[] {
+    const live = new Set(this.documentsSignal().map((document) => document.id));
+    return [...this.diskWorlds]
+      .filter(([id]) => !live.has(id))
+      .map(([id, onDisk]) => ({ id, path: onDisk.path }));
+  }
+
+  /**
+   * `true` when `project.json` on disk no longer describes the project as
+   * edited — a map was added, renamed, removed, or moved between zones.
+   */
+  manifestNeedsWriting(): boolean {
+    return this.projectJson() !== this.diskProjectJson;
+  }
+
+  /** `true` when anything at all is waiting to be written or deleted. */
+  hasUnwrittenChanges(): boolean {
+    return (
+      this.changedWorldIds().length > 0 ||
+      this.orphanedWorlds().length > 0 ||
+      this.manifestNeedsWriting()
+    );
+  }
+
+  /** Records that a map's file was written back to the content directory. */
+  markWorldWritten(worldId: string): void {
+    const document = this.documentsSignal().find((candidate) => candidate.id === worldId);
+    if (document !== undefined) {
+      this.diskWorlds.set(worldId, {
+        path: this.worldPath(worldId),
+        fingerprint: fingerprint(document),
+      });
+    }
+  }
+
+  /** Records that a map's file was deleted from the content directory. */
+  markWorldDeleted(worldId: string): void {
+    this.diskWorlds.delete(worldId);
+  }
+
+  /** Records that `project.json` was written back to the content directory. */
+  markManifestWritten(): void {
+    this.diskProjectJson = this.projectJson();
+  }
+
+  /**
+   * Re-reads whether anything is still unwritten, and lowers the flag if not.
+   *
+   * `touch` raises it on the first edit without fingerprinting anything — it
+   * runs on every brush stroke. Lowering it means fingerprinting every map, so
+   * a save calls this **once**, when it is done: doing it per file would make a
+   * save of N maps cost N² serialisations.
+   */
+  refreshDirty(): void {
+    this.dirtySignal.set(this.hasUnwrittenChanges());
   }
 
   // --------------------------------------------------------------- storage

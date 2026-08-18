@@ -53,7 +53,14 @@
 .toolbar .group {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
+}
+
+/* No authoring server: the save buttons are disabled and this says why. */
+.toolbar .readonly {
+  font-size: 11px;
+  color: var(--warn);
 }
 
 .toolbar button,

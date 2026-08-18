@@ -12,6 +12,11 @@
  * would reject. Map links add a second check the editor alone cannot make —
  * a door's target lives in another file — so `validateLinks` runs over the
  * whole loaded project (`docs/adr/ADR-0017-map-links.md`).
+ *
+ * Saving is the other half of that: the buttons write the map, and the manifest
+ * that goes with it, straight into the content directory through the authoring
+ * server (`docs/adr/ADR-0022-authoring-content-workspace.md`). Invalid content
+ * is never written — the files on disk are what the runtime boots on.
  */
 
 import {
@@ -41,6 +46,7 @@ import { TranslatePipe } from '../../../i18n/translate.pipe';
 import { SettingsService } from '../../../settings/settings.service';
 import { TitleScreenService } from '../../../services/title-screen.service';
 import { EngineService } from '../../../services/engine.service';
+import { ContentWorkspaceService } from '../../../services/content-workspace.service';
 import { ProjectStoreService } from '../../../services/project-store.service';
 
 /** Hex circumradius in world pixels. The camera scales from here. */
@@ -86,6 +92,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   private readonly i18n = inject(I18nService);
   private readonly settings = inject(SettingsService);
   private readonly titleScreen = inject(TitleScreenService);
+  private readonly workspace = inject(ContentWorkspaceService);
 
   private view: CanvasView | null = null;
   private renderer: HexMapRenderer | null = null;
@@ -113,6 +120,14 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   protected readonly revision = signal(0);
   /** The zone whose maps the picker lists; `null` lists every map. */
   protected readonly zoneFilter = signal<string | null>(null);
+  /** Set while a save is in flight, so the buttons cannot be pressed twice. */
+  protected readonly busy = signal(false);
+
+  /**
+   * `true` once the authoring server has answered — the editor is honest about
+   * being unable to write (`docs/adr/ADR-0022-authoring-content-workspace.md`).
+   */
+  protected readonly writable = computed(() => this.workspace.status() !== null);
 
   protected readonly palette = computed<readonly DocumentTile[]>(() => {
     this.revision();
@@ -269,9 +284,11 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       return;
     }
 
-    // Not awaited: the editor opens and paints without the languages, and the
-    // panels that need them re-render as soon as they arrive.
+    // Not awaited: the editor opens and paints without the languages, the
+    // settings or an authoring server, and the panels and buttons that need
+    // them re-render as soon as they arrive.
     void this.i18n.ensureAdopted().catch(() => undefined);
+    void this.workspace.ensureProbed().catch(() => undefined);
     void this.settings.ensureLoaded().catch(() => undefined);
 
     const document = this.store.requireDocument();
@@ -639,27 +656,180 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     }
   }
 
-  /** Downloads the open map as JSON, in the same layout as the shipped files. */
-  protected exportWorld(): void {
+  /**
+   * Writes the open map into the content directory.
+   *
+   * The map is validated first and an invalid one is **not** written: the file
+   * on disk is what the runtime boots on, so the editor never puts content
+   * there that the runtime would refuse to load.
+   *
+   * A map that already matches its file is left alone — see
+   * {@link reconcileManifest} for the rest of what a save owes the directory.
+   */
+  protected async saveWorld(): Promise<void> {
     const definition = this.store.currentDefinition();
-    download(`${definition.id}.json`, serializeWorld(definition));
-    this.store.markExported();
-    this.message.set(this.i18n.t('ui.editor.map.message.exportedMap', { file: `${definition.id}.json` }));
+    const path = this.store.worldPath(definition.id);
+
+    await this.write(async () => {
+      const report = this.validate();
+      if (report === null) {
+        return null;
+      }
+      if (!report.valid) {
+        this.error.set(this.i18n.t('ui.editor.map.error.notWritten'));
+        return null;
+      }
+
+      const parts: string[] = [];
+      if (this.store.worldNeedsWriting(definition.id)) {
+        await this.workspace.writeJson(path, serializeWorld(definition));
+        this.store.markWorldWritten(definition.id);
+        parts.push(this.i18n.t('ui.editor.map.message.savedMap', { file: path }));
+      } else {
+        parts.push(this.i18n.t('ui.editor.map.message.mapUpToDate', { file: path }));
+      }
+      parts.push(...(await this.reconcileManifest()));
+      return parts.join(' \u00b7 ');
+    });
   }
 
   /**
-   * Downloads every map plus `project.json`.
+   * Brings the whole content directory in line with the project.
    *
-   * This is the set of files a delivered build needs: drop them into
-   * `content/` and `just deliver` produces a bundle that boots on them.
+   * Only the maps that actually differ are written: authored content is kept
+   * under version control, and rewriting untouched files would bury the real
+   * change in a diff of timestamps.
    */
-  protected exportProject(): void {
-    for (const definition of this.store.definitions()) {
-      download(`${definition.id}.json`, serializeWorld(definition));
+  protected async saveProject(): Promise<void> {
+    await this.write(async () => {
+      const report = this.validateProject();
+      if (report === null) {
+        return null;
+      }
+      if (!report.valid) {
+        this.error.set(this.i18n.t('ui.editor.map.error.notWritten'));
+        return null;
+      }
+
+      const byId = new Map(
+        this.store.definitions().map((definition) => [definition.id, definition]),
+      );
+      const changed = this.store.changedWorldIds();
+      for (const id of changed) {
+        const definition = byId.get(id);
+        if (definition === undefined) {
+          continue;
+        }
+        await this.workspace.writeJson(this.store.worldPath(id), serializeWorld(definition));
+        this.store.markWorldWritten(id);
+      }
+
+      const parts =
+        changed.length === 0
+          ? []
+          : [this.i18n.t('ui.editor.map.message.savedProject', { count: changed.length })];
+      parts.push(...(await this.reconcileManifest()));
+      return parts.length === 0
+        ? this.i18n.t('ui.editor.map.message.upToDate')
+        : parts.join(' \u00b7 ');
+    });
+  }
+
+  /**
+   * Writes `project.json` when it no longer describes the project, then deletes
+   * the files of maps the editor no longer holds — removed, or renamed, which
+   * leaves the old file behind just the same.
+   *
+   * The manifest goes first on purpose: a manifest still naming a file that has
+   * been deleted is content the runtime cannot load, while a file no manifest
+   * names is only clutter. If one of the two fails, this is the half to have
+   * done.
+   */
+  private async reconcileManifest(): Promise<string[]> {
+    const parts: string[] = [];
+
+    if (this.store.manifestNeedsWriting()) {
+      await this.workspace.writeJson('project.json', this.store.projectJson());
+      this.store.markManifestWritten();
+      parts.push(this.i18n.t('ui.editor.map.message.savedManifest'));
     }
-    download('project.json', this.store.projectJson());
-    this.store.markExported();
-    this.message.set(this.i18n.t('ui.editor.map.message.exportedProject'));
+
+    const orphans = this.store.orphanedWorlds();
+    for (const orphan of orphans) {
+      await this.workspace.remove(orphan.path);
+      this.store.markWorldDeleted(orphan.id);
+    }
+    if (orphans.length > 0) {
+      parts.push(
+        this.i18n.t('ui.editor.map.message.removedMaps', {
+          count: orphans.length,
+          files: orphans.map((orphan) => orphan.path).join(', '),
+        }),
+      );
+    }
+
+    return parts;
+  }
+
+  /**
+   * Runs a write, owning the parts every save shares: the busy flag, the
+   * cleared notices, and turning a failed request into a message rather than a
+   * rejected promise. The body returns the note to show, or `null` when it
+   * decided not to write and has already said why.
+   */
+  private async write(body: () => Promise<string | null>): Promise<void> {
+    if (this.busy()) {
+      return;
+    }
+    this.busy.set(true);
+    this.error.set(null);
+    this.message.set(null);
+    try {
+      this.message.set(await body());
+    } catch (cause) {
+      this.error.set(describe(cause));
+    } finally {
+      // Once, at the end: what is still unwritten is a question about every map,
+      // and asking it per file would cost a serialisation of the whole project
+      // per file written.
+      this.store.refreshDirty();
+      this.busy.set(false);
+    }
+  }
+
+  /**
+   * Validates every map plus the doors between them.
+   *
+   * A project is only loadable if each of its files is *and* every door
+   * resolves, so saving the project checks both (`docs/adr/ADR-0017-map-links.md`).
+   * `null` means the engine was not ready and nothing was checked.
+   */
+  private validateProject(): ValidationReport | null {
+    if (!this.engine.isReady) {
+      this.message.set(this.i18n.t('ui.editor.map.message.engineLoading'));
+      return null;
+    }
+    try {
+      // Each world is validated *before* it is registered: `loadWorld` throws on
+      // content the validator would reject, and a thrown error is a worse
+      // report than the one the validator writes.
+      this.resetEngineContent();
+      for (const definition of this.store.definitions()) {
+        const json = serializeWorld(definition);
+        const report = this.engine.validateWorld(json);
+        if (!report.valid) {
+          this.report.set(report);
+          return report;
+        }
+        this.engine.loadWorld(json);
+      }
+      const links = this.engine.validateLinks();
+      this.report.set(links);
+      return links;
+    } catch (cause) {
+      this.error.set(describe(cause));
+      return null;
+    }
   }
 
   /** Loads a world file chosen from disk into the project. */
@@ -692,18 +862,27 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    * points at it, and the check would pass on content that no longer exists.
    */
   private loadProjectIntoEngine(): void {
+    this.resetEngineContent();
+    for (const definition of this.store.definitions()) {
+      this.engine.loadWorld(serializeWorld(definition));
+    }
+  }
+
+  /**
+   * Clears the registry and puts back everything a world is judged against:
+   * the locales, the title screen, the settings and every tile set.
+   *
+   * Locales go back in with the rest; `resetContent` cleared them, and the
+   * manifest will not load without the languages it declares
+   * (`docs/adr/ADR-0023-localised-content-keys.md`).
+   */
+  private resetEngineContent(): void {
     this.engine.resetContent();
-    // Locales go back in with the rest; `resetContent` cleared them, and the
-    // manifest will not load without the languages it declares
-    // (`docs/adr/ADR-0023-localised-content-keys.md`).
     this.i18n.register();
     this.titleScreen.register();
     this.settings.register();
     for (const tileSet of this.store.tileSetDefinitions()) {
       this.engine.loadTileSet(JSON.stringify(tileSet));
-    }
-    for (const definition of this.store.definitions()) {
-      this.engine.loadWorld(serializeWorld(definition));
     }
   }
 
@@ -852,15 +1031,6 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       showCoordinates: this.showCoordinates(),
     };
   }
-}
-
-function download(filename: string, text: string): void {
-  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
-  const link = window.document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
 }
 
 /** An unknown failure as a sentence, for the `{reason}` of a message key. */
