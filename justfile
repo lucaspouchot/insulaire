@@ -1,7 +1,10 @@
-run:
+# Start the dev environment. Extra arguments go to `ng serve` untouched, so
+# `just run --host 0.0.0.0` exposes the app to the local network and
+# `just run --port 4399` moves it off the default port.
+run *args:
     npm install
     npm run wasm:build
-    npm run dev
+    npm run dev -- {{args}}
 
 # Run the desktop shell against the live dev server: the game in its own window,
 # reloading like the browser does.

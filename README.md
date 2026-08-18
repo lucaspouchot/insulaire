@@ -182,6 +182,7 @@ In Play mode:
 | `npm run wasm:build` | Build the engine to `apps/web/public/wasm/` (release). |
 | `npm run wasm:build:dev` | Same, unoptimised — faster to build, slower to run. |
 | `npm run dev` | Start the authoring content server, then the Angular dev server in front of it. |
+| `just run` | The three quick-start commands in one. Extra flags reach `ng serve` untouched: `just run --host 0.0.0.0` also serves the app to the local network. |
 | `npm run build` | Production bundle into `apps/web/dist/web/browser/` (with the editor). |
 | `just deliver` | Client delivery: the desktop executable and its installers, collected in `deliveries/`. |
 | `just desktop` | Run the desktop shell against the dev server. |
