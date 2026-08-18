@@ -3,14 +3,45 @@
   "schemaVersion": 1,
   "titleKey": "menu.title.title",
   "subtitleKey": "menu.title.subtitle",
-  "background": { "image": "", "fit": "cover", "tint": "#0b1016" },
-  "splash": { "image": "", "durationMs": 1200, "skippable": true },
-  "theme": { "accent": "#ffd166", "text": "#e8eef5", "panel": "rgba(12, 16, 22, 0.72)", "font": "" },
+  "background": {
+    "image": "assets/images/insulaire_title.png",
+    "fit": "cover",
+    "tint": "#0b101640"
+  },
+  "logo": null,
+  "splash": {
+    "image": "",
+    "durationMs": 1200,
+    "skippable": true
+  },
+  "music": null,
+  "theme": {
+    "accent": "#ffd166",
+    "text": "#e8eef5",
+    "panel": "rgba(12, 16, 22, 0.72)",
+    "font": ""
+  },
   "layout": "left",
   "buttons": [
-    { "action": "newGame", "labelKey": "menu.buttons.newGame" },
-    { "action": "continue", "labelKey": "menu.buttons.continue" },
-    { "action": "settings", "labelKey": "menu.buttons.settings" },
-    { "action": "quit", "labelKey": "menu.buttons.quit" }
+    {
+      "action": "newGame",
+      "labelKey": "menu.buttons.newGame",
+      "hidden": false
+    },
+    {
+      "action": "continue",
+      "labelKey": "menu.buttons.continue",
+      "hidden": false
+    },
+    {
+      "action": "settings",
+      "labelKey": "menu.buttons.settings",
+      "hidden": false
+    },
+    {
+      "action": "quit",
+      "labelKey": "menu.buttons.quit",
+      "hidden": false
+    }
   ]
 }
