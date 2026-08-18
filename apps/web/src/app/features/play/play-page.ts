@@ -150,6 +150,13 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       // will not load without them either
       // (`docs/adr/ADR-0028-character-definitions.md`).
       await this.characters.ensureLoaded();
+      // And the title screen, which Play never shows: it is loaded because the
+      // *manifest names it*, and `loadProject` refuses a manifest naming a file
+      // that is not registered (`project.unloadedTitleScreen`). Opening
+      // `/play` directly — a bookmark, a reload, the editor's Play button —
+      // does not pass through the title page, so nothing else would have loaded
+      // it (`docs/adr/ADR-0024-authored-title-screen.md`).
+      await this.titleScreen.ensureLoaded();
       if (this.engine.hasGame()) {
         this.resumeGame();
       } else {
