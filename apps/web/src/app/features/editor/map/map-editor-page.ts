@@ -36,6 +36,9 @@ import { Camera } from '../../../../renderer/camera';
 import { CanvasView } from '../../../../renderer/canvas-view';
 import { HexMapRenderer } from '../../../../renderer/hex-map-renderer';
 import { RenderModel } from '../../../../renderer/render-model';
+import { I18nService } from '../../../i18n/i18n.service';
+import { TranslatePipe } from '../../../i18n/translate.pipe';
+import { SettingsService } from '../../../settings/settings.service';
 import { EngineService } from '../../../services/engine.service';
 import { ProjectStoreService } from '../../../services/project-store.service';
 
@@ -70,6 +73,7 @@ export type EditorTool =
 
 @Component({
   selector: 'app-map-editor-page',
+  imports: [TranslatePipe],
   templateUrl: './map-editor-page.html',
   styleUrl: './map-editor-page.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -78,6 +82,8 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   private readonly canvasRef = viewChild.required<ElementRef<HTMLCanvasElement>>('canvas');
   private readonly store = inject(ProjectStoreService);
   private readonly engine = inject(EngineService);
+  private readonly i18n = inject(I18nService);
+  private readonly settings = inject(SettingsService);
 
   private view: CanvasView | null = null;
   private renderer: HexMapRenderer | null = null;
@@ -261,12 +267,17 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       return;
     }
 
+    // Not awaited: the editor opens and paints without the languages, and the
+    // panels that need them re-render as soon as they arrive.
+    void this.i18n.ensureAdopted().catch(() => undefined);
+    void this.settings.ensureLoaded().catch(() => undefined);
+
     const document = this.store.requireDocument();
     this.selectedTile.set(document.palette[0]?.id ?? null);
 
     const context = this.canvasRef().nativeElement.getContext('2d');
     if (context === null) {
-      this.error.set('This browser did not provide a 2D canvas context.');
+      this.error.set(this.i18n.t('ui.common.noCanvas'));
       return;
     }
 
@@ -442,7 +453,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   protected validateLinks(): void {
     this.message.set(null);
     if (!this.engine.isReady) {
-      this.message.set('The engine is still loading — try again in a moment.');
+      this.message.set(this.i18n.t('ui.editor.map.message.engineLoading'));
       return;
     }
     try {
@@ -450,7 +461,9 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       const report = this.engine.validateLinks();
       this.report.set(report);
       this.message.set(
-        report.valid ? 'Every door in the project leads somewhere.' : 'Some doors do not resolve.',
+        this.i18n.t(
+          report.valid ? 'ui.editor.map.message.doorsResolve' : 'ui.editor.map.message.doorsDangle',
+        ),
       );
     } catch (cause) {
       this.error.set(cause instanceof Error ? cause.message : String(cause));
@@ -477,7 +490,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       if (this.zoneFilter() !== null) {
         this.zoneFilter.set(zone);
       }
-      this.message.set(`Moved to zone "${zone}".`);
+      this.message.set(this.i18n.t('ui.editor.map.message.movedToZone', { zone }));
     }
     this.renameWorld(id, name);
   }
@@ -494,7 +507,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       return;
     }
     this.zoneFilter.set(id);
-    this.message.set(`Added zone "${id}". Maps can be created straight into it.`);
+    this.message.set(this.i18n.t('ui.editor.map.message.zoneAdded', { zone: id }));
     this.rebuild();
   }
 
@@ -511,7 +524,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       return;
     }
     this.zoneFilter.set(null);
-    this.message.set(`Removed zone "${zone}".`);
+    this.message.set(this.i18n.t('ui.editor.map.message.zoneRemoved', { zone }));
     this.rebuild();
   }
 
@@ -553,7 +566,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
         this.zoneFilter.set(document.zone);
       }
       this.report.set(null);
-      this.message.set(`Added a ${width}x${height} map. Place a player before playing.`);
+      this.message.set(this.i18n.t('ui.editor.map.message.mapAdded', { width, height }));
       this.rebuild();
       this.view?.fit();
     } catch (cause) {
@@ -564,10 +577,10 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   protected renameWorld(id: string, name: string): void {
     const nextId = slugify(id) || this.store.requireDocument().id;
     if (!this.store.renameWorld(nextId, name.trim() || nextId)) {
-      this.error.set(`Another map already uses the id "${nextId}".`);
+      this.error.set(this.i18n.t('ui.editor.map.error.idTaken', { id: nextId }));
       return;
     }
-    this.message.set(`Renamed to ${nextId}; doors pointing at it were repointed.`);
+    this.message.set(this.i18n.t('ui.editor.map.message.mapRenamed', { id: nextId }));
     this.rebuild();
   }
 
@@ -577,10 +590,10 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       return;
     }
     if (!this.store.removeWorld(document.id)) {
-      this.error.set('A project must keep at least one map.');
+      this.error.set(this.i18n.t('ui.editor.map.error.lastMap'));
       return;
     }
-    this.message.set(`Removed ${document.id}. Doors that pointed at it now dangle — validate links.`);
+    this.message.set(this.i18n.t('ui.editor.map.message.mapRemoved', { id: document.id }));
     this.selected.set(null);
     this.rebuild();
     this.view?.fit();
@@ -590,13 +603,13 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     try {
       await this.store.resetToShipped();
     } catch (cause) {
-      this.error.set(`Could not reload content/: ${cause instanceof Error ? cause.message : cause}`);
+      this.error.set(this.i18n.t('ui.editor.map.error.reloadFailed', { reason: describe(cause) }));
       return;
     }
     this.selected.set(null);
     this.selectedTile.set(this.store.document()?.palette[0]?.id ?? null);
     this.report.set(null);
-    this.message.set('Reloaded the project from content/.');
+    this.message.set(this.i18n.t('ui.editor.map.message.reloaded'));
     this.rebuild();
     this.view?.fit();
   }
@@ -607,7 +620,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   protected validate(): ValidationReport | null {
     this.message.set(null);
     if (!this.engine.isReady) {
-      this.message.set('The engine is still loading — try again in a moment.');
+      this.message.set(this.i18n.t('ui.editor.map.message.engineLoading'));
       return null;
     }
     try {
@@ -629,7 +642,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     const definition = this.store.currentDefinition();
     download(`${definition.id}.json`, serializeWorld(definition));
     this.store.markExported();
-    this.message.set(`Exported ${definition.id}.json`);
+    this.message.set(this.i18n.t('ui.editor.map.message.exportedMap', { file: `${definition.id}.json` }));
   }
 
   /**
@@ -644,7 +657,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     }
     download('project.json', this.store.projectJson());
     this.store.markExported();
-    this.message.set('Exported every map and project.json — save them under content/.');
+    this.message.set(this.i18n.t('ui.editor.map.message.exportedProject'));
   }
 
   /** Loads a world file chosen from disk into the project. */
@@ -659,11 +672,11 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       const document = this.store.importDefinition(definition);
       this.selectedTile.set(document.palette[0]?.id ?? null);
       this.report.set(null);
-      this.message.set(`Imported ${file.name}.`);
+      this.message.set(this.i18n.t('ui.editor.map.message.imported', { file: file.name }));
       this.rebuild();
       this.view?.fit();
     } catch (cause) {
-      this.error.set(`Could not import ${file.name}: ${cause instanceof Error ? cause.message : cause}`);
+      this.error.set(this.i18n.t('ui.editor.map.error.importFailed', { file: file.name, reason: describe(cause) }));
     } finally {
       input.value = '';
     }
@@ -678,6 +691,11 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    */
   private loadProjectIntoEngine(): void {
     this.engine.resetContent();
+    // Locales go back in with the rest; `resetContent` cleared them, and the
+    // manifest will not load without the languages it declares
+    // (`docs/adr/ADR-0023-localised-content-keys.md`).
+    this.i18n.register();
+    this.settings.register();
     for (const tileSet of this.store.tileSetDefinitions()) {
       this.engine.loadTileSet(JSON.stringify(tileSet));
     }
@@ -840,6 +858,11 @@ function download(filename: string, text: string): void {
   link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+/** An unknown failure as a sentence, for the `{reason}` of a message key. */
+function describe(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
 function clampDimension(raw: string): number {

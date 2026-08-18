@@ -14,15 +14,23 @@ use crate::definition::{
     WORLD_SCHEMA_VERSION,
 };
 use crate::hex::OffsetCoord;
+use crate::locale::{missing_keys, LocaleBundle};
 use crate::project::{ProjectDefinition, PROJECT_SCHEMA_VERSION};
+use crate::settings::{ControlDefinition, SettingsDefinition, SETTINGS_SCHEMA_VERSION};
 use crate::template::{EntityKind, TemplateRegistry};
 use crate::tileset::{TileSetDefinition, TILE_SET_SCHEMA_VERSION};
+use crate::title_screen::{TitleAction, TitleScreenDefinition, TITLE_SCREEN_SCHEMA_VERSION};
 
 /// Upper bound on map size accepted by the MVP loader.
 ///
 /// The packed tile buffer is `width * height` bytes, so this caps a world at
 /// 4 MiB of terrain data.
 pub const MAX_MAP_DIMENSION: u32 = 2048;
+
+/// Longest splash or fade a title screen may author, in milliseconds.
+///
+/// A minute of unskippable logo is not a style choice, it is a bug in a file.
+pub const MAX_TITLE_DURATION_MS: u32 = 60_000;
 
 /// Maximum number of distinct tiles in one palette.
 ///
@@ -84,6 +92,19 @@ pub struct ValidationReport {
 }
 
 impl ValidationReport {
+    /// A report with nothing to say: valid, no issues.
+    ///
+    /// Not [`Default`], which produces `valid: false` because that is what a
+    /// `bool` defaults to — a distinction worth a named constructor rather than
+    /// a footgun at every call site.
+    #[must_use]
+    pub fn clean() -> Self {
+        Self {
+            valid: true,
+            issues: Vec::new(),
+        }
+    }
+
     fn from_issues(issues: Vec<ValidationIssue>) -> Self {
         let valid = !issues.iter().any(|issue| issue.severity == Severity::Error);
         Self { valid, issues }
@@ -654,11 +675,15 @@ pub fn validate_project_zones<'a>(
 /// The project only *names* files; whether they exist on disk is the host's
 /// business, so this checks the shape of the manifest and that its start world
 /// and referenced ids are among the loaded content.
+///
+/// `loaded_title_screen_id` is the id of the registered title screen, if any.
 #[must_use]
 pub fn validate_project(
     project: &ProjectDefinition,
     loaded_world_ids: &[String],
     loaded_tile_set_ids: &[String],
+    loaded_title_screen_id: Option<&str>,
+    loaded_settings_id: Option<&str>,
 ) -> ValidationReport {
     let mut issues = Vec::new();
 
@@ -751,6 +776,535 @@ pub fn validate_project(
                 project.start_world
             ),
         ));
+    }
+
+    if let Some(entry) = &project.title_screen {
+        if loaded_title_screen_id != Some(entry.id.as_str()) {
+            issues.push(ValidationIssue::error(
+                "project.unloadedTitleScreen",
+                "titleScreen.id",
+                format!(
+                    "title screen `{}` (`{}`) is listed by the project but not loaded",
+                    entry.id, entry.path
+                ),
+            ));
+        }
+    }
+
+    if let Some(entry) = &project.settings {
+        if loaded_settings_id != Some(entry.id.as_str()) {
+            issues.push(ValidationIssue::error(
+                "project.unloadedSettings",
+                "settings.id",
+                format!(
+                    "settings `{}` (`{}`) are listed by the project but not loaded",
+                    entry.id, entry.path
+                ),
+            ));
+        }
+    }
+
+    issues.extend(locale_declaration_issues(project));
+
+    ValidationReport::from_issues(issues)
+}
+
+/// Checks the `locales` block of a manifest, without looking at the files.
+fn locale_declaration_issues(project: &ProjectDefinition) -> Vec<ValidationIssue> {
+    let locales = &project.locales;
+    let mut issues = Vec::new();
+    let mut language_ids: BTreeSet<&str> = BTreeSet::new();
+
+    for (index, language) in locales.languages.iter().enumerate() {
+        if language.id.trim().is_empty() {
+            issues.push(ValidationIssue::error(
+                "locale.missingLanguageId",
+                format!("locales.languages[{index}].id"),
+                "language id must not be empty",
+            ));
+        } else if !language_ids.insert(language.id.as_str()) {
+            issues.push(ValidationIssue::error(
+                "locale.duplicateLanguage",
+                format!("locales.languages[{index}].id"),
+                format!("language `{}` is declared twice", language.id),
+            ));
+        }
+
+        let mut namespaces: BTreeSet<&str> = BTreeSet::new();
+        for (file_index, file) in language.files.iter().enumerate() {
+            let path = format!("locales.languages[{index}].files[{file_index}]");
+            if file.id.trim().is_empty() {
+                issues.push(ValidationIssue::error(
+                    "locale.missingNamespace",
+                    format!("{path}.id"),
+                    "a locale file's id is its namespace and must not be empty",
+                ));
+            } else if !namespaces.insert(file.id.as_str()) {
+                issues.push(ValidationIssue::error(
+                    "locale.duplicateNamespace",
+                    format!("{path}.id"),
+                    format!(
+                        "language `{}` declares namespace `{}` twice",
+                        language.id, file.id
+                    ),
+                ));
+            }
+            if file.path.trim().is_empty() {
+                issues.push(ValidationIssue::error(
+                    "locale.missingPath",
+                    format!("{path}.path"),
+                    format!(
+                        "locale file `{}` of language `{}` has no path",
+                        file.id, language.id
+                    ),
+                ));
+            }
+        }
+    }
+
+    if !locales.default.is_empty() && locales.language(&locales.default).is_none() {
+        issues.push(ValidationIssue::error(
+            "locale.unknownDefaultLanguage",
+            "locales.default",
+            format!(
+                "default language `{}` is not among the declared languages",
+                locales.default
+            ),
+        ));
+    }
+
+    issues
+}
+
+/// Compares the loaded languages against each other and against the manifest.
+///
+/// The check no single locale file can make: whether a key exists in *every*
+/// language. A gap is a warning, not an error — the default language stands in
+/// so a player never sees a raw key — but it is reported, because the editor's
+/// language screen is built out of this report
+/// (`docs/adr/ADR-0023-localised-content-keys.md`).
+///
+/// `bundles` is what the host actually loaded, in any order.
+#[must_use]
+pub fn validate_locales<'a>(
+    project: &ProjectDefinition,
+    bundles: impl IntoIterator<Item = &'a LocaleBundle>,
+) -> ValidationReport {
+    let bundles: Vec<&LocaleBundle> = bundles.into_iter().collect();
+    let mut issues = Vec::new();
+
+    for language in &project.locales.languages {
+        if !bundles
+            .iter()
+            .any(|bundle| bundle.language == language.id && !bundle.is_empty())
+        {
+            issues.push(ValidationIssue::error(
+                "locale.unloadedLanguage",
+                format!("locales.languages[{}]", language.id),
+                format!(
+                    "language `{}` is declared by the project but no locale file is loaded for it",
+                    language.id
+                ),
+            ));
+        }
+    }
+
+    let Some(default_id) = project.locales.default_language() else {
+        return ValidationReport::from_issues(issues);
+    };
+    let Some(default_bundle) = bundles
+        .iter()
+        .find(|bundle| bundle.language == default_id)
+        .copied()
+    else {
+        return ValidationReport::from_issues(issues);
+    };
+
+    for bundle in &bundles {
+        for (key, value) in &bundle.entries {
+            if value.trim().is_empty() {
+                issues.push(ValidationIssue::warning(
+                    "locale.emptyValue",
+                    format!("{}.{key}", bundle.language),
+                    format!("`{key}` is empty in language `{}`", bundle.language),
+                ));
+            }
+        }
+
+        if bundle.language == default_id {
+            continue;
+        }
+
+        for key in missing_keys(default_bundle, bundle) {
+            issues.push(ValidationIssue::warning(
+                "locale.missingTranslation",
+                format!("{}.{key}", bundle.language),
+                format!("`{key}` is not translated into `{}`", bundle.language),
+            ));
+        }
+        for key in missing_keys(bundle, default_bundle) {
+            issues.push(ValidationIssue::warning(
+                "locale.orphanKey",
+                format!("{}.{key}", bundle.language),
+                format!(
+                    "`{key}` exists in `{}` but not in the default language `{default_id}`",
+                    bundle.language
+                ),
+            ));
+        }
+    }
+
+    ValidationReport::from_issues(issues)
+}
+
+/// Validates a title screen in isolation.
+///
+/// "In isolation" is the limit worth knowing: this checks the file's own shape
+/// — its actions, its numbers, its asset paths — but not whether the keys it
+/// names exist, which needs the loaded languages
+/// ([`validate_referenced_keys`]), nor whether its images are on disk, which no
+/// build of the engine can see (`docs/adr/ADR-0024-authored-title-screen.md`).
+#[must_use]
+pub fn validate_title_screen(screen: &TitleScreenDefinition) -> ValidationReport {
+    let mut issues = Vec::new();
+
+    if screen.id.trim().is_empty() {
+        issues.push(ValidationIssue::error(
+            "titleScreen.missingId",
+            "id",
+            "title screen id must not be empty",
+        ));
+    }
+    if screen.schema_version == 0 || screen.schema_version > TITLE_SCREEN_SCHEMA_VERSION {
+        issues.push(ValidationIssue::error(
+            "titleScreen.unsupportedSchemaVersion",
+            "schemaVersion",
+            format!(
+                "unsupported title screen schemaVersion {}; this build supports up to \
+                 {TITLE_SCREEN_SCHEMA_VERSION}",
+                screen.schema_version
+            ),
+        ));
+    }
+
+    // The one action that must be offered: without it a delivered game opens on
+    // a menu it cannot leave.
+    let mut seen: BTreeSet<TitleAction> = BTreeSet::new();
+    let mut can_start = false;
+    for (index, button) in screen.buttons.iter().enumerate() {
+        let path = format!("buttons[{index}]");
+        if !seen.insert(button.action) {
+            issues.push(ValidationIssue::error(
+                "titleScreen.duplicateAction",
+                format!("{path}.action"),
+                format!("action `{:?}` is offered twice", button.action),
+            ));
+        }
+        if button.label_key.trim().is_empty() {
+            issues.push(ValidationIssue::error(
+                "titleScreen.missingLabelKey",
+                format!("{path}.labelKey"),
+                "a button's label key must not be empty",
+            ));
+        }
+        if button.action == TitleAction::NewGame && !button.hidden {
+            can_start = true;
+        }
+    }
+    if !can_start {
+        issues.push(ValidationIssue::error(
+            "titleScreen.noNewGame",
+            "buttons",
+            "a title screen must offer a visible `newGame` button",
+        ));
+    }
+
+    if screen.title_key.trim().is_empty() {
+        issues.push(ValidationIssue::error(
+            "titleScreen.missingTitleKey",
+            "titleKey",
+            "titleKey must not be empty",
+        ));
+    }
+
+    for (path, asset) in screen.referenced_assets() {
+        if let Some(reason) = unusable_asset_path(asset) {
+            issues.push(ValidationIssue::error(
+                "titleScreen.invalidAssetPath",
+                path,
+                format!("`{asset}` is not a usable content path: {reason}"),
+            ));
+        }
+    }
+
+    if let Some(logo) = &screen.logo {
+        if logo.max_width_percent == 0 || logo.max_width_percent > 100 {
+            issues.push(ValidationIssue::error(
+                "titleScreen.logoWidthOutOfRange",
+                "logo.maxWidthPercent",
+                format!(
+                    "logo width must be between 1 and 100, not {}",
+                    logo.max_width_percent
+                ),
+            ));
+        }
+    }
+
+    if let Some(splash) = &screen.splash {
+        if splash.duration_ms > MAX_TITLE_DURATION_MS {
+            issues.push(ValidationIssue::error(
+                "titleScreen.durationOutOfRange",
+                "splash.durationMs",
+                format!(
+                    "a splash may not last more than {MAX_TITLE_DURATION_MS} ms, not {}",
+                    splash.duration_ms
+                ),
+            ));
+        }
+        // A splash nobody can skip and that never ends is a hung game.
+        if !splash.skippable && splash.duration_ms == 0 {
+            issues.push(ValidationIssue::warning(
+                "titleScreen.instantSplash",
+                "splash.durationMs",
+                "this splash lasts 0 ms and cannot be skipped; it will not be seen",
+            ));
+        }
+    }
+
+    if let Some(music) = &screen.music {
+        if !(0.0..=1.0).contains(&music.gain) || !music.gain.is_finite() {
+            issues.push(ValidationIssue::error(
+                "titleScreen.gainOutOfRange",
+                "music.gain",
+                format!("music gain must be between 0 and 1, not {}", music.gain),
+            ));
+        }
+        if music.fade_in_ms > MAX_TITLE_DURATION_MS {
+            issues.push(ValidationIssue::error(
+                "titleScreen.durationOutOfRange",
+                "music.fadeInMs",
+                format!(
+                    "a fade-in may not last more than {MAX_TITLE_DURATION_MS} ms, not {}",
+                    music.fade_in_ms
+                ),
+            ));
+        }
+    }
+
+    ValidationReport::from_issues(issues)
+}
+
+/// Why a content path cannot be used, or `None` when it is fine.
+///
+/// Content paths are resolved against the content root by the host, so an
+/// absolute path, a parent segment or a URL would either escape the bundle or
+/// point at somebody else's server.
+fn unusable_asset_path(path: &str) -> Option<&'static str> {
+    if path.trim().is_empty() {
+        return Some("it is empty");
+    }
+    if path.contains("://") {
+        return Some("it is a URL; content is served from the content root");
+    }
+    if path.starts_with('/') || path.starts_with('\\') || path.contains(':') {
+        return Some("it must be relative to the content root");
+    }
+    if path.split('/').any(|segment| segment == "..") {
+        return Some("it may not step outside the content root");
+    }
+    None
+}
+
+/// Validates a settings declaration in isolation.
+///
+/// What it cannot check is deliberate: whether the label keys resolve needs the
+/// loaded languages ([`validate_referenced_keys`]), and what a setting *means*
+/// is the game's business, not the engine's
+/// (`docs/adr/ADR-0025-settings.md`).
+#[must_use]
+pub fn validate_settings(settings: &SettingsDefinition) -> ValidationReport {
+    let mut issues = Vec::new();
+
+    if settings.id.trim().is_empty() {
+        issues.push(ValidationIssue::error(
+            "settings.missingId",
+            "id",
+            "settings id must not be empty",
+        ));
+    }
+    if settings.schema_version == 0 || settings.schema_version > SETTINGS_SCHEMA_VERSION {
+        issues.push(ValidationIssue::error(
+            "settings.unsupportedSchemaVersion",
+            "schemaVersion",
+            format!(
+                "unsupported settings schemaVersion {}; this build supports up to \
+                 {SETTINGS_SCHEMA_VERSION}",
+                settings.schema_version
+            ),
+        ));
+    }
+
+    let mut ids: BTreeSet<&str> = BTreeSet::new();
+    for (path, field) in settings.fields() {
+        if field.id.trim().is_empty() {
+            issues.push(ValidationIssue::error(
+                "settings.missingFieldId",
+                format!("{path}.id"),
+                "a setting's id must not be empty",
+            ));
+        } else if !ids.insert(field.id.as_str()) {
+            // Ids are the keys values are stored under, so a duplicate is two
+            // controls fighting over one value.
+            issues.push(ValidationIssue::error(
+                "settings.duplicateField",
+                format!("{path}.id"),
+                format!("setting `{}` is declared twice", field.id),
+            ));
+        }
+        issues.extend(field_issues(&path, field));
+    }
+
+    for (path, field) in settings.fields() {
+        if let Some(condition) = &field.show_if {
+            if settings.field(&condition.field).is_none() {
+                issues.push(ValidationIssue::error(
+                    "settings.unknownCondition",
+                    format!("{path}.showIf.field"),
+                    format!(
+                        "setting `{}` is shown when `{}` has a value, but no such setting is declared",
+                        field.id, condition.field
+                    ),
+                ));
+            }
+        }
+    }
+
+    ValidationReport::from_issues(issues)
+}
+
+/// Everything one control can get wrong on its own.
+fn field_issues(path: &str, field: &ControlDefinition) -> Vec<ValidationIssue> {
+    let mut issues = Vec::new();
+
+    if field.label_key.trim().is_empty() {
+        issues.push(ValidationIssue::error(
+            "settings.missingLabelKey",
+            format!("{path}.labelKey"),
+            format!("setting `{}` has no label key", field.id),
+        ));
+    }
+
+    if field.control.uses_options() && field.options.is_empty() {
+        issues.push(ValidationIssue::error(
+            "settings.noOptions",
+            format!("{path}.options"),
+            format!(
+                "setting `{}` chooses from a list and declares none",
+                field.id
+            ),
+        ));
+    }
+    if !field.control.uses_options() && !field.options.is_empty() {
+        issues.push(ValidationIssue::warning(
+            "settings.unusedOptions",
+            format!("{path}.options"),
+            format!(
+                "setting `{}` is a `{:?}` control, so its options are ignored",
+                field.id, field.control
+            ),
+        ));
+    }
+
+    let mut option_values: BTreeSet<&str> = BTreeSet::new();
+    for (index, option) in field.options.iter().enumerate() {
+        if !option_values.insert(option.value.as_str()) {
+            issues.push(ValidationIssue::error(
+                "settings.duplicateOption",
+                format!("{path}.options[{index}].value"),
+                format!("setting `{}` offers `{}` twice", field.id, option.value),
+            ));
+        }
+        if option.label_key.trim().is_empty() {
+            issues.push(ValidationIssue::error(
+                "settings.missingLabelKey",
+                format!("{path}.options[{index}].labelKey"),
+                format!("an option of `{}` has no label key", field.id),
+            ));
+        }
+    }
+
+    if let (Some(min), Some(max)) = (field.min, field.max) {
+        if min > max {
+            issues.push(ValidationIssue::error(
+                "settings.emptyRange",
+                format!("{path}.min"),
+                format!("setting `{}` has min {min} above max {max}", field.id),
+            ));
+        }
+    }
+    if field.control.is_numeric() && field.step.is_some_and(|step| step <= 0.0) {
+        issues.push(ValidationIssue::error(
+            "settings.invalidStep",
+            format!("{path}.step"),
+            format!("setting `{}` has a step that is not positive", field.id),
+        ));
+    }
+
+    // The default is what a player gets before touching anything, so it has to
+    // be a value this control would accept from them.
+    if !field.accepts(&field.default) {
+        issues.push(ValidationIssue::error(
+            "settings.invalidDefault",
+            format!("{path}.default"),
+            format!(
+                "the default of `{}` is not a value its `{:?}` control accepts",
+                field.id, field.control
+            ),
+        ));
+    } else if field.control.is_numeric()
+        && field
+            .default
+            .as_f64()
+            .is_some_and(|number| !field.contains(number))
+    {
+        issues.push(ValidationIssue::error(
+            "settings.defaultOutOfRange",
+            format!("{path}.default"),
+            format!("the default of `{}` is outside its range", field.id),
+        ));
+    }
+
+    issues
+}
+
+/// Reports keys that content references but no language defines.
+///
+/// Content refers to text by key — a menu button, a settings label — and the
+/// key is only meaningful if some language answers it. This is what turns a
+/// typo in a `labelKey` into a validation issue instead of a blank button.
+#[must_use]
+pub fn validate_referenced_keys<'a>(
+    referenced: impl IntoIterator<Item = (&'a str, &'a str)>,
+    bundles: &[&LocaleBundle],
+) -> ValidationReport {
+    let mut issues = Vec::new();
+
+    for (path, key) in referenced {
+        if key.trim().is_empty() {
+            issues.push(ValidationIssue::error(
+                "locale.missingKey",
+                path.to_owned(),
+                "a text key must not be empty",
+            ));
+            continue;
+        }
+        if !bundles.iter().any(|bundle| bundle.get(key).is_some()) {
+            issues.push(ValidationIssue::error(
+                "locale.unknownKey",
+                path.to_owned(),
+                format!("`{key}` is not defined in any loaded language"),
+            ));
+        }
     }
 
     ValidationReport::from_issues(issues)
@@ -1125,6 +1679,9 @@ mod tests {
                     path: "worlds/interior_world.json".to_owned(),
                 },
             ],
+            locales: crate::project::LocalesDefinition::default(),
+            title_screen: None,
+            settings: None,
         }
     }
 
@@ -1138,7 +1695,7 @@ mod tests {
     #[test]
     fn a_project_listing_loaded_content_is_valid() {
         let (worlds, tile_sets) = loaded();
-        let report = validate_project(&project(), &worlds, &tile_sets);
+        let report = validate_project(&project(), &worlds, &tile_sets, None, None);
         assert!(report.valid, "unexpected issues: {:?}", report.issues);
     }
 
@@ -1147,8 +1704,10 @@ mod tests {
         let (worlds, tile_sets) = loaded();
         let mut project = project();
         project.start_world = "elsewhere".to_owned();
-        assert!(codes(&validate_project(&project, &worlds, &tile_sets))
-            .contains(&"project.unknownStartWorld"));
+        assert!(
+            codes(&validate_project(&project, &worlds, &tile_sets, None, None))
+                .contains(&"project.unknownStartWorld")
+        );
     }
 
     #[test]
@@ -1159,13 +1718,15 @@ mod tests {
             path: "worlds/ghost.json".to_owned(),
         });
         let (worlds, tile_sets) = loaded();
-        let report = validate_project(&project, &worlds, &tile_sets);
+        let report = validate_project(&project, &worlds, &tile_sets, None, None);
         assert!(codes(&report).contains(&"project.unloadedWorld"));
 
         project.worlds.pop();
         project.tile_sets[0].id = "absent".to_owned();
-        assert!(codes(&validate_project(&project, &worlds, &tile_sets))
-            .contains(&"project.unloadedTileSet"));
+        assert!(
+            codes(&validate_project(&project, &worlds, &tile_sets, None, None))
+                .contains(&"project.unloadedTileSet")
+        );
     }
 
     #[test]
@@ -1181,7 +1742,7 @@ mod tests {
             name: "Nameless".to_owned(),
         });
 
-        let report = validate_project(&project, &worlds, &tile_sets);
+        let report = validate_project(&project, &worlds, &tile_sets, None, None);
         assert!(codes(&report).contains(&"project.duplicateZone"));
         assert!(codes(&report).contains(&"project.missingZoneId"));
     }
@@ -1221,5 +1782,247 @@ mod tests {
 
         world.zone = "valley".to_owned();
         assert!(!validate_project_zones(&project, [&world]).valid);
+    }
+
+    // ---------------------------------------------------------------- locales
+
+    fn language(id: &str, namespaces: &[&str]) -> crate::project::LanguageDefinition {
+        crate::project::LanguageDefinition {
+            id: id.to_owned(),
+            name: id.to_uppercase(),
+            files: namespaces
+                .iter()
+                .map(|namespace| crate::project::ContentRef {
+                    id: (*namespace).to_owned(),
+                    path: format!("locales/{id}/{namespace}.json"),
+                })
+                .collect(),
+        }
+    }
+
+    fn localised_project() -> ProjectDefinition {
+        let mut project = project();
+        project.locales = crate::project::LocalesDefinition {
+            default: "en".to_owned(),
+            languages: vec![language("en", &["menu"]), language("fr", &["menu"])],
+        };
+        project
+    }
+
+    fn locale(id: &str, json: &str) -> LocaleBundle {
+        let mut bundle = LocaleBundle::new(id);
+        bundle.merge_json("menu", json).expect("locale");
+        bundle
+    }
+
+    #[test]
+    fn a_manifest_declaring_the_same_language_or_namespace_twice_is_an_error() {
+        let (worlds, tile_sets) = loaded();
+        let mut project = localised_project();
+        project.locales.languages.push(language("fr", &["menu"]));
+        project.locales.languages[0]
+            .files
+            .push(crate::project::ContentRef {
+                id: "menu".to_owned(),
+                path: "locales/en/menu-again.json".to_owned(),
+            });
+
+        let report = validate_project(&project, &worlds, &tile_sets, None, None);
+        assert!(codes(&report).contains(&"locale.duplicateLanguage"));
+        assert!(codes(&report).contains(&"locale.duplicateNamespace"));
+    }
+
+    #[test]
+    fn a_default_language_that_is_not_declared_is_an_error() {
+        let (worlds, tile_sets) = loaded();
+        let mut project = localised_project();
+        project.locales.default = "de".to_owned();
+
+        assert!(
+            codes(&validate_project(&project, &worlds, &tile_sets, None, None))
+                .contains(&"locale.unknownDefaultLanguage")
+        );
+    }
+
+    /**
+     * The check no single locale file can make: whether every language answers
+     * the same keys. A gap is a warning — the default language stands in — but
+     * it is what the editor's language screen lists.
+     */
+    #[test]
+    fn a_key_missing_from_one_language_is_reported_without_being_fatal() {
+        let project = localised_project();
+        let en = locale("en", r#"{ "play": "Play", "quit": "Quit" }"#);
+        let fr = locale("fr", r#"{ "play": "Jouer" }"#);
+
+        let report = validate_locales(&project, [&en, &fr]);
+
+        assert!(report.valid, "a missing translation is not fatal");
+        assert!(codes(&report).contains(&"locale.missingTranslation"));
+        assert!(report
+            .issues
+            .iter()
+            .any(|issue| issue.path == "fr.menu.quit"));
+    }
+
+    #[test]
+    fn a_key_only_one_language_has_and_an_empty_value_are_reported() {
+        let project = localised_project();
+        let en = locale("en", r#"{ "play": "Play" }"#);
+        let fr = locale("fr", r#"{ "play": "", "extra": "En trop" }"#);
+
+        let report = validate_locales(&project, [&en, &fr]);
+
+        assert!(codes(&report).contains(&"locale.orphanKey"));
+        assert!(codes(&report).contains(&"locale.emptyValue"));
+    }
+
+    #[test]
+    fn a_declared_language_with_no_loaded_file_is_an_error() {
+        let project = localised_project();
+        let en = locale("en", r#"{ "play": "Play" }"#);
+
+        let report = validate_locales(&project, [&en]);
+
+        assert!(!report.valid);
+        assert!(codes(&report).contains(&"locale.unloadedLanguage"));
+    }
+
+    // ----------------------------------------------------------- title screen
+
+    fn title_screen(json: &str) -> TitleScreenDefinition {
+        serde_json::from_str(json).expect("title screen parses")
+    }
+
+    const TITLE_SCREEN: &str = r#"{
+        "id": "main", "schemaVersion": 1, "titleKey": "menu.title.title",
+        "buttons": [
+            { "action": "newGame", "labelKey": "menu.buttons.newGame" },
+            { "action": "quit", "labelKey": "menu.buttons.quit" }
+        ]
+    }"#;
+
+    #[test]
+    fn a_minimal_title_screen_is_valid() {
+        let report = validate_title_screen(&title_screen(TITLE_SCREEN));
+        assert!(report.valid, "unexpected issues: {:?}", report.issues);
+        assert!(report.issues.is_empty());
+    }
+
+    /**
+     * A menu with no way to start a game is a game a client cannot play, so it
+     * fails here rather than in front of them.
+     */
+    #[test]
+    fn a_title_screen_must_offer_a_visible_new_game_button() {
+        let hidden = TITLE_SCREEN.replace(
+            r#"{ "action": "newGame", "labelKey": "menu.buttons.newGame" }"#,
+            r#"{ "action": "newGame", "labelKey": "menu.buttons.newGame", "hidden": true }"#,
+        );
+        let report = validate_title_screen(&title_screen(&hidden));
+
+        assert!(!report.valid);
+        assert!(codes(&report).contains(&"titleScreen.noNewGame"));
+    }
+
+    #[test]
+    fn an_action_offered_twice_or_without_a_label_is_an_error() {
+        let json = r#"{
+            "id": "main", "schemaVersion": 1, "titleKey": "menu.title.title",
+            "buttons": [
+                { "action": "newGame", "labelKey": "menu.buttons.newGame" },
+                { "action": "newGame", "labelKey": "menu.buttons.again" },
+                { "action": "quit", "labelKey": "  " }
+            ]
+        }"#;
+        let report = validate_title_screen(&title_screen(json));
+
+        assert!(codes(&report).contains(&"titleScreen.duplicateAction"));
+        assert!(codes(&report).contains(&"titleScreen.missingLabelKey"));
+    }
+
+    /**
+     * Asset paths are resolved against the content root by the host, so a URL
+     * or a parent segment would either leave the bundle or fetch somebody
+     * else's server.
+     */
+    #[test]
+    fn an_asset_path_that_leaves_the_content_root_is_an_error() {
+        for path in [
+            "/etc/passwd.png",
+            "../../secrets.png",
+            "https://example.com/logo.png",
+            "",
+        ] {
+            let json = TITLE_SCREEN.replace(
+                r#""titleKey": "menu.title.title","#,
+                &format!(
+                    r#""titleKey": "menu.title.title", "background": {{ "image": {} }},"#,
+                    serde_json::to_string(path).expect("json")
+                ),
+            );
+            let report = validate_title_screen(&title_screen(&json));
+            // An empty image means "no image", which is not an error.
+            if path.is_empty() {
+                assert!(report.valid, "empty image should be allowed");
+            } else {
+                assert!(
+                    codes(&report).contains(&"titleScreen.invalidAssetPath"),
+                    "expected `{path}` to be refused"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn out_of_range_numbers_are_errors() {
+        let json = r#"{
+            "id": "main", "schemaVersion": 1, "titleKey": "menu.title.title",
+            "logo": { "image": "assets/logo.png", "maxWidthPercent": 140 },
+            "splash": { "image": "assets/splash.png", "durationMs": 600000 },
+            "music": { "track": "assets/theme.ogg", "gain": 4.0 },
+            "buttons": [{ "action": "newGame", "labelKey": "menu.buttons.newGame" }]
+        }"#;
+        let report = validate_title_screen(&title_screen(json));
+
+        assert!(codes(&report).contains(&"titleScreen.logoWidthOutOfRange"));
+        assert!(codes(&report).contains(&"titleScreen.durationOutOfRange"));
+        assert!(codes(&report).contains(&"titleScreen.gainOutOfRange"));
+    }
+
+    #[test]
+    fn a_project_naming_a_title_screen_that_is_not_loaded_is_an_error() {
+        let (worlds, tile_sets) = loaded();
+        let mut project = project();
+        project.title_screen = Some(crate::project::ContentRef {
+            id: "main".to_owned(),
+            path: "menu/title-screen.json".to_owned(),
+        });
+
+        assert!(
+            codes(&validate_project(&project, &worlds, &tile_sets, None, None))
+                .contains(&"project.unloadedTitleScreen")
+        );
+        assert!(validate_project(&project, &worlds, &tile_sets, Some("main"), None).valid);
+    }
+
+    #[test]
+    fn a_key_referenced_by_content_must_exist_in_some_language() {
+        let en = locale("en", r#"{ "play": "Play" }"#);
+        let bundles = [&en];
+
+        let report = validate_referenced_keys([("buttons[0].labelKey", "menu.play")], &bundles);
+        assert!(report.valid, "unexpected issues: {:?}", report.issues);
+
+        let report = validate_referenced_keys(
+            [
+                ("buttons[0].labelKey", "menu.absent"),
+                ("buttons[1].labelKey", "  "),
+            ],
+            &bundles,
+        );
+        assert!(!report.valid);
+        assert!(codes(&report).contains(&"locale.unknownKey"));
+        assert!(codes(&report).contains(&"locale.missingKey"));
     }
 }

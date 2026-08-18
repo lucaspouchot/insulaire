@@ -14,6 +14,11 @@
 import { Injectable, signal } from '@angular/core';
 
 import {
+  SettingsDefinition,
+  SettingsValues,
+  TitleScreenDefinition,
+} from '../../content/content-types';
+import {
   CommandResult,
   ContentSummary,
   EngineCommand,
@@ -21,6 +26,7 @@ import {
   EngineInfo,
   GameSnapshot,
   LoadOutcome,
+  LocaleView,
   RawInsulaireEngine,
   ValidationReport,
   WorldView,
@@ -97,7 +103,89 @@ export class EngineService {
   }
 
   /**
-   * Forgets every loaded tile set, world and project.
+   * Registers one locale file under a language and a namespace.
+   *
+   * The namespace prefixes every key in the file, so `menu.json` loaded as
+   * `menu` answers `menu.title.buttons.newGame`
+   * (`docs/adr/ADR-0023-localised-content-keys.md`).
+   */
+  loadLocale(language: string, namespace: string, json: string): LoadOutcome {
+    return this.parse<LoadOutcome>(() => this.engine().loadLocale(language, namespace, json));
+  }
+
+  /**
+   * One language's text, with the project's default language filling the gaps.
+   *
+   * Resolution happens in Rust so every host answers a key the same way — the
+   * UI never implements a fallback of its own.
+   */
+  locale(language: string): LocaleView {
+    return this.parse<LocaleView>(() => this.engine().locale(language));
+  }
+
+  /**
+   * Compares the loaded languages against the manifest and each other.
+   *
+   * The editor's translation report: missing translations, orphan keys and
+   * empty values.
+   */
+  validateLocales(): ValidationReport {
+    return this.parse<ValidationReport>(() => this.engine().validateLocales());
+  }
+
+  /**
+   * Registers the title screen a client opens on.
+   *
+   * Load it before the project, which validates that the screen it names is
+   * actually loaded (`docs/adr/ADR-0024-authored-title-screen.md`).
+   */
+  loadTitleScreen(json: string): LoadOutcome {
+    return this.parse<LoadOutcome>(() => this.engine().loadTitleScreen(json));
+  }
+
+  /**
+   * Validates a title screen without registering it — the editor's check.
+   *
+   * Unlike loading, this also resolves the keys it references against the
+   * loaded languages.
+   */
+  validateTitleScreen(json: string): ValidationReport {
+    return this.parse<ValidationReport>(() => this.engine().validateTitleScreen(json));
+  }
+
+  /** The registered title screen, defaults filled in by the engine. */
+  titleScreen(): TitleScreenDefinition {
+    return this.parse<TitleScreenDefinition>(() => this.engine().titleScreen());
+  }
+
+  /** Registers the game's settings declaration, before the project. */
+  loadSettings(json: string): LoadOutcome {
+    return this.parse<LoadOutcome>(() => this.engine().loadSettings(json));
+  }
+
+  /** Validates a settings declaration without registering it, keys included. */
+  validateSettings(json: string): ValidationReport {
+    return this.parse<ValidationReport>(() => this.engine().validateSettings(json));
+  }
+
+  /** The registered settings declaration, defaults filled in by the engine. */
+  settings(): SettingsDefinition {
+    return this.parse<SettingsDefinition>(() => this.engine().settings());
+  }
+
+  /**
+   * Resolves values against the declaration: defaults filled, unknown keys
+   * dropped, numbers clamped.
+   *
+   * The screen and `createGame` both go through this, so what a player sees and
+   * what the game is created with cannot disagree.
+   */
+  resolveSettings(values: SettingsValues): SettingsValues {
+    return this.parse<SettingsValues>(() => this.engine().resolveSettings(JSON.stringify(values)));
+  }
+
+  /**
+   * Forgets every loaded tile set, world, locale and project.
    *
    * Loading is additive, so a host re-loading a whole project calls this first
    * — otherwise content deleted in the editor keeps answering for itself. A
@@ -160,9 +248,16 @@ export class EngineService {
 
   // ------------------------------------------------------------------- game
 
-  /** Starts a game. The engine owns the seed from here on. */
-  createGame(worldId: string, seed: number): GameSnapshot {
-    return this.parse<GameSnapshot>(() => this.engine().createGame(worldId, seed));
+  /**
+   * Starts a game. The engine owns the seed and the settings from here on.
+   *
+   * `settings` are the game's own, declared by content; the application's
+   * settings never cross the boundary (`docs/adr/ADR-0025-settings.md`).
+   */
+  createGame(worldId: string, seed: number, settings: SettingsValues = {}): GameSnapshot {
+    return this.parse<GameSnapshot>(() =>
+      this.engine().createGame(worldId, seed, JSON.stringify(settings)),
+    );
   }
 
   /** The current runtime state. */

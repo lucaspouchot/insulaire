@@ -20,10 +20,12 @@ import { serializeWorld } from '../content/world-serializer';
 import { offsetToAxial, hexDistance } from '../core/hex/hex-coords';
 import {
   CommandResult,
+  ContentSummary,
   EngineInfo,
   GameSnapshot,
   InsulaireEngineModule,
   LoadOutcome,
+  LocaleView,
   RawInsulaireEngine,
   ValidationReport,
   WorldView,
@@ -66,6 +68,36 @@ describe.skipIf(!built)('engine boundary', () => {
     instance.loadTileSet(tileSetJson());
     instance.loadWorld(worldJson());
     return instance;
+  }
+
+  /**
+   * Registers the shipped locale files.
+   *
+   * The manifest declares its languages, and a declared language with no file
+   * is a load error — so anything that loads the real `project.json` loads
+   * these too (`docs/adr/ADR-0023-localised-content-keys.md`).
+   */
+  function loadShippedLocales(instance: RawInsulaireEngine): void {
+    for (const language of ['en', 'fr']) {
+      for (const namespace of ['menu', 'game']) {
+        instance.loadLocale(
+          language,
+          namespace,
+          readText(`content/locales/${language}/${namespace}.json`),
+        );
+      }
+    }
+  }
+
+  /**
+   * Registers the shipped title screen.
+   *
+   * Like the languages: the manifest names it, so the manifest will not load
+   * without it (`docs/adr/ADR-0024-authored-title-screen.md`).
+   */
+  function loadShippedTitleScreen(instance: RawInsulaireEngine): void {
+    instance.loadTitleScreen(readText('content/menu/title-screen.json'));
+    instance.loadSettings(readText('content/settings.json'));
   }
 
   it('reports that it is running as WebAssembly', () => {
@@ -120,7 +152,7 @@ describe.skipIf(!built)('engine boundary', () => {
 
   it('advances exactly one tick per accepted move, and moves the monsters', () => {
     const instance = loaded();
-    const start = JSON.parse(instance.createGame('demo_world', 2026)) as GameSnapshot;
+    const start = JSON.parse(instance.createGame('demo_world', 2026, '{}')) as GameSnapshot;
 
     expect(start.tick).toBe(0);
     expect(start.legalMoves.length).toBeGreaterThan(0);
@@ -147,7 +179,7 @@ describe.skipIf(!built)('engine boundary', () => {
 
   it('refuses an illegal move without advancing anything', () => {
     const instance = loaded();
-    const start = JSON.parse(instance.createGame('demo_world', 2026)) as GameSnapshot;
+    const start = JSON.parse(instance.createGame('demo_world', 2026, '{}')) as GameSnapshot;
 
     const result = JSON.parse(
       instance.dispatch(JSON.stringify({ type: 'moveTo', to: [19, 19] })),
@@ -163,7 +195,7 @@ describe.skipIf(!built)('engine boundary', () => {
 
   it('only reports legal moves that the engine will actually accept', () => {
     const instance = loaded();
-    const start = JSON.parse(instance.createGame('demo_world', 1)) as GameSnapshot;
+    const start = JSON.parse(instance.createGame('demo_world', 1, '{}')) as GameSnapshot;
     const legal = new Set(start.legalMoves.map((move) => move.join()));
 
     // Try all six neighbours of the player; acceptance must match legalMoves.
@@ -184,7 +216,7 @@ describe.skipIf(!built)('engine boundary', () => {
       const to: [number, number] = [col, neighbour.r];
 
       const fresh = loaded();
-      fresh.createGame('demo_world', 1);
+      fresh.createGame('demo_world', 1, '{}');
       const result = JSON.parse(fresh.dispatch(JSON.stringify({ type: 'moveTo', to }))) as CommandResult;
       expect(result.accepted).toBe(legal.has(to.join()));
     }
@@ -193,7 +225,7 @@ describe.skipIf(!built)('engine boundary', () => {
   it('replays identically for the same seed and inputs', () => {
     const run = (): GameSnapshot => {
       const instance = loaded();
-      instance.createGame('demo_world', 4242);
+      instance.createGame('demo_world', 4242, '{}');
       for (const command of [
         { type: 'wait' },
         { type: 'moveTo', to: [5, 10] },
@@ -212,7 +244,7 @@ describe.skipIf(!built)('engine boundary', () => {
 
   it('closes the distance to a stationary player', () => {
     const instance = loaded();
-    const start = JSON.parse(instance.createGame('demo_world', 2026)) as GameSnapshot;
+    const start = JSON.parse(instance.createGame('demo_world', 2026, '{}')) as GameSnapshot;
     const playerAxial = offsetToAxial({ col: start.player!.at[0], row: start.player!.at[1] });
 
     const distanceOf = (snapshot: GameSnapshot): number =>
@@ -251,7 +283,7 @@ describe.skipIf(!built)('engine boundary', () => {
     const outcome = JSON.parse(instance.loadWorld(serializeWorld(document.toDefinition()))) as LoadOutcome;
 
     expect(outcome.report.valid).toBe(true);
-    const snapshot = JSON.parse(instance.createGame(outcome.id, 1)) as GameSnapshot;
+    const snapshot = JSON.parse(instance.createGame(outcome.id, 1, '{}')) as GameSnapshot;
     expect(snapshot.entities.filter((entity) => entity.kind === 'monster')).toHaveLength(3);
   });
 
@@ -265,6 +297,8 @@ describe.skipIf(!built)('engine boundary', () => {
     instance.loadTileSet(tileSetJson());
     instance.loadWorld(worldJson());
     instance.loadWorld(readText('content/worlds/demo_refuge.json'));
+    loadShippedLocales(instance);
+    loadShippedTitleScreen(instance);
     const project = JSON.parse(instance.loadProject(readText('content/project.json'))) as LoadOutcome;
     expect(project.id).toBe('insulaire');
 
@@ -275,7 +309,7 @@ describe.skipIf(!built)('engine boundary', () => {
     const door = view.links[0] as WorldView['links'][number];
     expect(door.targetWorld).toBe('demo_refuge');
 
-    instance.createGame('demo_world', 2026);
+    instance.createGame('demo_world', 2026, '{}');
     const result = JSON.parse(
       instance.dispatch(JSON.stringify({ type: 'moveTo', to: door.at })),
     ) as CommandResult;
@@ -301,6 +335,89 @@ describe.skipIf(!built)('engine boundary', () => {
     const report = JSON.parse(instance.validateLinks()) as ValidationReport;
     expect(report.valid).toBe(false);
     expect(report.issues.map((issue) => issue.code)).toContain('link.unknownTargetWorld');
+  });
+
+  /**
+   * The shipped languages, across the real boundary: the files this repository
+   * ships load, resolve, and answer the same keys
+   * (`docs/adr/ADR-0023-localised-content-keys.md`).
+   */
+  it('loads the shipped languages and resolves their keys', () => {
+    const instance = loaded();
+    instance.loadWorld(readText('content/worlds/demo_refuge.json'));
+
+    for (const language of ['en', 'fr']) {
+      const outcome = JSON.parse(
+        instance.loadLocale(language, 'menu', readText(`content/locales/${language}/menu.json`)),
+      ) as LoadOutcome;
+      expect(outcome.id).toBe(`${language}/menu`);
+    }
+    loadShippedTitleScreen(instance);
+    instance.loadProject(readText('content/project.json'));
+
+    const fr = JSON.parse(instance.locale('fr')) as LocaleView;
+    expect(fr.language).toBe('fr');
+    expect(fr.entries['menu.buttons.newGame']).toBe('Nouvelle partie');
+    // Both shipped languages are complete, so nothing is served by fallback.
+    expect(fr.fallbacks).toEqual([]);
+
+    const report = JSON.parse(instance.validateLocales()) as ValidationReport;
+    expect(report.valid).toBe(true);
+    expect(report.issues).toEqual([]);
+
+    const summary = JSON.parse(instance.contentSummary()) as ContentSummary;
+    expect(summary.project?.languages.map((language) => language.id)).toEqual(['en', 'fr']);
+    expect(summary.project?.languages[0]?.isDefault).toBe(true);
+  });
+
+  it('serves an untranslated key from the default language, and says so', () => {
+    const instance = loaded();
+    instance.loadWorld(readText('content/worlds/demo_refuge.json'));
+    instance.loadLocale('en', 'menu', '{ "play": "Play", "quit": "Quit" }');
+    instance.loadLocale('fr', 'menu', '{ "play": "Jouer" }');
+    // A stand-in for the shipped screen: the manifest still requires the id it
+    // names, but its keys have to be the ones these stub languages define.
+    instance.loadTitleScreen(
+      JSON.stringify({
+        id: 'main',
+        schemaVersion: 1,
+        titleKey: 'menu.play',
+        buttons: [{ action: 'newGame', labelKey: 'menu.play' }],
+      }),
+    );
+    // The manifest names a settings file too, and its label keys have to resolve
+    // against these stub languages just like the menu's.
+    instance.loadSettings(
+      JSON.stringify({
+        id: 'insulaire_game',
+        schemaVersion: 1,
+        sections: [
+          {
+            id: 's',
+            labelKey: 'menu.play',
+            groups: [
+              {
+                id: 'g',
+                labelKey: 'menu.play',
+                fields: [
+                  { id: 'f', labelKey: 'menu.play', control: 'toggle', default: false },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    instance.loadProject(readText('content/project.json'));
+
+    const fr = JSON.parse(instance.locale('fr')) as LocaleView;
+    expect(fr.entries['menu.play']).toBe('Jouer');
+    expect(fr.entries['menu.quit']).toBe('Quit');
+    expect(fr.fallbacks).toEqual(['menu.quit']);
+
+    const report = JSON.parse(instance.validateLocales()) as ValidationReport;
+    expect(report.valid).toBe(true);
+    expect(report.issues.map((issue) => issue.code)).toContain('locale.missingTranslation');
   });
 
   it('rejects a world with no player, listing the reason', () => {

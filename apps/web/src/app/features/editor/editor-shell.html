@@ -3,14 +3,26 @@
     <a
       [routerLink]="['/editor', module.id]"
       routerLinkActive="active"
-      [title]="module.summary"
+      [title]="module.summaryKey | t"
       [class.planned]="module.status === 'planned'"
     >
-      {{ module.title }}
+      {{ module.titleKey | t }}
       @if (module.status === 'planned') {
-        <span class="badge">soon</span>
+        <span class="badge">{{ 'ui.editor.module.soon' | t }}</span>
       }
     </a>
+  }
+
+  @if (workspaceName(); as name) {
+    <span class="workspace" [title]="'ui.editor.workspace.authoring' | t: { path: workspaceRoot() ?? '' }">
+      <span class="dot"></span>
+      {{ name }}
+    </span>
+  } @else {
+    <span class="workspace offline" [title]="'ui.editor.workspace.readOnlyTooltip' | t">
+      <span class="dot"></span>
+      {{ 'ui.editor.workspace.readOnly' | t }}
+    </span>
   }
 </nav>
 

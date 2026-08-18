@@ -3,16 +3,25 @@
     <canvas #canvas></canvas>
 
     <div class="viewport-tools">
-      <button type="button" (click)="zoom(1.2)" title="Zoom in">＋</button>
-      <button type="button" (click)="zoom(1 / 1.2)" title="Zoom out">－</button>
-      <button type="button" (click)="fitView()" title="Fit the map to the window">Fit</button>
-      <button type="button" (click)="toggleGrid()" [class.on]="showGrid()" title="Toggle grid">Grid</button>
+      <button type="button" (click)="zoom(1.2)" [title]="'ui.viewport.zoomIn' | t">＋</button>
+      <button type="button" (click)="zoom(1 / 1.2)" [title]="'ui.viewport.zoomOut' | t">－</button>
+      <button type="button" (click)="fitView()" [title]="'ui.viewport.fitTooltip' | t">
+        {{ 'ui.viewport.fit' | t }}
+      </button>
+      <button
+        type="button"
+        (click)="toggleGrid()"
+        [class.on]="showGrid()"
+        [title]="'ui.viewport.gridTooltip' | t"
+      >
+        {{ 'ui.viewport.grid' | t }}
+      </button>
     </div>
 
     @let snap = snapshot();
     @if (snap !== null) {
       <div class="tick-badge">
-        <span class="label">tick</span>
+        <span class="label">{{ 'ui.play.tick' | t }}</span>
         <span class="value">{{ snap.tick }}</span>
       </div>
     }
@@ -20,14 +29,14 @@
     @let cell = hover();
     <div class="overlay-note">
       @if (cell !== null) {
-        hex [{{ cell.col }}, {{ cell.row }}] — click a highlighted hex to move
+        {{ 'ui.play.overlay.hover' | t: { col: cell.col, row: cell.row } }}
       } @else {
-        highlighted hexes are the engine's legalMoves · right-drag to pan · wheel to zoom
+        {{ 'ui.play.overlay.idle' | t }}
       }
     </div>
 
     @if (lastRejection(); as refusal) {
-      <div class="refusal">{{ refusal }} — the tick did not advance.</div>
+      <div class="refusal">{{ 'ui.play.refusal' | t: { reason: refusal } }}</div>
     }
   </section>
 
@@ -35,29 +44,42 @@
     @if (error(); as failure) {
       <div class="banner error">
         {{ failure }}
-        <button type="button" class="dismiss" (click)="dismissError()">Dismiss</button>
+        <button type="button" class="dismiss" (click)="dismissError()">
+          {{ 'ui.common.dismiss' | t }}
+        </button>
       </div>
     }
 
     @if (busy()) {
-      <p class="hint">Starting the game…</p>
+      <p class="hint">{{ 'ui.play.starting' | t }}</p>
     }
 
     @let snapshotValue = snapshot();
     @let world = worldView();
     @if (snapshotValue !== null && world !== null) {
       <section class="panel">
-        <h2>Simulation</h2>
+        <h2>{{ 'ui.play.simulation.heading' | t }}</h2>
         <div class="rows">
-          <div class="row"><span>world</span><span>{{ world.name }} ({{ world.worldId }})</span></div>
-          <div class="row"><span>tick</span><span class="strong">{{ snapshotValue.tick }}</span></div>
-          <div class="row"><span>seed</span><span>{{ snapshotValue.seed }}</span></div>
-          <div class="row"><span>legal moves</span><span>{{ snapshotValue.legalMoves.length }}</span></div>
+          <div class="row">
+            <span>{{ 'ui.play.simulation.world' | t }}</span>
+            <span>{{ 'ui.play.simulation.worldValue' | t: { name: world.name, id: world.worldId } }}</span>
+          </div>
+          <div class="row">
+            <span>{{ 'ui.play.simulation.tick' | t }}</span>
+            <span class="strong">{{ snapshotValue.tick }}</span>
+          </div>
+          <div class="row">
+            <span>{{ 'ui.play.simulation.seed' | t }}</span><span>{{ snapshotValue.seed }}</span>
+          </div>
+          <div class="row">
+            <span>{{ 'ui.play.simulation.legalMoves' | t }}</span>
+            <span>{{ snapshotValue.legalMoves.length }}</span>
+          </div>
         </div>
       </section>
 
       <section class="panel">
-        <h2>Positions</h2>
+        <h2>{{ 'ui.play.positions.heading' | t }}</h2>
         <div class="rows">
           @let hero = player();
           @if (hero !== null) {
@@ -69,60 +91,84 @@
           @for (monster of monsterDistances(); track monster.id) {
             <div class="row">
               <span>{{ monster.id }}</span>
-              <span>[{{ monster.at[0] }}, {{ monster.at[1] }}] · {{ monster.distance }} away</span>
+              <span>
+                {{
+                  'ui.play.positions.away'
+                    | t: { col: monster.at[0], row: monster.at[1], distance: monster.distance }
+                }}
+              </span>
             </div>
           }
         </div>
       </section>
 
       <section class="panel">
-        <h2>Controls</h2>
+        <h2>{{ 'ui.play.controls.heading' | t }}</h2>
         <div class="button-row">
-          <button type="button" (click)="wait()" [disabled]="busy()">Wait (1 tick)</button>
+          <button type="button" (click)="wait()" [disabled]="busy()">
+            {{ 'ui.play.controls.wait' | t }}
+          </button>
         </div>
         <div class="restart">
-          <input #seedInput type="number" min="0" [value]="seed()" aria-label="Seed" />
-          <button type="button" (click)="restart(seedInput.value)">Restart</button>
+          <input
+            #seedInput
+            type="number"
+            min="0"
+            [value]="seed()"
+            [attr.aria-label]="'ui.play.controls.seedAria' | t"
+          />
+          <button type="button" (click)="restart(seedInput.value)">
+            {{ 'ui.play.controls.restart' | t }}
+          </button>
         </div>
-        <p class="hint">
-          Same seed plus the same clicks always replays identically — the RNG lives in Rust, never in
-          <code>Math.random()</code>.
-        </p>
+        <p class="hint">{{ 'ui.play.controls.hint' | t: { function: 'Math.random()' } }}</p>
       </section>
 
       <section class="panel">
-        <h2>Engine RNG</h2>
+        <h2>{{ 'ui.play.rng.heading' | t }}</h2>
         <div class="rows">
-          <div class="row"><span>state</span><span>{{ snapshotValue.rng.state }}</span></div>
-          <div class="row"><span>stream</span><span>{{ snapshotValue.rng.increment }}</span></div>
-          <div class="row"><span>draws</span><span>{{ snapshotValue.rng.draws }}</span></div>
+          <div class="row">
+            <span>{{ 'ui.play.rng.state' | t }}</span><span>{{ snapshotValue.rng.state }}</span>
+          </div>
+          <div class="row">
+            <span>{{ 'ui.play.rng.stream' | t }}</span><span>{{ snapshotValue.rng.increment }}</span>
+          </div>
+          <div class="row">
+            <span>{{ 'ui.play.rng.draws' | t }}</span><span>{{ snapshotValue.rng.draws }}</span>
+          </div>
         </div>
-        <p class="hint">Drawn only when several monsters need an acting order.</p>
+        <p class="hint">{{ 'ui.play.rng.hint' | t }}</p>
       </section>
 
       <section class="panel log-panel">
-        <h2>Events from the engine</h2>
+        <h2>{{ 'ui.play.log.heading' | t }}</h2>
         <ul class="log">
           @for (entry of log(); track entry.id) {
             <li [class]="entry.kind">
               <span class="tick">{{ entry.tick }}</span>
-              <span class="text">{{ entry.text }}</span>
+              <span class="text">{{ entry.key | t: entry.params }}</span>
             </li>
           } @empty {
-            <li class="empty">No events yet.</li>
+            <li class="empty">{{ 'ui.play.log.empty' | t }}</li>
           }
         </ul>
       </section>
 
       @if (stats(); as frame) {
         <section class="panel">
-          <h2>Renderer</h2>
+          <h2>{{ 'ui.play.renderer.heading' | t }}</h2>
           <div class="rows">
             <div class="row">
-              <span>cells drawn</span><span>{{ frame.cellsDrawn }} / {{ frame.cellsTotal }}</span>
+              <span>{{ 'ui.stats.cellsDrawn' | t }}</span>
+              <span>{{ 'ui.stats.drawnValue' | t: { drawn: frame.cellsDrawn, total: frame.cellsTotal } }}</span>
             </div>
-            <div class="row"><span>terrain fills</span><span>{{ frame.terrainBatches }}</span></div>
-            <div class="row"><span>last frame</span><span>{{ frame.lastFrameMs.toFixed(2) }} ms</span></div>
+            <div class="row">
+              <span>{{ 'ui.stats.terrainFills' | t }}</span><span>{{ frame.terrainBatches }}</span>
+            </div>
+            <div class="row">
+              <span>{{ 'ui.stats.lastFrame' | t }}</span>
+              <span>{{ 'ui.stats.frameValue' | t: { ms: frame.lastFrameMs.toFixed(2) } }}</span>
+            </div>
           </div>
         </section>
       }

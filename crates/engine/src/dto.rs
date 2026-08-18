@@ -9,6 +9,8 @@
 //! space authored files and the editor use. Axial coordinates are included on
 //! entity snapshots as a convenience for renderers, never as the primary key.
 
+use std::collections::BTreeMap;
+
 use insulaire_simulation::{EntityRuntime, Rng, SimEvent};
 use insulaire_world::{
     EntityKind, Hex, LinkTrigger, MapLinkDefinition, OffsetCoord, ProjectDefinition, ResolvedTile,
@@ -147,6 +149,12 @@ pub struct GameSnapshot {
     pub legal_moves: Vec<OffsetCoord>,
     /// Current RNG state.
     pub rng: RngSnapshot,
+    /// The game settings this game was created with, already resolved.
+    ///
+    /// Content declares them and a player sets them; the engine carries them so
+    /// a scenario can read them and a save can keep them
+    /// (`docs/adr/ADR-0025-settings.md`).
+    pub settings: BTreeMap<String, serde_json::Value>,
 }
 
 /// The result of dispatching a [`Command`].
@@ -328,6 +336,18 @@ pub struct WorldSummary {
     pub valid: bool,
 }
 
+/// One language a project offers, as the language picker sees it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LanguageView {
+    /// Language id, e.g. `fr`.
+    pub id: String,
+    /// Name shown in the picker, in that language.
+    pub name: String,
+    /// `true` when this is the language a missing translation falls back to.
+    pub is_default: bool,
+}
+
 /// The loaded project manifest, as the UI sees it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -340,10 +360,13 @@ pub struct ProjectView {
     pub start_world: String,
     /// Ids of every world the project ships, in listed order.
     pub world_ids: Vec<String>,
+    /// Languages the project declares, in author order.
+    pub languages: Vec<LanguageView>,
 }
 
 impl From<&ProjectDefinition> for ProjectView {
     fn from(project: &ProjectDefinition) -> Self {
+        let default_language = project.locales.default_language().unwrap_or_default();
         Self {
             id: project.id.clone(),
             name: project.name.clone(),
@@ -353,8 +376,38 @@ impl From<&ProjectDefinition> for ProjectView {
                 .iter()
                 .map(|entry| entry.id.clone())
                 .collect(),
+            languages: project
+                .locales
+                .languages
+                .iter()
+                .map(|language| LanguageView {
+                    id: language.id.clone(),
+                    name: if language.name.is_empty() {
+                        language.id.clone()
+                    } else {
+                        language.name.clone()
+                    },
+                    is_default: language.id == default_language,
+                })
+                .collect(),
         }
     }
+}
+
+/// Every translation of one language, ready for the UI to look keys up in.
+///
+/// The default language has already filled the gaps, so a value is always
+/// present for a key some language defines — a raw key never reaches a screen
+/// (`docs/adr/ADR-0023-localised-content-keys.md`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocaleView {
+    /// Language id these entries are for.
+    pub language: String,
+    /// Full key to translated text.
+    pub entries: BTreeMap<String, String>,
+    /// Keys served by the default language because this one has none.
+    pub fallbacks: Vec<String>,
 }
 
 /// What the content registry currently holds.

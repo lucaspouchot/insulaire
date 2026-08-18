@@ -28,10 +28,16 @@ modules are declared once in `editor-modules.ts`:
 
 ```text
 /editor/map        MapEditorPage        available
+/editor/title      TitleEditorPage      available   (ADR-0024)
+/editor/locale     LocaleEditorPage     available   (ADR-0023)
 /editor/character  PlannedModulePage    planned
 /editor/asset      PlannedModulePage    planned
 /editor/scenario   PlannedModulePage    planned
 ```
+
+Two of those were planned entries that became components, which is the shape
+this ADR predicted: the title screen editor and the language editor cost one
+registry entry and one component each, and nothing else moved.
 
 `EDITOR_MODULES` is the single source: `editor.routes.ts` builds the routes from
 it and the shell builds its tab bar from it. A module marked `planned` routes to

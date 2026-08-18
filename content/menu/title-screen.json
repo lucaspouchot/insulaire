@@ -1,0 +1,16 @@
+{
+  "id": "main",
+  "schemaVersion": 1,
+  "titleKey": "menu.title.title",
+  "subtitleKey": "menu.title.subtitle",
+  "background": { "image": "", "fit": "cover", "tint": "#0b1016" },
+  "splash": { "image": "", "durationMs": 1200, "skippable": true },
+  "theme": { "accent": "#ffd166", "text": "#e8eef5", "panel": "rgba(12, 16, 22, 0.72)", "font": "" },
+  "layout": "left",
+  "buttons": [
+    { "action": "newGame", "labelKey": "menu.buttons.newGame" },
+    { "action": "continue", "labelKey": "menu.buttons.continue" },
+    { "action": "settings", "labelKey": "menu.buttons.settings" },
+    { "action": "quit", "labelKey": "menu.buttons.quit" }
+  ]
+}

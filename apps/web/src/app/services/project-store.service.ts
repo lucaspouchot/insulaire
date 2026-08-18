@@ -49,6 +49,20 @@ const STORAGE_KEY = 'insulaire.editor.project.v1';
 /** Where the current documents came from. */
 export type ProjectSource = 'shipped' | 'restored' | 'imported' | 'new';
 
+/**
+ * One locale file as authored, ready to hand to the engine.
+ *
+ * The text is kept as the file's own JSON rather than parsed here: the engine
+ * owns flattening, merging and the fallback rule, so no host can invent its own
+ * (`docs/adr/ADR-0023-localised-content-keys.md`).
+ */
+export interface LocaleFile {
+  readonly language: string;
+  /** The file's id in the manifest, which is the key prefix it provides. */
+  readonly namespace: string;
+  readonly json: string;
+}
+
 /** The shape mirrored into `localStorage`. */
 interface StoredProject {
   readonly project: ProjectDefinition;
@@ -64,6 +78,7 @@ export class ProjectStoreService {
   private readonly dirtySignal = signal(false);
   private readonly sourceSignal = signal<ProjectSource>('shipped');
   private tileSets = new Map<string, TileSetDefinition>();
+  private readonly localeFilesSignal = signal<readonly LocaleFile[]>([]);
   private loading: Promise<void> | null = null;
 
   /** The manifest, once loaded. */
@@ -76,6 +91,8 @@ export class ProjectStoreService {
   readonly dirty = this.dirtySignal.asReadonly();
   /** Where the current documents came from. */
   readonly source = this.sourceSignal.asReadonly();
+  /** Every locale file the manifest lists, as fetched. */
+  readonly localeFiles = this.localeFilesSignal.asReadonly();
 
   /** The map currently open, or `null` before loading. */
   readonly document = computed<WorldDocument | null>(() => {
@@ -112,6 +129,8 @@ export class ProjectStoreService {
         ),
       ),
     );
+
+    this.localeFilesSignal.set(await fetchLocaleFiles(project));
 
     if (BUILD_FEATURES.editor && this.restore()) {
       return;
@@ -239,6 +258,10 @@ export class ProjectStoreService {
         id: document.id,
         path: `worlds/${document.id}.json`,
       })),
+      // Carried through untouched: the editor never regenerates the language
+      // list from what happens to be loaded, or an export would quietly drop a
+      // language whose files failed to fetch.
+      locales: project.locales,
     };
   }
 
@@ -449,8 +472,11 @@ export class ProjectStoreService {
       ),
     );
 
+    const localeFiles = await fetchLocaleFiles(project);
+
     this.tileSets = tileSets;
     this.projectSignal.set(project);
+    this.localeFilesSignal.set(localeFiles);
     this.adopt(definitions, project.startWorld, 'shipped');
     this.clearStored();
   }
@@ -500,6 +526,43 @@ export class ProjectStoreService {
       // Nothing to do; see persist().
     }
   }
+}
+
+/**
+ * Fetches every locale file the manifest lists.
+ *
+ * A language whose file is missing is *not* fatal here: the fetch failure is
+ * skipped and the engine's `validateLocales` reports the gap, which keeps a
+ * typo in one path from making the whole editor unopenable.
+ */
+async function fetchLocaleFiles(project: ProjectDefinition): Promise<LocaleFile[]> {
+  const requested = (project.locales?.languages ?? []).flatMap((language) =>
+    (language.files ?? []).map((file) => ({
+      language: language.id,
+      namespace: file.id,
+      path: file.path,
+    })),
+  );
+
+  const fetched = await Promise.all(
+    requested.map(async (entry) => {
+      try {
+        return { ...entry, json: await fetchText(contentUrl(entry.path)) };
+      } catch {
+        return null;
+      }
+    }),
+  );
+
+  return fetched.filter((entry) => entry !== null);
+}
+
+async function fetchText(url: string): Promise<string> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Could not load ${url} (HTTP ${response.status}).`);
+  }
+  return response.text();
 }
 
 async function fetchJson<T>(url: string): Promise<T> {

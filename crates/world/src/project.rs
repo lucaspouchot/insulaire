@@ -47,6 +47,64 @@ pub struct ContentRef {
     pub path: String,
 }
 
+/// One language the game is available in, and the files that translate it.
+///
+/// Each file's [`ContentRef::id`] is its **namespace**: `locales/fr/menu.json`
+/// registered as `menu` provides the keys under `menu.` — so the same key
+/// exists in every language, and a translator works on one area at a time
+/// (`docs/adr/ADR-0023-localised-content-keys.md`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LanguageDefinition {
+    /// Stable id, ideally a BCP 47 tag: `fr`, `en`, `pt-BR`.
+    pub id: String,
+    /// Name shown in the language picker, in that language.
+    #[serde(default)]
+    pub name: String,
+    /// Locale files, by namespace.
+    #[serde(default)]
+    pub files: Vec<ContentRef>,
+}
+
+/// The languages a project ships, and which one stands in for the others.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalesDefinition {
+    /// Id of the language a missing translation falls back to. Empty means the
+    /// first declared.
+    #[serde(default)]
+    pub default: String,
+    /// Every language, in author order.
+    #[serde(default)]
+    pub languages: Vec<LanguageDefinition>,
+}
+
+impl LocalesDefinition {
+    /// Id of the fallback language, or `None` when the project declares none.
+    #[must_use]
+    pub fn default_language(&self) -> Option<&str> {
+        if !self.default.is_empty() {
+            return Some(self.default.as_str());
+        }
+        self.languages.first().map(|language| language.id.as_str())
+    }
+
+    /// The declared language with this id.
+    #[must_use]
+    pub fn language(&self, id: &str) -> Option<&LanguageDefinition> {
+        self.languages.iter().find(|language| language.id == id)
+    }
+
+    /// `true` when the project declares no language at all.
+    ///
+    /// A project may: the application then uses the languages it ships for its
+    /// own chrome, which is enough to open the editor and see a map.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.languages.is_empty()
+    }
+}
+
 /// The set of content files that make up one game, and where it starts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -73,6 +131,23 @@ pub struct ProjectDefinition {
     /// be listed here, or the link cannot resolve at runtime.
     #[serde(default)]
     pub worlds: Vec<ContentRef>,
+    /// The languages the game is available in, and their locale files.
+    #[serde(default)]
+    pub locales: LocalesDefinition,
+    /// The title screen a client opens on, if the project authors one.
+    ///
+    /// Absent means the game starts on its `start_world` with no menu, which is
+    /// what development wants and what a delivery should not do
+    /// (`docs/adr/ADR-0024-authored-title-screen.md`).
+    #[serde(default)]
+    pub title_screen: Option<ContentRef>,
+    /// The settings this game offers, if it declares any.
+    ///
+    /// The *application's* settings — volumes, interface scale, language — are
+    /// not here: they configure the shell, not the game
+    /// (`docs/adr/ADR-0025-settings.md`).
+    #[serde(default)]
+    pub settings: Option<ContentRef>,
 }
 
 impl ProjectDefinition {

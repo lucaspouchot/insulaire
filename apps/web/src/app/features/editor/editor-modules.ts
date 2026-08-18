@@ -9,6 +9,9 @@
  *
  * Entries marked `planned` route to the placeholder page. They are listed on
  * purpose rather than hidden: the shell is the map of what the tool will be.
+ *
+ * Every label here is a **key**, not text: the editor is translated like the
+ * rest of the interface (`docs/adr/ADR-0023-localised-content-keys.md`).
  */
 
 export type EditorModuleStatus = 'available' | 'planned';
@@ -16,54 +19,66 @@ export type EditorModuleStatus = 'available' | 'planned';
 export interface EditorModule {
   /** Stable id, also the route segment under `/editor`. */
   readonly id: string;
-  /** Tab label. */
-  readonly title: string;
-  /** One line describing what the module edits. */
-  readonly summary: string;
+  /** Key of the tab label. */
+  readonly titleKey: string;
+  /** Key of the one-line description of what the module edits. */
+  readonly summaryKey: string;
   /** Whether the module is implemented. */
   readonly status: EditorModuleStatus;
-  /** For planned modules: what it will be responsible for. */
-  readonly plans?: readonly string[];
+  /** For planned modules: keys describing what it will be responsible for. */
+  readonly planKeys?: readonly string[];
 }
 
 export const EDITOR_MODULES: readonly EditorModule[] = [
   {
     id: 'map',
-    title: 'Maps',
-    summary: 'Paint terrain and elevation, place entities and points of interest, link maps together.',
+    titleKey: 'ui.editor.modules.map.title',
+    summaryKey: 'ui.editor.modules.map.summary',
+    status: 'available',
+  },
+  {
+    id: 'title',
+    titleKey: 'ui.editor.modules.title.title',
+    summaryKey: 'ui.editor.modules.title.summary',
+    status: 'available',
+  },
+  {
+    id: 'locale',
+    titleKey: 'ui.editor.modules.locale.title',
+    summaryKey: 'ui.editor.modules.locale.summary',
     status: 'available',
   },
   {
     id: 'character',
-    title: 'Characters',
-    summary: 'Entity templates: stats, behaviour, visuals, starting deck.',
+    titleKey: 'ui.editor.modules.character.title',
+    summaryKey: 'ui.editor.modules.character.summary',
     status: 'planned',
-    plans: [
-      'edit the entity templates the engine exposes through contentSummary()',
-      'author per-character decks once combat content exists',
-      'validate through the same Rust validator the map editor uses',
+    planKeys: [
+      'ui.editor.modules.character.plans.templates',
+      'ui.editor.modules.character.plans.decks',
+      'ui.editor.modules.character.plans.validation',
     ],
   },
   {
     id: 'asset',
-    title: 'Assets',
-    summary: 'Tile sets, sprites and visual ids resolved by the renderer.',
+    titleKey: 'ui.editor.modules.asset.title',
+    summaryKey: 'ui.editor.modules.asset.summary',
     status: 'planned',
-    plans: [
-      'import images and bind them to visualIds',
-      'edit tile sets in place instead of by hand in JSON',
-      'preview a tile set against a map without leaving the editor',
+    planKeys: [
+      'ui.editor.modules.asset.plans.images',
+      'ui.editor.modules.asset.plans.tileSets',
+      'ui.editor.modules.asset.plans.preview',
     ],
   },
   {
     id: 'scenario',
-    title: 'Scenario',
-    summary: 'Acts, phases, objectives, triggers, timers and consequences.',
+    titleKey: 'ui.editor.modules.scenario.title',
+    summaryKey: 'ui.editor.modules.scenario.summary',
     status: 'planned',
-    plans: [
-      'author the data-driven scenario runtime of ADR-0005',
-      'wire triggers to map links, locations and gameplay tags',
-      'no scenario-specific logic in the engine — only content',
+    planKeys: [
+      'ui.editor.modules.scenario.plans.runtime',
+      'ui.editor.modules.scenario.plans.triggers',
+      'ui.editor.modules.scenario.plans.noLogic',
     ],
   },
 ];

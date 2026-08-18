@@ -116,14 +116,119 @@ file fails here rather than when a player walks through a door (ADR-0018).
 
 This is also where every loaded world's `zone` is resolved against the zones the
 project declares, since a world file alone cannot say whether its zone exists
-(ADR-0021).
+(ADR-0021), and where the loaded **languages** are compared against the ones the
+manifest declares (ADR-0023).
 
 Errors: `parse`, `invalidContent` (`project.unloadedWorld`,
-`project.unknownStartWorld`, `world.unknownZone`, …).
+`project.unknownStartWorld`, `world.unknownZone`, `locale.unloadedLanguage`, …).
+
+### `loadLocale(language: string, namespace: string, json: string): LoadOutcome`
+
+Registers one locale file — a nested object of strings — under a language and a
+namespace. The namespace prefixes every key in the file, so `menu.json`
+registered as `menu` answers `menu.title.buttons.newGame` (ADR-0023).
+
+Files of one language are merged in load order, and a key defined twice is
+refused rather than overwritten: which file wins must not depend on load order.
+The returned `LoadOutcome.id` is `"<language>/<namespace>"`.
+
+Load these **before** `loadProject`: a language the manifest declares without a
+loaded file does not load.
+
+Errors: `parse` (not an object of strings; a key defined twice).
+
+### `locale(language: string): LocaleView`
+
+One language's text, ready to look keys up in:
+
+```json
+{
+  "language": "fr",
+  "entries": { "menu.buttons.newGame": "Nouvelle partie", "menu.buttons.quit": "Quit" },
+  "fallbacks": ["menu.buttons.quit"]
+}
+```
+
+`entries` already has the project's default language filling every gap, and
+`fallbacks` lists the keys that were filled that way. Hosts must not implement a
+fallback of their own — this is the one place the rule lives, so every host
+answers a key identically.
+
+Errors: `unknownContent` when no file was loaded for that language.
+
+### `validateLocales(): ValidationReport`
+
+Compares the loaded languages against the manifest and against each other:
+`locale.unloadedLanguage` (error), `locale.missingTranslation`,
+`locale.orphanKey` and `locale.emptyValue` (warnings). This is the report an
+editor's language screen is built from.
+
+### `loadTitleScreen(json: string): LoadOutcome`
+
+Registers the `TitleScreenDefinition` a client opens on (ADR-0024). Load it
+**before** `loadProject`, which refuses a manifest whose title screen is not
+loaded.
+
+Validation covers the file's own shape — a visible `newGame` button, unique
+actions, relative asset paths, numbers in range — and `loadProject` additionally
+resolves every key it references against the loaded languages.
+
+Errors: `parse`, `invalidContent` (`titleScreen.noNewGame`,
+`titleScreen.invalidAssetPath`, …).
+
+### `validateTitleScreen(json: string): ValidationReport`
+
+The editor's pre-save check: the same validation as loading, **plus** the keys,
+so one call answers both questions. Registers nothing.
+
+Errors: `parse` when the JSON is malformed.
+
+### `titleScreen(): TitleScreenDefinition`
+
+The registered screen, with every default filled in — `layout`, `background.fit`,
+`music.gain` and the rest — so a host never has to guess what an omitted field
+means.
+
+Errors: `unknownContent` when the project ships no title screen. That is a
+legitimate state: a project without one starts on a map, and the client falls
+back to a plain menu.
+
+### `loadSettings(json: string): LoadOutcome`
+
+Registers the `SettingsDefinition` the **game** declares (ADR-0025). Load it
+before `loadProject`, which refuses a manifest whose settings file is not
+loaded. The application's own settings are not content and never come through
+here.
+
+Errors: `parse`, `invalidContent` (`settings.duplicateField`,
+`settings.invalidDefault`, …).
+
+### `validateSettings(json: string): ValidationReport`
+
+The editor's pre-save check: the declaration's own validation plus the keys it
+references, resolved against the loaded languages. Registers nothing.
+
+### `settings(): SettingsDefinition`
+
+The registered declaration, defaults filled in.
+
+Errors: `unknownContent` when the project declares none — a legitimate state.
+
+### `resolveSettings(valuesJson: string): Record<string, unknown>`
+
+Resolves a set of values against the declaration: defaults fill the gaps, a
+value of the wrong type or an undeclared option falls back to the default, a
+number outside its bounds is clamped, and an unknown key is dropped.
+
+This is the **one** rule for what a value really is; the settings screen calls it
+so that what a player sees and what `createGame` receives cannot disagree.
+
+Errors: `parse` when the values are not a JSON object.
 
 ### `resetContent(): void`
 
-Forgets every loaded tile set, world and project. Loading is otherwise additive
+Forgets every loaded tile set, world, locale, title screen, settings declaration
+and project. Loading is otherwise additive
 — a world stays registered under its id until something replaces it — so a host
 re-loading a whole project calls this first, or content the author deleted keeps
 satisfying the doors that point at it.
@@ -179,7 +284,9 @@ is the same validator `loadWorld` runs (ADR-0015).
 
 What the registry holds: tile set ids, world summaries, the entity templates
 this build knows, and `project` — the loaded manifest as
-`{ id, name, startWorld, worldIds }`, or `null` when none was loaded.
+`{ id, name, startWorld, worldIds, languages }`, or `null` when none was loaded.
+Each language is `{ id, name, isDefault }`, in author order: what a language
+picker is built from.
 
 ### `worldView(worldId: string): WorldView`
 
@@ -232,10 +339,15 @@ length as `terrainBuffer` — cell `[col, row]` is at `row * width + col`.
 Presentation only: the renderer lifts cells by this much in isometric mode and
 draws their side faces (ADR-0016). No rule reads it. Fetched **once per world**.
 
-### `createGame(worldId: string, seed: number): GameSnapshot`
+### `createGame(worldId: string, seed: number, settingsJson: string): GameSnapshot`
 
 Starts a game on a registered world. `seed` is a `u32`; the engine owns it and
 the RNG state from here on (ADR-0011). Replaces any game in progress.
+
+`settingsJson` is the **game's** settings as a JSON object, resolved against the
+loaded declaration on the way in (ADR-0025). Pass `"{}"` when a project declares
+none. The resolved values come back on every `GameSnapshot` as `settings`, which
+is where a scenario will read them.
 
 ### `snapshot(): GameSnapshot`
 

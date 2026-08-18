@@ -1,0 +1,217 @@
+:host {
+  display: block;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.title-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+.toolbar .path {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.toolbar .spacer {
+  flex: 1;
+}
+
+.toolbar .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+
+.readonly {
+  font-size: 11px;
+  color: var(--warn);
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  padding: 12px;
+}
+
+.form {
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.panel {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+}
+
+.panel h2 {
+  margin: 2px 0 8px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.row input[type='text'],
+.row input[type='number'],
+.row select {
+  width: 100%;
+  padding: 4px 8px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/* The text a key resolves to, under the key itself: the author is writing a
+   reference, and this is what it means right now. */
+.resolved {
+  margin: -2px 0 8px 138px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.resolved.inline {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.button-row {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1.2fr) minmax(0, 1fr) auto auto auto auto;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.button-row .action {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.button-row input[type='text'] {
+  width: 100%;
+  padding: 3px 6px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.button-row button {
+  padding: 2px 8px;
+}
+
+.button-row .remove:hover {
+  color: var(--error);
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.add {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.preview {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.preview .caption {
+  margin-bottom: 4px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.preview .frame {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.issues {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+}
+
+.issues li.error {
+  color: var(--error);
+}
+
+.issues code {
+  margin-right: 6px;
+  color: var(--text-dim);
+}
+
+.banner {
+  margin: 8px 12px 0;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.banner.error {
+  border-color: var(--error);
+  background: rgba(240, 115, 106, 0.12);
+  color: var(--error);
+}
+
+.banner.ok {
+  border-color: var(--ok);
+  background: rgba(90, 196, 124, 0.1);
+  color: var(--ok);
+}
+
+.hint {
+  padding: 12px;
+  color: var(--text-dim);
+}

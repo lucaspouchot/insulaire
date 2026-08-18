@@ -1,0 +1,13 @@
+{
+  "title": {
+    "title": "Insulaire",
+    "subtitle": "An authored hexagonal world"
+  },
+  "buttons": {
+    "newGame": "New game",
+    "continue": "Continue",
+    "settings": "Settings",
+    "quit": "Quit"
+  },
+  "noSave": "No saved game yet"
+}

@@ -10,10 +10,12 @@ import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/c
 import { ActivatedRoute } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 
+import { TranslatePipe } from '../../../i18n/translate.pipe';
 import { EditorModule, editorModule } from '../editor-modules';
 
 @Component({
   selector: 'app-planned-module-page',
+  imports: [TranslatePipe],
   templateUrl: './planned-module-page.html',
   styleUrl: './planned-module-page.css',
   changeDetection: ChangeDetectionStrategy.OnPush,

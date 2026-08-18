@@ -1,7 +1,15 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "What the game window is allowed to ask of the shell: nothing beyond Tauri's own core. The game plays entirely inside the webview, so no filesystem, shell, HTTP or dialog permission is granted — a capability is added the day a feature needs it, not before.",
-  "windows": ["main"],
-  "permissions": ["core:default"]
+  "description": "What the game window is allowed to ask of the shell: Tauri's own core, plus the window controls the title screen and the settings need — closing it (the Quit button), going fullscreen and resizing. The game still plays entirely inside the webview: no filesystem, shell, HTTP or dialog permission is granted, and a capability is added the day a feature needs it, not before.",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:allow-close",
+    "core:window:allow-set-fullscreen",
+    "core:window:allow-is-fullscreen",
+    "core:window:allow-set-size"
+  ]
 }

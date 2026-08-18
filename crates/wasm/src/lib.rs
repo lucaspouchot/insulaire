@@ -91,7 +91,79 @@ impl InsulaireEngine {
         self.inner.load_project(json).map_err(to_js)
     }
 
-    /// Forgets every loaded tile set, world and project.
+    /// Registers one locale file under a language and a namespace. Returns a
+    /// `LoadOutcome`.
+    ///
+    /// # Errors
+    ///
+    /// `parse` when the file is not a nested object of strings, or redefines a
+    /// key.
+    #[wasm_bindgen(js_name = loadLocale)]
+    pub fn load_locale(
+        &mut self,
+        language: &str,
+        namespace: &str,
+        json: &str,
+    ) -> Result<String, JsValue> {
+        self.inner
+            .load_locale(language, namespace, json)
+            .map_err(to_js)
+    }
+
+    /// Returns a `LocaleView`: one language's text, gaps filled by the default
+    /// language.
+    ///
+    /// # Errors
+    ///
+    /// `unknownContent` when no file was loaded for that language.
+    #[wasm_bindgen(js_name = locale)]
+    pub fn locale(&self, language: &str) -> Result<String, JsValue> {
+        self.inner.locale(language).map_err(to_js)
+    }
+
+    /// Compares the loaded languages against the manifest and each other.
+    /// Returns a `ValidationReport`.
+    ///
+    /// # Errors
+    ///
+    /// A JSON error payload on serialisation failure.
+    #[wasm_bindgen(js_name = validateLocales)]
+    pub fn validate_locales(&self) -> Result<String, JsValue> {
+        self.inner.validate_locales().map_err(to_js)
+    }
+
+    /// Registers the title screen a client opens on. Returns a `LoadOutcome`.
+    ///
+    /// # Errors
+    ///
+    /// `parse` or `invalidContent`.
+    #[wasm_bindgen(js_name = loadTitleScreen)]
+    pub fn load_title_screen(&mut self, json: &str) -> Result<String, JsValue> {
+        self.inner.load_title_screen(json).map_err(to_js)
+    }
+
+    /// Validates a title screen *without* registering it, keys included.
+    /// Returns a `ValidationReport`.
+    ///
+    /// # Errors
+    ///
+    /// `parse` when the JSON is malformed.
+    #[wasm_bindgen(js_name = validateTitleScreen)]
+    pub fn validate_title_screen(&self, json: &str) -> Result<String, JsValue> {
+        self.inner.validate_title_screen(json).map_err(to_js)
+    }
+
+    /// Returns the registered `TitleScreenDefinition`.
+    ///
+    /// # Errors
+    ///
+    /// `unknownContent` when the project ships no title screen.
+    #[wasm_bindgen(js_name = titleScreen)]
+    pub fn title_screen(&self) -> Result<String, JsValue> {
+        self.inner.title_screen().map_err(to_js)
+    }
+
+    /// Forgets every loaded tile set, world, locale and project.
     ///
     /// Hosts call this before re-loading a whole project, so content removed in
     /// the editor stops answering for itself. A running game is unaffected.
@@ -176,8 +248,57 @@ impl InsulaireEngine {
     ///
     /// `unknownContent` or `setup`.
     #[wasm_bindgen(js_name = createGame)]
-    pub fn create_game(&mut self, world_id: &str, seed: u32) -> Result<String, JsValue> {
-        self.inner.create_game(world_id, seed).map_err(to_js)
+    pub fn create_game(
+        &mut self,
+        world_id: &str,
+        seed: u32,
+        settings_json: &str,
+    ) -> Result<String, JsValue> {
+        self.inner
+            .create_game(world_id, seed, settings_json)
+            .map_err(to_js)
+    }
+
+    /// Registers the game's settings declaration. Returns a `LoadOutcome`.
+    ///
+    /// # Errors
+    ///
+    /// `parse` or `invalidContent`.
+    #[wasm_bindgen(js_name = loadSettings)]
+    pub fn load_settings(&mut self, json: &str) -> Result<String, JsValue> {
+        self.inner.load_settings(json).map_err(to_js)
+    }
+
+    /// Validates a settings declaration *without* registering it, keys
+    /// included. Returns a `ValidationReport`.
+    ///
+    /// # Errors
+    ///
+    /// `parse` when the JSON is malformed.
+    #[wasm_bindgen(js_name = validateSettings)]
+    pub fn validate_settings(&self, json: &str) -> Result<String, JsValue> {
+        self.inner.validate_settings(json).map_err(to_js)
+    }
+
+    /// Returns the registered `SettingsDefinition`.
+    ///
+    /// # Errors
+    ///
+    /// `unknownContent` when the project declares no settings.
+    #[wasm_bindgen(js_name = settings)]
+    pub fn settings(&self) -> Result<String, JsValue> {
+        self.inner.settings().map_err(to_js)
+    }
+
+    /// Resolves values against the declaration: defaults filled, unknown keys
+    /// dropped, numbers clamped.
+    ///
+    /// # Errors
+    ///
+    /// `parse` when the values are not a JSON object.
+    #[wasm_bindgen(js_name = resolveSettings)]
+    pub fn resolve_settings(&self, values_json: &str) -> Result<String, JsValue> {
+        self.inner.resolve_settings(values_json).map_err(to_js)
     }
 
     /// Returns the current `GameSnapshot`.

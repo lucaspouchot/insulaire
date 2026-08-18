@@ -1,0 +1,235 @@
+@let doc = screen();
+
+<div class="title-editor">
+  <div class="toolbar">
+    <span class="path">{{ path() }}</span>
+    @if (dirty()) {
+      <span class="dot" [title]="'ui.editor.title.unsaved' | t"></span>
+    }
+    <span class="spacer"></span>
+    @if (!writable()) {
+      <span class="readonly">{{ 'ui.editor.workspace.readOnly' | t }}</span>
+    }
+    <button type="button" (click)="validate()">{{ 'ui.editor.map.actions.validate' | t }}</button>
+    <button type="button" class="primary" [disabled]="busy() || !writable()" (click)="save()">
+      {{ 'ui.editor.title.save' | t }}
+    </button>
+  </div>
+
+  @if (error(); as failure) {
+    <div class="banner error">{{ failure }}</div>
+  }
+  @if (message(); as note) {
+    <div class="banner ok">{{ note }}</div>
+  }
+
+  @if (doc === null) {
+    <p class="hint">{{ 'ui.common.loading' | t }}</p>
+  } @else {
+    <div class="columns">
+      <div class="form">
+        <section class="panel">
+          <h2>{{ 'ui.editor.title.identity' | t }}</h2>
+
+          <label class="row">
+            <span>{{ 'ui.editor.title.titleKey' | t }}</span>
+            <input
+              type="text"
+              [value]="doc.titleKey"
+              (change)="patch({ titleKey: $any($event.target).value })"
+            />
+          </label>
+          <p class="resolved">{{ preview(doc.titleKey) }}</p>
+
+          <label class="row">
+            <span>{{ 'ui.editor.title.subtitleKey' | t }}</span>
+            <input
+              type="text"
+              [value]="doc.subtitleKey"
+              (change)="patch({ subtitleKey: $any($event.target).value })"
+            />
+          </label>
+          <p class="resolved">{{ preview(doc.subtitleKey) }}</p>
+
+          <label class="row">
+            <span>{{ 'ui.editor.title.layout' | t }}</span>
+            <select (change)="patch({ layout: $any($event.target).value })">
+              @for (option of ['left', 'center', 'right']; track option) {
+                <option [value]="option" [selected]="option === doc.layout">{{ option }}</option>
+              }
+            </select>
+          </label>
+        </section>
+
+        <section class="panel">
+          <h2>{{ 'ui.editor.title.background' | t }}</h2>
+
+          <label class="row">
+            <span>{{ 'ui.editor.title.image' | t }}</span>
+            <select
+              (change)="patch({ background: { image: $any($event.target).value, fit: doc.background.fit, tint: doc.background.tint } })"
+            >
+              <option value="">{{ 'ui.editor.title.noImage' | t }}</option>
+              @for (file of images(); track file.path) {
+                <option [value]="file.path" [selected]="file.path === doc.background.image">
+                  {{ file.path }}
+                </option>
+              }
+            </select>
+          </label>
+
+          <label class="row file">
+            <span>{{ 'ui.editor.title.upload' | t }}</span>
+            <input
+              type="file"
+              accept="image/*"
+              [disabled]="!writable()"
+              (change)="upload($event, 'image', (path) => patch({ background: { image: path, fit: doc.background.fit, tint: doc.background.tint } }))"
+            />
+          </label>
+
+          <label class="row">
+            <span>{{ 'ui.editor.title.fit' | t }}</span>
+            <select
+              (change)="patch({ background: { image: doc.background.image, fit: $any($event.target).value, tint: doc.background.tint } })"
+            >
+              @for (option of ['cover', 'contain', 'tile']; track option) {
+                <option [value]="option" [selected]="option === doc.background.fit">{{ option }}</option>
+              }
+            </select>
+          </label>
+
+          <label class="row">
+            <span>{{ 'ui.editor.title.tint' | t }}</span>
+            <input
+              type="text"
+              [value]="doc.background.tint"
+              (change)="patch({ background: { image: doc.background.image, fit: doc.background.fit, tint: $any($event.target).value } })"
+            />
+          </label>
+        </section>
+
+        <section class="panel">
+          <h2>{{ 'ui.editor.title.music' | t }}</h2>
+
+          <label class="row">
+            <span>{{ 'ui.editor.title.track' | t }}</span>
+            <select
+              (change)="patch({ music: $any($event.target).value ? { track: $any($event.target).value, loops: doc.music?.loops ?? true, gain: doc.music?.gain ?? 1, fadeInMs: doc.music?.fadeInMs ?? 1200 } : null })"
+            >
+              <option value="">{{ 'ui.editor.title.noMusic' | t }}</option>
+              @for (file of tracks(); track file.path) {
+                <option [value]="file.path" [selected]="file.path === doc.music?.track">
+                  {{ file.path }}
+                </option>
+              }
+            </select>
+          </label>
+
+          <label class="row file">
+            <span>{{ 'ui.editor.title.upload' | t }}</span>
+            <input
+              type="file"
+              accept="audio/*"
+              [disabled]="!writable()"
+              (change)="upload($event, 'audio', (path) => patch({ music: { track: path, loops: doc.music?.loops ?? true, gain: doc.music?.gain ?? 1, fadeInMs: doc.music?.fadeInMs ?? 1200 } }))"
+            />
+          </label>
+
+          @if (doc.music; as music) {
+            <label class="row">
+              <span>{{ 'ui.editor.title.gain' | t }}</span>
+              <input
+                type="number"
+                min="0"
+                max="1"
+                step="0.05"
+                [value]="music.gain"
+                (change)="patch({ music: { track: music.track, loops: music.loops, gain: +$any($event.target).value, fadeInMs: music.fadeInMs } })"
+              />
+            </label>
+            <label class="row">
+              <span>{{ 'ui.editor.title.fadeIn' | t }}</span>
+              <input
+                type="number"
+                min="0"
+                step="100"
+                [value]="music.fadeInMs"
+                (change)="patch({ music: { track: music.track, loops: music.loops, gain: music.gain, fadeInMs: +$any($event.target).value } })"
+              />
+            </label>
+          }
+        </section>
+
+        <section class="panel">
+          <h2>{{ 'ui.editor.title.buttons' | t }}</h2>
+
+          @for (button of doc.buttons; track $index) {
+            <div class="button-row">
+              <span class="action">{{ button.action }}</span>
+              <input
+                type="text"
+                [value]="button.labelKey"
+                [attr.aria-label]="'ui.editor.title.labelKey' | t"
+                (change)="patchButton($index, { labelKey: $any($event.target).value })"
+              />
+              <span class="resolved inline">{{ preview(button.labelKey) }}</span>
+              <label class="check">
+                <input
+                  type="checkbox"
+                  [checked]="button.hidden === true"
+                  (change)="patchButton($index, { hidden: $any($event.target).checked })"
+                />
+                <span>{{ 'ui.editor.title.hidden' | t }}</span>
+              </label>
+              <button type="button" (click)="moveButton($index, -1)" [title]="'ui.editor.title.moveUp' | t">↑</button>
+              <button type="button" (click)="moveButton($index, 1)" [title]="'ui.editor.title.moveDown' | t">↓</button>
+              <button type="button" class="remove" (click)="removeButton($index)">×</button>
+            </div>
+          }
+
+          <div class="add">
+            <select #newAction>
+              @for (action of actions; track action) {
+                <option [value]="action">{{ action }}</option>
+              }
+            </select>
+            <button type="button" (click)="addButton(newAction.value)">
+              {{ 'ui.editor.title.addButton' | t }}
+            </button>
+          </div>
+        </section>
+
+        @if (report(); as validation) {
+          <section class="panel">
+            <h2>{{ 'ui.editor.title.validation' | t }}</h2>
+            @if (validation.valid && validation.issues.length === 0) {
+              <div class="banner ok">{{ 'ui.editor.map.notices.valid' | t }}</div>
+            } @else {
+              <ul class="issues">
+                @for (issue of validation.issues; track issue.code + issue.path) {
+                  <li [class.error]="issue.severity === 'error'">
+                    <code>{{ issue.path }}</code>
+                    <span>{{ issue.message }}</span>
+                  </li>
+                }
+              </ul>
+            }
+          </section>
+        }
+      </div>
+
+      <!--
+        The preview is the real title screen component: an author sees what a
+        player will see, because it is the same code
+        (`docs/adr/ADR-0024-authored-title-screen.md`).
+      -->
+      <div class="preview">
+        <span class="caption">{{ 'ui.editor.title.preview' | t }}</span>
+        <div class="frame">
+          <app-title-page />
+        </div>
+      </div>
+    </div>
+  }
+</div>

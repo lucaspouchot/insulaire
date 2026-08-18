@@ -3,14 +3,12 @@
   "version": "0.0.0",
   "scripts": {
     "ng": "ng",
-    "prestart": "node ../../scripts/sync-content.mjs",
-    "start": "ng serve",
+    "start": "node ../../scripts/dev.mjs",
     "prebuild": "node ../../scripts/sync-content.mjs",
     "build": "ng build",
     "prebuild:deliver": "node ../../scripts/sync-content.mjs",
     "build:deliver": "ng build --configuration deliver",
     "watch": "ng build --watch --configuration development",
-    "pretest": "node ../../scripts/sync-content.mjs",
     "test": "ng test"
   },
   "private": true,
@@ -22,6 +20,7 @@
     "@angular/forms": "^21.2.0",
     "@angular/platform-browser": "^21.2.0",
     "@angular/router": "^21.2.0",
+    "@tauri-apps/api": "^2.11.1",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0"
   },

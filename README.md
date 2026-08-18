@@ -28,11 +28,21 @@ stack to prove the architecture works end to end, and nothing more.
 - An invalid move changes nothing — no movement, no tick, no randomness.
 - Live display of the tick, every entity position, the engine's RNG state and
   the event stream coming out of Rust.
+- Open on an **authored title screen** — background, music, splash and menu, all
+  content — with a settings screen that mixes the application's own settings and
+  whatever settings the game declares.
+- Read every displayed string from **language files**: the application ships
+  English and French, and a project adds its own.
+- Author a game in **its own directory**, outside this repository, with the
+  editor uploading images and music straight into it.
 - Produce a **client delivery** with `just deliver`: the game without the
   editor, as a desktop executable for Windows, macOS and Linux.
 
 Deliberately **not** implemented yet: scenarios, combat, deckbuilding,
-pathfinding, procedural generation, save/load UI, an asset pipeline, a backend.
+pathfinding, procedural generation, **saving and loading** (the title screen's
+*Continue* is disabled until it exists, ADR-0010), an asset pipeline, a backend.
+The **settings editor** is not written either: a game's settings are authored by
+editing `content/settings.json` by hand, and the engine validates the result.
 
 ---
 
@@ -61,7 +71,8 @@ npm run wasm:build   # compile the Rust engine to WebAssembly (~15 s first time)
 npm run dev          # start Angular on http://localhost:4200
 ```
 
-Open <http://localhost:4200>. You land in the **Editor**, already showing
+Open <http://localhost:4200>. You land on the **title screen** the content
+declares; the top bar's **Editor** link opens the map editor on
 `content/worlds/demo_world.json`.
 
 The header shows the open project's name on the left and, on the right, a badge
@@ -129,10 +140,20 @@ into `demo_refuge` — whose own door leads back out.
 
 ### Other editors
 
-`/editor` is a shell with one tab per module (ADR-0019). **Maps** is
-implemented; **Characters**, **Assets** and **Scenario** are registered and
-route to a placeholder describing what they will own. Adding one is an entry in
-`editor-modules.ts` plus a component.
+`/editor` is a shell with one tab per module (ADR-0019). **Maps**, **Title
+screen** and **Languages** are implemented; **Characters**, **Assets** and
+**Scenario** are registered and route to a placeholder describing what they will
+own. Adding one is an entry in `editor-modules.ts` plus a component.
+
+**Title screen** edits `menu/title-screen.json`: background, logo, splash,
+music, theme, and the buttons with their label keys. Images and music are
+uploaded straight into the content directory, and the preview on the right is
+the real title screen component, so what you see is what a player gets.
+
+**Languages** is the translation table: every key, every language, side by side,
+with a filter for what is still untranslated. Saving rewrites one file per
+language and namespace. Keys the *application* ships are listed greyed — typing
+over one overrides it for this project.
 
 ### Play it
 
@@ -160,15 +181,16 @@ In Play mode:
 | `npm install` | Install JS dependencies, including `wasm-pack`. |
 | `npm run wasm:build` | Build the engine to `apps/web/public/wasm/` (release). |
 | `npm run wasm:build:dev` | Same, unoptimised — faster to build, slower to run. |
-| `npm run dev` | Mirror `content/`, then start the Angular dev server. |
+| `npm run dev` | Start the authoring content server, then the Angular dev server in front of it. |
 | `npm run build` | Production bundle into `apps/web/dist/web/browser/` (with the editor). |
 | `just deliver` | Client delivery: the desktop executable and its installers, collected in `deliveries/`. |
 | `just desktop` | Run the desktop shell against the dev server. |
 | `just icons` | Regenerate the icon set from `apps/desktop/icons/icon.svg`. |
 | `npm run build:deliver` | Just the editor-free web bundle, without the shell. |
-| `npm test` | Rust tests, then TypeScript tests. |
-| `npm run test:rust` | `cargo test --workspace` (162 tests, no browser needed). |
-| `npm run test:web` | Vitest (69 tests, including real WASM integration). |
+| `npm test` | Rust tests, then TypeScript tests, then the script tests. |
+| `npm run test:rust` | `cargo test --workspace` (191 tests, no browser needed). |
+| `npm run test:web` | Vitest (92 tests, including real WASM integration). |
+| `npm run test:scripts` | `node --test` over `scripts/` — the content server's path rules. |
 | `npm run lint:rust` | `cargo clippy -D warnings` and `cargo fmt --check`. |
 | `npm run check` | Lint plus every test. |
 | `just check-desktop` | The desktop shell's own clippy, rustfmt and tests. |
@@ -249,7 +271,11 @@ apps/desktop/
   icons/icon.svg   source of every generated icon
 
 scripts/
-  sync-content.mjs         mirrors content/ into apps/web/public/
+  content-dir.mjs          resolves which content directory this run works on
+  content-server.mjs       serves and writes it, in development only
+  content-paths.mjs        the path and file-type rules that server enforces
+  dev.mjs                  starts the content server, then `ng serve` in front of it
+  sync-content.mjs         mirrors the content directory into apps/web/public/ for a build
   tauri.mjs                runs the Tauri CLI on apps/desktop (and fixes WSL's PATH)
   verify-client-build.mjs  proves the shipped bundle has no editor
   collect-bundles.mjs      gathers installers and the bare executable
@@ -263,8 +289,42 @@ generated and git-ignored.
 
 ## Content
 
-Authored content lives at the repository root in `content/` and is specified in
-**`docs/content-format.md`**.
+`content/` at the repository root is the **fixture**: the smallest valid project
+that proves the engine works, and what every test suite reads. A game is
+authored somewhere else — copy `.env.example` to `.env` and name its content
+directory:
+
+```bash
+cp .env.example .env
+# INSULAIRE_CONTENT_DIR=/absolute/path/to/your-game/content
+npm run dev        # serves that directory, and lets the editor write into it
+```
+
+`npm run dev` starts a small authoring server on the loopback interface and
+proxies `/content` and `/api/content` to it, so an image dropped into the editor
+lands on disk and appears immediately. Nothing in the *game* talks to it: builds
+mirror the directory into the bundle, and the delivered executable embeds it
+(`docs/adr/ADR-0022-authoring-content-workspace.md`).
+
+The file schema is specified in **`docs/content-format.md`**.
+
+### Languages
+
+No string on screen is written in the source. A template names a key, and the
+key resolves against the language in use (`docs/adr/ADR-0023-localised-content-keys.md`):
+
+```text
+content/locales/en/menu.json    { "buttons": { "newGame": "New game" } }
+content/locales/fr/menu.json    { "buttons": { "newGame": "Nouvelle partie" } }
+                                 →  menu.buttons.newGame
+```
+
+`project.json` declares the languages and their files; the file's `id` in the
+manifest is the namespace prefixed to its keys. The application ships its own
+interface text in English and French, so the editor is legible before a project
+loads — and content may override any of it. A language the manifest declares
+without a loaded file is a **load error**; a key one language is missing is a
+warning, and the default language's text is shown instead.
 
 ```jsonc
 {

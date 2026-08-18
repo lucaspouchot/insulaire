@@ -269,7 +269,16 @@ starts. It is what a delivered client build boots from (ADR-0018).
   "worlds": [
     { "id": "demo_world", "path": "worlds/demo_world.json" },
     { "id": "demo_refuge", "path": "worlds/demo_refuge.json" }
-  ]
+  ],
+  "titleScreen": { "id": "main", "path": "menu/title-screen.json" },
+  "settings": { "id": "insulaire_game", "path": "settings.json" },
+  "locales": {
+    "default": "en",
+    "languages": [
+      { "id": "en", "name": "English", "files": [{ "id": "menu", "path": "locales/en/menu.json" }] },
+      { "id": "fr", "name": "Français", "files": [{ "id": "menu", "path": "locales/fr/menu.json" }] }
+    ]
+  }
 }
 ```
 
@@ -282,9 +291,158 @@ starts. It is what a delivered client build boots from (ADR-0018).
 | `zones` | `{ id, name }[]` | no | Zones the maps are grouped into; the **first is the default**. Absent means one implicit `default` zone. See *Zones* above. |
 | `tileSets` | `{ id, path }[]` | no | Tile sets to load; `path` is relative to the content root. |
 | `worlds` | `{ id, path }[]` | yes | Worlds to load. Every world reachable through a link must be listed. |
+| `locales` | `{ default, languages }` | no | Languages the game is available in. See *Locales* below. Absent means the application's own languages, and no content translations. |
+| `titleScreen` | `{ id, path }` | no | The screen a client opens on. See *TitleScreenDefinition* below. Absent means the game starts on a map. |
+| `settings` | `{ id, path }` | no | The settings this game offers. See *SettingsDefinition* below. The application's own settings are not content. |
 
 Paths are content-root-relative so the same manifest works served from a
 subdirectory.
+
+### Locales
+
+Every string a screen displays is a **key**, resolved against the language in
+use (ADR-0023). A locale file is a plain nested object of strings, and the
+manifest gives it a namespace — its `id` — which prefixes every key in it:
+
+```json
+// content/locales/fr/menu.json, declared with "id": "menu"
+{
+  "title": { "title": "Insulaire", "subtitle": "Un monde hexagonal" },
+  "buttons": { "newGame": "Nouvelle partie", "quit": "Quitter" }
+}
+//  →  menu.title.subtitle, menu.buttons.newGame, menu.buttons.quit
+```
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `locales.default` | string | no | Language a missing translation falls back to. Absent means the first declared. |
+| `locales.languages[].id` | string | yes | Language id, ideally a BCP 47 tag (`fr`, `en`, `pt-BR`). |
+| `locales.languages[].name` | string | no | Name shown in the picker, written in that language. Defaults to the id. |
+| `locales.languages[].files[]` | `{ id, path }[]` | no | Locale files; `id` is the **namespace** prefixed to every key in the file. |
+
+Rules:
+
+- a file holds **strings only** — a number or a boolean is a parse error;
+- a key segment may not be empty or contain a dot;
+- a key may not be defined twice in one language, whichever file defines it;
+- a language the manifest declares must have at least one loaded file, or the
+  project does not load;
+- a key some language defines but another does not is a **warning**: the default
+  language's text is served, and `fallbacks` in the `LocaleView` lists it.
+
+The application ships its own text for the `ui.` namespace in every language it
+claims, so the editor is legible with no content loaded. Content may define
+`ui.` keys too, and content wins.
+
+---
+
+## TitleScreenDefinition
+
+`content/menu/title-screen.json` is what a delivered client opens on: the
+background, the music, and the menu (ADR-0024). Everything visible is authored;
+what a button *does* is not — `action` names one of a closed set the application
+implements.
+
+```json
+{
+  "id": "main",
+  "schemaVersion": 1,
+  "titleKey": "menu.title.title",
+  "subtitleKey": "menu.title.subtitle",
+  "background": { "image": "assets/images/title.png", "fit": "cover", "tint": "#0b1016" },
+  "logo": { "image": "assets/images/logo.png", "maxWidthPercent": 40 },
+  "splash": { "image": "assets/images/splash.png", "durationMs": 1200, "skippable": true },
+  "music": { "track": "assets/audio/theme.ogg", "loops": true, "gain": 0.8, "fadeInMs": 1500 },
+  "theme": { "accent": "#ffd166", "text": "#e8eef5", "panel": "rgba(12,16,22,0.72)", "font": "" },
+  "layout": "left",
+  "buttons": [
+    { "action": "newGame", "labelKey": "menu.buttons.newGame" },
+    { "action": "continue", "labelKey": "menu.buttons.continue" },
+    { "action": "settings", "labelKey": "menu.buttons.settings" },
+    { "action": "quit", "labelKey": "menu.buttons.quit" }
+  ]
+}
+```
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `id` | string | yes | Stable id; must match the manifest's `titleScreen.id`. |
+| `schemaVersion` | integer | yes | `1`. |
+| `titleKey` / `subtitleKey` | string | `titleKey` | Keys, not text. |
+| `background.image` | string | no | Content path. Empty means no image; the `tint` is then the whole backdrop. |
+| `background.fit` | `cover` \| `contain` \| `tile` | no | Defaults to `cover`. |
+| `background.tint` | CSS colour | no | Laid over the image. |
+| `logo` | `{ image, maxWidthPercent }` | no | Drawn in place of the title. `maxWidthPercent` is `1..=100`, default `40`. |
+| `splash` | `{ image, durationMs, skippable }` | no | Shown once per launch, over the menu. `image` may be empty (the title alone); `skippable` defaults to `true`. |
+| `music` | `{ track, loops, gain, fadeInMs }` | no | `gain` is `0..=1` relative to the music volume setting; `loops` defaults to `true`. |
+| `theme` | `{ accent, text, panel, font }` | no | CSS values applied as custom properties. |
+| `layout` | `left` \| `center` \| `right` | no | Defaults to `left`. |
+| `buttons[].action` | `newGame` \| `continue` \| `settings` \| `credits` \| `quit` | yes | What pressing it does. |
+| `buttons[].labelKey` | string | yes | Key of the label. |
+| `buttons[].hidden` | boolean | no | Authored out without deleting it. |
+
+Rules:
+
+- exactly one visible `newGame` button is required, and an action may not appear
+  twice;
+- an asset path must be relative to the content root, with no `..` and no URL;
+- `durationMs` and `fadeInMs` are capped at 60 000;
+- `quit` is dropped by the client outside the desktop shell, and `continue` is
+  shown disabled while there is no save — both decided by the application, not
+  by the file.
+
+---
+
+## SettingsDefinition
+
+`content/settings.json` declares the settings the **game** offers (ADR-0025).
+The application's own — volumes, interface scale, language, window size — are
+not here: they configure the shell and are declared in the application. Both use
+the same control vocabulary, so one screen renders them together.
+
+```json
+{
+  "id": "insulaire_game",
+  "schemaVersion": 1,
+  "sections": [{
+    "id": "gameplay", "labelKey": "game.settings.gameplay",
+    "groups": [{
+      "id": "world", "labelKey": "game.settings.worldGroup",
+      "fields": [
+        { "id": "population", "labelKey": "game.settings.population",
+          "helpKey": "game.settings.populationHelp",
+          "control": "slider", "default": 120, "min": 20, "max": 400, "step": 10,
+          "scope": "newGame" },
+        { "id": "harshWinters", "labelKey": "game.settings.harshWinters",
+          "control": "checkbox", "default": true, "scope": "newGame",
+          "showIf": { "field": "difficulty", "equals": "harsh" } }
+      ]
+    }]
+  }]
+}
+```
+
+Sections are tabs, groups are panels, fields are settings.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `id` | string | yes | Stable id; must match the manifest's `settings.id`. |
+| `schemaVersion` | integer | yes | `1`. |
+| `sections[].id` / `groups[].id` / `fields[].id` | string | yes | Stable ids. A **field** id is the key its value is stored under, and must be unique across the whole file. |
+| `*.labelKey`, `fields[].helpKey` | string | `labelKey` | Keys, not text. |
+| `fields[].control` | `toggle` \| `checkbox` \| `select` \| `multiSelect` \| `slider` \| `number` \| `text` \| `color` | yes | How it is presented, and therefore what it accepts. |
+| `fields[].default` | any | yes | Must be a value its own control accepts, and within its bounds. |
+| `fields[].options[]` | `{ value, labelKey }[]` | for `select`/`multiSelect` | The choices. |
+| `fields[].min` / `max` / `step` | number | no | For `slider` and `number`. `step` must be positive. |
+| `fields[].unit` | string | no | Shown next to the value, e.g. `%`. Displayed as written, not translated. |
+| `fields[].scope` | `session` \| `newGame` | no | `session` (default) applies immediately; `newGame` is frozen while a game runs. |
+| `fields[].showIf` | `{ field, equals }` | no | Shows this field only when another holds that value. One field, one value — no expressions. |
+
+Values are **resolved** against the declaration before they are used: defaults
+fill the gaps, a value of the wrong type or an option nobody declared falls back
+to the default, a number outside its bounds is clamped, and a key the
+declaration does not know is dropped. The settings screen and `createGame` both
+resolve, so they cannot disagree.
 
 ---
 
@@ -358,6 +516,26 @@ exposed across the boundary as `validateLinks()` and `loadProject()`.
 | `project.duplicateZone` / `project.missingZoneId` | The manifest declares a zone twice, or one without an id. |
 | `world.unknownZone` | A loaded world names a zone the project does not declare. Reported when the project is loaded. |
 | `project.unknownStartWorld` | `startWorld` is not among the manifest's worlds. |
+| `locale.missingLanguageId` / `locale.duplicateLanguage` | The manifest declares a language without an id, or one twice. |
+| `locale.missingNamespace` / `locale.duplicateNamespace` / `locale.missingPath` | A locale file has no namespace id, repeats one within a language, or has no path. |
+| `locale.unknownDefaultLanguage` | `locales.default` is not among the declared languages. |
+| `locale.unloadedLanguage` | A declared language has no loaded locale file. Reported when the project is loaded. |
+| `locale.missingKey` / `locale.unknownKey` | Content references a text key that is empty, or that no language defines. |
+| `project.unloadedTitleScreen` | The manifest names a title screen that is not loaded. |
+| `titleScreen.missingId` / `titleScreen.unsupportedSchemaVersion` | Title screen header problems. |
+| `titleScreen.missingTitleKey` / `titleScreen.missingLabelKey` | A key field is empty. |
+| `titleScreen.noNewGame` | No visible `newGame` button: the menu cannot start a game. |
+| `titleScreen.duplicateAction` | The same action is offered twice. |
+| `titleScreen.invalidAssetPath` | An asset path is absolute, a URL, or steps outside the content root. |
+| `titleScreen.logoWidthOutOfRange` / `titleScreen.durationOutOfRange` / `titleScreen.gainOutOfRange` | A number is outside its range. |
+| `project.unloadedSettings` | The manifest names a settings file that is not loaded. |
+| `settings.missingId` / `settings.unsupportedSchemaVersion` | Settings header problems. |
+| `settings.missingFieldId` / `settings.duplicateField` | A setting has no id, or two share one. |
+| `settings.missingLabelKey` | A section, group, field or option has no label key. |
+| `settings.noOptions` / `settings.duplicateOption` | A `select`/`multiSelect` declares no options, or the same value twice. |
+| `settings.emptyRange` / `settings.invalidStep` | `min` above `max`, or a step that is not positive. |
+| `settings.invalidDefault` / `settings.defaultOutOfRange` | The default is not a value the control accepts, or is outside the bounds. |
+| `settings.unknownCondition` | A `showIf` points at a field nobody declares. |
 | `tileSet.empty` / `tileSet.paletteTooLarge` / `tile.duplicateId` / `tile.missingVisualId` | Tile set problems. |
 
 **Warnings** (content loads):
@@ -365,6 +543,11 @@ exposed across the boundary as `validateLinks()` and `loadProject()`.
 | Code | Meaning |
 |---|---|
 | `world.noMonsters` | Nothing will chase the player. |
+| `locale.missingTranslation` | A key the default language defines is missing from another language; its text is served instead. |
+| `locale.orphanKey` | A language defines a key the default language does not. |
+| `locale.emptyValue` | A translation is an empty string. |
+| `titleScreen.instantSplash` | A splash that lasts 0 ms and cannot be skipped will never be seen. |
+| `settings.unusedOptions` | A control that does not choose from a list declares options. |
 
 ---
 

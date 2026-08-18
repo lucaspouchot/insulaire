@@ -1,0 +1,13 @@
+{
+  "title": {
+    "title": "Insulaire",
+    "subtitle": "Un monde hexagonal écrit à la main"
+  },
+  "buttons": {
+    "newGame": "Nouvelle partie",
+    "continue": "Continuer",
+    "settings": "Options",
+    "quit": "Quitter"
+  },
+  "noSave": "Aucune partie enregistrée"
+}

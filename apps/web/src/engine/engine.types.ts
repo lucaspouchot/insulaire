@@ -9,6 +9,8 @@
  * Positions cross as offset pairs `[col, row]`.
  */
 
+import { SettingsValues } from '../content/content-types';
+
 /** `[col, row]` in odd-r offset coordinates. */
 export type OffsetWire = [number, number];
 
@@ -57,6 +59,13 @@ export interface GameSnapshot {
   /** Hexes the player may move to right now, decided by the engine. */
   legalMoves: OffsetWire[];
   rng: RngSnapshot;
+  /**
+   * The game settings this game was created with, already resolved.
+   *
+   * Declared by content, set by the player, carried by the engine
+   * (`docs/adr/ADR-0025-settings.md`).
+   */
+  settings: SettingsValues;
 }
 
 export type SimEvent =
@@ -146,12 +155,36 @@ export interface WorldSummary {
   valid: boolean;
 }
 
+/** One language a project offers, as the language picker sees it. */
+export interface LanguageView {
+  id: string;
+  /** Name shown in the picker, in that language. */
+  name: string;
+  /** `true` for the language a missing translation falls back to. */
+  isDefault: boolean;
+}
+
 /** The loaded project manifest. */
 export interface ProjectView {
   id: string;
   name: string;
   startWorld: string;
   worldIds: string[];
+  languages: LanguageView[];
+}
+
+/**
+ * One language's text, ready to look keys up in.
+ *
+ * Gaps are already filled by the project's default language, so a key some
+ * language defines always resolves (`docs/adr/ADR-0023-localised-content-keys.md`).
+ */
+export interface LocaleView {
+  language: string;
+  /** Full key (`menu.title.buttons.newGame`) to translated text. */
+  entries: Record<string, string>;
+  /** Keys served by the default language because this one has none. */
+  fallbacks: string[];
 }
 
 export interface ContentSummary {
@@ -242,6 +275,16 @@ export interface RawInsulaireEngine {
   loadTileSet(json: string): string;
   loadWorld(json: string): string;
   loadProject(json: string): string;
+  loadLocale(language: string, namespace: string, json: string): string;
+  locale(language: string): string;
+  validateLocales(): string;
+  loadTitleScreen(json: string): string;
+  validateTitleScreen(json: string): string;
+  titleScreen(): string;
+  loadSettings(json: string): string;
+  validateSettings(json: string): string;
+  settings(): string;
+  resolveSettings(valuesJson: string): string;
   resetContent(): void;
   validateLinks(): string;
   validateWorld(json: string): string;
@@ -249,7 +292,7 @@ export interface RawInsulaireEngine {
   worldView(worldId: string): string;
   terrainBuffer(worldId: string): Uint8Array;
   elevationBuffer(worldId: string): Int8Array;
-  createGame(worldId: string, seed: number): string;
+  createGame(worldId: string, seed: number, settingsJson: string): string;
   snapshot(): string;
   dispatch(commandJson: string): string;
   endGame(): void;

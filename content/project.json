@@ -12,5 +12,14 @@
   "worlds": [
     { "id": "demo_world", "path": "worlds/demo_world.json" },
     { "id": "demo_refuge", "path": "worlds/demo_refuge.json" }
-  ]
+  ],
+  "titleScreen": { "id": "main", "path": "menu/title-screen.json" },
+  "settings": { "id": "insulaire_game", "path": "settings.json" },
+  "locales": {
+    "default": "en",
+    "languages": [
+      { "id": "en", "name": "English", "files": [{"id":"menu","path":"locales/en/menu.json"}, {"id":"game","path":"locales/en/game.json"}] },
+      { "id": "fr", "name": "Français", "files": [{"id":"menu","path":"locales/fr/menu.json"}, {"id":"game","path":"locales/fr/game.json"}] }
+    ]
+  }
 }

@@ -1,0 +1,24 @@
+{
+  "settings": {
+    "gameplay": "Gameplay",
+    "difficultyGroup": "Difficulty",
+    "difficulty": "Difficulty",
+    "difficultyHelp": "How much the world pushes back.",
+    "difficultyGentle": "Gentle",
+    "difficultyNormal": "Normal",
+    "difficultyHarsh": "Harsh",
+    "permadeath": "Permadeath",
+    "worldGroup": "World",
+    "population": "Starting population",
+    "populationHelp": "How many people the valley starts with.",
+    "hunters": "Hunters",
+    "factions": "Factions in play",
+    "factionValley": "Valley",
+    "factionRefuge": "Refuge",
+    "harshWinters": "Harsh winters",
+    "chronicle": "Chronicle",
+    "identity": "Identity",
+    "chronicleName": "Chronicle name",
+    "bannerColour": "Banner colour"
+  }
+}

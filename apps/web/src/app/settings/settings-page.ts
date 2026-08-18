@@ -1,0 +1,102 @@
+/**
+ * The settings screen: the application's settings and the game's, one list.
+ *
+ * The screen itself is generic — it walks sections, groups and fields and hands
+ * each one to {@link ControlField}. Nothing here knows what "difficulty" means,
+ * which is what lets a game declare its own settings and get a screen for them
+ * (`docs/adr/ADR-0025-settings.md`).
+ *
+ * A `newGame` setting is shown **locked** while a game is running, rather than
+ * hidden: the value is part of the game in progress, and a player looking for it
+ * deserves to see it and be told why it cannot move.
+ */
+
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
+
+import { ControlDefinition, SettingValue } from '../../content/content-types';
+import { TranslatePipe } from '../i18n/translate.pipe';
+import { EngineService } from '../services/engine.service';
+import { ControlField } from './control-field';
+import { SettingsService } from './settings.service';
+
+@Component({
+  selector: 'app-settings-page',
+  imports: [ControlField, TranslatePipe],
+  templateUrl: './settings-page.html',
+  styleUrl: './settings-page.css',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+})
+export class SettingsPage {
+  private readonly settings = inject(SettingsService);
+  private readonly engine = inject(EngineService);
+  private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
+
+  /** Every section, application first, then whatever the game declares. */
+  protected readonly sections = this.settings.sections;
+  /** Why the game's settings could not be loaded, if they could not. */
+  protected readonly error = signal<string | null>(null);
+  /**
+   * The section being shown; the first one until the player picks another.
+   *
+   * Seeded from `?section=`, which makes a tab addressable — useful for a link
+   * straight to the audio settings, and for a screenshot of one tab.
+   */
+  protected readonly activeSection = signal<string | null>(
+    this.route.snapshot.queryParamMap.get('section'),
+  );
+
+  protected readonly section = computed(() => {
+    const sections = this.sections();
+    const active = this.activeSection();
+    return sections.find((candidate) => candidate.id === active) ?? sections[0] ?? null;
+  });
+
+  /**
+   * `true` while a game is running.
+   *
+   * What it locks is the `newGame` settings: the game was created with them.
+   */
+  protected readonly inGame = computed(() => this.engine.isReady && this.engine.hasGame());
+
+  constructor() {
+    void this.settings.ensureLoaded().catch((cause: unknown) => {
+      this.error.set(cause instanceof Error ? cause.message : String(cause));
+    });
+  }
+
+  protected value(field: ControlDefinition): SettingValue {
+    return this.settings.value(field);
+  }
+
+  protected isVisible(field: ControlDefinition): boolean {
+    return this.settings.isVisible(field);
+  }
+
+  protected isLocked(field: ControlDefinition): boolean {
+    return field.scope === 'newGame' && this.inGame();
+  }
+
+  protected change(field: ControlDefinition, value: SettingValue): void {
+    this.settings.set(field, value);
+  }
+
+  protected select(sectionId: string): void {
+    this.activeSection.set(sectionId);
+    // Reflected in the URL so the tab survives a refresh and can be linked to.
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { section: sectionId },
+      replaceUrl: true,
+    });
+  }
+
+  protected reset(): void {
+    this.settings.reset();
+  }
+
+  protected async back(): Promise<void> {
+    await this.router.navigate(['/title']);
+  }
+}

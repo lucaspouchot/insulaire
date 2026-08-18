@@ -1,0 +1,43 @@
+<section class="settings">
+  <header>
+    <h1>{{ 'ui.settings.heading' | t }}</h1>
+    <div class="actions">
+      <button type="button" (click)="reset()">{{ 'ui.settings.reset' | t }}</button>
+      <button type="button" class="primary" (click)="back()">{{ 'ui.settings.back' | t }}</button>
+    </div>
+  </header>
+
+  @if (error(); as failure) {
+    <div class="banner error">{{ failure }}</div>
+  }
+
+  <nav class="tabs">
+    @for (entry of sections(); track entry.id) {
+      <button type="button" [class.on]="entry.id === section()?.id" (click)="select(entry.id)">
+        {{ entry.labelKey | t }}
+      </button>
+    }
+  </nav>
+
+  @if (section(); as active) {
+    <div class="panels">
+      @for (group of active.groups; track group.id) {
+        <section class="panel">
+          <h2>{{ group.labelKey | t }}</h2>
+          @for (field of group.fields; track field.id) {
+            @if (isVisible(field)) {
+              <app-control-field
+                [field]="field"
+                [value]="value(field)"
+                [locked]="isLocked(field)"
+                (changed)="change(field, $event)"
+              />
+            }
+          }
+        </section>
+      }
+    </div>
+  } @else {
+    <p class="hint">{{ 'ui.settings.empty' | t }}</p>
+  }
+</section>

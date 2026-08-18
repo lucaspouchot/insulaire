@@ -20,6 +20,10 @@ npm-debug.log*
 # Generated: content mirrored from /content by scripts/sync-content.mjs
 /apps/web/public/content/
 
+# Local environment: which content directory this machine authors against.
+# `.env.example` documents it and is committed.
+/.env
+
 # Editors / OS
 .DS_Store
 Thumbs.db

@@ -9,7 +9,7 @@
 //!
 //! ```text
 //! load_tile_set(json)  ─┐
-//! load_world(json)     ─┴─> content registry ──> create_game(worldId, seed)
+//! load_world(json)     ─┴─> content registry ──> create_game(worldId, seed, "{}")
 //!                                                      │
 //!                       world_view(worldId) ───────────┤  once per world
 //!                       terrain_buffer(worldId) ───────┤  (packed Uint8Array)
@@ -41,7 +41,7 @@
 //! engine.load_tile_set(tile_set)?;
 //! engine.load_world(world)?;
 //!
-//! let state = engine.create_game("w", 42)?;
+//! let state = engine.create_game("w", 42, "{}")?;
 //! assert_eq!(state.tick, 0);
 //!
 //! let target = state.legal_moves[0];
@@ -58,13 +58,17 @@ pub mod error;
 pub mod json;
 pub mod registry;
 
+use std::collections::BTreeMap;
+
 use insulaire_simulation::{rules, tick, GameState, PendingTransition, SimEvent};
-use insulaire_world::{Hex, ProjectionMode, WorldDefinition, WorldGrid};
+use insulaire_world::{
+    Hex, ProjectionMode, SettingsDefinition, TitleScreenDefinition, WorldDefinition, WorldGrid,
+};
 
 pub use dto::{
     AxialDto, Command, CommandResult, ContentSummary, EngineInfo, EntitySnapshot, GameSnapshot,
-    LinkView, LoadOutcome, LocationView, PaletteEntry, ProjectView, RngSnapshot, TemplateView,
-    WorldSummary, WorldView,
+    LanguageView, LinkView, LoadOutcome, LocaleView, LocationView, PaletteEntry, ProjectView,
+    RngSnapshot, TemplateView, WorldSummary, WorldView,
 };
 pub use error::{EngineError, EngineErrorPayload};
 pub use json::{JsonEngine, JsonResult};
@@ -82,6 +86,13 @@ struct PreparedWorld {
 pub struct Engine {
     content: ContentRegistry,
     game: Option<GameState>,
+    /// The game settings the running game was created with, already resolved.
+    ///
+    /// They live here rather than in `GameState` because no rule reads them
+    /// yet: the simulation gains them the day a scenario needs one, and until
+    /// then keeping them out of the state keeps the state honest
+    /// (`docs/adr/ADR-0025-settings.md`).
+    game_settings: BTreeMap<String, serde_json::Value>,
 }
 
 impl Engine {
@@ -127,7 +138,124 @@ impl Engine {
         Ok(LoadOutcome { id, report })
     }
 
-    /// Forgets every loaded tile set, world and project.
+    /// Parses and registers one locale file under a language and a namespace.
+    ///
+    /// The namespace prefixes every key in the file, so `menu.json` loaded as
+    /// `menu` answers `menu.title.buttons.newGame`. Load a language's files in
+    /// any order; a key defined twice is refused
+    /// (`docs/adr/ADR-0023-localised-content-keys.md`).
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Parse`] when the file is not a nested object of strings,
+    /// or redefines a key.
+    pub fn load_locale(
+        &mut self,
+        language: &str,
+        namespace: &str,
+        json: &str,
+    ) -> Result<LoadOutcome, EngineError> {
+        self.content.load_locale(language, namespace, json)?;
+        Ok(LoadOutcome {
+            id: format!("{language}/{namespace}"),
+            // A locale file has no validation of its own: it is either a nested
+            // object of strings or a parse error. What can go wrong between
+            // languages is `validateLocales`'s answer, not this one's.
+            report: insulaire_world::ValidationReport::clean(),
+        })
+    }
+
+    /// Every translation of one language, with the default language's text
+    /// filling the gaps.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::UnknownContent`] when no file was loaded for `language`.
+    pub fn locale(&self, language: &str) -> Result<LocaleView, EngineError> {
+        let resolved =
+            self.content
+                .locale_bundle(language)
+                .ok_or_else(|| EngineError::UnknownContent {
+                    kind: "language".to_owned(),
+                    id: language.to_owned(),
+                })?;
+
+        let authored: Vec<&str> = self
+            .content
+            .locales()
+            .find(|bundle| bundle.language == language)
+            .map(|bundle| bundle.keys().collect())
+            .unwrap_or_default();
+
+        let fallbacks = resolved
+            .keys()
+            .filter(|key| !authored.contains(key))
+            .map(str::to_owned)
+            .collect();
+
+        Ok(LocaleView {
+            language: resolved.language.clone(),
+            entries: resolved.entries.clone(),
+            fallbacks,
+        })
+    }
+
+    /// Compares the loaded languages against the manifest and each other.
+    ///
+    /// The editor's translation report: which keys a language is missing, which
+    /// it has that the default language does not, and which are empty.
+    #[must_use]
+    pub fn validate_locales(&self) -> insulaire_world::ValidationReport {
+        self.content.validate_locales()
+    }
+
+    // ----------------------------------------------------------- title screen
+
+    /// Parses, validates and registers the title screen a client opens on.
+    ///
+    /// # Errors
+    ///
+    /// See [`ContentRegistry::load_title_screen`].
+    pub fn load_title_screen(&mut self, json: &str) -> Result<LoadOutcome, EngineError> {
+        let (id, report) = self.content.load_title_screen(json)?;
+        Ok(LoadOutcome { id, report })
+    }
+
+    /// Validates a title screen without registering it — the editor's check.
+    ///
+    /// Unlike the load, this also resolves the keys it references against the
+    /// loaded languages, because an editor wants both answers at once
+    /// (`docs/adr/ADR-0024-authored-title-screen.md`).
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Parse`] when the JSON is malformed.
+    pub fn validate_title_screen(
+        &self,
+        json: &str,
+    ) -> Result<insulaire_world::ValidationReport, EngineError> {
+        self.content.validate_title_screen_json(json)
+    }
+
+    /// The registered title screen.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::UnknownContent`] when the project ships none — which is a
+    /// legitimate state, and why this is a `Result` rather than an `Option` at
+    /// the boundary: a host asking for a screen that does not exist has made a
+    /// mistake worth reporting.
+    pub fn title_screen(&self) -> Result<TitleScreenDefinition, EngineError> {
+        self.content
+            .title_screen()
+            .cloned()
+            .ok_or_else(|| EngineError::UnknownContent {
+                kind: "title screen".to_owned(),
+                id: "(none loaded)".to_owned(),
+            })
+    }
+
+    /// Forgets every loaded tile set, world, locale and project.
     ///
     /// Call it before re-loading a whole project, so content that was removed
     /// in the editor stops answering for itself. A running game survives: it
@@ -307,7 +435,13 @@ impl Engine {
     ///
     /// [`EngineError::UnknownContent`] for an unknown world, or
     /// [`EngineError::Setup`] when the world cannot be instantiated.
-    pub fn create_game(&mut self, world_id: &str, seed: u32) -> Result<GameSnapshot, EngineError> {
+    pub fn create_game(
+        &mut self,
+        world_id: &str,
+        seed: u32,
+        settings_json: &str,
+    ) -> Result<GameSnapshot, EngineError> {
+        self.game_settings = self.resolve_settings(settings_json)?;
         let world = self.world_or_err(world_id)?;
         let tile_set =
             self.content
@@ -318,9 +452,89 @@ impl Engine {
                 })?;
 
         let state = GameState::create(world, tile_set, self.content.templates(), u64::from(seed))?;
-        let snapshot = Self::snapshot_of(&state);
+        let snapshot = self.snapshot_of(&state);
         self.game = Some(state);
         Ok(snapshot)
+    }
+
+    /// Fills in defaults, drops what is not declared, clamps what is.
+    ///
+    /// A project that declares no settings resolves everything to nothing:
+    /// there is no schema to check against, so there is nothing to carry.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Parse`] when the values are not a JSON object.
+    fn resolve_settings(
+        &self,
+        json: &str,
+    ) -> Result<BTreeMap<String, serde_json::Value>, EngineError> {
+        let values: serde_json::Value = if json.trim().is_empty() {
+            serde_json::Value::Object(serde_json::Map::new())
+        } else {
+            serde_json::from_str(json).map_err(|source| EngineError::Parse {
+                what: "settings values".to_owned(),
+                message: source.to_string(),
+            })?
+        };
+
+        Ok(self
+            .content
+            .settings()
+            .map(|settings| settings.resolve(&values))
+            .unwrap_or_default())
+    }
+
+    /// Parses, validates and registers the game's settings declaration.
+    ///
+    /// # Errors
+    ///
+    /// See [`ContentRegistry::load_settings`].
+    pub fn load_settings(&mut self, json: &str) -> Result<LoadOutcome, EngineError> {
+        let (id, report) = self.content.load_settings(json)?;
+        Ok(LoadOutcome { id, report })
+    }
+
+    /// Validates a settings declaration without registering it, keys included.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Parse`] when the JSON is malformed.
+    pub fn validate_settings(
+        &self,
+        json: &str,
+    ) -> Result<insulaire_world::ValidationReport, EngineError> {
+        self.content.validate_settings_json(json)
+    }
+
+    /// The registered settings declaration.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::UnknownContent`] when the project declares none.
+    pub fn settings(&self) -> Result<SettingsDefinition, EngineError> {
+        self.content
+            .settings()
+            .cloned()
+            .ok_or_else(|| EngineError::UnknownContent {
+                kind: "settings".to_owned(),
+                id: "(none loaded)".to_owned(),
+            })
+    }
+
+    /// Resolves a set of values against the declaration, without a game.
+    ///
+    /// This is what a settings screen calls before starting one, so what it
+    /// shows and what `create_game` receives cannot disagree.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Parse`] when the values are not a JSON object.
+    pub fn resolved_settings(
+        &self,
+        json: &str,
+    ) -> Result<BTreeMap<String, serde_json::Value>, EngineError> {
+        self.resolve_settings(json)
     }
 
     /// Discards the running game, if any.
@@ -342,7 +556,7 @@ impl Engine {
     pub fn snapshot(&self) -> Result<GameSnapshot, EngineError> {
         self.game
             .as_ref()
-            .map(Self::snapshot_of)
+            .map(|state| self.snapshot_of(state))
             .ok_or(EngineError::NoGame)
     }
 
@@ -367,7 +581,7 @@ impl Engine {
             accepted: outcome.accepted,
             rejection: outcome.rejection.map(Into::into),
             events,
-            state: Self::snapshot_of(state),
+            state: self.snapshot_of(state),
         })
     }
 
@@ -412,8 +626,9 @@ impl Engine {
         }
     }
 
-    fn snapshot_of(state: &GameState) -> GameSnapshot {
+    fn snapshot_of(&self, state: &GameState) -> GameSnapshot {
         GameSnapshot {
+            settings: self.game_settings.clone(),
             world_id: state.world_id().to_owned(),
             seed: state.seed() as u32,
             tick: state.tick(),
@@ -451,7 +666,9 @@ mod tests {
 
     fn started() -> Engine {
         let mut engine = engine();
-        engine.create_game("sample_world", 42).expect("game starts");
+        engine
+            .create_game("sample_world", 42, "{}")
+            .expect("game starts");
         engine
     }
 
@@ -552,7 +769,9 @@ mod tests {
     #[test]
     fn creating_a_game_returns_the_initial_snapshot() {
         let mut engine = engine();
-        let snapshot = engine.create_game("sample_world", 42).expect("game starts");
+        let snapshot = engine
+            .create_game("sample_world", 42, "{}")
+            .expect("game starts");
 
         assert_eq!(snapshot.tick, 0);
         assert_eq!(snapshot.seed, 42);
@@ -676,7 +895,7 @@ mod tests {
         let run = || {
             let mut engine = engine();
             engine
-                .create_game("sample_world", 2026)
+                .create_game("sample_world", 2026, "{}")
                 .expect("game starts");
             script
                 .iter()
@@ -698,7 +917,9 @@ mod tests {
                 .load_world(&serde_json::to_string(&world).expect("serialise"))
                 .expect("world loads");
         }
-        engine.create_game("linked_world", 7).expect("game starts");
+        engine
+            .create_game("linked_world", 7, "{}")
+            .expect("game starts");
         engine
     }
 
@@ -742,7 +963,9 @@ mod tests {
         engine
             .load_world(&serde_json::to_string(&testing::linked_world()).expect("serialise"))
             .expect("world loads");
-        engine.create_game("linked_world", 7).expect("game starts");
+        engine
+            .create_game("linked_world", 7, "{}")
+            .expect("game starts");
 
         let result = engine
             .dispatch(Command::MoveTo {
@@ -808,7 +1031,10 @@ mod tests {
         assert!(engine.validate_world(&json).expect("parses").valid);
         assert!(engine.content_summary().worlds.is_empty());
         assert_eq!(
-            engine.create_game("sample_world", 1).unwrap_err().code(),
+            engine
+                .create_game("sample_world", 1, "{}")
+                .unwrap_err()
+                .code(),
             "unknownContent"
         );
     }

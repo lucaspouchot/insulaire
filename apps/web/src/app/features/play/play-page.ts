@@ -44,22 +44,33 @@ import { HexMapRenderer } from '../../../renderer/hex-map-renderer';
 import { toProjectionMode } from '../../../renderer/projection';
 import { RenderModel, elevationRangeOf } from '../../../renderer/render-model';
 import { serializeWorld } from '../../../content/world-serializer';
+import { I18nService } from '../../i18n/i18n.service';
+import { SettingsService } from '../../settings/settings.service';
+import { TranslatePipe } from '../../i18n/translate.pipe';
 import { EngineService } from '../../services/engine.service';
 import { ProjectStoreService } from '../../services/project-store.service';
 
 const HEX_SIZE = 28;
 const MAX_LOG_ENTRIES = 60;
 
-/** One rendered line in the event log. */
+/**
+ * One rendered line in the event log.
+ *
+ * A line is a **key and its values**, not a sentence: the log is on screen, so
+ * it is translated like everything else, and switching language rewrites the
+ * lines already logged (`docs/adr/ADR-0023-localised-content-keys.md`).
+ */
 interface LogEntry {
   readonly id: number;
   readonly tick: number;
-  readonly text: string;
+  readonly key: string;
+  readonly params?: Readonly<Record<string, string | number>>;
   readonly kind: 'move' | 'hold' | 'tick' | 'reject';
 }
 
 @Component({
   selector: 'app-play-page',
+  imports: [TranslatePipe],
   templateUrl: './play-page.html',
   styleUrl: './play-page.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -69,6 +80,8 @@ export class PlayPage implements AfterViewInit, OnDestroy {
   private readonly engine = inject(EngineService);
   private readonly store = inject(ProjectStoreService);
   private readonly route = inject(ActivatedRoute);
+  private readonly i18n = inject(I18nService);
+  private readonly settings = inject(SettingsService);
 
   private view: CanvasView | null = null;
   private renderer: HexMapRenderer | null = null;
@@ -115,6 +128,15 @@ export class PlayPage implements AfterViewInit, OnDestroy {
     try {
       await this.engine.ready();
       await this.store.ensureLoaded();
+      // The manifest declares its languages, and it will not load until their
+      // files are registered — so the game waits for them like any other
+      // content (`docs/adr/ADR-0023-localised-content-keys.md`).
+      await this.i18n.ensureAdopted();
+      // The game's settings are content, and the game is created with them; the
+      // seed comes from the application's own settings
+      // (`docs/adr/ADR-0025-settings.md`).
+      await this.settings.ensureLoaded();
+      this.seed.set(this.settings.seed());
       this.startGame(this.seed());
     } catch (cause) {
       this.error.set(cause instanceof Error ? cause.message : String(cause));
@@ -150,6 +172,11 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       // Cleared first: loading is additive, so a map removed in the editor
       // would otherwise still satisfy a door that points at it.
       this.engine.resetContent();
+      // Locales go back in with the rest: the manifest declares languages, and
+      // `loadProject` validates that every one of them is actually loaded
+      // (`docs/adr/ADR-0023-localised-content-keys.md`).
+      this.i18n.register();
+      this.settings.register();
       for (const tileSet of this.store.tileSetDefinitions()) {
         this.engine.loadTileSet(JSON.stringify(tileSet));
       }
@@ -162,17 +189,20 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       // walking into one: the runtime degrades, it does not crash.
       const links = this.engine.validateLinks();
       for (const issue of links.issues) {
-        this.pushLog(0, `${issue.code}: ${issue.message}`, 'reject');
+        this.pushLog(0, 'ui.play.log.issue', 'reject', {
+          code: issue.code,
+          message: issue.message,
+        });
       }
 
       const worldId = this.startWorldId();
-      const snapshot = this.engine.createGame(worldId, seed);
+      const snapshot = this.engine.createGame(worldId, seed, this.settings.gameSettings());
 
       this.snapshot.set(snapshot);
       this.selected.set(null);
       const view = this.loadWorldIntoRenderer(worldId, true);
 
-      this.pushLog(0, `Game started on "${view.name}" with seed ${seed}.`, 'tick');
+      this.pushLog(0, 'ui.play.log.started', 'tick', { world: view.name, seed });
       this.busy.set(false);
     } catch (cause) {
       this.error.set(describe(cause));
@@ -270,7 +300,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
 
     const context = this.canvasRef().nativeElement.getContext('2d');
     if (context === null) {
-      this.error.set('This browser did not provide a 2D canvas context.');
+      this.error.set(this.i18n.t('ui.common.noCanvas'));
       return;
     }
 
@@ -379,40 +409,59 @@ export class PlayPage implements AfterViewInit, OnDestroy {
   private logEvent(tick: number, event: SimEvent): void {
     switch (event.type) {
       case 'entityMoved':
-        this.pushLog(
-          tick,
-          `${event.contentId} moved [${event.from[0]}, ${event.from[1]}] → [${event.to[0]}, ${event.to[1]}]`,
-          'move',
-        );
+        this.pushLog(tick, 'ui.play.log.moved', 'move', {
+          entity: event.contentId,
+          fromCol: event.from[0],
+          fromRow: event.from[1],
+          toCol: event.to[0],
+          toRow: event.to[1],
+        });
         break;
       case 'entityHeld':
-        this.pushLog(tick, `${event.contentId} held at [${event.at[0]}, ${event.at[1]}] — nowhere closer`, 'hold');
+        this.pushLog(tick, 'ui.play.log.held', 'hold', {
+          entity: event.contentId,
+          col: event.at[0],
+          row: event.at[1],
+        });
         break;
       case 'tickAdvanced':
-        this.pushLog(event.tick, `tick ${event.tick}`, 'tick');
+        this.pushLog(event.tick, 'ui.play.log.tick', 'tick', { tick: event.tick });
         break;
       case 'actionRejected':
-        this.pushLog(tick, `refused: ${event.reason.message}`, 'reject');
+        // The reason comes from Rust already worded; it is quoted, not composed.
+        this.pushLog(tick, 'ui.play.log.refused', 'reject', { reason: event.reason.message });
         break;
       case 'linkTriggered':
-        this.pushLog(tick, `door "${event.link}" leads to ${event.toWorld}`, 'move');
+        this.pushLog(tick, 'ui.play.log.door', 'move', {
+          link: event.link,
+          world: event.toWorld,
+        });
         break;
       case 'worldEntered':
-        this.pushLog(
-          tick,
-          `entered ${event.toWorld} at [${event.at[0]}, ${event.at[1]}] (from ${event.fromWorld})`,
-          'tick',
-        );
+        this.pushLog(tick, 'ui.play.log.entered', 'tick', {
+          world: event.toWorld,
+          col: event.at[0],
+          row: event.at[1],
+          from: event.fromWorld,
+        });
         break;
       case 'linkUnresolved':
-        this.pushLog(tick, `door "${event.link}" goes nowhere: ${event.reason}`, 'reject');
+        this.pushLog(tick, 'ui.play.log.doorUnresolved', 'reject', {
+          link: event.link,
+          reason: event.reason,
+        });
         break;
     }
   }
 
-  private pushLog(tick: number, text: string, kind: LogEntry['kind']): void {
+  private pushLog(
+    tick: number,
+    key: string,
+    kind: LogEntry['kind'],
+    params?: Readonly<Record<string, string | number>>,
+  ): void {
     this.logCounter += 1;
-    const entry: LogEntry = { id: this.logCounter, tick, text, kind };
+    const entry: LogEntry = { id: this.logCounter, tick, key, params, kind };
     this.log.update((entries) => [entry, ...entries].slice(0, MAX_LOG_ENTRIES));
   }
 }

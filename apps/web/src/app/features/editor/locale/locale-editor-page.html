@@ -1,0 +1,96 @@
+<section class="locales">
+  <header class="toolbar">
+    <span class="counts">
+      {{ 'ui.editor.locale.counts' | t: { keys: visibleRows().length, missing: missingCount() } }}
+    </span>
+
+    <label class="field">
+      <span>{{ 'ui.editor.locale.namespace' | t }}</span>
+      <select (change)="setNamespace($any($event.target).value)">
+        <option value="all">{{ 'ui.editor.locale.allNamespaces' | t }}</option>
+        @for (namespace of namespaces(); track namespace) {
+          <option [value]="namespace" [selected]="namespace === namespaceFilter()">
+            {{ namespace }}
+          </option>
+        }
+      </select>
+    </label>
+
+    <input
+      #searchInput
+      type="search"
+      [value]="search()"
+      [attr.placeholder]="'ui.editor.locale.search' | t"
+      [attr.aria-label]="'ui.editor.locale.search' | t"
+      (input)="search.set(searchInput.value)"
+    />
+
+    <label class="check">
+      <input type="checkbox" [checked]="onlyMissing()" (change)="onlyMissing.set($any($event.target).checked)" />
+      <span>{{ 'ui.editor.locale.onlyMissing' | t }}</span>
+    </label>
+
+    <span class="spacer"></span>
+
+    <input
+      #newKey
+      type="text"
+      [attr.placeholder]="'ui.editor.locale.newKey' | t"
+      [attr.aria-label]="'ui.editor.locale.newKey' | t"
+    />
+    <button type="button" (click)="addKey(newKey.value); newKey.value = ''">
+      {{ 'ui.editor.locale.addKey' | t }}
+    </button>
+    <button type="button" class="primary" [disabled]="saving() || !dirty()" (click)="save()">
+      {{ 'ui.editor.locale.save' | t }}
+    </button>
+  </header>
+
+  @if (error(); as failure) {
+    <div class="banner error">{{ failure }}</div>
+  }
+  @if (message(); as note) {
+    <div class="banner ok">{{ note }}</div>
+  }
+
+  <div class="table" [style.--languages]="languages().length">
+    <div class="row head">
+      <span class="key">{{ 'ui.editor.locale.key' | t }}</span>
+      @for (language of languages(); track language.id) {
+        <span class="cell">{{ language.name }}</span>
+      }
+      <span class="actions"></span>
+    </div>
+
+    @for (row of visibleRows(); track row.key) {
+      <div class="row" [class.incomplete]="row.incomplete" [class.inherited]="row.fromApplication">
+        <span class="key" [title]="row.key">{{ row.key }}</span>
+        @for (language of languages(); track language.id) {
+          <span class="cell">
+            <input
+              type="text"
+              [value]="row.values[language.id]"
+              [attr.placeholder]="placeholder(row, language.id)"
+              [attr.aria-label]="row.key + ' · ' + language.id"
+              (change)="edit(row, language.id, $any($event.target).value)"
+            />
+          </span>
+        }
+        <span class="actions">
+          <button
+            type="button"
+            class="remove"
+            [title]="'ui.editor.locale.removeKey' | t"
+            (click)="removeKey(row)"
+          >
+            ×
+          </button>
+        </span>
+      </div>
+    } @empty {
+      <p class="hint">{{ 'ui.editor.locale.empty' | t }}</p>
+    }
+  </div>
+
+  <p class="hint footer">{{ 'ui.editor.locale.hint' | t }}</p>
+</section>

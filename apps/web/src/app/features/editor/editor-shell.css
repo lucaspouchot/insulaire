@@ -43,6 +43,28 @@
   opacity: 0.7;
 }
 
+/* Pushed to the right: context, not navigation. */
+.module-tabs .workspace {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 0 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.module-tabs .workspace .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.module-tabs .workspace.offline .dot {
+  background: var(--text-dim);
+}
+
 .module-tabs .badge {
   font-size: 9px;
   letter-spacing: 0.08em;

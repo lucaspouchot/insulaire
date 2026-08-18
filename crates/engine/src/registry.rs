@@ -8,9 +8,10 @@
 use std::collections::BTreeMap;
 
 use insulaire_world::{
-    validate_project, validate_project_links, validate_project_zones, validate_tile_set,
-    validate_world, ProjectDefinition, TemplateRegistry, TileSetDefinition, ValidationReport,
-    WorldDefinition,
+    validate_locales, validate_project, validate_project_links, validate_project_zones,
+    validate_referenced_keys, validate_settings, validate_tile_set, validate_title_screen,
+    validate_world, LocaleBundle, ProjectDefinition, SettingsDefinition, TemplateRegistry,
+    TileSetDefinition, TitleScreenDefinition, ValidationReport, WorldDefinition,
 };
 
 use crate::error::EngineError;
@@ -20,6 +21,9 @@ use crate::error::EngineError;
 pub struct ContentRegistry {
     tile_sets: BTreeMap<String, TileSetDefinition>,
     worlds: BTreeMap<String, WorldDefinition>,
+    locales: BTreeMap<String, LocaleBundle>,
+    title_screen: Option<TitleScreenDefinition>,
+    settings: Option<SettingsDefinition>,
     templates: TemplateRegistry,
     project: Option<ProjectDefinition>,
 }
@@ -117,10 +121,19 @@ impl ContentRegistry {
                 message: source.to_string(),
             })?;
 
-        // Two questions, one verdict: does the manifest hold together, and does
-        // every loaded map name a zone this project declares?
-        let report = validate_project(&project, &self.world_ids(), &self.tile_set_ids())
-            .merge(validate_project_zones(&project, self.worlds.values()));
+        // Three questions, one verdict: does the manifest hold together, does
+        // every loaded map name a zone this project declares, and do the loaded
+        // languages answer the same keys?
+        let report = validate_project(
+            &project,
+            &self.world_ids(),
+            &self.tile_set_ids(),
+            self.title_screen.as_ref().map(|screen| screen.id.as_str()),
+            self.settings.as_ref().map(|settings| settings.id.as_str()),
+        )
+        .merge(validate_project_zones(&project, self.worlds.values()))
+        .merge(validate_locales(&project, self.locales.values()))
+        .merge(self.title_screen_key_report());
         if !report.valid {
             return Err(EngineError::Invalid {
                 what: format!("project `{}`", project.id),
@@ -139,6 +152,214 @@ impl ContentRegistry {
         self.project.as_ref()
     }
 
+    // ---------------------------------------------------------------- locales
+
+    /// Registers one locale file under `language` and `namespace`.
+    ///
+    /// Files are merged into one bundle per language, in load order, and a key
+    /// defined twice is refused rather than silently overwritten
+    /// (`docs/adr/ADR-0023-localised-content-keys.md`).
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Parse`] when the file is not a nested object of strings,
+    /// or when it redefines a key the language already has.
+    pub fn load_locale(
+        &mut self,
+        language: &str,
+        namespace: &str,
+        json: &str,
+    ) -> Result<usize, EngineError> {
+        let bundle = self
+            .locales
+            .entry(language.to_owned())
+            .or_insert_with(|| LocaleBundle::new(language));
+
+        bundle
+            .merge_json(namespace, json)
+            .map_err(|message| EngineError::Parse {
+                what: format!("locale `{language}/{namespace}`"),
+                message,
+            })?;
+
+        Ok(bundle.entries.len())
+    }
+
+    /// The translations of one language, with the project's default language
+    /// filling every gap.
+    ///
+    /// Falling back here rather than in the host is what keeps a raw key off the
+    /// screen no matter which host asks.
+    #[must_use]
+    pub fn locale_bundle(&self, language: &str) -> Option<LocaleBundle> {
+        let bundle = self.locales.get(language)?;
+        let default = self
+            .project
+            .as_ref()
+            .and_then(|project| project.locales.default_language())
+            .and_then(|id| self.locales.get(id));
+
+        Some(match default {
+            Some(default) if default.language != bundle.language => bundle.with_fallback(default),
+            _ => bundle.clone(),
+        })
+    }
+
+    /// Every loaded bundle, as authored — no fallback applied.
+    pub fn locales(&self) -> impl Iterator<Item = &LocaleBundle> {
+        self.locales.values()
+    }
+
+    /// Ids of the languages with at least one loaded file, sorted.
+    #[must_use]
+    pub fn language_ids(&self) -> Vec<String> {
+        self.locales.keys().cloned().collect()
+    }
+
+    // ----------------------------------------------------------- title screen
+
+    /// Parses, validates and registers the title screen.
+    ///
+    /// One at a time: a project opens on a single menu, so a second file
+    /// replaces the first rather than accumulating.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Parse`] when the JSON is malformed, or
+    /// [`EngineError::Invalid`] when the screen fails validation.
+    pub fn load_title_screen(
+        &mut self,
+        json: &str,
+    ) -> Result<(String, ValidationReport), EngineError> {
+        let screen: TitleScreenDefinition =
+            serde_json::from_str(json).map_err(|source| EngineError::Parse {
+                what: "title screen".to_owned(),
+                message: source.to_string(),
+            })?;
+
+        let report = validate_title_screen(&screen);
+        if !report.valid {
+            return Err(EngineError::Invalid {
+                what: format!("title screen `{}`", screen.id),
+                report: Box::new(report),
+            });
+        }
+
+        let id = screen.id.clone();
+        self.title_screen = Some(screen);
+        Ok((id, report))
+    }
+
+    /// Validates a title screen without registering it — the editor's check.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Parse`] when the JSON is malformed.
+    pub fn validate_title_screen_json(&self, json: &str) -> Result<ValidationReport, EngineError> {
+        let screen: TitleScreenDefinition =
+            serde_json::from_str(json).map_err(|source| EngineError::Parse {
+                what: "title screen".to_owned(),
+                message: source.to_string(),
+            })?;
+        Ok(validate_title_screen(&screen).merge(self.referenced_key_report(&screen)))
+    }
+
+    /// The registered title screen, if the project ships one.
+    #[must_use]
+    pub const fn title_screen(&self) -> Option<&TitleScreenDefinition> {
+        self.title_screen.as_ref()
+    }
+
+    /// Whether the registered title screen's keys resolve in some language.
+    ///
+    /// Runs as part of loading the project, because that is the first moment
+    /// both halves — the screen and the languages — are in hand.
+    fn title_screen_key_report(&self) -> ValidationReport {
+        match &self.title_screen {
+            Some(screen) => self.referenced_key_report(screen),
+            None => ValidationReport::clean(),
+        }
+    }
+
+    fn referenced_key_report(&self, screen: &TitleScreenDefinition) -> ValidationReport {
+        // With no language loaded there is nothing to check against; the
+        // manifest's own `locale.unloadedLanguage` is the issue to report then,
+        // not a key error against every label.
+        if self.locales.is_empty() {
+            return ValidationReport::clean();
+        }
+        let bundles: Vec<&LocaleBundle> = self.locales.values().collect();
+        validate_referenced_keys(screen.referenced_keys(), &bundles)
+    }
+
+    // ---------------------------------------------------------------- settings
+
+    /// Parses, validates and registers the game's settings declaration.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Parse`] when the JSON is malformed, or
+    /// [`EngineError::Invalid`] when the declaration is unusable.
+    pub fn load_settings(&mut self, json: &str) -> Result<(String, ValidationReport), EngineError> {
+        let settings: SettingsDefinition =
+            serde_json::from_str(json).map_err(|source| EngineError::Parse {
+                what: "settings".to_owned(),
+                message: source.to_string(),
+            })?;
+
+        let report = validate_settings(&settings);
+        if !report.valid {
+            return Err(EngineError::Invalid {
+                what: format!("settings `{}`", settings.id),
+                report: Box::new(report),
+            });
+        }
+
+        let id = settings.id.clone();
+        self.settings = Some(settings);
+        Ok((id, report))
+    }
+
+    /// Validates a settings declaration without registering it, keys included.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Parse`] when the JSON is malformed.
+    pub fn validate_settings_json(&self, json: &str) -> Result<ValidationReport, EngineError> {
+        let settings: SettingsDefinition =
+            serde_json::from_str(json).map_err(|source| EngineError::Parse {
+                what: "settings".to_owned(),
+                message: source.to_string(),
+            })?;
+
+        let report = validate_settings(&settings);
+        if self.locales.is_empty() {
+            return Ok(report);
+        }
+        let bundles: Vec<&LocaleBundle> = self.locales.values().collect();
+        let keys = settings.referenced_keys();
+        let referenced: Vec<(&str, &str)> = keys
+            .iter()
+            .map(|(path, key)| (path.as_str(), *key))
+            .collect();
+        Ok(report.merge(validate_referenced_keys(referenced, &bundles)))
+    }
+
+    /// The registered settings declaration, if the project ships one.
+    #[must_use]
+    pub const fn settings(&self) -> Option<&SettingsDefinition> {
+        self.settings.as_ref()
+    }
+
+    /// Compares the loaded languages against the manifest and each other.
+    #[must_use]
+    pub fn validate_locales(&self) -> ValidationReport {
+        match &self.project {
+            Some(project) => validate_locales(project, self.locales.values()),
+            None => ValidationReport::clean(),
+        }
+    }
+
     /// Forgets every loaded tile set, world and project.
     ///
     /// Loading is otherwise additive — a world stays registered under its id
@@ -152,6 +373,9 @@ impl ContentRegistry {
     pub fn clear(&mut self) {
         self.tile_sets.clear();
         self.worlds.clear();
+        self.locales.clear();
+        self.title_screen = None;
+        self.settings = None;
         self.project = None;
     }
 

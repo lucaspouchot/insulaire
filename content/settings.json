@@ -1,0 +1,110 @@
+{
+  "id": "insulaire_game",
+  "schemaVersion": 1,
+  "sections": [
+    {
+      "id": "gameplay",
+      "labelKey": "game.settings.gameplay",
+      "groups": [
+        {
+          "id": "difficulty",
+          "labelKey": "game.settings.difficultyGroup",
+          "fields": [
+            {
+              "id": "difficulty",
+              "labelKey": "game.settings.difficulty",
+              "helpKey": "game.settings.difficultyHelp",
+              "control": "select",
+              "default": "normal",
+              "scope": "newGame",
+              "options": [
+                { "value": "gentle", "labelKey": "game.settings.difficultyGentle" },
+                { "value": "normal", "labelKey": "game.settings.difficultyNormal" },
+                { "value": "harsh", "labelKey": "game.settings.difficultyHarsh" }
+              ]
+            },
+            {
+              "id": "permadeath",
+              "labelKey": "game.settings.permadeath",
+              "control": "toggle",
+              "default": false,
+              "scope": "newGame"
+            }
+          ]
+        },
+        {
+          "id": "world",
+          "labelKey": "game.settings.worldGroup",
+          "fields": [
+            {
+              "id": "population",
+              "labelKey": "game.settings.population",
+              "helpKey": "game.settings.populationHelp",
+              "control": "slider",
+              "default": 120,
+              "min": 20,
+              "max": 400,
+              "step": 10,
+              "scope": "newGame"
+            },
+            {
+              "id": "hunters",
+              "labelKey": "game.settings.hunters",
+              "control": "number",
+              "default": 2,
+              "min": 0,
+              "max": 12,
+              "step": 1,
+              "scope": "newGame"
+            },
+            {
+              "id": "factions",
+              "labelKey": "game.settings.factions",
+              "control": "multiSelect",
+              "default": ["valley"],
+              "scope": "newGame",
+              "options": [
+                { "value": "valley", "labelKey": "game.settings.factionValley" },
+                { "value": "refuge", "labelKey": "game.settings.factionRefuge" }
+              ]
+            },
+            {
+              "id": "harshWinters",
+              "labelKey": "game.settings.harshWinters",
+              "control": "checkbox",
+              "default": true,
+              "scope": "newGame",
+              "showIf": { "field": "difficulty", "equals": "harsh" }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "chronicle",
+      "labelKey": "game.settings.chronicle",
+      "groups": [
+        {
+          "id": "identity",
+          "labelKey": "game.settings.identity",
+          "fields": [
+            {
+              "id": "chronicleName",
+              "labelKey": "game.settings.chronicleName",
+              "control": "text",
+              "default": "",
+              "scope": "newGame"
+            },
+            {
+              "id": "bannerColour",
+              "labelKey": "game.settings.bannerColour",
+              "control": "color",
+              "default": "#ffd166",
+              "scope": "session"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

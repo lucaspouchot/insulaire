@@ -1,0 +1,122 @@
+@let control = field();
+
+<div class="field" [class.locked]="locked()">
+  <label [for]="control.id">
+    <span class="label">{{ control.labelKey | t }}</span>
+    @if (control.helpKey) {
+      <span class="help">{{ control.helpKey | t }}</span>
+    }
+  </label>
+
+  <div class="control">
+    @switch (control.control) {
+      @case ('toggle') {
+        <button
+          type="button"
+          class="switch"
+          role="switch"
+          [id]="control.id"
+          [attr.aria-checked]="asBoolean()"
+          [class.on]="asBoolean()"
+          [disabled]="locked()"
+          (click)="toggle(!asBoolean())"
+        >
+          <span class="knob"></span>
+        </button>
+      }
+
+      @case ('checkbox') {
+        <input
+          type="checkbox"
+          [id]="control.id"
+          [checked]="asBoolean()"
+          [disabled]="locked()"
+          (change)="toggle($any($event.target).checked)"
+        />
+      }
+
+      @case ('select') {
+        <select
+          [id]="control.id"
+          [disabled]="locked()"
+          (change)="setText($any($event.target).value)"
+        >
+          @for (option of control.options ?? []; track option.value) {
+            <option [value]="option.value" [selected]="option.value === asText()">
+              {{ option.labelKey | t }}
+            </option>
+          }
+        </select>
+      }
+
+      @case ('multiSelect') {
+        <div class="choices">
+          @for (option of control.options ?? []; track option.value) {
+            <label class="choice">
+              <input
+                type="checkbox"
+                [checked]="isChosen(option.value)"
+                [disabled]="locked()"
+                (change)="setInList(option.value, $any($event.target).checked)"
+              />
+              <span>{{ option.labelKey | t }}</span>
+            </label>
+          }
+        </div>
+      }
+
+      @case ('slider') {
+        <div class="slider">
+          <input
+            type="range"
+            [id]="control.id"
+            [min]="control.min ?? 0"
+            [max]="control.max ?? 100"
+            [step]="control.step ?? 1"
+            [value]="asNumber()"
+            [disabled]="locked()"
+            (input)="setNumber($any($event.target).value)"
+          />
+          <span class="readout">{{ readout() }}</span>
+        </div>
+      }
+
+      @case ('number') {
+        <input
+          type="number"
+          [id]="control.id"
+          [min]="control.min ?? null"
+          [max]="control.max ?? null"
+          [step]="control.step ?? 1"
+          [value]="asNumber()"
+          [disabled]="locked()"
+          (change)="setNumber($any($event.target).value)"
+        />
+      }
+
+      @case ('color') {
+        <input
+          type="color"
+          [id]="control.id"
+          [value]="asText()"
+          [disabled]="locked()"
+          (change)="setText($any($event.target).value)"
+        />
+      }
+
+      @default {
+        <input
+          type="text"
+          [id]="control.id"
+          [value]="asText()"
+          [disabled]="locked()"
+          (change)="setText($any($event.target).value)"
+        />
+      }
+    }
+
+    @if (locked()) {
+      <span class="lock" [title]="'ui.settings.lockedHelp' | t">{{ 'ui.settings.locked' | t }}</span>
+    }
+  </div>
+</div>

@@ -74,13 +74,46 @@ export function serializeProject(project: ProjectDefinition): string {
   lines.push(...recordArray('zones', project.zones ?? []));
   lines.push(...recordArray('tileSets', project.tileSets));
 
-  const worlds = recordArray('worlds', project.worlds);
-  const last = worlds.length - 1;
-  worlds[last] = (worlds[last] as string).replace(/,$/, '');
-  lines.push(...worlds);
+  lines.push(...recordArray('worlds', project.worlds));
+  if (project.titleScreen !== undefined) {
+    lines.push(`  "titleScreen": ${inlineObject(project.titleScreen)},`);
+  }
+  if (project.settings !== undefined) {
+    lines.push(`  "settings": ${inlineObject(project.settings)},`);
+  }
+  lines.push(...localesBlock(project.locales));
+
+  // The last entry carries no comma, whichever block it turned out to be.
+  const last = lines.length - 1;
+  lines[last] = (lines[last] as string).replace(/,$/, '');
 
   lines.push('}');
   return `${lines.join('\n')}\n`;
+}
+
+/**
+ * The `locales` block: one language per line, its files inline.
+ *
+ * Written out even when empty, because a project that lost its languages by
+ * export would lose every screen's text with them
+ * (`docs/adr/ADR-0023-localised-content-keys.md`).
+ */
+function localesBlock(locales: ProjectDefinition['locales']): string[] {
+  const languages = locales?.languages ?? [];
+  if (languages.length === 0) {
+    return ['  "locales": { "default": "", "languages": [] },'];
+  }
+
+  const lines = ['  "locales": {'];
+  lines.push(`    "default": ${JSON.stringify(locales?.default ?? languages[0]?.id ?? '')},`);
+  lines.push('    "languages": [');
+  languages.forEach((language, index) => {
+    const comma = index < languages.length - 1 ? ',' : '';
+    lines.push(`      ${inlineObject(language)}${comma}`);
+  });
+  lines.push('    ]');
+  lines.push('  },');
+  return lines;
 }
 
 function recordArray(key: string, records: readonly object[]): string[] {

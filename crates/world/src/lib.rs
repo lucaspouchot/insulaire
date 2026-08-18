@@ -35,9 +35,12 @@
 pub mod definition;
 pub mod grid;
 pub mod hex;
+pub mod locale;
 pub mod project;
+pub mod settings;
 pub mod template;
 pub mod tileset;
+pub mod title_screen;
 pub mod validation;
 
 #[cfg(feature = "testing")]
@@ -55,12 +58,23 @@ pub use definition::{
 };
 pub use grid::{GridError, ResolvedTile, WorldGrid};
 pub use hex::{Hex, HexDirection, OffsetCoord, DIRECTIONS};
+pub use locale::{missing_keys, LocaleBundle, LocaleError, LocaleNode};
 pub use project::{
-    ContentRef, ProjectDefinition, ZoneDefinition, DEFAULT_ZONE_ID, PROJECT_SCHEMA_VERSION,
+    ContentRef, LanguageDefinition, LocalesDefinition, ProjectDefinition, ZoneDefinition,
+    DEFAULT_ZONE_ID, PROJECT_SCHEMA_VERSION,
+};
+pub use settings::{
+    ControlDefinition, ControlKind, ControlOption, SettingScope, SettingsDefinition, SettingsGroup,
+    SettingsSection, ShowIf, SETTINGS_SCHEMA_VERSION,
 };
 pub use template::{Behavior, EntityKind, EntityTemplate, TemplateRegistry};
 pub use tileset::{TileDefinition, TileSetDefinition, TileVisual, TILE_SET_SCHEMA_VERSION};
+pub use title_screen::{
+    BackgroundFit, TitleAction, TitleBackground, TitleButton, TitleLayout, TitleLogo, TitleMusic,
+    TitleScreenDefinition, TitleSplash, TitleTheme, TITLE_SCREEN_SCHEMA_VERSION,
+};
 pub use validation::{
-    validate_project, validate_project_links, validate_project_zones, validate_tile_set,
+    validate_locales, validate_project, validate_project_links, validate_project_zones,
+    validate_referenced_keys, validate_settings, validate_tile_set, validate_title_screen,
     validate_world, Severity, ValidationIssue, ValidationReport,
 };

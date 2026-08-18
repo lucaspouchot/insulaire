@@ -1,51 +1,55 @@
-<header class="topbar">
-  <div class="brand">
-    <span class="mark">⬢</span>
-    <span>{{ projectName() }}</span>
-    @if (features.label) {
-      <span class="tag">{{ features.label }}</span>
-    }
-  </div>
+@if (showChrome()) {
+  <header class="topbar">
+    <div class="brand">
+      <span class="mark">⬢</span>
+      <span>{{ projectName() }}</span>
+      @if (features.label) {
+        <span class="tag">{{ features.label }}</span>
+      }
+    </div>
 
-  <nav>
-    @if (features.editor) {
-      <a routerLink="/editor" routerLinkActive="active">Editor</a>
-    }
-    <a routerLink="/play" routerLinkActive="active">Play</a>
-  </nav>
+    <nav>
+      <a routerLink="/title" routerLinkActive="active">{{ 'ui.app.nav.title' | t }}</a>
+      @if (features.editor) {
+        <a routerLink="/editor" routerLinkActive="active">{{ 'ui.app.nav.editor' | t }}</a>
+      }
+      <a routerLink="/play" routerLinkActive="active">{{ 'ui.app.nav.play' | t }}</a>
+    </nav>
 
-  @let info = engine.info();
-  @switch (engine.status()) {
-    @case ('ready') {
-      <div
-        class="engine ready"
-        [title]="
-          'Running as WebAssembly · ' +
-          info?.targetArch +
-          ' · ' +
-          info?.pointerWidth +
-          '-bit · v' +
-          info?.version
-        "
-      >
-        <span class="dot"></span>
-        <span>Insulaire engine</span>
-      </div>
+    @let info = engine.info();
+    @switch (engine.status()) {
+      @case ('ready') {
+        <div
+          class="engine ready"
+          [title]="
+            'ui.app.engine.readyTooltip'
+              | t
+                : {
+                    arch: info?.targetArch ?? '',
+                    bits: info?.pointerWidth ?? '',
+                    version: info?.version ?? '',
+                  }
+          "
+        >
+          <span class="dot"></span>
+          <span>{{ 'ui.app.engine.ready' | t }}</span>
+        </div>
+      }
+      @case ('failed') {
+        <div class="engine failed" [title]="engine.failure() ?? ''">
+          <span class="dot"></span>
+          <span>{{ 'ui.app.engine.failed' | t }} <code>npm run wasm:build</code></span>
+        </div>
+      }
+      @default {
+        <div class="engine loading">
+          <span class="dot"></span>
+          <span>{{ 'ui.app.engine.loading' | t }}</span>
+        </div>
+      }
     }
-    @case ('failed') {
-      <div class="engine failed" [title]="engine.failure() ?? ''">
-        <span class="dot"></span>
-        <span>Engine failed — run <code>npm run wasm:build</code></span>
-      </div>
-    }
-    @default {
-      <div class="engine loading">
-        <span class="dot"></span>
-        <span>Loading engine…</span>
-      </div>
-    }
-  }
-</header>
+  </header>
+}
 
 <main>
   <router-outlet />

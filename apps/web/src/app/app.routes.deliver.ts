@@ -1,4 +1,12 @@
+import { inject } from '@angular/core';
 import { Routes } from '@angular/router';
+
+import { I18nService } from './i18n/i18n.service';
+
+/** Document title for a route, resolved in the language in use (ADR-0023). */
+function pageTitle(key: string): () => string {
+  return () => inject(I18nService).t(key);
+}
 
 /**
  * Routes of the **client** delivery: the game, and nothing else.
@@ -11,11 +19,23 @@ import { Routes } from '@angular/router';
  * (`docs/adr/ADR-0018-client-delivery-build.md`).
  */
 export const routes: Routes = [
-  { path: '', pathMatch: 'full', redirectTo: 'play' },
+  // A delivered game opens on its title screen, never on a map
+  // (`docs/adr/ADR-0024-authored-title-screen.md`).
+  { path: '', pathMatch: 'full', redirectTo: 'title' },
+  {
+    path: 'title',
+    title: pageTitle('ui.title.documentTitle'),
+    loadComponent: () => import('./features/title/title-page').then((m) => m.TitlePage),
+  },
+  {
+    path: 'settings',
+    title: pageTitle('ui.settings.settingsTitle'),
+    loadComponent: () => import('./settings/settings-page').then((m) => m.SettingsPage),
+  },
   {
     path: 'play',
-    title: 'Play',
+    title: pageTitle('ui.app.title.play'),
     loadComponent: () => import('./features/play/play-page').then((m) => m.PlayPage),
   },
-  { path: '**', redirectTo: 'play' },
+  { path: '**', redirectTo: 'title' },
 ];

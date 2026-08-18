@@ -1,0 +1,24 @@
+{
+  "settings": {
+    "gameplay": "Jeu",
+    "difficultyGroup": "Difficulté",
+    "difficulty": "Difficulté",
+    "difficultyHelp": "À quel point le monde résiste.",
+    "difficultyGentle": "Clémente",
+    "difficultyNormal": "Normale",
+    "difficultyHarsh": "Rude",
+    "permadeath": "Mort définitive",
+    "worldGroup": "Monde",
+    "population": "Population de départ",
+    "populationHelp": "Combien d’habitants la vallée compte au début.",
+    "hunters": "Chasseurs",
+    "factions": "Factions en jeu",
+    "factionValley": "Vallée",
+    "factionRefuge": "Refuge",
+    "harshWinters": "Hivers rudes",
+    "chronicle": "Chronique",
+    "identity": "Identité",
+    "chronicleName": "Nom de la chronique",
+    "bannerColour": "Couleur de bannière"
+  }
+}

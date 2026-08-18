@@ -117,14 +117,27 @@ async function waitForServer(url, timeoutMs, isAlive) {
  * Starts `ng serve` and waits for it. Returns the base URL and a stop function.
  *
  * The dev server is used rather than a production build because it is what the
- * developer is looking at, and because its `prestart` mirrors `content/` into
- * `public/` — the same content the runtime ships.
+ * developer is looking at.
+ *
+ * `INSULAIRE_CONTENT_DIR` is pinned to the repository fixture, overriding any
+ * `.env`: the transcript below is a byte-for-byte comparison against a
+ * baseline, so it must run on the content this repository ships and never on
+ * whichever game the developer happens to be authoring
+ * (`docs/adr/ADR-0022-authoring-content-workspace.md`).
  */
 async function startServer(options, log) {
   const child = spawn(
     'npm',
     ['run', 'start', '--workspace', 'web', '--', '--port', String(options.port)],
-    { cwd: REPO, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, NG_CLI_ANALYTICS: 'false' } },
+    {
+      cwd: REPO,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        NG_CLI_ANALYTICS: 'false',
+        INSULAIRE_CONTENT_DIR: resolve(REPO, 'content'),
+      },
+    },
   );
   let exited = false;
   let tail = '';
@@ -389,8 +402,34 @@ async function recordTranscript(page, baseUrl, scenario) {
     for (const entry of manifest.worlds ?? []) {
       content.worlds.push(parse(engine.loadWorld(await text('/content/' + entry.path))));
     }
+    // Languages are content like the rest, and a language the manifest declares
+    // without a loaded file makes loadProject fail — exactly as it does for a
+    // world (docs/adr/ADR-0023-localised-content-keys.md).
+    content.locales = [];
+    for (const language of manifest.locales?.languages ?? []) {
+      for (const file of language.files ?? []) {
+        content.locales.push(
+          parse(engine.loadLocale(language.id, file.id, await text('/content/' + file.path))),
+        );
+      }
+    }
+    // The menu is content too, and the manifest will not load without the
+    // screen it names (docs/adr/ADR-0024-authored-title-screen.md).
+    content.titleScreen = null;
+    if (manifest.titleScreen) {
+      content.titleScreen = parse(
+        engine.loadTitleScreen(await text('/content/' + manifest.titleScreen.path)),
+      );
+    }
+    content.settings = null;
+    if (manifest.settings) {
+      content.settings = parse(
+        engine.loadSettings(await text('/content/' + manifest.settings.path)),
+      );
+    }
     content.project = parse(engine.loadProject(manifestJson));
     const links = parse(engine.validateLinks());
+    const localeReport = parse(engine.validateLocales());
 
     const trim = (snapshot) => ({
       worldId: snapshot.worldId,
@@ -401,7 +440,9 @@ async function recordTranscript(page, baseUrl, scenario) {
       rngDraws: snapshot.rng?.draws ?? null,
     });
 
-    let state = parse(engine.createGame(scenario.world, scenario.seed));
+    let state = parse(
+      engine.createGame(scenario.world, scenario.seed, JSON.stringify(scenario.settings ?? {})),
+    );
     const steps = [{ label: 'createGame', command: null, accepted: true, rejection: null, events: [], state: trim(state) }];
 
     for (const step of scenario.steps) {
@@ -435,6 +476,10 @@ async function recordTranscript(page, baseUrl, scenario) {
         worlds: content.worlds.map((outcome) => ({ id: outcome.id, valid: outcome.report.valid })),
         tileSetIds: summary.tileSetIds,
         links,
+        locales: content.locales.map((outcome) => outcome.id),
+        localeReport,
+        titleScreen: content.titleScreen ? content.titleScreen.id : null,
+        settings: content.settings ? content.settings.id : null,
       },
       steps,
     };

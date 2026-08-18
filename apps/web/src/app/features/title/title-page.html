@@ -1,0 +1,64 @@
+<section
+  class="title"
+  [class.centred]="screen()?.layout === 'center'"
+  [class.right]="screen()?.layout === 'right'"
+  [style]="themeStyle()"
+>
+  @if (error(); as failure) {
+    <div class="banner error">{{ failure }}</div>
+  }
+
+  <div class="menu">
+    @if (logoUrl(); as logo) {
+      <img
+        class="logo"
+        [src]="logo"
+        [alt]="titleText()"
+        [style.max-width.%]="screen()?.logo?.maxWidthPercent ?? 40"
+      />
+    } @else {
+      <h1>{{ titleText() }}</h1>
+    }
+
+    @if (subtitleText(); as subtitle) {
+      <p class="subtitle">{{ subtitle }}</p>
+    }
+
+    <nav class="actions">
+      @for (entry of entries(); track entry.action) {
+        <button
+          type="button"
+          [class]="entry.action"
+          [disabled]="entry.disabled"
+          [title]="entry.reasonKey === null ? '' : (entry.reasonKey | t)"
+          (click)="activate(entry)"
+        >
+          {{ entry.labelKey | t }}
+        </button>
+      }
+    </nav>
+  </div>
+
+  <!--
+    The splash sits over the menu rather than on its own route: it is one
+    launch-time overlay, and a route would put it in the history where the back
+    button could bring it back.
+  -->
+  @if (splashing()) {
+    <div
+      class="splash"
+      role="button"
+      tabindex="0"
+      [attr.aria-label]="'ui.title.skipSplash' | t"
+      (click)="endSplash()"
+      (keydown.enter)="endSplash()"
+      (keydown.space)="endSplash()"
+    >
+      @if (splashUrl(); as image) {
+        <img [src]="image" [alt]="titleText()" />
+      } @else {
+        <h1>{{ titleText() }}</h1>
+      }
+    </div>
+  }
+</section>

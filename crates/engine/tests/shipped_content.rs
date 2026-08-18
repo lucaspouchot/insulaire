@@ -26,6 +26,18 @@ fn read(relative: &str) -> String {
         .unwrap_or_else(|error| panic!("cannot read {}: {error}", path.display()))
 }
 
+/// Every locale file the shipped manifest lists, as `(language, namespace)`.
+///
+/// Spelled out rather than parsed from the manifest so this test fails when a
+/// language is added without a file, instead of quietly testing whatever the
+/// manifest happens to say.
+const SHIPPED_LOCALES: [(&str, &str); 4] = [
+    ("en", "menu"),
+    ("en", "game"),
+    ("fr", "menu"),
+    ("fr", "game"),
+];
+
 /// Loads everything `content/project.json` lists, in the order a client does.
 fn engine_with_shipped_content() -> Engine {
     let mut engine = Engine::new();
@@ -37,6 +49,21 @@ fn engine_with_shipped_content() -> Engine {
             .load_world(&read(&format!("content/worlds/{world}.json")))
             .unwrap_or_else(|error| panic!("the shipped world `{world}` must load: {error}"));
     }
+    for (language, namespace) in SHIPPED_LOCALES {
+        engine
+            .load_locale(
+                language,
+                namespace,
+                &read(&format!("content/locales/{language}/{namespace}.json")),
+            )
+            .unwrap_or_else(|error| panic!("locale `{language}/{namespace}` must load: {error}"));
+    }
+    engine
+        .load_title_screen(&read("content/menu/title-screen.json"))
+        .expect("the shipped title screen must load");
+    engine
+        .load_settings(&read("content/settings.json"))
+        .expect("the shipped settings must load");
     engine
         .load_project(&read("content/project.json"))
         .expect("the shipped project must load");
@@ -74,11 +101,67 @@ fn the_shipped_content_loads_without_errors_or_warnings() {
         );
     }
 
+    for (language, namespace) in SHIPPED_LOCALES {
+        engine
+            .load_locale(
+                language,
+                namespace,
+                &read(&format!("content/locales/{language}/{namespace}.json")),
+            )
+            .expect("locale file loads");
+    }
+
+    let title_screen = engine
+        .load_title_screen(&read("content/menu/title-screen.json"))
+        .expect("title screen loads");
+    assert_eq!(title_screen.id, "main");
+    assert!(title_screen.report.issues.is_empty());
+
+    let settings = engine
+        .load_settings(&read("content/settings.json"))
+        .expect("settings load");
+    assert_eq!(settings.id, "insulaire_game");
+    assert!(
+        settings.report.issues.is_empty(),
+        "{:?}",
+        settings.report.issues
+    );
+
     let project = engine
         .load_project(&read("content/project.json"))
         .expect("project loads");
     assert_eq!(project.id, "insulaire");
     assert!(project.report.issues.is_empty());
+}
+
+/// The shipped languages say the same things.
+///
+/// A translation gap is only a warning at load time — the default language
+/// stands in — but the content this repository ships is the example every game
+/// is copied from, so here it is a failure.
+#[test]
+fn every_shipped_language_translates_every_key() {
+    let engine = engine_with_shipped_content();
+
+    let report = engine.validate_locales();
+    assert!(
+        report.issues.is_empty(),
+        "the shipped languages must agree: {:?}",
+        report.issues
+    );
+
+    for (language, _) in SHIPPED_LOCALES {
+        let bundle = engine.locale(language).expect("bundle");
+        assert!(
+            bundle.fallbacks.is_empty(),
+            "`{language}` falls back for {:?}",
+            bundle.fallbacks
+        );
+        assert!(
+            bundle.entries.contains_key("menu.buttons.newGame"),
+            "`{language}` must define the menu keys"
+        );
+    }
 }
 
 #[test]
@@ -97,7 +180,9 @@ fn every_shipped_map_link_resolves() {
 #[test]
 fn walking_through_the_shipped_door_changes_map_and_comes_back() {
     let mut engine = engine_with_shipped_content();
-    let start = engine.create_game("demo_world", 2026).expect("game starts");
+    let start = engine
+        .create_game("demo_world", 2026, "{}")
+        .expect("game starts");
     let door = engine.world_view("demo_world").expect("view").links[0].at;
     assert_eq!(
         distance(start.player.as_ref().expect("player").at, door),
@@ -158,7 +243,9 @@ fn the_demo_world_matches_its_documented_shape() {
 #[test]
 fn a_game_starts_from_the_shipped_world() {
     let mut engine = engine_with_shipped_content();
-    let snapshot = engine.create_game("demo_world", 2026).expect("game starts");
+    let snapshot = engine
+        .create_game("demo_world", 2026, "{}")
+        .expect("game starts");
 
     assert_eq!(snapshot.tick, 0);
     assert_eq!(snapshot.entities.len(), 3);
@@ -187,7 +274,9 @@ fn chasers_reach_the_player_when_the_player_stands_still() {
     // stalls one hex further out. Demanding adjacency for both would assert
     // behaviour the documented rule does not provide.
     let mut engine = engine_with_shipped_content();
-    let start = engine.create_game("demo_world", 2026).expect("game starts");
+    let start = engine
+        .create_game("demo_world", 2026, "{}")
+        .expect("game starts");
     let player_at = start.player.as_ref().expect("player").at;
 
     let mut result = engine.dispatch(Command::Wait).expect("dispatch");
@@ -235,7 +324,9 @@ fn chasers_reach_the_player_when_the_player_stands_still() {
 #[test]
 fn illegal_moves_never_advance_the_shipped_game() {
     let mut engine = engine_with_shipped_content();
-    let start = engine.create_game("demo_world", 1).expect("game starts");
+    let start = engine
+        .create_game("demo_world", 1, "{}")
+        .expect("game starts");
     let player_at = start.player.as_ref().expect("player").at;
 
     // Every hex that is *not* a legal move must be refused, and refusals must be
@@ -294,7 +385,9 @@ fn replaying_the_demo_world_is_deterministic() {
 
     let run = || {
         let mut engine = engine_with_shipped_content();
-        engine.create_game("demo_world", 7).expect("game starts");
+        engine
+            .create_game("demo_world", 7, "{}")
+            .expect("game starts");
         script
             .iter()
             .map(|command| engine.dispatch(*command).expect("dispatch"))

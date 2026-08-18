@@ -1,4 +1,12 @@
+import { inject } from '@angular/core';
 import { Routes } from '@angular/router';
+
+import { I18nService } from './i18n/i18n.service';
+
+/** Document title for a route, resolved in the language in use (ADR-0023). */
+function pageTitle(key: string): () => string {
+  return () => inject(I18nService).t(key);
+}
 
 /**
  * Routes of the **dev** build: the game plus the editor.
@@ -11,15 +19,27 @@ import { Routes } from '@angular/router';
  * bundle and vice versa.
  */
 export const routes: Routes = [
-  { path: '', pathMatch: 'full', redirectTo: 'editor' },
+  // Both builds open on the title screen: the player's first screen is the one
+  // developers should be looking at too (`docs/adr/ADR-0024-authored-title-screen.md`).
+  { path: '', pathMatch: 'full', redirectTo: 'title' },
+  {
+    path: 'title',
+    title: pageTitle('ui.title.documentTitle'),
+    loadComponent: () => import('./features/title/title-page').then((m) => m.TitlePage),
+  },
   {
     path: 'editor',
     loadChildren: () => import('./features/editor/editor.routes').then((m) => m.EDITOR_ROUTES),
   },
   {
+    path: 'settings',
+    title: pageTitle('ui.settings.settingsTitle'),
+    loadComponent: () => import('./settings/settings-page').then((m) => m.SettingsPage),
+  },
+  {
     path: 'play',
-    title: 'Insulaire — Play',
+    title: pageTitle('ui.app.title.play'),
     loadComponent: () => import('./features/play/play-page').then((m) => m.PlayPage),
   },
-  { path: '**', redirectTo: 'editor' },
+  { path: '**', redirectTo: 'title' },
 ];

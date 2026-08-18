@@ -1,0 +1,180 @@
+/*
+  The authored theme arrives as custom properties set on the host element, so
+  every value below has a defensible default and the content only overrides what
+  it cares about (`docs/adr/ADR-0024-authored-title-screen.md`).
+*/
+:host {
+  display: block;
+  height: 100%;
+  min-height: 0;
+}
+
+.title {
+  --title-accent: var(--accent);
+  --title-text: var(--text);
+  --title-panel: rgba(13, 17, 23, 0.72);
+  --title-font: var(--font);
+  --title-tint: transparent;
+  --title-background: none;
+  --title-background-size: cover;
+  --title-background-repeat: no-repeat;
+
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 8vw;
+  color: var(--title-text);
+  background-color: var(--bg);
+  background-image: var(--title-background);
+  background-size: var(--title-background-size);
+  background-repeat: var(--title-background-repeat);
+  background-position: center;
+  overflow: hidden;
+}
+
+/* The tint is a layer, not the background colour: an authored image shows
+   through it, and without an image it is the whole backdrop. */
+.title::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--title-tint);
+  pointer-events: none;
+}
+
+.title.centred {
+  justify-content: center;
+  text-align: center;
+}
+
+.title.right {
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.menu {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 260px;
+  max-width: 520px;
+  padding: 28px 32px;
+  border-radius: calc(var(--radius) * 2);
+  background: var(--title-panel);
+  backdrop-filter: blur(2px);
+}
+
+.menu h1 {
+  margin: 0;
+  font-family: var(--title-font);
+  font-size: clamp(28px, 5vw, 54px);
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+}
+
+.logo {
+  align-self: flex-start;
+  height: auto;
+}
+
+.title.centred .logo {
+  align-self: center;
+}
+
+.title.right .logo {
+  align-self: flex-end;
+}
+
+.subtitle {
+  margin: 0 0 8px;
+  color: var(--title-text);
+  opacity: 0.75;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.actions button {
+  padding: 10px 16px;
+  font-size: 15px;
+  text-align: inherit;
+  color: var(--title-text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-left: 2px solid var(--title-accent);
+  border-radius: var(--radius);
+}
+
+.actions button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--title-accent);
+}
+
+.actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.title.centred .actions button {
+  border-left: none;
+  border-bottom: 2px solid var(--title-accent);
+}
+
+.banner.error {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 60ch;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--error);
+  background: rgba(240, 115, 106, 0.12);
+  color: var(--error);
+}
+
+/* Over everything, including the menu: it is the first thing a launch shows. */
+.splash {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  cursor: pointer;
+  animation: splash-in 240ms ease;
+}
+
+.splash img {
+  max-width: 70%;
+  max-height: 70%;
+  object-fit: contain;
+}
+
+.splash h1 {
+  margin: 0;
+  font-family: var(--title-font);
+  font-size: clamp(28px, 6vw, 64px);
+  opacity: 0.9;
+}
+
+@keyframes splash-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splash {
+    animation: none;
+  }
+}

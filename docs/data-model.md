@@ -39,6 +39,18 @@ the `zones` its maps are grouped into, and the `tileSets` and `worlds` it ships,
 each as `{ id, path }`. A delivered client build boots from it (ADR-0018); the
 editor regenerates it whenever the set of maps or zones changes.
 
+The manifest also names the game's **settings** declaration
+(`content/settings.json`): sections, groups and fields described with the same
+control vocabulary the application's own settings use. The engine validates and
+resolves them; it never interprets one, and a resolved set travels with the game
+it created (ADR-0025).
+
+The manifest also declares the game's **languages**: `locales.default` and
+`locales.languages[]`, each `{ id, name, files }` where a file's `id` is the
+namespace prefixed to its keys. Text is not a field of any definition — every
+string a screen displays is a key resolved against a language, and the files
+holding them are content like the maps (ADR-0023).
+
 A `zone` is `{ id, name }` and nothing more: the *first* declared is the default,
 and a world naming no zone belongs to it, so "unzoned" is not a state a map can
 be in (ADR-0021). Zones live here rather than on the maps because a zone has to

@@ -1,10 +1,13 @@
+/* Flex rather than fixed grid rows: the bar is absent on the title screen, and
+   a row template would leave its 48 px behind (ADR-0024). */
 :host {
-  display: grid;
-  grid-template-rows: 48px 1fr;
+  display: flex;
+  flex-direction: column;
   height: 100vh;
 }
 
 .topbar {
+  flex: 0 0 48px;
   display: flex;
   align-items: center;
   gap: 24px;
@@ -99,6 +102,7 @@ nav a.active {
 }
 
 main {
+  flex: 1;
   min-height: 0;
   overflow: hidden;
 }

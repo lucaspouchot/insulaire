@@ -98,7 +98,81 @@ impl JsonEngine {
         ok(&outcome)
     }
 
-    /// Forgets every loaded tile set, world and project.
+    /// Registers one locale file; returns a [`LoadOutcome`](crate::LoadOutcome)
+    /// whose id is `language/namespace`.
+    ///
+    /// # Errors
+    ///
+    /// `parse` when the file is not a nested object of strings, or redefines a
+    /// key the language already has.
+    pub fn load_locale(&mut self, language: &str, namespace: &str, json: &str) -> JsonResult {
+        let outcome = self
+            .inner
+            .load_locale(language, namespace, json)
+            .map_err(|error| err(&error))?;
+        ok(&outcome)
+    }
+
+    /// Returns a [`LocaleView`](crate::LocaleView): one language's text, with
+    /// the default language filling the gaps.
+    ///
+    /// # Errors
+    ///
+    /// `unknownContent` when no file was loaded for that language.
+    pub fn locale(&self, language: &str) -> JsonResult {
+        let view = self.inner.locale(language).map_err(|error| err(&error))?;
+        ok(&view)
+    }
+
+    /// Compares the loaded languages; returns a `ValidationReport`.
+    ///
+    /// # Errors
+    ///
+    /// Only on serialisation failure.
+    pub fn validate_locales(&self) -> JsonResult {
+        ok(&self.inner.validate_locales())
+    }
+
+    /// Registers the title screen; returns a [`LoadOutcome`](crate::LoadOutcome).
+    ///
+    /// # Errors
+    ///
+    /// `parse` for malformed JSON, `invalidContent` for a screen that cannot be
+    /// shown — no visible `newGame` button, an asset path leaving the content
+    /// root, a number out of range.
+    pub fn load_title_screen(&mut self, json: &str) -> JsonResult {
+        let outcome = self
+            .inner
+            .load_title_screen(json)
+            .map_err(|error| err(&error))?;
+        ok(&outcome)
+    }
+
+    /// Validates a title screen without registering it; returns a
+    /// `ValidationReport` that also covers the keys it references.
+    ///
+    /// # Errors
+    ///
+    /// `parse` for malformed JSON.
+    pub fn validate_title_screen(&self, json: &str) -> JsonResult {
+        let report = self
+            .inner
+            .validate_title_screen(json)
+            .map_err(|error| err(&error))?;
+        ok(&report)
+    }
+
+    /// Returns the registered `TitleScreenDefinition`.
+    ///
+    /// # Errors
+    ///
+    /// `unknownContent` when the project ships no title screen.
+    pub fn title_screen(&self) -> JsonResult {
+        let screen = self.inner.title_screen().map_err(|error| err(&error))?;
+        ok(&screen)
+    }
+
+    /// Forgets every loaded tile set, world, locale and project.
     ///
     /// Call it before re-loading a whole project; a running game is unaffected.
     pub fn reset_content(&mut self) {
@@ -178,12 +252,64 @@ impl JsonEngine {
     /// # Errors
     ///
     /// `unknownContent` or `setup`.
-    pub fn create_game(&mut self, world_id: &str, seed: u32) -> JsonResult {
+    pub fn create_game(&mut self, world_id: &str, seed: u32, settings_json: &str) -> JsonResult {
         let snapshot = self
             .inner
-            .create_game(world_id, seed)
+            .create_game(world_id, seed, settings_json)
             .map_err(|error| err(&error))?;
         ok(&snapshot)
+    }
+
+    /// Registers the game's settings declaration; returns a
+    /// [`LoadOutcome`](crate::LoadOutcome).
+    ///
+    /// # Errors
+    ///
+    /// `parse` for malformed JSON, `invalidContent` for a declaration that
+    /// cannot be rendered — a duplicate id, a default no control accepts.
+    pub fn load_settings(&mut self, json: &str) -> JsonResult {
+        let outcome = self
+            .inner
+            .load_settings(json)
+            .map_err(|error| err(&error))?;
+        ok(&outcome)
+    }
+
+    /// Validates a settings declaration without registering it, keys included.
+    ///
+    /// # Errors
+    ///
+    /// `parse` for malformed JSON.
+    pub fn validate_settings(&self, json: &str) -> JsonResult {
+        let report = self
+            .inner
+            .validate_settings(json)
+            .map_err(|error| err(&error))?;
+        ok(&report)
+    }
+
+    /// Returns the registered `SettingsDefinition`.
+    ///
+    /// # Errors
+    ///
+    /// `unknownContent` when the project declares no settings.
+    pub fn settings(&self) -> JsonResult {
+        let settings = self.inner.settings().map_err(|error| err(&error))?;
+        ok(&settings)
+    }
+
+    /// Resolves values against the declaration: defaults filled, unknown keys
+    /// dropped, numbers clamped. Returns the resolved object.
+    ///
+    /// # Errors
+    ///
+    /// `parse` when the values are not a JSON object.
+    pub fn resolve_settings(&self, values_json: &str) -> JsonResult {
+        let resolved = self
+            .inner
+            .resolved_settings(values_json)
+            .map_err(|error| err(&error))?;
+        ok(&resolved)
     }
 
     /// Returns the current [`GameSnapshot`](crate::GameSnapshot).
@@ -275,7 +401,7 @@ mod tests {
 
         assert_eq!(engine.terrain_buffer("w").expect("buffer").len(), 64);
 
-        let snapshot = json(&engine.create_game("w", 7).expect("game"));
+        let snapshot = json(&engine.create_game("w", 7, "{}").expect("game"));
         assert_eq!(snapshot["tick"], 0);
         assert!(engine.has_game());
 
@@ -350,7 +476,7 @@ mod tests {
             "parse"
         );
         assert_eq!(
-            code(&engine.create_game("nope", 1).unwrap_err()),
+            code(&engine.create_game("nope", 1, "{}").unwrap_err()),
             "unknownContent"
         );
     }
@@ -358,7 +484,7 @@ mod tests {
     #[test]
     fn an_illegal_command_is_a_result_not_an_error() {
         let mut engine = loaded();
-        engine.create_game("w", 1).expect("game");
+        engine.create_game("w", 1, "{}").expect("game");
 
         let result = json(
             &engine
@@ -455,7 +581,7 @@ mod tests {
         assert_eq!(view["links"][0]["targetAt"], json("[1,1]"));
         assert_eq!(view["links"][0]["trigger"], "enter");
 
-        engine.create_game("outside", 5).expect("game");
+        engine.create_game("outside", 5, "{}").expect("game");
         let result = json(
             &engine
                 .dispatch(r#"{"type":"moveTo","to":[3,2]}"#)
@@ -520,7 +646,7 @@ mod tests {
     #[test]
     fn resetting_content_leaves_a_running_game_alone() {
         let mut engine = linked();
-        engine.create_game("outside", 5).expect("game");
+        engine.create_game("outside", 5, "{}").expect("game");
 
         engine.reset_content();
 
@@ -551,7 +677,7 @@ mod tests {
     #[test]
     fn waiting_advances_the_tick_and_the_monster() {
         let mut engine = loaded();
-        let before = json(&engine.create_game("w", 3).expect("game"));
+        let before = json(&engine.create_game("w", 3, "{}").expect("game"));
         let monster_before = before["entities"][1]["at"].clone();
 
         let result = json(&engine.dispatch(r#"{"type":"wait"}"#).expect("dispatch"));
@@ -563,11 +689,294 @@ mod tests {
     #[test]
     fn ending_a_game_leaves_content_loaded() {
         let mut engine = loaded();
-        engine.create_game("w", 1).expect("game");
+        engine.create_game("w", 1, "{}").expect("game");
         engine.end_game();
 
         assert!(!engine.has_game());
         assert_eq!(code(&engine.snapshot().unwrap_err()), "noGame");
         assert!(engine.world_view("w").is_ok());
+    }
+
+    // ---------------------------------------------------------------- locales
+
+    const LOCALISED_PROJECT: &str = r#"{
+        "id": "p", "schemaVersion": 1, "startWorld": "w",
+        "tileSets": [{ "id": "t", "path": "tilesets/t.json" }],
+        "worlds": [{ "id": "w", "path": "worlds/w.json" }],
+        "locales": {
+            "default": "en",
+            "languages": [
+                { "id": "en", "name": "English",
+                  "files": [{ "id": "menu", "path": "locales/en/menu.json" }] },
+                { "id": "fr", "name": "Français",
+                  "files": [{ "id": "menu", "path": "locales/fr/menu.json" }] }
+            ]
+        }}"#;
+
+    #[test]
+    fn locale_files_load_and_resolve_through_the_string_api() {
+        let mut engine = loaded();
+        engine
+            .load_locale(
+                "en",
+                "menu",
+                r#"{ "buttons": { "newGame": "New game", "quit": "Quit" } }"#,
+            )
+            .expect("english loads");
+        engine
+            .load_locale(
+                "fr",
+                "menu",
+                r#"{ "buttons": { "newGame": "Nouvelle partie" } }"#,
+            )
+            .expect("french loads");
+        engine.load_project(LOCALISED_PROJECT).expect("project");
+
+        let fr = json(&engine.locale("fr").expect("french bundle"));
+        assert_eq!(fr["language"], "fr");
+        assert_eq!(fr["entries"]["menu.buttons.newGame"], "Nouvelle partie");
+        // Untranslated: the default language stands in, and says so.
+        assert_eq!(fr["entries"]["menu.buttons.quit"], "Quit");
+        assert_eq!(fr["fallbacks"][0], "menu.buttons.quit");
+
+        let summary = json(&engine.content_summary().expect("summary"));
+        assert_eq!(summary["project"]["languages"][0]["id"], "en");
+        assert_eq!(summary["project"]["languages"][0]["isDefault"], true);
+        assert_eq!(summary["project"]["languages"][1]["name"], "Français");
+    }
+
+    #[test]
+    fn a_missing_translation_is_a_warning_not_a_failed_load() {
+        let mut engine = loaded();
+        engine
+            .load_locale("en", "menu", r#"{ "play": "Play", "quit": "Quit" }"#)
+            .expect("english loads");
+        engine
+            .load_locale("fr", "menu", r#"{ "play": "Jouer" }"#)
+            .expect("french loads");
+
+        // The project loads: the gap does not make the content unusable.
+        engine.load_project(LOCALISED_PROJECT).expect("project");
+
+        let report = json(&engine.validate_locales().expect("report"));
+        assert_eq!(report["valid"], true);
+        assert_eq!(report["issues"][0]["code"], "locale.missingTranslation");
+        assert_eq!(report["issues"][0]["path"], "fr.menu.quit");
+    }
+
+    #[test]
+    fn a_locale_file_that_is_not_nested_strings_is_a_parse_error() {
+        let mut engine = loaded();
+        assert_eq!(
+            code(
+                &engine
+                    .load_locale("en", "menu", r#"{ "delay": 42 }"#)
+                    .unwrap_err()
+            ),
+            "parse"
+        );
+        assert_eq!(
+            code(&engine.load_locale("en", "menu", "not json").unwrap_err()),
+            "parse"
+        );
+    }
+
+    #[test]
+    fn a_key_defined_twice_in_one_language_is_refused() {
+        let mut engine = loaded();
+        engine
+            .load_locale("en", "menu", r#"{ "play": "Play" }"#)
+            .expect("first file");
+
+        let error = engine.load_locale("en", "menu", r#"{ "play": "Again" }"#);
+        assert_eq!(code(&error.unwrap_err()), "parse");
+
+        // The first value stands; a refused file changes nothing.
+        let bundle = json(&engine.locale("en").expect("bundle"));
+        assert_eq!(bundle["entries"]["menu.play"], "Play");
+    }
+
+    #[test]
+    fn asking_for_a_language_that_was_never_loaded_is_an_error() {
+        let engine = loaded();
+        assert_eq!(code(&engine.locale("de").unwrap_err()), "unknownContent");
+    }
+
+    // ----------------------------------------------------------- title screen
+
+    const TITLE_SCREEN: &str = r#"{
+        "id": "main", "schemaVersion": 1, "titleKey": "menu.title",
+        "buttons": [{ "action": "newGame", "labelKey": "menu.play" }]
+    }"#;
+
+    #[test]
+    fn a_title_screen_loads_and_comes_back_through_the_string_api() {
+        let mut engine = loaded();
+        let outcome = json(&engine.load_title_screen(TITLE_SCREEN).expect("loads"));
+        assert_eq!(outcome["id"], "main");
+
+        let screen = json(&engine.title_screen().expect("screen"));
+        assert_eq!(screen["titleKey"], "menu.title");
+        assert_eq!(screen["buttons"][0]["action"], "newGame");
+        // Defaults are explicit on the way out, so a host never guesses.
+        assert_eq!(screen["layout"], "left");
+        assert_eq!(screen["background"]["fit"], "cover");
+    }
+
+    #[test]
+    fn a_title_screen_with_no_way_to_start_a_game_is_refused() {
+        let mut engine = loaded();
+        let error = engine
+            .load_title_screen(
+                r#"{ "id": "main", "schemaVersion": 1, "titleKey": "menu.title", "buttons": [] }"#,
+            )
+            .unwrap_err();
+
+        assert_eq!(code(&error), "invalidContent");
+        assert!(error.contains("titleScreen.noNewGame"), "{error}");
+        assert_eq!(code(&engine.title_screen().unwrap_err()), "unknownContent");
+    }
+
+    #[test]
+    fn a_project_naming_a_title_screen_that_is_not_loaded_does_not_load() {
+        let mut engine = loaded();
+        let manifest = r#"{
+            "id": "p", "schemaVersion": 1, "startWorld": "w",
+            "tileSets": [{ "id": "t", "path": "tilesets/t.json" }],
+            "worlds": [{ "id": "w", "path": "worlds/w.json" }],
+            "titleScreen": { "id": "main", "path": "menu/title-screen.json" }
+        }"#;
+
+        let error = engine.load_project(manifest).unwrap_err();
+        assert!(error.contains("project.unloadedTitleScreen"), "{error}");
+
+        engine
+            .load_title_screen(TITLE_SCREEN)
+            .expect("screen loads");
+        assert!(engine.load_project(manifest).is_ok());
+    }
+
+    /**
+     * The check that needs both halves: a label key is only meaningful if some
+     * language answers it, and that is only knowable once both are loaded.
+     */
+    #[test]
+    fn a_label_key_no_language_defines_is_reported() {
+        let mut engine = loaded();
+        engine
+            .load_locale("en", "menu", r#"{ "title": "Insulaire" }"#)
+            .expect("locale loads");
+        engine
+            .load_title_screen(TITLE_SCREEN)
+            .expect("screen loads");
+
+        let report = json(&engine.validate_title_screen(TITLE_SCREEN).expect("report"));
+        assert_eq!(report["valid"], false);
+        let codes: Vec<&str> = report["issues"]
+            .as_array()
+            .expect("issues")
+            .iter()
+            .map(|issue| issue["code"].as_str().expect("code"))
+            .collect();
+        assert!(codes.contains(&"locale.unknownKey"), "{codes:?}");
+    }
+
+    // --------------------------------------------------------------- settings
+
+    const SETTINGS: &str = r#"{
+        "id": "game", "schemaVersion": 1,
+        "sections": [{ "id": "gameplay", "labelKey": "game.gameplay", "groups": [{
+            "id": "world", "labelKey": "game.world", "fields": [
+                { "id": "difficulty", "labelKey": "game.difficulty", "control": "select",
+                  "default": "normal", "scope": "newGame",
+                  "options": [{ "value": "easy", "labelKey": "game.easy" },
+                              { "value": "normal", "labelKey": "game.normal" }] },
+                { "id": "population", "labelKey": "game.population", "control": "slider",
+                  "default": 120, "min": 10, "max": 500, "scope": "newGame" }
+            ] }] }]
+    }"#;
+
+    #[test]
+    fn settings_load_and_resolve_through_the_string_api() {
+        let mut engine = loaded();
+        let outcome = json(&engine.load_settings(SETTINGS).expect("loads"));
+        assert_eq!(outcome["id"], "game");
+
+        let declaration = json(&engine.settings().expect("settings"));
+        assert_eq!(
+            declaration["sections"][0]["groups"][0]["fields"][0]["id"],
+            "difficulty"
+        );
+
+        // Defaults filled, unknown dropped, out of range clamped: one rule, in
+        // one place, for the screen and for createGame alike.
+        let resolved = json(
+            &engine
+                .resolve_settings(r#"{ "population": 9000, "unknown": true }"#)
+                .expect("resolve"),
+        );
+        assert_eq!(resolved["difficulty"], "normal");
+        assert_eq!(resolved["population"], 500.0);
+        assert!(resolved.get("unknown").is_none());
+    }
+
+    #[test]
+    fn a_game_carries_the_settings_it_was_created_with() {
+        let mut engine = loaded();
+        engine.load_settings(SETTINGS).expect("settings load");
+
+        let start = json(
+            &engine
+                .create_game("w", 7, r#"{ "difficulty": "easy" }"#)
+                .expect("game"),
+        );
+        assert_eq!(start["settings"]["difficulty"], "easy");
+        assert_eq!(start["settings"]["population"], 120);
+
+        // And they survive a tick, because they are what the game was made with.
+        let result = json(&engine.dispatch(r#"{"type":"wait"}"#).expect("dispatch"));
+        assert_eq!(result["state"]["settings"]["difficulty"], "easy");
+    }
+
+    #[test]
+    fn a_game_without_a_settings_declaration_carries_none() {
+        let mut engine = loaded();
+        let start = json(
+            &engine
+                .create_game("w", 7, r#"{ "anything": 1 }"#)
+                .expect("game"),
+        );
+
+        assert_eq!(start["settings"], serde_json::json!({}));
+        assert_eq!(code(&engine.settings().unwrap_err()), "unknownContent");
+    }
+
+    #[test]
+    fn a_settings_declaration_that_cannot_be_rendered_is_refused() {
+        let mut engine = loaded();
+        let error = engine
+            .load_settings(
+                r#"{ "id": "game", "schemaVersion": 1, "sections": [{ "id": "s", "labelKey": "k",
+                     "groups": [{ "id": "g", "labelKey": "k", "fields": [
+                       { "id": "difficulty", "labelKey": "k", "control": "select",
+                         "default": "nightmare", "options": [] }
+                     ] }] }] }"#,
+            )
+            .unwrap_err();
+
+        assert_eq!(code(&error), "invalidContent");
+        assert!(error.contains("settings.noOptions"), "{error}");
+        assert!(error.contains("settings.invalidDefault"), "{error}");
+    }
+
+    #[test]
+    fn resetting_content_forgets_the_languages_too() {
+        let mut engine = loaded();
+        engine
+            .load_locale("en", "menu", r#"{ "play": "Play" }"#)
+            .expect("english loads");
+        engine.reset_content();
+
+        assert_eq!(code(&engine.locale("en").unwrap_err()), "unknownContent");
     }
 }
