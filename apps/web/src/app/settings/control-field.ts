@@ -32,28 +32,45 @@ export class ControlField {
 
   /** Emitted with the new value whenever the player changes it. */
   readonly changed = output<SettingValue>();
+  /**
+   * Emitted when the player has *finished* changing it.
+   *
+   * For every control but the slider this is the same moment as
+   * {@link changed} — a select changes once, when it is picked. A slider
+   * reports continuously while it is dragged and again on release, which is
+   * what lets a setting whose effect moves the interface itself wait for the
+   * hand to come off (`settings.service.ts`).
+   */
+  readonly committed = output<SettingValue>();
 
   protected readonly asBoolean = computed(() => this.value() === true);
-  protected readonly asNumber = computed(() => (typeof this.value() === 'number' ? (this.value() as number) : 0));
-  protected readonly asText = computed(() => (typeof this.value() === 'string' ? (this.value() as string) : ''));
-  protected readonly asList = computed(() => (Array.isArray(this.value()) ? (this.value() as string[]) : []));
+  protected readonly asNumber = computed(() =>
+    typeof this.value() === 'number' ? (this.value() as number) : 0,
+  );
+  protected readonly asText = computed(() =>
+    typeof this.value() === 'string' ? (this.value() as string) : '',
+  );
+  protected readonly asList = computed(() =>
+    Array.isArray(this.value()) ? (this.value() as string[]) : [],
+  );
 
   /** The number shown next to a slider, with its unit. */
   protected readonly readout = computed(() => `${this.asNumber()}${this.field().unit ?? ''}`);
 
   protected toggle(checked: boolean): void {
-    this.changed.emit(checked);
+    this.emit(checked);
   }
 
-  protected setNumber(raw: string): void {
+  /** `live` is the slider being dragged: reported, but not yet let go of. */
+  protected setNumber(raw: string, live = false): void {
     const parsed = Number.parseFloat(raw);
     if (Number.isFinite(parsed)) {
-      this.changed.emit(parsed);
+      this.emit(parsed, live);
     }
   }
 
   protected setText(raw: string): void {
-    this.changed.emit(raw);
+    this.emit(raw);
   }
 
   /** Adds or removes one option of a `multiSelect`, keeping author order. */
@@ -65,7 +82,14 @@ export class ControlField {
     } else {
       chosen.delete(option);
     }
-    this.changed.emit(declared.filter((value) => chosen.has(value)));
+    this.emit(declared.filter((value) => chosen.has(value)));
+  }
+
+  private emit(value: SettingValue, live = false): void {
+    this.changed.emit(value);
+    if (!live) {
+      this.committed.emit(value);
+    }
   }
 
   protected isChosen(option: string): boolean {

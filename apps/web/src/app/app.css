@@ -3,7 +3,31 @@
 :host {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+
+  /*
+    The interface scale (ADR-0025) acts here, once, on the whole shell.
+
+    `zoom` rather than a transform: it scales the *layout*, so a dock takes the
+    room its larger text needs and everything below reflows around it, where
+    `transform: scale()` would magnify a window-sized box and push half of it
+    off screen. Canvases keep their own resolution — `CanvasView` sizes its
+    backing store from `getBoundingClientRect()`, which reports the scaled box —
+    so the map stays sharp instead of being stretched with the rest.
+
+    `--ui-scale` is written on the document element by `settings.service.ts`;
+    the fallback is what the shell uses before it has run.
+
+    The height is a **percentage**, not `100vh`, and that is not a detail: the
+    two engines this application runs on disagree about viewport units inside a
+    zoomed box. Chromium multiplies them by the zoom like any other length, so
+    `100vh` overflows the window; WebKitGTK — the Tauri shell on Linux
+    (ADR-0020) — resolves them in the zoomed box's own units, so a `100vh`
+    divided by the scale to satisfy Chromium left the window two-thirds full.
+    A percentage of `body`, which `styles.css` keeps one window tall, is
+    resolved the same way by both.
+  */
+  zoom: var(--ui-scale, 1);
+  height: 100%;
 }
 
 .topbar {
@@ -130,7 +154,11 @@ main {
 }
 
 .dialog {
-  width: min(420px, calc(100vw - 32px));
+  /* Measured against the scrim rather than the window: the scrim is fixed to
+     the viewport and therefore already carries the interface scale, while
+     `100vw` is a raw length the zoom would multiply — at 150% the margin meant
+     to keep the dialog inside a narrow window would push it outside. */
+  width: min(420px, calc(100% - 32px));
   padding: 20px 22px;
   border: 1px solid var(--border);
   border-radius: calc(var(--radius) * 2);

@@ -24,8 +24,8 @@ import {
 } from '../../content/content-types';
 import { I18nService } from '../i18n/i18n.service';
 import { AudioService } from '../services/audio.service';
-import { DesktopShellService } from '../services/desktop-shell.service';
 import { EngineService } from '../services/engine.service';
+import { NativeShellService } from '../services/native-shell.service';
 import { ProjectStoreService, contentUrl } from '../services/project-store.service';
 import {
   ENGINE_SETTING,
@@ -36,17 +36,37 @@ import {
 
 const STORAGE_KEY = 'insulaire.settings.v1';
 
+/**
+ * Settings the shell applies when the player lets go, not on every movement.
+ *
+ * The interface scale is the one whose effect moves the control being held: a
+ * shell that zooms on every `input` slides the slider out from under the
+ * cursor, and the player chases it. Everything else applies live — that is what
+ * makes a volume audible while it is being dragged (ADR-0025) — so this is a
+ * list, not a rule about sliders.
+ */
+const APPLIED_ON_RELEASE: ReadonlySet<string> = new Set([ENGINE_SETTING.scale]);
+
 @Injectable({ providedIn: 'root' })
 export class SettingsService {
   private readonly engine = inject(EngineService);
   private readonly store = inject(ProjectStoreService);
   private readonly i18n = inject(I18nService);
   private readonly audio = inject(AudioService);
-  private readonly desktop = inject(DesktopShellService);
+  private readonly shell = inject(NativeShellService);
 
   /** Every value, application and game alike, by field id. */
   private readonly valuesSignal = signal<SettingsValues>(readStored());
   readonly values = this.valuesSignal.asReadonly();
+
+  /**
+   * What the shell applies for the settings in {@link APPLIED_ON_RELEASE}: the
+   * value as of the last time the player let go of the control.
+   *
+   * Seeded from storage, so a scale chosen in an earlier session is in force
+   * from the first frame; only the screen's own values move during a drag.
+   */
+  private readonly releasedSignal = signal<SettingsValues>(readStored());
 
   /** The game's sections, once its declaration has been loaded. */
   private readonly gameSections = signal<readonly SettingsSection[]>([]);
@@ -57,7 +77,7 @@ export class SettingsService {
 
   /** The application's sections, which depend on the languages and the shell. */
   readonly applicationSections = computed<readonly SettingsSection[]>(() =>
-    engineSettingsSections(this.i18n.languages(), this.desktop.isDesktop()),
+    engineSettingsSections(this.i18n.languages(), this.shell.hasWindow()),
   );
 
   /** Everything the settings screen shows, application first. */
@@ -151,7 +171,27 @@ export class SettingsService {
 
   /** The value of one setting, falling back to its declared default. */
   value(field: ControlDefinition): SettingValue {
-    return this.valuesSignal()[field.id] ?? field.default;
+    const stored = this.valuesSignal()[field.id];
+    return this.accepts(field, stored) ? (stored as SettingValue) : field.default;
+  }
+
+  /**
+   * Whether a stored value is still one the declaration offers.
+   *
+   * A `select` names its choices, and a stored value no longer among them — a
+   * window size this version dropped, a language a project removed — is not a
+   * value: left alone it would show in the picker as the first option while the
+   * shell applied nothing, which is worse than either. This keeps no old value
+   * working; it stops one from being half in force.
+   */
+  private accepts(field: ControlDefinition, value: SettingValue | undefined): boolean {
+    if (value === undefined) {
+      return false;
+    }
+    if (field.control !== 'select' || field.options === undefined) {
+      return true;
+    }
+    return field.options.some((option) => option.value === value);
   }
 
   /** Sets one value and persists every one of them. */
@@ -160,15 +200,29 @@ export class SettingsService {
     this.persist();
   }
 
+  /**
+   * Takes a value the player has *finished* choosing.
+   *
+   * Same store as {@link set} — the value has already been going in on every
+   * movement — plus the one thing a drag withholds: permission to act on it.
+   */
+  commit(field: ControlDefinition, value: SettingValue): void {
+    this.set(field, value);
+    if (APPLIED_ON_RELEASE.has(field.id)) {
+      this.releasedSignal.update((released) => ({ ...released, [field.id]: value }));
+    }
+  }
+
   /** Restores every setting to its declared default. */
   reset(): void {
     const defaults: SettingsValues = {
-      ...engineSettingsDefaults(this.i18n.languages(), this.desktop.isDesktop()),
+      ...engineSettingsDefaults(this.i18n.languages(), this.shell.hasWindow()),
     };
     for (const field of fieldsOf(this.gameSections())) {
       defaults[field.id] = field.default;
     }
     this.valuesSignal.set(defaults);
+    this.releasedSignal.set(defaults);
     this.persist();
   }
 
@@ -220,7 +274,8 @@ export class SettingsService {
 
   /** The value in force for a setting id: what is stored, else its default. */
   private effective(id: string): SettingValue | undefined {
-    return this.valuesSignal()[id] ?? this.field(id)?.default;
+    const field = this.field(id);
+    return field === undefined ? this.valuesSignal()[id] : this.value(field);
   }
 
   // ------------------------------------------------------------- application
@@ -234,7 +289,13 @@ export class SettingsService {
   private applySessionSettings(): void {
     const values = this.valuesSignal();
 
-    const scale = numberOr(values[ENGINE_SETTING.scale], 100);
+    // The factor `app.css` zooms the whole shell by. Clamped to the slider's own
+    // bounds: a hand-edited or stale stored value must not be able to leave a
+    // player looking at an interface too large to reach the setting again.
+    const scale = this.clamped(
+      ENGINE_SETTING.scale,
+      numberOr(this.releasedSignal()[ENGINE_SETTING.scale], 100),
+    );
     if (typeof document !== 'undefined') {
       document.documentElement.style.setProperty('--ui-scale', String(scale / 100));
     }
@@ -249,13 +310,23 @@ export class SettingsService {
       this.i18n.use(language);
     }
 
-    if (this.desktop.isDesktop()) {
-      void this.desktop.setFullscreen(values[ENGINE_SETTING.fullscreen] === true);
-      const size = WINDOW_SIZES[String(values[ENGINE_SETTING.windowSize] ?? '')];
+    // Only a shell with a window: a phone application is already fullscreen, in
+    // the one orientation its manifest allows, and neither is a setting.
+    if (this.shell.hasWindow()) {
+      void this.shell.setFullscreen(values[ENGINE_SETTING.fullscreen] === true);
+      const size = WINDOW_SIZES[String(this.effective(ENGINE_SETTING.windowSize) ?? '')];
       if (size !== undefined && values[ENGINE_SETTING.fullscreen] !== true) {
-        void this.desktop.setSize(size.width, size.height);
+        void this.shell.setSize(size.width, size.height);
       }
     }
+  }
+
+  /** A number brought back inside the bounds its own declaration gives. */
+  private clamped(id: string, value: number): number {
+    const field = this.field(id);
+    const min = typeof field?.min === 'number' ? field.min : value;
+    const max = typeof field?.max === 'number' ? field.max : value;
+    return Math.min(Math.max(value, min), max);
   }
 
   // ------------------------------------------------------------------ storage

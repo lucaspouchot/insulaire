@@ -36,10 +36,15 @@ export const ENGINE_SETTING = {
  * A list rather than two number fields: a player picking a window size is
  * choosing a shape, and an arbitrary pair of numbers is how you end up with a
  * window taller than the screen.
+ *
+ * All 16:9, and the smallest is the shell's own minimum
+ * (`apps/desktop/tauri.conf.json`). The interface scale divides the room the
+ * layout has — at 150% a 1280-wide window is a 853-wide layout — so the shape
+ * the screens are designed against is the one worth offering, and a floor under
+ * it is what keeps a scaled-up interface from running out of width.
  */
 export const WINDOW_SIZES: Readonly<Record<string, { width: number; height: number }>> = {
-  '1280x800': { width: 1280, height: 800 },
-  '1440x900': { width: 1440, height: 900 },
+  '1280x720': { width: 1280, height: 720 },
   '1600x900': { width: 1600, height: 900 },
   '1920x1080': { width: 1920, height: 1080 },
 };
@@ -52,7 +57,7 @@ export const WINDOW_SIZES: Readonly<Record<string, { width: number; height: numb
  */
 export function engineSettingsSections(
   languages: readonly { id: string; name: string }[],
-  isDesktop: boolean,
+  hasWindow: boolean,
 ): SettingsSection[] {
   const display: ControlDefinition[] = [
     {
@@ -69,9 +74,11 @@ export function engineSettingsSections(
     },
   ];
 
-  // Only the desktop shell has a window to resize; in a browser these controls
-  // would be buttons that do nothing (`docs/adr/ADR-0020-desktop-executable.md`).
-  if (isDesktop) {
+  // Only a shell with a window can resize it or leave fullscreen: in a browser
+  // tab, and in a phone application, these would be controls that do nothing
+  // (`docs/adr/ADR-0020-desktop-executable.md`). The interface scale above is
+  // offered everywhere, because everywhere can zoom.
+  if (hasWindow) {
     display.unshift(
       {
         id: ENGINE_SETTING.fullscreen,
@@ -84,12 +91,12 @@ export function engineSettingsSections(
         id: ENGINE_SETTING.windowSize,
         labelKey: 'ui.settings.windowSize',
         control: 'select',
-        default: '1280x800',
+        default: '1280x720',
         scope: 'session',
         showIf: { field: ENGINE_SETTING.fullscreen, equals: false },
         options: Object.keys(WINDOW_SIZES).map((value) => ({
           value,
-          // The label is the size itself; no translation would improve "1280x800".
+          // The label is the size itself; no translation would improve "1280x720".
           labelKey: `ui.settings.windowSize.${value}`,
         })),
       },
@@ -185,10 +192,10 @@ export function engineSettingsSections(
 /** Every application setting's default, by id. */
 export function engineSettingsDefaults(
   languages: readonly { id: string; name: string }[],
-  isDesktop: boolean,
+  hasWindow: boolean,
 ): Record<string, SettingValue> {
   const defaults: Record<string, SettingValue> = {};
-  for (const section of engineSettingsSections(languages, isDesktop)) {
+  for (const section of engineSettingsSections(languages, hasWindow)) {
     for (const group of section.groups) {
       for (const field of group.fields) {
         defaults[field.id] = field.default;

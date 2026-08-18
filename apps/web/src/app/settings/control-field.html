@@ -75,7 +75,8 @@
             [step]="control.step ?? 1"
             [value]="asNumber()"
             [disabled]="locked()"
-            (input)="setNumber($any($event.target).value)"
+            (input)="setNumber($any($event.target).value, true)"
+            (change)="setNumber($any($event.target).value)"
           />
           <span class="readout">{{ readout() }}</span>
         </div>

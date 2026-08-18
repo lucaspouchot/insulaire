@@ -31,6 +31,7 @@
                 [value]="value(field)"
                 [locked]="isLocked(field)"
                 (changed)="change(field, $event)"
+                (committed)="commit(field, $event)"
               />
             }
           }

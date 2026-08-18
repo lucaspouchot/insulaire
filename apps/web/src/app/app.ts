@@ -8,6 +8,7 @@ import { I18nService } from './i18n/i18n.service';
 import { TranslatePipe } from './i18n/translate.pipe';
 import { EngineService } from './services/engine.service';
 import { ProjectStoreService } from './services/project-store.service';
+import { SettingsService } from './settings/settings.service';
 
 /**
  * Application shell: the open project's name, navigation, and a badge that
@@ -34,6 +35,16 @@ export class App {
   private readonly store = inject(ProjectStoreService);
   private readonly i18n = inject(I18nService);
   private readonly router = inject(Router);
+  /**
+   * Injected for its effect, not for its API: constructing this service is what
+   * puts the application's own settings in force — the interface scale the
+   * shell zooms by (`app.css`), the volumes, the window
+   * (`docs/adr/ADR-0025-settings.md`). They act on the shell, so they belong to
+   * the shell's lifetime; asked for by a screen instead, they would only apply
+   * once a player had happened to open that screen, and the title screen — the
+   * first thing anyone sees — asks for none of them.
+   */
+  private readonly settings = inject(SettingsService);
 
   /** What this build contains; the client delivery has no editor. */
   protected readonly features = BUILD_FEATURES;

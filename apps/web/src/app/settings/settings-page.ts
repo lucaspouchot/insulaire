@@ -97,6 +97,11 @@ export class SettingsPage {
     this.settings.set(field, value);
   }
 
+  /** The player let go: what waits for that is applied now. */
+  protected commit(field: ControlDefinition, value: SettingValue): void {
+    this.settings.commit(field, value);
+  }
+
   protected select(sectionId: string): void {
     this.activeSection.set(sectionId);
     // Reflected in the URL so the tab survives a refresh and can be linked to.

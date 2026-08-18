@@ -6,6 +6,7 @@
  * `showIf` condition sees before anybody has touched anything
  * (`docs/adr/ADR-0025-settings.md`).
  */
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -13,6 +14,7 @@ import { SettingsService } from './settings.service';
 import { ENGINE_SETTING } from './engine-settings.schema';
 import { ControlDefinition, SettingsValues } from '../../content/content-types';
 import { EngineService } from '../services/engine.service';
+import { NativeShellService } from '../services/native-shell.service';
 import { ProjectStoreService } from '../services/project-store.service';
 
 /** A stand-in engine that answers with a fixed settings declaration. */
@@ -23,7 +25,11 @@ class FakeEngine {
     return this;
   }
 
-  locale(language: string): { language: string; entries: Record<string, string>; fallbacks: string[] } {
+  locale(language: string): {
+    language: string;
+    entries: Record<string, string>;
+    fallbacks: string[];
+  } {
     return { language, entries: {}, fallbacks: [] };
   }
 
@@ -89,8 +95,14 @@ class FakeEngine {
 /** A store whose project declares a settings file. */
 class FakeStore {
   project() {
-    return { id: 'p', schemaVersion: 1, startWorld: 'w', tileSets: [], worlds: [],
-      settings: { id: 'game', path: 'settings.json' } };
+    return {
+      id: 'p',
+      schemaVersion: 1,
+      startWorld: 'w',
+      tileSets: [],
+      worlds: [],
+      settings: { id: 'game', path: 'settings.json' },
+    };
   }
 
   localeFiles() {
@@ -100,7 +112,19 @@ class FakeStore {
   async ensureLoaded(): Promise<void> {}
 }
 
-function setup(): { settings: SettingsService; engine: FakeEngine } {
+/** A stand-in shell: `hasWindow` is the whole question the settings ask it. */
+function fakeShell(hasWindow: boolean): Partial<NativeShellService> {
+  return {
+    isShell: signal(true).asReadonly(),
+    isMobile: signal(!hasWindow).asReadonly(),
+    hasWindow: signal(hasWindow).asReadonly(),
+  } as Partial<NativeShellService>;
+}
+
+function setup(shell?: Partial<NativeShellService>): {
+  settings: SettingsService;
+  engine: FakeEngine;
+} {
   const engine = new FakeEngine();
   // The declaration is fetched as a file; what it contains does not matter here,
   // because the fake engine is what parses it.
@@ -109,9 +133,17 @@ function setup(): { settings: SettingsService; engine: FakeEngine } {
     providers: [
       { provide: EngineService, useValue: engine },
       { provide: ProjectStoreService, useValue: new FakeStore() },
+      ...(shell === undefined ? [] : [{ provide: NativeShellService, useValue: shell }]),
     ],
   });
   return { settings: TestBed.inject(SettingsService), engine };
+}
+
+/** Every setting id the screen would show. */
+function shownIds(settings: SettingsService): string[] {
+  return settings
+    .sections()
+    .flatMap((section) => section.groups.flatMap((group) => group.fields.map((f) => f.id)));
 }
 
 /** The application setting with this id, from the rendered sections. */
@@ -121,9 +153,15 @@ function field(settings: SettingsService, id: string): ControlDefinition {
   return found as ControlDefinition;
 }
 
+/** What the shell actually zooms by. */
+function scaleVariable(): string {
+  return document.documentElement.style.getPropertyValue('--ui-scale');
+}
+
 describe('SettingsService', () => {
   beforeEach(() => {
     localStorage.clear();
+    document.documentElement.style.removeProperty('--ui-scale');
     TestBed.resetTestingModule();
   });
 
@@ -182,6 +220,89 @@ describe('SettingsService', () => {
     expect(game[ENGINE_SETTING.music]).toBeUndefined();
   });
 
+  /**
+   * The one application setting whose effect is visible without a device: the
+   * shell zooms by `--ui-scale` (`app.css`), so the variable *is* the feature.
+   */
+  it('applies the interface scale to the document', () => {
+    const { settings } = setup();
+    TestBed.tick();
+
+    expect(scaleVariable()).toBe('1');
+
+    settings.commit(field(settings, ENGINE_SETTING.scale), 125);
+    TestBed.tick();
+
+    expect(scaleVariable()).toBe('1.25');
+  });
+
+  /**
+   * A shell that zooms on every movement slides the slider out from under the
+   * cursor. The value follows the hand; the zoom waits for it to come off.
+   */
+  it('applies the interface scale only once the slider is released', () => {
+    const { settings } = setup();
+    const scale = field(settings, ENGINE_SETTING.scale);
+    TestBed.tick();
+
+    settings.set(scale, 140);
+    TestBed.tick();
+
+    expect(settings.value(scale)).toBe(140);
+    expect(scaleVariable()).toBe('1');
+
+    settings.commit(scale, 140);
+    TestBed.tick();
+
+    expect(scaleVariable()).toBe('1.4');
+  });
+
+  /** A stored value outside the slider's bounds must not lock the player out. */
+  it('keeps the interface scale inside the declared bounds', () => {
+    localStorage.setItem('insulaire.settings.v1', JSON.stringify({ [ENGINE_SETTING.scale]: 900 }));
+    const { settings } = setup();
+    TestBed.tick();
+
+    expect(settings.value(field(settings, ENGINE_SETTING.scale))).toBe(900);
+    expect(scaleVariable()).toBe('1.5');
+  });
+
+  /**
+   * Dropping the 16:10 window sizes (`engine-settings.schema.ts`) left values
+   * behind in the stores of anyone who had picked one. A choice the declaration
+   * no longer offers is not a choice: the picker would show the first option
+   * while the shell applied nothing.
+   */
+  it('drops a stored choice the declaration no longer offers', () => {
+    localStorage.setItem(
+      'insulaire.settings.v1',
+      JSON.stringify({ [ENGINE_SETTING.seedMode]: 'whatever-this-used-to-be' }),
+    );
+    const { settings } = setup();
+
+    expect(settings.value(field(settings, ENGINE_SETTING.seedMode))).toBe('fixed');
+    expect(settings.seed()).toBe(2026);
+  });
+
+  /**
+   * A window is what makes "how big should it be" a question. A shell that ships
+   * as a phone application (`tauri android build`) has none: it is fullscreen in
+   * the orientation its manifest fixes, so both controls would do nothing —
+   * while the interface scale, which only zooms the page, is offered everywhere.
+   */
+  it('offers the window controls only to a shell that has a window', () => {
+    const windowed = setup(fakeShell(true)).settings;
+    expect(shownIds(windowed)).toContain(ENGINE_SETTING.windowSize);
+    expect(shownIds(windowed)).toContain(ENGINE_SETTING.fullscreen);
+    expect(shownIds(windowed)).toContain(ENGINE_SETTING.scale);
+
+    TestBed.resetTestingModule();
+    const mobile = setup(fakeShell(false)).settings;
+    expect(shownIds(mobile)).not.toContain(ENGINE_SETTING.windowSize);
+    expect(shownIds(mobile)).not.toContain(ENGINE_SETTING.fullscreen);
+    expect(shownIds(mobile)).toContain(ENGINE_SETTING.scale);
+  });
+
   it('honours the seed mode', () => {
     const { settings } = setup();
     expect(settings.seed()).toBe(2026);
@@ -199,10 +320,13 @@ describe('SettingsService', () => {
     await settings.ensureLoaded();
     settings.set(field(settings, ENGINE_SETTING.music), 3);
     settings.set(field(settings, 'difficulty'), 'harsh');
+    settings.commit(field(settings, ENGINE_SETTING.scale), 125);
 
     settings.reset();
 
     expect(settings.value(field(settings, ENGINE_SETTING.music))).toBe(70);
     expect(settings.gameSettings()['difficulty']).toBe('normal');
+    TestBed.tick();
+    expect(scaleVariable()).toBe('1');
   });
 });

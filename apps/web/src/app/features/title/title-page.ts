@@ -37,8 +37,8 @@ import { assetUrl } from '../../../core/asset-url';
 import { I18nService } from '../../i18n/i18n.service';
 import { TranslatePipe } from '../../i18n/translate.pipe';
 import { AudioService } from '../../services/audio.service';
-import { DesktopShellService } from '../../services/desktop-shell.service';
 import { EngineService } from '../../services/engine.service';
+import { NativeShellService } from '../../services/native-shell.service';
 import { CONTENT_ROOT, ProjectStoreService } from '../../services/project-store.service';
 import { SaveCatalogService } from '../../services/save-catalog.service';
 import { TitleScreenService } from '../../services/title-screen.service';
@@ -81,7 +81,7 @@ export class TitlePage implements OnDestroy {
   private readonly store = inject(ProjectStoreService);
   private readonly i18n = inject(I18nService);
   private readonly audio = inject(AudioService);
-  private readonly desktop = inject(DesktopShellService);
+  private readonly shell = inject(NativeShellService);
   private readonly saves = inject(SaveCatalogService);
   private readonly titleScreen = inject(TitleScreenService);
   private readonly router = inject(Router);
@@ -110,15 +110,15 @@ export class TitlePage implements OnDestroy {
   /** Buttons to draw, with what this build and this session make possible. */
   protected readonly entries = computed<readonly MenuEntry[]>(() => {
     const authored = this.screen()?.buttons ?? FALLBACK_BUTTONS;
-    const desktop = this.desktop.isDesktop();
+    const native = this.shell.isShell();
     const hasSaves = this.saves.slots().length > 0;
 
     return (
       authored
         .filter((button) => button.hidden !== true)
         // A Quit button in a browser tab has nothing to close, so it is not shown
-        // at all rather than shown broken.
-        .filter((button) => button.action !== 'quit' || desktop)
+        // at all rather than shown broken. Any native shell has.
+        .filter((button) => button.action !== 'quit' || native)
         .map((button) => ({
           action: button.action,
           labelKey: button.labelKey,
@@ -276,7 +276,7 @@ export class TitlePage implements OnDestroy {
         await this.router.navigate(['/credits']);
         break;
       case 'quit':
-        await this.desktop.quit();
+        await this.shell.quit();
         break;
     }
   }
