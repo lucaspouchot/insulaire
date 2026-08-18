@@ -8,36 +8,38 @@
     <div class="banner error">{{ failure }}</div>
   }
 
-  <div class="menu">
-    @if (logoUrl(); as logo) {
-      <img
-        class="logo"
-        [src]="logo"
-        [alt]="titleText()"
-        [style.max-width.%]="screen()?.logo?.maxWidthPercent ?? 40"
-      />
-    } @else {
-      <h1>{{ titleText() }}</h1>
-    }
-
-    @if (subtitleText(); as subtitle) {
-      <p class="subtitle">{{ subtitle }}</p>
-    }
-
-    <nav class="actions">
-      @for (entry of entries(); track entry.action) {
-        <button
-          type="button"
-          [class]="entry.action"
-          [disabled]="entry.disabled"
-          [title]="entry.reasonKey === null ? '' : (entry.reasonKey | t)"
-          (click)="activate(entry)"
-        >
-          {{ entry.labelKey | t }}
-        </button>
+  @if (prepared()) {
+    <div class="menu">
+      @if (logoUrl(); as logo) {
+        <img
+          class="logo"
+          [src]="logo"
+          [alt]="titleText()"
+          [style.max-width.%]="screen()?.logo?.maxWidthPercent ?? 40"
+        />
+      } @else {
+        <h1>{{ titleText() }}</h1>
       }
-    </nav>
-  </div>
+
+      @if (subtitleText(); as subtitle) {
+        <p class="subtitle">{{ subtitle }}</p>
+      }
+
+      <nav class="actions">
+        @for (entry of entries(); track entry.action) {
+          <button
+            type="button"
+            [class]="entry.action"
+            [disabled]="entry.disabled"
+            [title]="entry.reasonKey === null ? '' : (entry.reasonKey | t)"
+            (click)="activate(entry)"
+          >
+            {{ entry.labelKey | t }}
+          </button>
+        }
+      </nav>
+    </div>
+  }
 
   <!--
     The splash sits over the menu rather than on its own route: it is one

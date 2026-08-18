@@ -13,6 +13,10 @@
  * 3. **the first gesture.** Browsers refuse to play music until the visitor has
  *    interacted, so skipping the splash is what starts the theme.
  *
+ * The splash belongs to **launching the game**, not to the route: coming back
+ * here from a game or from the settings shows the menu straight away. One page
+ * load is one launch, which is exactly what a delivered executable is.
+ *
  * With no authored screen — which is the normal state of a bare project — it
  * falls back to a plain menu carrying the same actions, so the route is never a
  * blank page.
@@ -28,11 +32,7 @@ import {
 } from '@angular/core';
 import { Router } from '@angular/router';
 
-import {
-  TitleAction,
-  TitleButton,
-  TitleScreenDefinition,
-} from '../../../content/content-types';
+import { TitleAction, TitleButton } from '../../../content/content-types';
 import { assetUrl } from '../../../core/asset-url';
 import { I18nService } from '../../i18n/i18n.service';
 import { TranslatePipe } from '../../i18n/translate.pipe';
@@ -41,6 +41,7 @@ import { DesktopShellService } from '../../services/desktop-shell.service';
 import { EngineService } from '../../services/engine.service';
 import { CONTENT_ROOT, ProjectStoreService } from '../../services/project-store.service';
 import { SaveCatalogService } from '../../services/save-catalog.service';
+import { TitleScreenService } from '../../services/title-screen.service';
 
 /** A button as the template needs it: label, state and reason. */
 interface MenuEntry {
@@ -50,6 +51,15 @@ interface MenuEntry {
   /** Key explaining why it is disabled, when it is. */
   readonly reasonKey: string | null;
 }
+
+/**
+ * Whether this launch has already played its splash.
+ *
+ * Module-level on purpose: the state being tracked is the *application run*, and
+ * a run ends when the page is unloaded. A service would say the same thing with
+ * a lifetime that is harder to read.
+ */
+let splashPlayed = false;
 
 /** The menu offered when a project authors no title screen. */
 const FALLBACK_BUTTONS: readonly TitleButton[] = [
@@ -73,10 +83,20 @@ export class TitlePage implements OnDestroy {
   private readonly audio = inject(AudioService);
   private readonly desktop = inject(DesktopShellService);
   private readonly saves = inject(SaveCatalogService);
+  private readonly titleScreen = inject(TitleScreenService);
   private readonly router = inject(Router);
 
   /** The authored screen, or `null` while loading and when none is shipped. */
-  protected readonly screen = signal<TitleScreenDefinition | null>(null);
+  protected readonly screen = this.titleScreen.screen;
+  /**
+   * `false` until the screen's content has been read and the splash decided.
+   *
+   * The menu is withheld until then. Without it the fallback menu paints on the
+   * first frame and the splash covers it one fetch later, which reads as a
+   * flash of the wrong screen — the splash is supposed to be the *first* thing
+   * a launch shows, not the second.
+   */
+  protected readonly prepared = signal(false);
   /** `true` while the splash is on top. */
   protected readonly splashing = signal(false);
   /** Why the screen could not be prepared, if it could not. */
@@ -93,17 +113,19 @@ export class TitlePage implements OnDestroy {
     const desktop = this.desktop.isDesktop();
     const hasSaves = this.saves.slots().length > 0;
 
-    return authored
-      .filter((button) => button.hidden !== true)
-      // A Quit button in a browser tab has nothing to close, so it is not shown
-      // at all rather than shown broken.
-      .filter((button) => button.action !== 'quit' || desktop)
-      .map((button) => ({
-        action: button.action,
-        labelKey: button.labelKey,
-        disabled: button.action === 'continue' && !hasSaves,
-        reasonKey: button.action === 'continue' && !hasSaves ? 'ui.title.noSave' : null,
-      }));
+    return (
+      authored
+        .filter((button) => button.hidden !== true)
+        // A Quit button in a browser tab has nothing to close, so it is not shown
+        // at all rather than shown broken.
+        .filter((button) => button.action !== 'quit' || desktop)
+        .map((button) => ({
+          action: button.action,
+          labelKey: button.labelKey,
+          disabled: button.action === 'continue' && !hasSaves,
+          reasonKey: button.action === 'continue' && !hasSaves ? 'ui.title.noSave' : null,
+        }))
+    );
   });
 
   /** CSS custom properties carrying the authored theme. */
@@ -132,7 +154,8 @@ export class TitlePage implements OnDestroy {
       style['--title-background'] = `url("${this.contentUrl(screen.background.image)}")`;
       style['--title-background-size'] =
         screen.background.fit === 'tile' ? 'auto' : screen.background.fit;
-      style['--title-background-repeat'] = screen.background.fit === 'tile' ? 'repeat' : 'no-repeat';
+      style['--title-background-repeat'] =
+        screen.background.fit === 'tile' ? 'repeat' : 'no-repeat';
     }
     return style;
   });
@@ -161,32 +184,26 @@ export class TitlePage implements OnDestroy {
    * Loads the content the screen is made of, then starts the splash.
    *
    * The engine holds the authored screen because it is content like any other:
-   * validated by the same Rust validator, with its defaults already applied.
+   * validated by the same Rust validator, with its defaults already applied. A
+   * project without one is a legitimate state — the fallback menu carries the
+   * same actions.
    */
   private async prepare(): Promise<void> {
     try {
       await this.i18n.ensureAdopted();
       await this.saves.refresh();
 
-      const declared = this.store.project()?.titleScreen;
-      if (declared === undefined) {
-        // A project without a title screen is a legitimate state — the fallback
-        // menu carries the same actions.
-        return;
-      }
-
-      const json = await fetchText(assetUrl(`${CONTENT_ROOT}/${declared.path}`));
-      this.engine.loadTitleScreen(json);
-      const screen = this.engine.titleScreen();
-      this.screen.set(screen);
-
-      if (screen.splash !== null) {
+      const screen = await this.titleScreen.ensureLoaded();
+      if (screen !== null && screen.splash !== null && !splashPlayed) {
+        splashPlayed = true;
         this.startSplash(screen.splash.durationMs);
       } else {
         this.startMusic();
       }
     } catch (cause) {
       this.error.set(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      this.prepared.set(true);
     }
   }
 
@@ -238,6 +255,11 @@ export class TitlePage implements OnDestroy {
 
     switch (entry.action) {
       case 'newGame':
+        // A *new* game: anything still running is discarded here rather than
+        // resumed by the play screen, which is what makes the button honest.
+        if (this.engine.hasGame()) {
+          this.engine.endGame();
+        }
         await this.router.navigate(['/play']);
         break;
       case 'continue':
@@ -246,7 +268,9 @@ export class TitlePage implements OnDestroy {
         await this.router.navigate(['/play']);
         break;
       case 'settings':
-        await this.router.navigate(['/settings']);
+        // The settings screen drops the application bar, so it is told where
+        // Back leads.
+        await this.router.navigate(['/settings'], { queryParams: { from: '/title' } });
         break;
       case 'credits':
         await this.router.navigate(['/credits']);
@@ -279,12 +303,4 @@ export class TitlePage implements OnDestroy {
       this.splashTimer = null;
     }
   }
-}
-
-async function fetchText(url: string): Promise<string> {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Could not load ${url} (HTTP ${response.status}).`);
-  }
-  return response.text();
 }

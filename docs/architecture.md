@@ -61,6 +61,9 @@ The MVP implements the marked parts. Unmarked entries are the planned shape.
 │               ├── app.routes*.ts       # dev routes / client routes          [MVP]
 │               └── features/editor/     # shell + one module per domain       [MVP]
 │                   ├── map/             # the map editor                      [MVP]
+│                   ├── title/           # the title screen editor (ADR-0024)  [MVP]
+│                   ├── settings/        # the game settings editor (ADR-0025) [MVP]
+│                   ├── locale/          # the language table (ADR-0023)       [MVP]
 │                   └── planned/         # character, asset, scenario tabs      [MVP]
 ├── crates/
 │   ├── world/                   # hexes, content definitions, validation     [MVP]
@@ -124,6 +127,11 @@ browser. `cargo test` runs the entire simulation without WASM.
 - **Application ↔ game settings** — the shell's settings are declared in code,
   the game's are content; both use one control vocabulary and one resolver, and
   only the game's cross `createGame`. See ADR-0025.
+- **Session ↔ route** — the engine owns the game, so leaving `/play` does not
+  end it and returning resumes it; a game ends only where a player asks. Anything
+  calling `resetContent()` re-registers the languages, the title screen and the
+  settings with the maps, because `loadProject` validates the whole manifest.
+  See ADR-0026.
 - **Text ↔ language** — no string is written where it is displayed: a template
   names a key, the engine flattens the project's locale files and applies the
   default-language fallback. See ADR-0023.

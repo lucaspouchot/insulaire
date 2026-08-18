@@ -132,6 +132,23 @@ export class SettingsService {
     }
   }
 
+  /**
+   * Takes on a declaration the editor has just written.
+   *
+   * Same reason as {@link register}: the file on disk is the one that has to
+   * come back after a content reset, so the cached text moves with it.
+   */
+  adopt(json: string): void {
+    this.declarationJson = json;
+    this.engine.loadSettings(json);
+    this.gameSections.set(this.engine.settings().sections);
+    this.valuesSignal.update((values) => ({
+      ...values,
+      ...this.engine.resolveSettings(this.gameValues(values)),
+    }));
+    this.persist();
+  }
+
   /** The value of one setting, falling back to its declared default. */
   value(field: ControlDefinition): SettingValue {
     return this.valuesSignal()[field.id] ?? field.default;

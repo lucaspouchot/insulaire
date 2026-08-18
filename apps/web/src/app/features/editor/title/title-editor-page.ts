@@ -28,6 +28,7 @@ import { ContentWorkspaceService, WorkspaceFile } from '../../../services/conten
 import { EngineService } from '../../../services/engine.service';
 import { CONTENT_ROOT, ProjectStoreService } from '../../../services/project-store.service';
 import { assetUrl } from '../../../../core/asset-url';
+import { TitleScreenService } from '../../../services/title-screen.service';
 import { TitlePage } from '../../title/title-page';
 
 /** Where an uploaded file goes, by kind. */
@@ -48,6 +49,7 @@ export class TitleEditorPage {
   private readonly engine = inject(EngineService);
   private readonly i18n = inject(I18nService);
   private readonly workspace = inject(ContentWorkspaceService);
+  private readonly titleScreen = inject(TitleScreenService);
 
   /** The document being edited. */
   protected readonly screen = signal<TitleScreenDefinition | null>(null);
@@ -244,10 +246,11 @@ export class TitleEditorPage {
         return;
       }
 
-      await this.workspace.writeJson(this.path(), `${JSON.stringify(screen, null, 2)}\n`);
-      // Registering it is what makes the preview and the real title screen agree
-      // from here on.
-      this.engine.loadTitleScreen(JSON.stringify(screen));
+      const json = `${JSON.stringify(screen, null, 2)}\n`;
+      await this.workspace.writeJson(this.path(), json);
+      // Adopting it is what makes the preview and the real title screen agree
+      // from here on — and what a later content reset puts back.
+      this.titleScreen.adopt(json);
       this.dirty.set(false);
       this.message.set(this.i18n.t('ui.editor.title.saved', { file: this.path() }));
     } catch (cause) {

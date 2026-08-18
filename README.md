@@ -31,6 +31,8 @@ stack to prove the architecture works end to end, and nothing more.
 - Open on an **authored title screen** — background, music, splash and menu, all
   content — with a settings screen that mixes the application's own settings and
   whatever settings the game declares.
+- Author those game settings in an editor, and see the player's screen build
+  itself as you type.
 - Read every displayed string from **language files**: the application ships
   English and French, and a project adds its own.
 - Author a game in **its own directory**, outside this repository, with the
@@ -41,8 +43,6 @@ stack to prove the architecture works end to end, and nothing more.
 Deliberately **not** implemented yet: scenarios, combat, deckbuilding,
 pathfinding, procedural generation, **saving and loading** (the title screen's
 *Continue* is disabled until it exists, ADR-0010), an asset pipeline, a backend.
-The **settings editor** is not written either: a game's settings are authored by
-editing `content/settings.json` by hand, and the engine validates the result.
 
 ---
 
@@ -74,6 +74,17 @@ npm run dev          # start Angular on http://localhost:4200
 Open <http://localhost:4200>. You land on the **title screen** the content
 declares; the top bar's **Editor** link opens the map editor on
 `content/worlds/demo_world.json`.
+
+The splash belongs to the *launch*, not to the route: it plays once per page
+load, so coming back to the title screen from a game shows the menu directly.
+
+Two screens take the whole window and drop the bar, because they are the
+player's and not the developer's: the title screen and **Settings**. Settings
+carries its own **Back**, which returns wherever it was opened from. And while a
+game is running, **Title** asks before it navigates — arriving there ends the
+session, and saving does not exist yet (ADR-0010). Going to the settings or the
+editor does not: the engine holds the game, so coming back to **Play** resumes
+it.
 
 The header shows the open project's name on the left and, on the right, a badge
 reading **Insulaire engine** whose tooltip is what the engine actually is:
@@ -141,14 +152,28 @@ into `demo_refuge` — whose own door leads back out.
 ### Other editors
 
 `/editor` is a shell with one tab per module (ADR-0019). **Maps**, **Title
-screen** and **Languages** are implemented; **Characters**, **Assets** and
-**Scenario** are registered and route to a placeholder describing what they will
-own. Adding one is an entry in `editor-modules.ts` plus a component.
+screen**, **Settings** and **Languages** are implemented; **Characters**,
+**Assets** and **Scenario** are registered and route to a placeholder describing
+what they will own. Adding one is an entry in `editor-modules.ts` plus a
+component.
 
 **Title screen** edits `menu/title-screen.json`: background, logo, splash,
 music, theme, and the buttons with their label keys. Images and music are
 uploaded straight into the content directory, and the preview on the right is
 the real title screen component, so what you see is what a player gets.
+
+**Settings** edits `settings.json`: the settings the *game* offers — sections
+become tabs, groups become panels, fields become controls (ADR-0025). Pick a
+control kind and the form offers exactly what that kind accepts: options for a
+`select`, `min`/`max`/`step` for a slider, a `showIf` naming one other field.
+The preview on the right is the player's screen, rendered with the same
+component — and moving a control there is how a field's **default** is set.
+`scope` decides when a player may change a setting: `session` at any time,
+`newGame` only outside a game.
+
+The application's own settings — volumes, interface scale, language, window
+size, seed — are *not* editable there, because they are not content: the
+application implements each one (`app/settings/engine-settings.schema.ts`).
 
 **Languages** is the translation table: every key, every language, side by side,
 with a filter for what is still untranslated. Saving rewrites one file per
@@ -190,7 +215,7 @@ In Play mode:
 | `npm run build:deliver` | Just the editor-free web bundle, without the shell. |
 | `npm test` | Rust tests, then TypeScript tests, then the script tests. |
 | `npm run test:rust` | `cargo test --workspace` (191 tests, no browser needed). |
-| `npm run test:web` | Vitest (92 tests, including real WASM integration). |
+| `npm run test:web` | Vitest (102 tests, including real WASM integration). |
 | `npm run test:scripts` | `node --test` over `scripts/` — the content server's path rules. |
 | `npm run lint:rust` | `cargo clippy -D warnings` and `cargo fmt --check`. |
 | `npm run check` | Lint plus every test. |
@@ -534,6 +559,11 @@ Read in order:
 19. **ADR-0019 — editor modules**
 20. **ADR-0020 — desktop executable (Tauri 2), Steam seam**
 21. **ADR-0021 — map zones** *(zone-wide ticks not implemented yet)*
+22. **ADR-0022 — authoring content workspace and the dev-only content server**
+23. **ADR-0023 — every displayed string is a key, resolved per language**
+24. **ADR-0024 — the client opens on an authored title screen**
+25. **ADR-0025 — engine settings belong to the shell, game settings are content**
+26. **ADR-0026 — the session outlives the route, and the title screen ends it**
 
 `CLAUDE.md` contains project-level instructions for Claude Code and other coding
 agents.

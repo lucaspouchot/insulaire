@@ -1,4 +1,4 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { filter, map } from 'rxjs/operators';
@@ -61,10 +61,20 @@ export class App {
    * The title screen is the game's own first impression and takes the whole
    * window: a navigation bar and an engine badge across the top of it would be
    * the development tooling leaking into the product
-   * (`docs/adr/ADR-0024-authored-title-screen.md`). Every other screen keeps the
-   * bar, which is also how a developer leaves the title screen.
+   * (`docs/adr/ADR-0024-authored-title-screen.md`). The settings screen is the
+   * same argument — it is a screen a *player* opens, it fills the window, and
+   * it carries its own way back to wherever it was opened from. Every other
+   * screen keeps the bar, which is also how a developer leaves those two.
    */
-  protected readonly showChrome = computed(() => !this.url().startsWith('/title'));
+  protected readonly showChrome = computed(
+    () => !this.url().startsWith('/title') && !this.url().startsWith('/settings'),
+  );
+
+  /** `true` while the Title link would throw a running game away. */
+  protected readonly confirmingTitle = signal(false);
+
+  /** The Title entry is a button, so it needs its own active state. */
+  protected readonly onTitle = computed(() => this.url().startsWith('/title'));
 
   constructor() {
     // Starts the engine and the content as early as possible — both modes need
@@ -75,4 +85,34 @@ export class App {
       // content; the bar keeps its fallback name and the built-in strings.
     });
   }
+
+  /**
+   * Goes back to the title screen, asking first when that costs a game.
+   *
+   * Leaving for the settings or the editor keeps the session — the engine holds
+   * it, not the play component — but the title screen is where a game is
+   * started, so arriving there ends the one in progress. Saves do not exist yet
+   * (`docs/adr/ADR-0010-save-system.md`), so "unsaved" is currently everything.
+   */
+  protected async goToTitle(): Promise<void> {
+    if (this.engine.hasGame()) {
+      this.confirmingTitle.set(true);
+      return;
+    }
+    await this.router.navigate(['/title']);
+  }
+
+  /** Discards the running game and goes to the title screen. */
+  protected async abandonGame(): Promise<void> {
+    this.confirmingTitle.set(false);
+    this.engine.endGame();
+    await this.router.navigate(['/title']);
+  }
+
+  protected keepPlaying(): void {
+    this.confirmingTitle.set(false);
+  }
+
+  /** Where the settings screen should send the player back to. */
+  protected readonly settingsReturn = computed(() => ({ from: this.url() }));
 }

@@ -43,6 +43,12 @@ export const EDITOR_MODULES: readonly EditorModule[] = [
     status: 'available',
   },
   {
+    id: 'settings',
+    titleKey: 'ui.editor.modules.settings.title',
+    summaryKey: 'ui.editor.modules.settings.summary',
+    status: 'available',
+  },
+  {
     id: 'locale',
     titleKey: 'ui.editor.modules.locale.title',
     summaryKey: 'ui.editor.modules.locale.summary',

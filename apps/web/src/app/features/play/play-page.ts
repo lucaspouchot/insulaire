@@ -19,6 +19,12 @@
  *
  * The world it plays is whatever the editor currently holds — the editor's own
  * export, fed straight into `loadWorld`.
+ *
+ * The **session outlives this component**. The engine owns the game (ADR-0001),
+ * so opening the settings or the editor and coming back resumes what was left,
+ * and leaving the route is not a way to throw a game away. A game ends where a
+ * player says so: *Restart* here, *New game* on the title screen, or the
+ * confirmation the application bar asks for before going back to the title.
  */
 
 import {
@@ -49,6 +55,7 @@ import { SettingsService } from '../../settings/settings.service';
 import { TranslatePipe } from '../../i18n/translate.pipe';
 import { EngineService } from '../../services/engine.service';
 import { ProjectStoreService } from '../../services/project-store.service';
+import { TitleScreenService } from '../../services/title-screen.service';
 
 const HEX_SIZE = 28;
 const MAX_LOG_ENTRIES = 60;
@@ -82,6 +89,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
   private readonly i18n = inject(I18nService);
   private readonly settings = inject(SettingsService);
+  private readonly titleScreen = inject(TitleScreenService);
 
   private view: CanvasView | null = null;
   private renderer: HexMapRenderer | null = null;
@@ -136,8 +144,12 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       // seed comes from the application's own settings
       // (`docs/adr/ADR-0025-settings.md`).
       await this.settings.ensureLoaded();
-      this.seed.set(this.settings.seed());
-      this.startGame(this.seed());
+      if (this.engine.hasGame()) {
+        this.resumeGame();
+      } else {
+        this.seed.set(this.settings.seed());
+        this.startGame(this.seed());
+      }
     } catch (cause) {
       this.error.set(cause instanceof Error ? cause.message : String(cause));
       this.busy.set(false);
@@ -145,22 +157,17 @@ export class PlayPage implements AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    // The canvas goes; the game does not. See the note at the top of the file.
     this.view?.dispose();
-    if (this.engine.isReady && this.engine.hasGame()) {
-      this.engine.endGame();
-    }
   }
 
   // ------------------------------------------------------------------- game
 
   /**
-   * Loads the whole project into the engine and starts a game.
+   * Registers the project and starts a game on it.
    *
-   * *Whole* project, not just the map being played: a door can send the player
-   * anywhere the project ships, and the engine can only follow a link to a
-   * world it already holds (`docs/adr/ADR-0017-map-links.md`). Tile sets are
-   * registered first because a world is validated against its own; every call
-   * here goes through the same Rust validator the editor uses.
+   * Every content call here goes through the same Rust validator the editor
+   * uses; tile sets go in first because a world is validated against its own.
    */
   private startGame(seed: number): void {
     this.busy.set(true);
@@ -169,31 +176,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
     this.log.set([]);
 
     try {
-      // Cleared first: loading is additive, so a map removed in the editor
-      // would otherwise still satisfy a door that points at it.
-      this.engine.resetContent();
-      // Locales go back in with the rest: the manifest declares languages, and
-      // `loadProject` validates that every one of them is actually loaded
-      // (`docs/adr/ADR-0023-localised-content-keys.md`).
-      this.i18n.register();
-      this.settings.register();
-      for (const tileSet of this.store.tileSetDefinitions()) {
-        this.engine.loadTileSet(JSON.stringify(tileSet));
-      }
-      for (const definition of this.store.definitions()) {
-        this.engine.loadWorld(serializeWorld(definition));
-      }
-      this.engine.loadProject(this.store.projectJson());
-
-      // Dangling doors are worth saying out loud rather than discovering by
-      // walking into one: the runtime degrades, it does not crash.
-      const links = this.engine.validateLinks();
-      for (const issue of links.issues) {
-        this.pushLog(0, 'ui.play.log.issue', 'reject', {
-          code: issue.code,
-          message: issue.message,
-        });
-      }
+      this.registerContent();
 
       const worldId = this.startWorldId();
       const snapshot = this.engine.createGame(worldId, seed, this.settings.gameSettings());
@@ -207,6 +190,77 @@ export class PlayPage implements AfterViewInit, OnDestroy {
     } catch (cause) {
       this.error.set(describe(cause));
       this.busy.set(false);
+    }
+  }
+
+  /**
+   * Re-attaches to the game the engine is already holding.
+   *
+   * Nothing is created and no tick is spent: the snapshot is read back and
+   * drawn. The content is registered again first because anything that ran
+   * `resetContent()` in the meantime — the editor reloading a project — left
+   * the engine unable to describe the very world the session is standing on.
+   */
+  private resumeGame(): void {
+    this.busy.set(true);
+    this.error.set(null);
+    this.lastRejection.set(null);
+    this.log.set([]);
+
+    try {
+      this.registerContent();
+
+      const snapshot = this.engine.snapshot();
+      this.snapshot.set(snapshot);
+      this.seed.set(snapshot.seed);
+      this.selected.set(null);
+      const view = this.loadWorldIntoRenderer(snapshot.worldId, true);
+
+      this.pushLog(snapshot.tick, 'ui.play.log.resumed', 'tick', {
+        world: view.name,
+        tick: snapshot.tick,
+      });
+      this.busy.set(false);
+    } catch (cause) {
+      this.error.set(describe(cause));
+      this.busy.set(false);
+    }
+  }
+
+  /**
+   * Loads the whole project into the engine, and reports what does not resolve.
+   *
+   * *Whole* project, not just the map being played: a door can send the player
+   * anywhere the project ships, and the engine can only follow a link to a
+   * world it already holds (`docs/adr/ADR-0017-map-links.md`).
+   */
+  private registerContent(): void {
+    // Cleared first: loading is additive, so a map removed in the editor
+    // would otherwise still satisfy a door that points at it.
+    this.engine.resetContent();
+    // The languages, the title screen and the settings go back in with the
+    // maps: `loadProject` validates the whole manifest, and refuses one naming
+    // a file that is not loaded — which is exactly what `resetContent` just
+    // made true of all three.
+    this.i18n.register();
+    this.titleScreen.register();
+    this.settings.register();
+    for (const tileSet of this.store.tileSetDefinitions()) {
+      this.engine.loadTileSet(JSON.stringify(tileSet));
+    }
+    for (const definition of this.store.definitions()) {
+      this.engine.loadWorld(serializeWorld(definition));
+    }
+    this.engine.loadProject(this.store.projectJson());
+
+    // Dangling doors are worth saying out loud rather than discovering by
+    // walking into one: the runtime degrades, it does not crash.
+    const links = this.engine.validateLinks();
+    for (const issue of links.issues) {
+      this.pushLog(0, 'ui.play.log.issue', 'reject', {
+        code: issue.code,
+        message: issue.message,
+      });
     }
   }
 
@@ -235,7 +289,9 @@ export class PlayPage implements AfterViewInit, OnDestroy {
     if (attach || this.renderer === null) {
       this.attachRenderer(view, terrain, elevation);
     } else {
-      this.renderer.setModel(this.buildModel(view, terrain, elevation, elevationRangeOf(elevation)));
+      this.renderer.setModel(
+        this.buildModel(view, terrain, elevation, elevationRangeOf(elevation)),
+      );
       this.view?.fit();
     }
     return view;

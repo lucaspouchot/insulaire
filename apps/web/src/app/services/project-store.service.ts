@@ -258,6 +258,13 @@ export class ProjectStoreService {
         id: document.id,
         path: `worlds/${document.id}.json`,
       })),
+      // Carried through untouched, like the languages below: these name files
+      // the editor does not hold documents for, so regenerating them from what
+      // happens to be loaded would drop the title screen and the settings on
+      // the first export — and, because this is also what is mirrored into
+      // `localStorage`, on the first reload after any edit.
+      titleScreen: project.titleScreen,
+      settings: project.settings,
       // Carried through untouched: the editor never regenerates the language
       // list from what happens to be loaded, or an export would quietly drop a
       // language whose files failed to fetch.

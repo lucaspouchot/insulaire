@@ -47,6 +47,9 @@ export class EngineService {
   /** Why loading failed, when it did. */
   readonly failure = signal<string | null>(null);
 
+  /** Whether a game is in progress; mirrored from the engine, see {@link hasGame}. */
+  private readonly running = signal(false);
+
   /**
    * Loads and initialises the engine, at most once.
    *
@@ -255,9 +258,11 @@ export class EngineService {
    * settings never cross the boundary (`docs/adr/ADR-0025-settings.md`).
    */
   createGame(worldId: string, seed: number, settings: SettingsValues = {}): GameSnapshot {
-    return this.parse<GameSnapshot>(() =>
+    const snapshot = this.parse<GameSnapshot>(() =>
       this.engine().createGame(worldId, seed, JSON.stringify(settings)),
     );
+    this.running.set(this.instance?.hasGame() ?? true);
+    return snapshot;
   }
 
   /** The current runtime state. */
@@ -279,12 +284,19 @@ export class EngineService {
   /** Discards the running game; loaded content stays loaded. */
   endGame(): void {
     this.engine().endGame();
+    this.running.set(this.instance?.hasGame() ?? false);
   }
 
-  /** `true` when a game is in progress. */
-  hasGame(): boolean {
-    return this.instance?.hasGame() ?? false;
-  }
+  /**
+   * `true` when a game is in progress.
+   *
+   * A signal, not a call into WASM, because the shell reacts to it: the
+   * settings screen locks its `newGame` fields while a game runs, and the
+   * navigation bar asks before throwing one away. It is written on either side
+   * of the two calls that can change it, and read back from the engine there so
+   * the mirror cannot drift.
+   */
+  readonly hasGame = this.running.asReadonly();
 
   // ------------------------------------------------------------------ plumbing
 

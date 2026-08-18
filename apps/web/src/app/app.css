@@ -42,20 +42,27 @@ nav {
   gap: 4px;
 }
 
-nav a {
+/* The Title entry is a button rather than a link, because it may have to ask
+   before it navigates; it has to be indistinguishable from its neighbours. */
+nav a,
+nav button {
   color: var(--text-dim);
+  font: inherit;
   text-decoration: none;
   padding: 5px 12px;
   border-radius: var(--radius);
   border: 1px solid transparent;
+  background: transparent;
 }
 
-nav a:hover {
+nav a:hover,
+nav button:hover {
   color: var(--text);
   background: var(--bg-raised);
 }
 
-nav a.active {
+nav a.active,
+nav button.active {
   color: var(--accent);
   border-color: var(--accent-dim);
   background: var(--bg-raised);
@@ -105,4 +112,54 @@ main {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+}
+
+/*
+  Leaving a game behind is the one navigation this application refuses to do
+  silently, so it is the one thing that gets a modal. It sits outside <main> so
+  it covers the bar as well as the screen underneath.
+*/
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 9, 13, 0.72);
+}
+
+.dialog {
+  width: min(420px, calc(100vw - 32px));
+  padding: 20px 22px;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) * 2);
+  background: var(--bg-panel);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+}
+
+.dialog h2 {
+  font-size: 16px;
+}
+
+.dialog p {
+  margin: 8px 0 0;
+  color: var(--text-dim);
+}
+
+.dialog .actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.dialog button.danger {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.dialog button.danger:hover:not(:disabled) {
+  background: rgba(240, 115, 106, 0.12);
+  border-color: var(--error);
 }

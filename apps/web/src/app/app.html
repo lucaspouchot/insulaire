@@ -9,11 +9,24 @@
     </div>
 
     <nav>
-      <a routerLink="/title" routerLinkActive="active">{{ 'ui.app.nav.title' | t }}</a>
+      <!--
+        A button, not a link: going back to the title screen ends the game, so
+        it has to be able to ask first.
+      -->
+      <button type="button" [class.active]="onTitle()" (click)="goToTitle()">
+        {{ 'ui.app.nav.title' | t }}
+      </button>
       @if (features.editor) {
         <a routerLink="/editor" routerLinkActive="active">{{ 'ui.app.nav.editor' | t }}</a>
       }
       <a routerLink="/play" routerLinkActive="active">{{ 'ui.app.nav.play' | t }}</a>
+      <!--
+        The settings screen drops this bar, so it is told where it was opened
+        from and its own Back button comes here again.
+      -->
+      <a routerLink="/settings" [queryParams]="settingsReturn()" routerLinkActive="active">
+        {{ 'ui.app.nav.settings' | t }}
+      </a>
     </nav>
 
     @let info = engine.info();
@@ -54,3 +67,25 @@
 <main>
   <router-outlet />
 </main>
+
+@if (confirmingTitle()) {
+  <div class="scrim">
+    <div
+      class="dialog"
+      role="alertdialog"
+      aria-modal="true"
+      [attr.aria-label]="'ui.app.leaveGame.heading' | t"
+    >
+      <h2>{{ 'ui.app.leaveGame.heading' | t }}</h2>
+      <p>{{ 'ui.app.leaveGame.body' | t }}</p>
+      <div class="actions">
+        <button type="button" (click)="keepPlaying()">
+          {{ 'ui.app.leaveGame.stay' | t }}
+        </button>
+        <button type="button" class="danger" (click)="abandonGame()">
+          {{ 'ui.app.leaveGame.leave' | t }}
+        </button>
+      </div>
+    </div>
+  </div>
+}

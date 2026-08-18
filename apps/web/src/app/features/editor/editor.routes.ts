@@ -51,6 +51,12 @@ export const EDITOR_ROUTES: Routes = [
         loadComponent: () => import('./title/title-editor-page').then((m) => m.TitleEditorPage),
       },
       {
+        path: 'settings',
+        title: moduleTitle(requireModule('settings')),
+        loadComponent: () =>
+          import('./settings/settings-editor-page').then((m) => m.SettingsEditorPage),
+      },
+      {
         path: 'locale',
         title: moduleTitle(requireModule('locale')),
         loadComponent: () => import('./locale/locale-editor-page').then((m) => m.LocaleEditorPage),

@@ -1,0 +1,413 @@
+@let doc = document();
+
+<div class="settings-editor">
+  <div class="toolbar">
+    <span class="path">{{ path() }}</span>
+    @if (dirty()) {
+      <span class="dot" [title]="'ui.editor.settings.unsaved' | t"></span>
+    }
+    <span class="spacer"></span>
+    @if (errorCount(); as count) {
+      <span class="issues-count">{{ 'ui.editor.settings.issueCount' | t: { count: count } }}</span>
+    }
+    @if (!writable()) {
+      <span class="readonly">{{ 'ui.editor.workspace.readOnly' | t }}</span>
+    }
+    <button type="button" (click)="validate()">{{ 'ui.editor.map.actions.validate' | t }}</button>
+    <button type="button" class="primary" [disabled]="busy() || !writable()" (click)="save()">
+      {{ 'ui.editor.settings.save' | t }}
+    </button>
+  </div>
+
+  @if (error(); as failure) {
+    <div class="banner error">{{ failure }}</div>
+  }
+  @if (message(); as note) {
+    <div class="banner ok">{{ note }}</div>
+  }
+  @if (unlisted()) {
+    <div class="banner warn">{{ 'ui.editor.settings.unlisted' | t: { file: path() } }}</div>
+  }
+
+  @if (doc === null) {
+    <p class="hint">{{ 'ui.common.loading' | t }}</p>
+  } @else {
+    <div class="columns">
+      <div class="form">
+        <section class="panel">
+          <h2>{{ 'ui.editor.settings.file' | t }}</h2>
+          <label class="row">
+            <span>{{ 'ui.editor.settings.id' | t }}</span>
+            <input type="text" [value]="doc.id" (change)="setId($any($event.target).value)" />
+          </label>
+          @if (declaredId(); as expected) {
+            <p class="resolved" [class.mismatch]="expected !== doc.id">
+              {{ 'ui.editor.settings.expectedId' | t: { id: expected } }}
+            </p>
+          }
+          <p class="hint">
+            {{ 'ui.editor.settings.applicationNote' | t }}
+          </p>
+        </section>
+
+        <!-- Sections are tabs on the player's screen; groups are its panels. -->
+        <section class="panel">
+          <h2>{{ 'ui.editor.settings.sections' | t }}</h2>
+          @for (entry of sections(); track entry.id) {
+            <div class="node" [class.on]="entry.id === section()?.id">
+              <button
+                type="button"
+                class="pick"
+                [title]="'ui.editor.settings.openSection' | t"
+                (click)="selectSection(entry.id)"
+              >
+                ▸
+              </button>
+              <input
+                type="text"
+                class="id"
+                [value]="entry.id"
+                [attr.aria-label]="'ui.editor.settings.id' | t"
+                (change)="patchSection($index, { id: $any($event.target).value })"
+              />
+              <input
+                type="text"
+                [value]="entry.labelKey"
+                [attr.aria-label]="'ui.editor.settings.labelKey' | t"
+                (change)="patchSection($index, { labelKey: $any($event.target).value })"
+              />
+              <span class="resolved inline" [class.missing]="missingKey(entry.labelKey)">
+                {{ preview(entry.labelKey) }}
+              </span>
+              <button type="button" (click)="moveSection($index, -1)" title="↑">↑</button>
+              <button type="button" (click)="moveSection($index, 1)" title="↓">↓</button>
+              <button type="button" class="remove" (click)="removeSection($index)">×</button>
+            </div>
+          }
+          <div class="add">
+            <button type="button" (click)="addSection()">
+              {{ 'ui.editor.settings.addSection' | t }}
+            </button>
+          </div>
+        </section>
+
+        @if (section(); as active) {
+          <section class="panel">
+            <h2>{{ 'ui.editor.settings.groupsOf' | t: { section: preview(active.labelKey) } }}</h2>
+            @for (entry of groups(); track entry.id) {
+              <div class="node" [class.on]="entry.id === group()?.id">
+                <button
+                  type="button"
+                  class="pick"
+                  [title]="'ui.editor.settings.openGroup' | t"
+                  (click)="selectGroup(entry.id)"
+                >
+                  ▸
+                </button>
+                <input
+                  type="text"
+                  class="id"
+                  [value]="entry.id"
+                  [attr.aria-label]="'ui.editor.settings.id' | t"
+                  (change)="patchGroup($index, { id: $any($event.target).value })"
+                />
+                <input
+                  type="text"
+                  [value]="entry.labelKey"
+                  [attr.aria-label]="'ui.editor.settings.labelKey' | t"
+                  (change)="patchGroup($index, { labelKey: $any($event.target).value })"
+                />
+                <span class="resolved inline" [class.missing]="missingKey(entry.labelKey)">
+                  {{ preview(entry.labelKey) }}
+                </span>
+                <button type="button" (click)="moveGroup($index, -1)" title="↑">↑</button>
+                <button type="button" (click)="moveGroup($index, 1)" title="↓">↓</button>
+                <button type="button" class="remove" (click)="removeGroup($index)">×</button>
+              </div>
+            } @empty {
+              <p class="hint">{{ 'ui.editor.settings.noGroup' | t }}</p>
+            }
+            <div class="add">
+              <button type="button" (click)="addGroup()">
+                {{ 'ui.editor.settings.addGroup' | t }}
+              </button>
+            </div>
+          </section>
+        }
+
+        @if (group(); as active) {
+          <section class="panel">
+            <h2>{{ 'ui.editor.settings.fieldsOf' | t: { group: preview(active.labelKey) } }}</h2>
+
+            @for (field of fields(); track field.id; let fieldIndex = $index) {
+              <details class="field" open>
+                <summary>
+                  <span class="badge">{{ field.control }}</span>
+                  <span class="name">{{ field.id }}</span>
+                  <span class="resolved inline">{{ preview(field.labelKey) }}</span>
+                </summary>
+
+                <label class="row">
+                  <span>{{ 'ui.editor.settings.id' | t }}</span>
+                  <input
+                    type="text"
+                    [value]="field.id"
+                    (change)="patchField(fieldIndex, { id: $any($event.target).value })"
+                  />
+                </label>
+
+                <label class="row">
+                  <span>{{ 'ui.editor.settings.labelKey' | t }}</span>
+                  <input
+                    type="text"
+                    [value]="field.labelKey"
+                    (change)="patchField(fieldIndex, { labelKey: $any($event.target).value })"
+                  />
+                </label>
+                <p class="resolved" [class.missing]="missingKey(field.labelKey)">
+                  {{ preview(field.labelKey) }}
+                </p>
+
+                <label class="row">
+                  <span>{{ 'ui.editor.settings.helpKey' | t }}</span>
+                  <input
+                    type="text"
+                    [value]="field.helpKey ?? ''"
+                    (change)="patchField(fieldIndex, { helpKey: $any($event.target).value })"
+                  />
+                </label>
+
+                <label class="row">
+                  <span>{{ 'ui.editor.settings.control' | t }}</span>
+                  <select (change)="setControl(fieldIndex, $any($event.target).value)">
+                    @for (kind of controlKinds; track kind) {
+                      <option [value]="kind" [selected]="kind === field.control">{{ kind }}</option>
+                    }
+                  </select>
+                </label>
+
+                <label class="row">
+                  <span>{{ 'ui.editor.settings.scope' | t }}</span>
+                  <select (change)="patchField(fieldIndex, { scope: $any($event.target).value })">
+                    @for (scope of scopes; track scope.id) {
+                      <option
+                        [value]="scope.id"
+                        [selected]="scope.id === (field.scope ?? 'session')"
+                      >
+                        {{ scope.labelKey | t }}
+                      </option>
+                    }
+                  </select>
+                </label>
+
+                @if (isNumeric(field.control)) {
+                  <div class="row bounds">
+                    <span>{{ 'ui.editor.settings.bounds' | t }}</span>
+                    <div class="three">
+                      <input
+                        type="number"
+                        [value]="field.min ?? ''"
+                        [attr.aria-label]="'ui.editor.settings.min' | t"
+                        [placeholder]="'ui.editor.settings.min' | t"
+                        (change)="setBound(fieldIndex, 'min', $any($event.target).value)"
+                      />
+                      <input
+                        type="number"
+                        [value]="field.max ?? ''"
+                        [attr.aria-label]="'ui.editor.settings.max' | t"
+                        [placeholder]="'ui.editor.settings.max' | t"
+                        (change)="setBound(fieldIndex, 'max', $any($event.target).value)"
+                      />
+                      <input
+                        type="number"
+                        [value]="field.step ?? ''"
+                        [attr.aria-label]="'ui.editor.settings.step' | t"
+                        [placeholder]="'ui.editor.settings.step' | t"
+                        (change)="setBound(fieldIndex, 'step', $any($event.target).value)"
+                      />
+                    </div>
+                  </div>
+                  <label class="row">
+                    <span>{{ 'ui.editor.settings.unit' | t }}</span>
+                    <input
+                      type="text"
+                      [value]="field.unit ?? ''"
+                      (change)="patchField(fieldIndex, { unit: $any($event.target).value })"
+                    />
+                  </label>
+                }
+
+                @if (usesOptions(field.control)) {
+                  <div class="options">
+                    <span class="caption">{{ 'ui.editor.settings.options' | t }}</span>
+                    @for (option of field.options ?? []; track $index; let optionIndex = $index) {
+                      <div class="option">
+                        <input
+                          type="text"
+                          class="id"
+                          [value]="option.value"
+                          [attr.aria-label]="'ui.editor.settings.optionValue' | t"
+                          (change)="
+                            patchOption(fieldIndex, optionIndex, {
+                              value: $any($event.target).value,
+                            })
+                          "
+                        />
+                        <input
+                          type="text"
+                          [value]="option.labelKey"
+                          [attr.aria-label]="'ui.editor.settings.labelKey' | t"
+                          (change)="
+                            patchOption(fieldIndex, optionIndex, {
+                              labelKey: $any($event.target).value,
+                            })
+                          "
+                        />
+                        <span class="resolved inline" [class.missing]="missingKey(option.labelKey)">
+                          {{ preview(option.labelKey) }}
+                        </span>
+                        <button
+                          type="button"
+                          class="remove"
+                          (click)="removeOption(fieldIndex, optionIndex)"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    } @empty {
+                      <p class="hint">{{ 'ui.editor.settings.noOption' | t }}</p>
+                    }
+                    <button type="button" (click)="addOption(fieldIndex)">
+                      {{ 'ui.editor.settings.addOption' | t }}
+                    </button>
+                  </div>
+                }
+
+                <!--
+                  One field, one value: the whole conditional vocabulary
+                  (`docs/adr/ADR-0025-settings.md`). Anything richer would be a
+                  rules language, which is a non-goal.
+                -->
+                <div class="row condition">
+                  <span>{{ 'ui.editor.settings.showIf' | t }}</span>
+                  <div class="pair">
+                    <select (change)="setCondition(fieldIndex, $any($event.target).value)">
+                      <option value="" [selected]="!field.showIf">
+                        {{ 'ui.editor.settings.always' | t }}
+                      </option>
+                      @for (other of allFields(); track other.id) {
+                        @if (other.id !== field.id) {
+                          <option [value]="other.id" [selected]="other.id === field.showIf?.field">
+                            {{ other.id }}
+                          </option>
+                        }
+                      }
+                    </select>
+                    @if (field.showIf) {
+                      <input
+                        type="text"
+                        [value]="conditionValue(field)"
+                        [attr.aria-label]="'ui.editor.settings.equals' | t"
+                        (change)="setConditionValue(fieldIndex, $any($event.target).value)"
+                      />
+                    }
+                  </div>
+                </div>
+
+                <div class="field-actions">
+                  <button type="button" (click)="moveField(fieldIndex, -1)" title="↑">↑</button>
+                  <button type="button" (click)="moveField(fieldIndex, 1)" title="↓">↓</button>
+                  <button type="button" class="remove" (click)="removeField(fieldIndex)">
+                    {{ 'ui.editor.settings.removeField' | t }}
+                  </button>
+                </div>
+              </details>
+            } @empty {
+              <p class="hint">{{ 'ui.editor.settings.noField' | t }}</p>
+            }
+
+            <div class="add">
+              <button type="button" (click)="addField()">
+                {{ 'ui.editor.settings.addField' | t }}
+              </button>
+            </div>
+          </section>
+        }
+
+        @if (report()) {
+          <section class="panel">
+            <h2>{{ 'ui.editor.settings.validation' | t }}</h2>
+            @if (blocking().length === 0) {
+              <div class="banner ok">{{ 'ui.editor.map.notices.valid' | t }}</div>
+            } @else {
+              <ul class="issues">
+                @for (issue of blocking(); track issue.code + issue.path) {
+                  <li [class.error]="issue.severity === 'error'">
+                    <code>{{ issue.path }}</code>
+                    <span>{{ issue.message }}</span>
+                  </li>
+                }
+              </ul>
+            }
+
+            <!--
+              A key with no text is not a broken file: it renders as itself, on
+              purpose (ADR-0023). It is listed on its own so it is impossible to
+              miss, and so it does not stop the file being written.
+            -->
+            @if (untranslated().length > 0) {
+              <p class="hint">{{ 'ui.editor.settings.untranslated' | t }}</p>
+              <ul class="issues">
+                @for (issue of untranslated(); track issue.path) {
+                  <li>
+                    <code>{{ issue.path }}</code>
+                    <span>{{ issue.message }}</span>
+                  </li>
+                }
+              </ul>
+            }
+          </section>
+        }
+      </div>
+
+      <!--
+        The preview is the component the player's settings screen renders with,
+        so what an author sees is what a player gets. Moving a control here sets
+        the field's *declared default* — the value the game starts from.
+      -->
+      <div class="preview">
+        <span class="caption">{{ 'ui.editor.settings.preview' | t }}</span>
+        <div class="frame">
+          @if (section(); as active) {
+            <nav class="tabs">
+              @for (entry of sections(); track entry.id) {
+                <button
+                  type="button"
+                  [class.on]="entry.id === active.id"
+                  (click)="selectSection(entry.id)"
+                >
+                  {{ preview(entry.labelKey) }}
+                </button>
+              }
+            </nav>
+
+            @for (group of active.groups; track group.id) {
+              <section class="preview-panel">
+                <h3>{{ preview(group.labelKey) }}</h3>
+                @for (field of group.fields; track field.id) {
+                  @if (isVisible(field)) {
+                    <app-control-field
+                      [field]="field"
+                      [value]="field.default"
+                      (changed)="setDefault(field.id, $event)"
+                    />
+                  }
+                }
+              </section>
+            }
+          }
+        </div>
+      </div>
+    </div>
+  }
+</div>

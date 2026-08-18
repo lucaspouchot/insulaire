@@ -8,7 +8,14 @@
  *
  * A `newGame` setting is shown **locked** while a game is running, rather than
  * hidden: the value is part of the game in progress, and a player looking for it
- * deserves to see it and be told why it cannot move.
+ * deserves to see it and be told why it cannot move. That covers the seed and
+ * the game's own world settings alike — they are what the running game was
+ * created with.
+ *
+ * The screen fills the window: the application bar is dropped for it, as it is
+ * for the title screen, so **Back** is the way out and it has to lead somewhere
+ * sensible. `?from=` carries that, set by whoever opened the screen; the title
+ * screen is the fallback.
  */
 
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
@@ -50,7 +57,7 @@ export class SettingsPage {
   protected readonly section = computed(() => {
     const sections = this.sections();
     const active = this.activeSection();
-    return sections.find((candidate) => candidate.id === active) ?? sections[0] ?? null;
+    return sections.find((candidate) => candidate.id === active) ?? sections.at(0) ?? null;
   });
 
   /**
@@ -58,7 +65,15 @@ export class SettingsPage {
    *
    * What it locks is the `newGame` settings: the game was created with them.
    */
-  protected readonly inGame = computed(() => this.engine.isReady && this.engine.hasGame());
+  protected readonly inGame = this.engine.hasGame;
+
+  /** Where **Back** leads: where the screen was opened from, else the title. */
+  private readonly returnTo = computed(() => {
+    const from = this.route.snapshot.queryParamMap.get('from') ?? '';
+    // Only an in-application path, and never a protocol-relative one: this
+    // value comes off the URL bar, so it is not trusted to name a destination.
+    return /^\/(?!\/)/.test(from) ? from : '/title';
+  });
 
   constructor() {
     void this.settings.ensureLoaded().catch((cause: unknown) => {
@@ -88,6 +103,8 @@ export class SettingsPage {
     void this.router.navigate([], {
       relativeTo: this.route,
       queryParams: { section: sectionId },
+      // Merged, or picking a tab would forget where Back has to lead.
+      queryParamsHandling: 'merge',
       replaceUrl: true,
     });
   }
@@ -97,6 +114,6 @@ export class SettingsPage {
   }
 
   protected async back(): Promise<void> {
-    await this.router.navigate(['/title']);
+    await this.router.navigateByUrl(this.returnTo());
   }
 }

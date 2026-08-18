@@ -39,6 +39,7 @@ import { RenderModel } from '../../../../renderer/render-model';
 import { I18nService } from '../../../i18n/i18n.service';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
 import { SettingsService } from '../../../settings/settings.service';
+import { TitleScreenService } from '../../../services/title-screen.service';
 import { EngineService } from '../../../services/engine.service';
 import { ProjectStoreService } from '../../../services/project-store.service';
 
@@ -84,6 +85,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   private readonly engine = inject(EngineService);
   private readonly i18n = inject(I18nService);
   private readonly settings = inject(SettingsService);
+  private readonly titleScreen = inject(TitleScreenService);
 
   private view: CanvasView | null = null;
   private renderer: HexMapRenderer | null = null;
@@ -695,6 +697,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     // manifest will not load without the languages it declares
     // (`docs/adr/ADR-0023-localised-content-keys.md`).
     this.i18n.register();
+    this.titleScreen.register();
     this.settings.register();
     for (const tileSet of this.store.tileSetDefinitions()) {
       this.engine.loadTileSet(JSON.stringify(tileSet));

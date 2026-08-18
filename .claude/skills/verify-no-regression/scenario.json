@@ -30,6 +30,12 @@
     },
     { "name": "editor-map", "path": "/editor/map", "settleMs": 2000 },
     { "name": "editor-title", "path": "/editor/title", "settleMs": 2500, "canvas": false },
+    {
+      "name": "editor-settings",
+      "path": "/editor/settings",
+      "settleMs": 2000,
+      "canvas": false
+    },
     { "name": "editor-locale", "path": "/editor/locale", "settleMs": 2000, "canvas": false },
     {
       "name": "play",
