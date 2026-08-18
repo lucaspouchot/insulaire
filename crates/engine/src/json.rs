@@ -320,6 +320,82 @@ impl JsonEngine {
         ok(&resolved)
     }
 
+    /// Registers a character definition; returns a
+    /// [`LoadOutcome`](crate::LoadOutcome).
+    ///
+    /// # Errors
+    ///
+    /// `parse` for malformed JSON, `invalidContent` for a failing definition.
+    pub fn load_character(&mut self, json: &str) -> JsonResult {
+        let outcome = self
+            .inner
+            .load_character(json)
+            .map_err(|error| err(&error))?;
+        ok(&outcome)
+    }
+
+    /// Validates a character definition without registering it, keys included.
+    ///
+    /// # Errors
+    ///
+    /// `parse` when the JSON is malformed.
+    pub fn validate_character(&self, json: &str) -> JsonResult {
+        let report = self
+            .inner
+            .validate_character(json)
+            .map_err(|error| err(&error))?;
+        ok(&report)
+    }
+
+    /// Returns a registered
+    /// [`CharacterDefinition`](insulaire_world::CharacterDefinition).
+    ///
+    /// # Errors
+    ///
+    /// `unknownContent` when no definition has that id.
+    pub fn character(&self, id: &str) -> JsonResult {
+        let character = self.inner.character(id).map_err(|error| err(&error))?;
+        ok(&character)
+    }
+
+    /// Returns the ids of every registered character definition.
+    ///
+    /// # Errors
+    ///
+    /// Only on serialisation failure.
+    pub fn character_ids(&self) -> JsonResult {
+        ok(&self.inner.character_ids())
+    }
+
+    /// Resolves a definition passed in against a customisation; returns a
+    /// [`ResolvedCharacter`](insulaire_world::ResolvedCharacter).
+    ///
+    /// # Errors
+    ///
+    /// `parse` when either argument is not JSON.
+    pub fn preview_character(&self, character_json: &str, values_json: &str) -> JsonResult {
+        let resolved = self
+            .inner
+            .preview_character(character_json, values_json)
+            .map_err(|error| err(&error))?;
+        ok(&resolved)
+    }
+
+    /// Resolves a definition against a customisation; returns a
+    /// [`ResolvedCharacter`](insulaire_world::ResolvedCharacter).
+    ///
+    /// # Errors
+    ///
+    /// `parse` when the values are not JSON, `unknownContent` when no
+    /// definition has that id.
+    pub fn resolve_character(&self, id: &str, values_json: &str) -> JsonResult {
+        let resolved = self
+            .inner
+            .resolve_character(id, values_json)
+            .map_err(|error| err(&error))?;
+        ok(&resolved)
+    }
+
     /// Returns the current [`GameSnapshot`](crate::GameSnapshot).
     ///
     /// # Errors
@@ -977,6 +1053,157 @@ mod tests {
         assert_eq!(code(&error), "invalidContent");
         assert!(error.contains("settings.noOptions"), "{error}");
         assert!(error.contains("settings.invalidDefault"), "{error}");
+    }
+
+    // ------------------------------------------------------------- characters
+
+    const CHARACTER: &str = r##"{
+        "id": "human_player", "schemaVersion": 1, "name": "Human Player",
+        "category": "player", "rendering": "procedural", "scaleParameter": "height",
+        "parameters": [
+            { "id": "hairColor", "labelKey": "game.character.hairColor",
+              "control": "color", "default": "#4b3621" },
+            { "id": "height", "labelKey": "game.character.height", "control": "slider",
+              "default": 1.0, "min": 0.85, "max": 1.15, "step": 0.05 }
+        ],
+        "layers": [
+            { "id": "hair", "variants": [
+                { "id": "default", "rect": [0.38, 0.08, 0.24, 0.14],
+                  "visual": { "kind": "shape", "shape": "ellipse",
+                              "color": { "parameter": "hairColor" } } }
+            ] }
+        ]
+    }"##;
+
+    #[test]
+    fn characters_load_and_resolve_through_the_string_api() {
+        let mut engine = loaded();
+        let outcome = json(&engine.load_character(CHARACTER).expect("loads"));
+        assert_eq!(outcome["id"], "human_player");
+
+        let ids = json(&engine.character_ids().expect("ids"));
+        assert_eq!(ids, serde_json::json!(["human_player"]));
+
+        let definition = json(&engine.character("human_player").expect("definition"));
+        assert_eq!(definition["category"], "player");
+        assert_eq!(definition["parameters"][0]["id"], "hairColor");
+
+        // The customisation crosses as values and comes back as geometry: the
+        // host draws what Rust resolved, and resolves nothing itself.
+        let resolved = json(
+            &engine
+                .resolve_character("human_player", r##"{ "hairColor": "#f2c14e" }"##)
+                .expect("resolve"),
+        );
+        assert_eq!(resolved["character"], "human_player");
+        assert_eq!(resolved["values"]["height"], 1.0);
+        assert_eq!(resolved["layers"][0]["layer"], "hair");
+        assert_eq!(resolved["layers"][0]["visual"]["kind"], "shape");
+        assert_eq!(resolved["layers"][0]["visual"]["color"], "#f2c14e");
+    }
+
+    #[test]
+    fn a_customisation_is_resolved_by_the_same_rules_as_settings() {
+        let mut engine = loaded();
+        engine.load_character(CHARACTER).expect("loads");
+
+        let resolved = json(
+            &engine
+                .resolve_character(
+                    "human_player",
+                    r#"{ "height": 9.0, "hairColor": 3, "unknown": true }"#,
+                )
+                .expect("resolve"),
+        );
+
+        // Clamped, refused, dropped — exactly what a settings payload gets.
+        assert_eq!(resolved["values"]["height"], 1.15);
+        assert_eq!(resolved["values"]["hairColor"], "#4b3621");
+        assert!(resolved["values"].get("unknown").is_none());
+    }
+
+    /// The editor previews content that is not registered and need not be
+    /// finished: resolution is total, so a half-written definition still draws.
+    #[test]
+    fn a_definition_in_hand_previews_without_being_registered() {
+        let engine = loaded();
+
+        let resolved = json(
+            &engine
+                .preview_character(CHARACTER, r#"{ "height": 1.15 }"#)
+                .expect("preview"),
+        );
+        assert_eq!(resolved["character"], "human_player");
+        assert_eq!(resolved["values"]["height"], 1.15);
+        // Nothing was registered by previewing it.
+        assert_eq!(
+            code(&engine.character("human_player").unwrap_err()),
+            "unknownContent"
+        );
+
+        // A definition whose colour binding names nothing still previews, in
+        // the colour that says so.
+        let broken = json(
+            &engine
+                .preview_character(
+                    r##"{ "id": "wip", "schemaVersion": 1, "layers": [{ "id": "hair",
+                          "variants": [{ "id": "v", "visual": { "kind": "shape",
+                          "shape": "ellipse", "color": { "parameter": "absent" } } }] }] }"##,
+                    "{}",
+                )
+                .expect("preview"),
+        );
+        assert_eq!(broken["layers"][0]["visual"]["color"], "#ff00ff");
+
+        assert_eq!(
+            code(&engine.preview_character("{", "{}").unwrap_err()),
+            "parse"
+        );
+    }
+
+    #[test]
+    fn a_character_the_renderer_could_not_draw_is_refused() {
+        let mut engine = loaded();
+        let error = engine
+            .load_character(
+                r##"{ "id": "broken", "schemaVersion": 1, "rendering": "procedural",
+                      "layers": [{ "id": "hair", "variants": [
+                        { "id": "default", "visual": { "kind": "shape", "shape": "ellipse",
+                          "color": { "parameter": "hairColor" } } }
+                      ] }] }"##,
+            )
+            .unwrap_err();
+
+        assert_eq!(code(&error), "invalidContent");
+        assert!(error.contains("character.unknownColorParameter"), "{error}");
+        assert_eq!(
+            code(&engine.character("broken").unwrap_err()),
+            "unknownContent"
+        );
+        assert_eq!(
+            code(&engine.resolve_character("broken", "{}").unwrap_err()),
+            "unknownContent"
+        );
+    }
+
+    #[test]
+    fn a_project_naming_a_character_that_is_not_loaded_does_not_load() {
+        let mut engine = loaded();
+        let manifest = r#"{
+            "id": "p", "schemaVersion": 1, "startWorld": "w",
+            "tileSets": [{ "id": "t", "path": "tilesets/t.json" }],
+            "worlds": [{ "id": "w", "path": "worlds/w.json" }],
+            "characters": [{ "id": "human_player", "path": "characters/human_player.json" }]
+        }"#;
+
+        let error = engine.load_project(manifest).unwrap_err();
+        assert!(error.contains("project.unloadedCharacter"), "{error}");
+
+        engine.load_character(CHARACTER).expect("character loads");
+        assert!(engine.load_project(manifest).is_ok());
+
+        let summary = json(&engine.content_summary().expect("summary"));
+        assert_eq!(summary["characters"], serde_json::json!(["human_player"]));
     }
 
     #[test]

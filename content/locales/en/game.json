@@ -20,5 +20,13 @@
     "identity": "Identity",
     "chronicleName": "Chronicle name",
     "bannerColour": "Banner colour"
+  },
+  "character": {
+    "gender": "Gender",
+    "genderFemale": "Female",
+    "genderMale": "Male",
+    "hairColor": "Hair colour",
+    "height": "Height",
+    "heightHelp": "How tall the character stands."
   }
 }

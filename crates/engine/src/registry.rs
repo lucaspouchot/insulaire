@@ -8,10 +8,11 @@
 use std::collections::BTreeMap;
 
 use insulaire_world::{
-    validate_locales, validate_project, validate_project_links, validate_project_zones,
-    validate_referenced_keys, validate_settings, validate_tile_set, validate_title_screen,
-    validate_world, LocaleBundle, ProjectDefinition, SettingsDefinition, TemplateRegistry,
-    TileSetDefinition, TitleScreenDefinition, ValidationReport, WorldDefinition,
+    validate_character, validate_locales, validate_project, validate_project_links,
+    validate_project_zones, validate_referenced_keys, validate_settings, validate_tile_set,
+    validate_title_screen, validate_world, CharacterDefinition, LoadedContent, LocaleBundle,
+    ProjectDefinition, ResolvedCharacter, SettingsDefinition, TemplateRegistry, TileSetDefinition,
+    TitleScreenDefinition, ValidationReport, WorldDefinition,
 };
 
 use crate::error::EngineError;
@@ -22,6 +23,7 @@ pub struct ContentRegistry {
     tile_sets: BTreeMap<String, TileSetDefinition>,
     worlds: BTreeMap<String, WorldDefinition>,
     locales: BTreeMap<String, LocaleBundle>,
+    characters: BTreeMap<String, CharacterDefinition>,
     title_screen: Option<TitleScreenDefinition>,
     settings: Option<SettingsDefinition>,
     templates: TemplateRegistry,
@@ -126,10 +128,13 @@ impl ContentRegistry {
         // languages answer the same keys?
         let report = validate_project(
             &project,
-            &self.world_ids(),
-            &self.tile_set_ids(),
-            self.title_screen.as_ref().map(|screen| screen.id.as_str()),
-            self.settings.as_ref().map(|settings| settings.id.as_str()),
+            LoadedContent {
+                worlds: &self.world_ids(),
+                tile_sets: &self.tile_set_ids(),
+                characters: &self.character_ids(),
+                title_screen: self.title_screen.as_ref().map(|screen| screen.id.as_str()),
+                settings: self.settings.as_ref().map(|settings| settings.id.as_str()),
+            },
         )
         .merge(validate_project_zones(&project, self.worlds.values()))
         .merge(validate_locales(&project, self.locales.values()))
@@ -351,6 +356,96 @@ impl ContentRegistry {
         self.settings.as_ref()
     }
 
+    // -------------------------------------------------------------- characters
+
+    /// Parses, validates and registers a character definition.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Parse`] when the JSON is malformed, or
+    /// [`EngineError::Invalid`] when the definition fails validation.
+    pub fn load_character(
+        &mut self,
+        json: &str,
+    ) -> Result<(String, ValidationReport), EngineError> {
+        let character = Self::parse_character(json)?;
+
+        let report = validate_character(&character);
+        if !report.valid {
+            return Err(EngineError::Invalid {
+                what: format!("character `{}`", character.id),
+                report: Box::new(report),
+            });
+        }
+
+        let id = character.id.clone();
+        self.characters.insert(id.clone(), character);
+        Ok((id, report))
+    }
+
+    /// Validates a character definition without registering it, keys included.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Parse`] when the JSON is malformed.
+    pub fn validate_character_json(&self, json: &str) -> Result<ValidationReport, EngineError> {
+        let character = Self::parse_character(json)?;
+
+        let report = validate_character(&character);
+        if self.locales.is_empty() {
+            return Ok(report);
+        }
+        let bundles: Vec<&LocaleBundle> = self.locales.values().collect();
+        let keys = character.referenced_keys();
+        let referenced: Vec<(&str, &str)> = keys
+            .iter()
+            .map(|(path, key)| (path.as_str(), *key))
+            .collect();
+        Ok(report.merge(validate_referenced_keys(referenced, &bundles)))
+    }
+
+    fn parse_character(json: &str) -> Result<CharacterDefinition, EngineError> {
+        serde_json::from_str(json).map_err(|source| EngineError::Parse {
+            what: "character".to_owned(),
+            message: source.to_string(),
+        })
+    }
+
+    /// The registered character definition with this id.
+    #[must_use]
+    pub fn character(&self, id: &str) -> Option<&CharacterDefinition> {
+        self.characters.get(id)
+    }
+
+    /// Ids of every registered character definition, sorted.
+    #[must_use]
+    pub fn character_ids(&self) -> Vec<String> {
+        self.characters.keys().cloned().collect()
+    }
+
+    /// Resolves a registered definition against a customisation.
+    ///
+    /// The resolver lives in `insulaire_world`; this only finds the definition,
+    /// so every host — editor preview, runtime, test — draws what the same code
+    /// produced (`docs/adr/ADR-0028-character-definitions.md`).
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::UnknownContent`] when no such definition is registered.
+    pub fn resolve_character(
+        &self,
+        id: &str,
+        values: &serde_json::Value,
+    ) -> Result<ResolvedCharacter, EngineError> {
+        self.characters
+            .get(id)
+            .map(|character| character.resolve(values))
+            .ok_or_else(|| EngineError::UnknownContent {
+                kind: "character".to_owned(),
+                id: id.to_owned(),
+            })
+    }
+
     /// Compares the loaded languages against the manifest and each other.
     #[must_use]
     pub fn validate_locales(&self) -> ValidationReport {
@@ -374,6 +469,7 @@ impl ContentRegistry {
         self.tile_sets.clear();
         self.worlds.clear();
         self.locales.clear();
+        self.characters.clear();
         self.title_screen = None;
         self.settings = None;
         self.project = None;

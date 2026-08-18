@@ -75,6 +75,11 @@ export function serializeProject(project: ProjectDefinition): string {
   lines.push(...recordArray('tileSets', project.tileSets));
 
   lines.push(...recordArray('worlds', project.worlds));
+  // Only written when the project ships characters: a manifest that has never
+  // seen one should not grow an empty array on its first unrelated save.
+  if (project.characters !== undefined && project.characters.length > 0) {
+    lines.push(...recordArray('characters', project.characters));
+  }
   if (project.titleScreen !== undefined) {
     lines.push(`  "titleScreen": ${inlineObject(project.titleScreen)},`);
   }

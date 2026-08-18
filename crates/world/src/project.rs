@@ -131,6 +131,13 @@ pub struct ProjectDefinition {
     /// be listed here, or the link cannot resolve at runtime.
     #[serde(default)]
     pub worlds: Vec<ContentRef>,
+    /// Character definitions to load, in order.
+    ///
+    /// A project may ship none: characters describe how an entity is *drawn*,
+    /// and a map of coloured tokens needs no definition
+    /// (`docs/adr/ADR-0028-character-definitions.md`).
+    #[serde(default)]
+    pub characters: Vec<ContentRef>,
     /// The languages the game is available in, and their locale files.
     #[serde(default)]
     pub locales: LocalesDefinition,

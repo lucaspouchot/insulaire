@@ -44,6 +44,7 @@ import { RenderModel } from '../../../../renderer/render-model';
 import { I18nService } from '../../../i18n/i18n.service';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
 import { SettingsService } from '../../../settings/settings.service';
+import { CharacterLibraryService } from '../../../services/character-library.service';
 import { TitleScreenService } from '../../../services/title-screen.service';
 import { EngineService } from '../../../services/engine.service';
 import { ContentWorkspaceService } from '../../../services/content-workspace.service';
@@ -92,6 +93,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   private readonly i18n = inject(I18nService);
   private readonly settings = inject(SettingsService);
   private readonly titleScreen = inject(TitleScreenService);
+  private readonly characters = inject(CharacterLibraryService);
   private readonly workspace = inject(ContentWorkspaceService);
 
   private view: CanvasView | null = null;
@@ -290,6 +292,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     void this.i18n.ensureAdopted().catch(() => undefined);
     void this.workspace.ensureProbed().catch(() => undefined);
     void this.settings.ensureLoaded().catch(() => undefined);
+    void this.characters.ensureLoaded().catch(() => undefined);
 
     const document = this.store.requireDocument();
     this.selectedTile.set(document.palette[0]?.id ?? null);
@@ -870,7 +873,8 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
 
   /**
    * Clears the registry and puts back everything a world is judged against:
-   * the locales, the title screen, the settings and every tile set.
+   * the locales, the title screen, the settings, the characters and every tile
+   * set.
    *
    * Locales go back in with the rest; `resetContent` cleared them, and the
    * manifest will not load without the languages it declares
@@ -881,6 +885,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     this.i18n.register();
     this.titleScreen.register();
     this.settings.register();
+    this.characters.register();
     for (const tileSet of this.store.tileSetDefinitions()) {
       this.engine.loadTileSet(JSON.stringify(tileSet));
     }

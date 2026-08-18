@@ -13,6 +13,9 @@
     { "id": "demo_world", "path": "worlds/demo_world.json" },
     { "id": "demo_refuge", "path": "worlds/demo_refuge.json" }
   ],
+  "characters": [
+    { "id": "human_player", "path": "characters/human_player.json" }
+  ],
   "titleScreen": { "id": "main", "path": "menu/title-screen.json" },
   "settings": { "id": "insulaire_game", "path": "settings.json" },
   "locales": {

@@ -1,0 +1,290 @@
+/* The form on the left, the character on the right — the same shape as the
+   settings and title editors, for the same reason: an author edits and sees at
+   once. */
+:host {
+  display: block;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.character-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+.toolbar .path {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.toolbar .spacer {
+  flex: 1;
+}
+
+.toolbar .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+
+.issues-count {
+  font-size: 11px;
+  color: var(--error);
+}
+
+.readonly {
+  font-size: 11px;
+  color: var(--warn);
+}
+
+.banner {
+  margin: 8px 12px 0;
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  padding: 12px;
+}
+
+.form,
+.preview {
+  min-height: 0;
+  overflow: auto;
+}
+
+.panel {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+}
+
+.panel h2 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.row input,
+.row select {
+  width: 100%;
+}
+
+/* One definition of the project. */
+.pick-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 5px 8px;
+  text-align: left;
+  font-size: 12px;
+}
+
+.pick-row.on {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+}
+
+.pick-row .name {
+  flex: 1;
+}
+
+.pick-row .tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+/* A parameter, a layer or a variant: a bordered block of lines. */
+.node {
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.node.on {
+  border-color: var(--accent-dim);
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.line + .line {
+  margin-top: 6px;
+}
+
+.line input[type='text'],
+.line select {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.line input.id {
+  flex: 0 0 110px;
+  font-family: var(--mono);
+}
+
+.line input.asset {
+  flex: 2;
+  font-family: var(--mono);
+}
+
+.line input[type='color'] {
+  flex: 0 0 34px;
+  padding: 0;
+  height: 24px;
+}
+
+.bounds,
+.when {
+  flex-wrap: wrap;
+}
+
+.bounds label,
+.when label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.bounds input,
+.when input {
+  width: 72px;
+  font-size: 11px;
+}
+
+.when .label {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.options {
+  margin-top: 6px;
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
+}
+
+.count {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.pick {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+}
+
+button.remove {
+  color: var(--error);
+}
+
+button.small {
+  margin-top: 4px;
+  font-size: 11px;
+}
+
+.add {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.hint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.hint.ok {
+  color: var(--ok);
+}
+
+.resolved {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.resolved.inline {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resolved.missing {
+  color: var(--warn);
+  font-style: italic;
+}
+
+/* The character itself, on a ground line so scaling reads as height. */
+.stage-canvas {
+  display: block;
+  width: 100%;
+  height: 320px;
+  border-radius: var(--radius);
+  background: linear-gradient(var(--bg), var(--bg-raised));
+  border-bottom: 2px solid var(--border);
+}
+
+.issue {
+  margin: 0 0 6px;
+  font-size: 11px;
+  color: var(--error);
+}
+
+.issue.warn {
+  color: var(--warn);
+}
+
+.issue .code {
+  margin-right: 6px;
+  font-family: var(--mono);
+}
+
+.issue .where {
+  margin-right: 6px;
+  font-family: var(--mono);
+  color: var(--text-dim);
+}

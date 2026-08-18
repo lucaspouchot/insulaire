@@ -5,7 +5,8 @@
 //! dependency. It answers three questions:
 //!
 //! 1. *Where is a hex?* — [`hex`]
-//! 2. *What did the author write?* — [`definition`], [`tileset`], [`template`]
+//! 2. *What did the author write?* — [`definition`], [`tileset`], [`template`],
+//!    [`character`]
 //! 3. *Is it loadable, and what does it look like once loaded?* —
 //!    [`validation`], [`grid`]
 //!
@@ -32,6 +33,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod character;
 pub mod definition;
 pub mod grid;
 pub mod hex;
@@ -51,6 +53,11 @@ pub mod testing;
 #[cfg(all(test, not(feature = "testing")))]
 mod testing;
 
+pub use character::{
+    CharacterCategory, CharacterDefinition, CharacterLayer, ColorSource, LayerVariant, LayerVisual,
+    RenderingMode, ResolvedCharacter, ResolvedLayer, ResolvedVisual, ShapeKind, UnitRect,
+    CHARACTER_SCHEMA_VERSION, UNRESOLVED_COLOR,
+};
 pub use definition::{
     EntityDefinition, HexOrientation, LinkTrigger, LocationDefinition, MapLinkDefinition,
     PlacedTile, ProjectionMode, WorldDefinition, WorldMetadata, MAX_ELEVATION, MIN_ELEVATION,
@@ -64,8 +71,8 @@ pub use project::{
     DEFAULT_ZONE_ID, PROJECT_SCHEMA_VERSION,
 };
 pub use settings::{
-    ControlDefinition, ControlKind, ControlOption, SettingScope, SettingsDefinition, SettingsGroup,
-    SettingsSection, ShowIf, SETTINGS_SCHEMA_VERSION,
+    resolve_controls, ControlDefinition, ControlKind, ControlOption, SettingScope,
+    SettingsDefinition, SettingsGroup, SettingsSection, ShowIf, SETTINGS_SCHEMA_VERSION,
 };
 pub use template::{Behavior, EntityKind, EntityTemplate, TemplateRegistry};
 pub use tileset::{TileDefinition, TileSetDefinition, TileVisual, TILE_SET_SCHEMA_VERSION};
@@ -74,7 +81,8 @@ pub use title_screen::{
     TitleScreenDefinition, TitleSplash, TitleTheme, TITLE_SCREEN_SCHEMA_VERSION,
 };
 pub use validation::{
-    validate_locales, validate_project, validate_project_links, validate_project_zones,
-    validate_referenced_keys, validate_settings, validate_tile_set, validate_title_screen,
-    validate_world, Severity, ValidationIssue, ValidationReport,
+    validate_character, validate_locales, validate_project, validate_project_links,
+    validate_project_zones, validate_referenced_keys, validate_settings, validate_tile_set,
+    validate_title_screen, validate_world, LoadedContent, Severity, ValidationIssue,
+    ValidationReport,
 };

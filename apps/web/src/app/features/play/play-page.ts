@@ -55,6 +55,7 @@ import { SettingsService } from '../../settings/settings.service';
 import { TranslatePipe } from '../../i18n/translate.pipe';
 import { EngineService } from '../../services/engine.service';
 import { ProjectStoreService } from '../../services/project-store.service';
+import { CharacterLibraryService } from '../../services/character-library.service';
 import { TitleScreenService } from '../../services/title-screen.service';
 
 const HEX_SIZE = 28;
@@ -90,6 +91,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
   private readonly i18n = inject(I18nService);
   private readonly settings = inject(SettingsService);
   private readonly titleScreen = inject(TitleScreenService);
+  private readonly characters = inject(CharacterLibraryService);
 
   private view: CanvasView | null = null;
   private renderer: HexMapRenderer | null = null;
@@ -144,6 +146,10 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       // seed comes from the application's own settings
       // (`docs/adr/ADR-0025-settings.md`).
       await this.settings.ensureLoaded();
+      // Character definitions are content the manifest lists, so the project
+      // will not load without them either
+      // (`docs/adr/ADR-0028-character-definitions.md`).
+      await this.characters.ensureLoaded();
       if (this.engine.hasGame()) {
         this.resumeGame();
       } else {
@@ -238,13 +244,14 @@ export class PlayPage implements AfterViewInit, OnDestroy {
     // Cleared first: loading is additive, so a map removed in the editor
     // would otherwise still satisfy a door that points at it.
     this.engine.resetContent();
-    // The languages, the title screen and the settings go back in with the
-    // maps: `loadProject` validates the whole manifest, and refuses one naming
-    // a file that is not loaded — which is exactly what `resetContent` just
-    // made true of all three.
+    // The languages, the title screen, the settings and the characters go back
+    // in with the maps: `loadProject` validates the whole manifest, and refuses
+    // one naming a file that is not loaded — which is exactly what
+    // `resetContent` just made true of all of them.
     this.i18n.register();
     this.titleScreen.register();
     this.settings.register();
+    this.characters.register();
     for (const tileSet of this.store.tileSetDefinitions()) {
       this.engine.loadTileSet(JSON.stringify(tileSet));
     }

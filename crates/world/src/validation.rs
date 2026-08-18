@@ -9,6 +9,12 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
+use serde_json::Value;
+
+use crate::character::{
+    CharacterDefinition, CharacterLayer, ColorSource, LayerVariant, LayerVisual,
+    CHARACTER_SCHEMA_VERSION,
+};
 use crate::definition::{
     HexOrientation, LinkTrigger, WorldDefinition, MAX_ELEVATION, MIN_ELEVATION,
     WORLD_SCHEMA_VERSION,
@@ -62,7 +68,7 @@ pub struct ValidationIssue {
 }
 
 impl ValidationIssue {
-    fn error(code: &str, path: impl Into<String>, message: impl Into<String>) -> Self {
+    fn error(code: impl Into<String>, path: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             code: code.into(),
             severity: Severity::Error,
@@ -71,7 +77,11 @@ impl ValidationIssue {
         }
     }
 
-    fn warning(code: &str, path: impl Into<String>, message: impl Into<String>) -> Self {
+    fn warning(
+        code: impl Into<String>,
+        path: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
         Self {
             code: code.into(),
             severity: Severity::Warning,
@@ -670,20 +680,33 @@ pub fn validate_project_zones<'a>(
     ValidationReport::from_issues(issues)
 }
 
+/// Ids of everything a host currently holds, for [`validate_project`].
+///
+/// A parameter bag rather than five positional arguments: three of them are
+/// lists of ids, and a call site that swaps two of those compiles and lies.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LoadedContent<'a> {
+    /// Ids of the registered worlds.
+    pub worlds: &'a [String],
+    /// Ids of the registered tile sets.
+    pub tile_sets: &'a [String],
+    /// Ids of the registered character definitions.
+    pub characters: &'a [String],
+    /// Id of the registered title screen, if any.
+    pub title_screen: Option<&'a str>,
+    /// Id of the registered settings declaration, if any.
+    pub settings: Option<&'a str>,
+}
+
 /// Validates a project file, given the ids of everything currently loaded.
 ///
 /// The project only *names* files; whether they exist on disk is the host's
 /// business, so this checks the shape of the manifest and that its start world
 /// and referenced ids are among the loaded content.
-///
-/// `loaded_title_screen_id` is the id of the registered title screen, if any.
 #[must_use]
 pub fn validate_project(
     project: &ProjectDefinition,
-    loaded_world_ids: &[String],
-    loaded_tile_set_ids: &[String],
-    loaded_title_screen_id: Option<&str>,
-    loaded_settings_id: Option<&str>,
+    loaded: LoadedContent<'_>,
 ) -> ValidationReport {
     let mut issues = Vec::new();
 
@@ -738,7 +761,7 @@ pub fn validate_project(
                 format!("world `{}` is listed twice", entry.id),
             ));
         }
-        if !loaded_world_ids.iter().any(|id| id == &entry.id) {
+        if !loaded.worlds.iter().any(|id| id == &entry.id) {
             issues.push(ValidationIssue::error(
                 "project.unloadedWorld",
                 format!("worlds[{index}].id"),
@@ -751,12 +774,33 @@ pub fn validate_project(
     }
 
     for (index, entry) in project.tile_sets.iter().enumerate() {
-        if !loaded_tile_set_ids.iter().any(|id| id == &entry.id) {
+        if !loaded.tile_sets.iter().any(|id| id == &entry.id) {
             issues.push(ValidationIssue::error(
                 "project.unloadedTileSet",
                 format!("tileSets[{index}].id"),
                 format!(
                     "tile set `{}` (`{}`) is listed by the project but not loaded",
+                    entry.id, entry.path
+                ),
+            ));
+        }
+    }
+
+    let mut declared_characters: BTreeSet<&str> = BTreeSet::new();
+    for (index, entry) in project.characters.iter().enumerate() {
+        if !declared_characters.insert(entry.id.as_str()) {
+            issues.push(ValidationIssue::error(
+                "project.duplicateCharacter",
+                format!("characters[{index}].id"),
+                format!("character `{}` is listed twice", entry.id),
+            ));
+        }
+        if !loaded.characters.iter().any(|id| id == &entry.id) {
+            issues.push(ValidationIssue::error(
+                "project.unloadedCharacter",
+                format!("characters[{index}].id"),
+                format!(
+                    "character `{}` (`{}`) is listed by the project but not loaded",
                     entry.id, entry.path
                 ),
             ));
@@ -779,7 +823,7 @@ pub fn validate_project(
     }
 
     if let Some(entry) = &project.title_screen {
-        if loaded_title_screen_id != Some(entry.id.as_str()) {
+        if loaded.title_screen != Some(entry.id.as_str()) {
             issues.push(ValidationIssue::error(
                 "project.unloadedTitleScreen",
                 "titleScreen.id",
@@ -792,7 +836,7 @@ pub fn validate_project(
     }
 
     if let Some(entry) = &project.settings {
-        if loaded_settings_id != Some(entry.id.as_str()) {
+        if loaded.settings != Some(entry.id.as_str()) {
             issues.push(ValidationIssue::error(
                 "project.unloadedSettings",
                 "settings.id",
@@ -1161,7 +1205,7 @@ pub fn validate_settings(settings: &SettingsDefinition) -> ValidationReport {
                 format!("setting `{}` is declared twice", field.id),
             ));
         }
-        issues.extend(field_issues(&path, field));
+        issues.extend(field_issues("settings", &path, field));
     }
 
     for (path, field) in settings.fields() {
@@ -1183,12 +1227,17 @@ pub fn validate_settings(settings: &SettingsDefinition) -> ValidationReport {
 }
 
 /// Everything one control can get wrong on its own.
-fn field_issues(path: &str, field: &ControlDefinition) -> Vec<ValidationIssue> {
+///
+/// `kind` namespaces the codes: the very same checks report `settings.noOptions`
+/// on a settings file and `character.noOptions` on a character's parameters, so
+/// one implementation serves both vocabularies without either pretending to be
+/// the other (`docs/adr/ADR-0028-character-definitions.md`).
+fn field_issues(kind: &str, path: &str, field: &ControlDefinition) -> Vec<ValidationIssue> {
     let mut issues = Vec::new();
 
     if field.label_key.trim().is_empty() {
         issues.push(ValidationIssue::error(
-            "settings.missingLabelKey",
+            format!("{kind}.missingLabelKey"),
             format!("{path}.labelKey"),
             format!("setting `{}` has no label key", field.id),
         ));
@@ -1196,7 +1245,7 @@ fn field_issues(path: &str, field: &ControlDefinition) -> Vec<ValidationIssue> {
 
     if field.control.uses_options() && field.options.is_empty() {
         issues.push(ValidationIssue::error(
-            "settings.noOptions",
+            format!("{kind}.noOptions"),
             format!("{path}.options"),
             format!(
                 "setting `{}` chooses from a list and declares none",
@@ -1206,7 +1255,7 @@ fn field_issues(path: &str, field: &ControlDefinition) -> Vec<ValidationIssue> {
     }
     if !field.control.uses_options() && !field.options.is_empty() {
         issues.push(ValidationIssue::warning(
-            "settings.unusedOptions",
+            format!("{kind}.unusedOptions"),
             format!("{path}.options"),
             format!(
                 "setting `{}` is a `{:?}` control, so its options are ignored",
@@ -1219,14 +1268,14 @@ fn field_issues(path: &str, field: &ControlDefinition) -> Vec<ValidationIssue> {
     for (index, option) in field.options.iter().enumerate() {
         if !option_values.insert(option.value.as_str()) {
             issues.push(ValidationIssue::error(
-                "settings.duplicateOption",
+                format!("{kind}.duplicateOption"),
                 format!("{path}.options[{index}].value"),
                 format!("setting `{}` offers `{}` twice", field.id, option.value),
             ));
         }
         if option.label_key.trim().is_empty() {
             issues.push(ValidationIssue::error(
-                "settings.missingLabelKey",
+                format!("{kind}.missingLabelKey"),
                 format!("{path}.options[{index}].labelKey"),
                 format!("an option of `{}` has no label key", field.id),
             ));
@@ -1236,7 +1285,7 @@ fn field_issues(path: &str, field: &ControlDefinition) -> Vec<ValidationIssue> {
     if let (Some(min), Some(max)) = (field.min, field.max) {
         if min > max {
             issues.push(ValidationIssue::error(
-                "settings.emptyRange",
+                format!("{kind}.emptyRange"),
                 format!("{path}.min"),
                 format!("setting `{}` has min {min} above max {max}", field.id),
             ));
@@ -1244,7 +1293,7 @@ fn field_issues(path: &str, field: &ControlDefinition) -> Vec<ValidationIssue> {
     }
     if field.control.is_numeric() && field.step.is_some_and(|step| step <= 0.0) {
         issues.push(ValidationIssue::error(
-            "settings.invalidStep",
+            format!("{kind}.invalidStep"),
             format!("{path}.step"),
             format!("setting `{}` has a step that is not positive", field.id),
         ));
@@ -1254,7 +1303,7 @@ fn field_issues(path: &str, field: &ControlDefinition) -> Vec<ValidationIssue> {
     // be a value this control would accept from them.
     if !field.accepts(&field.default) {
         issues.push(ValidationIssue::error(
-            "settings.invalidDefault",
+            format!("{kind}.invalidDefault"),
             format!("{path}.default"),
             format!(
                 "the default of `{}` is not a value its `{:?}` control accepts",
@@ -1268,13 +1317,317 @@ fn field_issues(path: &str, field: &ControlDefinition) -> Vec<ValidationIssue> {
             .is_some_and(|number| !field.contains(number))
     {
         issues.push(ValidationIssue::error(
-            "settings.defaultOutOfRange",
+            format!("{kind}.defaultOutOfRange"),
             format!("{path}.default"),
             format!("the default of `{}` is outside its range", field.id),
         ));
     }
 
     issues
+}
+
+/// Validates a character definition on its own.
+///
+/// The checks are the ones a *renderer* would otherwise discover the hard way:
+/// a variant that names a parameter nobody declared, a colour bound to a
+/// number, a sprite with no path, a box of zero size. None of them know what
+/// the character is for — the same rules judge a player, a merchant and a
+/// dragon (`docs/adr/ADR-0028-character-definitions.md`).
+#[must_use]
+pub fn validate_character(character: &CharacterDefinition) -> ValidationReport {
+    let mut issues = Vec::new();
+
+    if character.id.trim().is_empty() {
+        issues.push(ValidationIssue::error(
+            "character.missingId",
+            "id",
+            "character id must not be empty",
+        ));
+    }
+    if character.schema_version == 0 || character.schema_version > CHARACTER_SCHEMA_VERSION {
+        issues.push(ValidationIssue::error(
+            "character.unsupportedSchemaVersion",
+            "schemaVersion",
+            format!(
+                "unsupported character schemaVersion {}; this build supports up to \
+                 {CHARACTER_SCHEMA_VERSION}",
+                character.schema_version
+            ),
+        ));
+    }
+
+    issues.extend(parameter_issues(character));
+    issues.extend(scale_issues(character));
+    issues.extend(layer_issues(character));
+
+    ValidationReport::from_issues(issues)
+}
+
+/// The choices a definition offers: unique, named, and individually sound.
+fn parameter_issues(character: &CharacterDefinition) -> Vec<ValidationIssue> {
+    let mut issues = Vec::new();
+    let mut ids: BTreeSet<&str> = BTreeSet::new();
+
+    for (index, parameter) in character.parameters.iter().enumerate() {
+        let path = format!("parameters[{index}]");
+        if parameter.id.trim().is_empty() {
+            issues.push(ValidationIssue::error(
+                "character.missingParameterId",
+                format!("{path}.id"),
+                "a parameter's id must not be empty",
+            ));
+        } else if !ids.insert(parameter.id.as_str()) {
+            // Ids are what a variant's `when` and a colour binding name, so a
+            // duplicate is two choices fighting over one answer.
+            issues.push(ValidationIssue::error(
+                "character.duplicateParameter",
+                format!("{path}.id"),
+                format!("parameter `{}` is declared twice", parameter.id),
+            ));
+        }
+        issues.extend(field_issues("character", &path, parameter));
+
+        if let Some(condition) = &parameter.show_if {
+            if character.parameter(&condition.field).is_none() {
+                issues.push(ValidationIssue::error(
+                    "character.unknownCondition",
+                    format!("{path}.showIf.field"),
+                    format!(
+                        "parameter `{}` is shown when `{}` has a value, but no such parameter \
+                         is declared",
+                        parameter.id, condition.field
+                    ),
+                ));
+            }
+        }
+    }
+
+    issues
+}
+
+/// The one binding that acts on geometry has to name a number.
+fn scale_issues(character: &CharacterDefinition) -> Vec<ValidationIssue> {
+    if character.scale_parameter.is_empty() {
+        return Vec::new();
+    }
+    match character.parameter(&character.scale_parameter) {
+        None => vec![ValidationIssue::error(
+            "character.unknownScaleParameter",
+            "scaleParameter",
+            format!(
+                "`{}` scales the character but is not a declared parameter",
+                character.scale_parameter
+            ),
+        )],
+        Some(parameter) if !parameter.control.is_numeric() => vec![ValidationIssue::error(
+            "character.nonNumericScale",
+            "scaleParameter",
+            format!(
+                "`{}` scales the character, so it must be a numeric control, not a `{:?}`",
+                character.scale_parameter, parameter.control
+            ),
+        )],
+        Some(_) => Vec::new(),
+    }
+}
+
+/// The pieces a definition is drawn from, and what each variant claims.
+fn layer_issues(character: &CharacterDefinition) -> Vec<ValidationIssue> {
+    let mut issues = Vec::new();
+    let mut layer_ids: BTreeSet<&str> = BTreeSet::new();
+
+    if character.layers.is_empty() {
+        issues.push(ValidationIssue::warning(
+            "character.noLayers",
+            "layers",
+            format!("character `{}` draws nothing", character.id),
+        ));
+    }
+
+    for (index, layer) in character.layers.iter().enumerate() {
+        let path = format!("layers[{index}]");
+        if layer.id.trim().is_empty() {
+            issues.push(ValidationIssue::error(
+                "character.missingLayerId",
+                format!("{path}.id"),
+                "a layer's id must not be empty",
+            ));
+        } else if !layer_ids.insert(layer.id.as_str()) {
+            issues.push(ValidationIssue::error(
+                "character.duplicateLayer",
+                format!("{path}.id"),
+                format!("layer `{}` is declared twice", layer.id),
+            ));
+        }
+        if layer.variants.is_empty() {
+            issues.push(ValidationIssue::warning(
+                "character.emptyLayer",
+                format!("{path}.variants"),
+                format!("layer `{}` has no variant, so it never draws", layer.id),
+            ));
+        }
+
+        let mut variant_ids: BTreeSet<&str> = BTreeSet::new();
+        for (variant_index, variant) in layer.variants.iter().enumerate() {
+            let path = format!("{path}.variants[{variant_index}]");
+            if variant.id.trim().is_empty() {
+                issues.push(ValidationIssue::error(
+                    "character.missingVariantId",
+                    format!("{path}.id"),
+                    "a variant's id must not be empty",
+                ));
+            } else if !variant_ids.insert(variant.id.as_str()) {
+                issues.push(ValidationIssue::error(
+                    "character.duplicateVariant",
+                    format!("{path}.id"),
+                    format!(
+                        "layer `{}` declares variant `{}` twice",
+                        layer.id, variant.id
+                    ),
+                ));
+            }
+            issues.extend(variant_issues(character, &path, layer, variant));
+        }
+    }
+
+    issues
+}
+
+/// One variant: its conditions, its box and what it draws.
+fn variant_issues(
+    character: &CharacterDefinition,
+    path: &str,
+    layer: &CharacterLayer,
+    variant: &LayerVariant,
+) -> Vec<ValidationIssue> {
+    let mut issues = Vec::new();
+
+    for (id, required) in &variant.when {
+        let Some(parameter) = character.parameter(id) else {
+            issues.push(ValidationIssue::error(
+                "character.unknownConditionParameter",
+                format!("{path}.when"),
+                format!(
+                    "variant `{}` of layer `{}` waits on parameter `{id}`, which is not declared",
+                    variant.id, layer.id
+                ),
+            ));
+            continue;
+        };
+        if !parameter_allows(parameter, required) {
+            // Not an error: the file still loads and the variant simply never
+            // applies. It is, however, always a mistake worth reading.
+            issues.push(ValidationIssue::warning(
+                "character.impossibleCondition",
+                format!("{path}.when"),
+                format!(
+                    "variant `{}` of layer `{}` waits for `{id}` to hold a value its control \
+                     never produces",
+                    variant.id, layer.id
+                ),
+            ));
+        }
+    }
+
+    if variant.rect.width() <= 0.0 || variant.rect.height() <= 0.0 {
+        issues.push(ValidationIssue::error(
+            "character.emptyRect",
+            format!("{path}.rect"),
+            format!(
+                "variant `{}` of layer `{}` has a box of zero size",
+                variant.id, layer.id
+            ),
+        ));
+    } else if variant.rect.x() < 0.0
+        || variant.rect.y() < 0.0
+        || variant.rect.x() + variant.rect.width() > 1.0
+        || variant.rect.y() + variant.rect.height() > 1.0
+    {
+        // Drawing outside the unit square is legal — it is how a wing overhangs
+        // — but it is far more often a typo, so it is said out loud.
+        issues.push(ValidationIssue::warning(
+            "character.rectOutOfBox",
+            format!("{path}.rect"),
+            format!(
+                "variant `{}` of layer `{}` draws outside the character's box",
+                variant.id, layer.id
+            ),
+        ));
+    }
+
+    if variant.visual.mode() != character.rendering {
+        issues.push(ValidationIssue::error(
+            "character.renderingMismatch",
+            format!("{path}.visual"),
+            format!(
+                "character `{}` is drawn as `{:?}`, so variant `{}` of layer `{}` may not be a \
+                 `{:?}` visual",
+                character.id,
+                character.rendering,
+                variant.id,
+                layer.id,
+                variant.visual.mode()
+            ),
+        ));
+    }
+
+    match &variant.visual {
+        LayerVisual::Sprite { asset } if asset.trim().is_empty() => {
+            issues.push(ValidationIssue::error(
+                "character.missingAsset",
+                format!("{path}.visual.asset"),
+                format!(
+                    "variant `{}` of layer `{}` is a sprite with no image",
+                    variant.id, layer.id
+                ),
+            ));
+        }
+        LayerVisual::Shape {
+            color: ColorSource::Parameter(id),
+            ..
+        } if character.parameter(id).is_none() => {
+            issues.push(ValidationIssue::error(
+                "character.unknownColorParameter",
+                format!("{path}.visual.color"),
+                format!(
+                    "variant `{}` of layer `{}` takes its colour from `{id}`, which is not \
+                     declared",
+                    variant.id, layer.id
+                ),
+            ));
+        }
+        LayerVisual::Shape {
+            color: ColorSource::Fixed(color),
+            ..
+        } if color.trim().is_empty() => {
+            issues.push(ValidationIssue::error(
+                "character.missingColor",
+                format!("{path}.visual.color"),
+                format!(
+                    "variant `{}` of layer `{}` has no colour",
+                    variant.id, layer.id
+                ),
+            ));
+        }
+        _ => {}
+    }
+
+    issues
+}
+
+/// Whether a parameter can ever hold the value a condition waits for.
+///
+/// A list control is the exception: a `multiSelect` never *equals* one of its
+/// options, but a variant asking for one is asking whether it was chosen, which
+/// is exactly the containment rule the resolver applies.
+fn parameter_allows(parameter: &ControlDefinition, required: &Value) -> bool {
+    if parameter.accepts(required) {
+        return true;
+    }
+    parameter.control.is_multiple()
+        && required
+            .as_str()
+            .is_some_and(|text| parameter.options.iter().any(|option| option.value == text))
 }
 
 /// Reports keys that content references but no language defines.
@@ -1337,7 +1690,9 @@ fn tile_at_is_passable(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::character::{RenderingMode, ShapeKind, UnitRect};
     use crate::hex::OffsetCoord;
+    use crate::settings::ControlKind;
     use crate::testing;
 
     fn codes(report: &ValidationReport) -> Vec<&str> {
@@ -1686,33 +2041,42 @@ mod tests {
                     path: "worlds/interior_world.json".to_owned(),
                 },
             ],
+            characters: Vec::new(),
             locales: crate::project::LocalesDefinition::default(),
             title_screen: None,
             settings: None,
         }
     }
 
-    fn loaded() -> (Vec<String>, Vec<String>) {
+    fn loaded_ids() -> (Vec<String>, Vec<String>) {
         (
             vec!["linked_world".to_owned(), "interior_world".to_owned()],
             vec!["mvp_terrain".to_owned()],
         )
     }
 
+    fn loaded<'a>(worlds: &'a [String], tile_sets: &'a [String]) -> LoadedContent<'a> {
+        LoadedContent {
+            worlds,
+            tile_sets,
+            ..LoadedContent::default()
+        }
+    }
+
     #[test]
     fn a_project_listing_loaded_content_is_valid() {
-        let (worlds, tile_sets) = loaded();
-        let report = validate_project(&project(), &worlds, &tile_sets, None, None);
+        let (worlds, tile_sets) = loaded_ids();
+        let report = validate_project(&project(), loaded(&worlds, &tile_sets));
         assert!(report.valid, "unexpected issues: {:?}", report.issues);
     }
 
     #[test]
     fn a_project_start_world_must_be_one_of_its_worlds() {
-        let (worlds, tile_sets) = loaded();
+        let (worlds, tile_sets) = loaded_ids();
         let mut project = project();
         project.start_world = "elsewhere".to_owned();
         assert!(
-            codes(&validate_project(&project, &worlds, &tile_sets, None, None))
+            codes(&validate_project(&project, loaded(&worlds, &tile_sets)))
                 .contains(&"project.unknownStartWorld")
         );
     }
@@ -1724,21 +2088,21 @@ mod tests {
             id: "ghost".to_owned(),
             path: "worlds/ghost.json".to_owned(),
         });
-        let (worlds, tile_sets) = loaded();
-        let report = validate_project(&project, &worlds, &tile_sets, None, None);
+        let (worlds, tile_sets) = loaded_ids();
+        let report = validate_project(&project, loaded(&worlds, &tile_sets));
         assert!(codes(&report).contains(&"project.unloadedWorld"));
 
         project.worlds.pop();
         project.tile_sets[0].id = "absent".to_owned();
         assert!(
-            codes(&validate_project(&project, &worlds, &tile_sets, None, None))
+            codes(&validate_project(&project, loaded(&worlds, &tile_sets)))
                 .contains(&"project.unloadedTileSet")
         );
     }
 
     #[test]
     fn a_zone_declared_twice_or_without_an_id_is_an_error() {
-        let (worlds, tile_sets) = loaded();
+        let (worlds, tile_sets) = loaded_ids();
         let mut project = project();
         project.zones.push(crate::project::ZoneDefinition {
             id: "valley".to_owned(),
@@ -1749,7 +2113,7 @@ mod tests {
             name: "Nameless".to_owned(),
         });
 
-        let report = validate_project(&project, &worlds, &tile_sets, None, None);
+        let report = validate_project(&project, loaded(&worlds, &tile_sets));
         assert!(codes(&report).contains(&"project.duplicateZone"));
         assert!(codes(&report).contains(&"project.missingZoneId"));
     }
@@ -1824,7 +2188,7 @@ mod tests {
 
     #[test]
     fn a_manifest_declaring_the_same_language_or_namespace_twice_is_an_error() {
-        let (worlds, tile_sets) = loaded();
+        let (worlds, tile_sets) = loaded_ids();
         let mut project = localised_project();
         project.locales.languages.push(language("fr", &["menu"]));
         project.locales.languages[0]
@@ -1834,19 +2198,19 @@ mod tests {
                 path: "locales/en/menu-again.json".to_owned(),
             });
 
-        let report = validate_project(&project, &worlds, &tile_sets, None, None);
+        let report = validate_project(&project, loaded(&worlds, &tile_sets));
         assert!(codes(&report).contains(&"locale.duplicateLanguage"));
         assert!(codes(&report).contains(&"locale.duplicateNamespace"));
     }
 
     #[test]
     fn a_default_language_that_is_not_declared_is_an_error() {
-        let (worlds, tile_sets) = loaded();
+        let (worlds, tile_sets) = loaded_ids();
         let mut project = localised_project();
         project.locales.default = "de".to_owned();
 
         assert!(
-            codes(&validate_project(&project, &worlds, &tile_sets, None, None))
+            codes(&validate_project(&project, loaded(&worlds, &tile_sets)))
                 .contains(&"locale.unknownDefaultLanguage")
         );
     }
@@ -1999,7 +2363,7 @@ mod tests {
 
     #[test]
     fn a_project_naming_a_title_screen_that_is_not_loaded_is_an_error() {
-        let (worlds, tile_sets) = loaded();
+        let (worlds, tile_sets) = loaded_ids();
         let mut project = project();
         project.title_screen = Some(crate::project::ContentRef {
             id: "main".to_owned(),
@@ -2007,10 +2371,211 @@ mod tests {
         });
 
         assert!(
-            codes(&validate_project(&project, &worlds, &tile_sets, None, None))
+            codes(&validate_project(&project, loaded(&worlds, &tile_sets)))
                 .contains(&"project.unloadedTitleScreen")
         );
-        assert!(validate_project(&project, &worlds, &tile_sets, Some("main"), None).valid);
+        assert!(
+            validate_project(
+                &project,
+                LoadedContent {
+                    title_screen: Some("main"),
+                    ..loaded(&worlds, &tile_sets)
+                },
+            )
+            .valid
+        );
+    }
+
+    // ------------------------------------------------------------ characters
+
+    fn character(json: &str) -> CharacterDefinition {
+        serde_json::from_str(json).expect("parse")
+    }
+
+    /// A minimal definition that validates: one parameter, one layer.
+    fn valid_character() -> CharacterDefinition {
+        character(
+            r##"{
+                "id": "human_player", "schemaVersion": 1, "name": "Human Player",
+                "category": "player", "rendering": "procedural",
+                "parameters": [
+                    { "id": "hairColor", "labelKey": "game.character.hairColor",
+                      "control": "color", "default": "#4b3621" }
+                ],
+                "layers": [
+                    { "id": "hair", "variants": [
+                        { "id": "default", "rect": [0.38, 0.08, 0.24, 0.14],
+                          "visual": { "kind": "shape", "shape": "ellipse",
+                                      "color": { "parameter": "hairColor" } } }
+                    ] }
+                ]
+            }"##,
+        )
+    }
+
+    #[test]
+    fn a_well_formed_character_has_nothing_to_report() {
+        let report = validate_character(&valid_character());
+        assert!(report.valid, "unexpected issues: {:?}", report.issues);
+        assert!(report.issues.is_empty(), "{:?}", report.issues);
+    }
+
+    #[test]
+    fn a_character_parameter_is_judged_by_the_settings_rules_under_its_own_codes() {
+        let mut character = valid_character();
+        // A colour whose default is a number: the shared control check catches
+        // it, and reports it as a character problem rather than a settings one.
+        character.parameters[0].default = serde_json::json!(3);
+
+        let report = validate_character(&character);
+        let found = codes(&report);
+        assert!(found.contains(&"character.invalidDefault"), "{found:?}");
+        assert!(!found.iter().any(|code| code.starts_with("settings.")));
+    }
+
+    #[test]
+    fn a_variant_may_only_wait_on_a_parameter_that_exists() {
+        let mut character = valid_character();
+        character.layers[0].variants[0]
+            .when
+            .insert("gender".to_owned(), serde_json::json!("female"));
+
+        let report = validate_character(&character);
+        assert!(!report.valid);
+        assert!(codes(&report).contains(&"character.unknownConditionParameter"));
+    }
+
+    /// A condition no control could ever satisfy is a variant that will never
+    /// be drawn — wrong, but not a reason to refuse the file.
+    #[test]
+    fn a_condition_the_control_cannot_produce_is_a_warning() {
+        let mut character = character(
+            r##"{
+                "id": "goblin", "schemaVersion": 1, "rendering": "procedural",
+                "parameters": [
+                    { "id": "armor", "labelKey": "k", "control": "select", "default": "leather",
+                      "options": [{ "value": "leather", "labelKey": "k" }] }
+                ],
+                "layers": [
+                    { "id": "armor", "variants": [
+                        { "id": "plate", "when": { "armor": "plate" },
+                          "visual": { "kind": "shape", "shape": "rect",
+                                      "color": { "fixed": "#888888" } } }
+                    ] }
+                ]
+            }"##,
+        );
+
+        let report = validate_character(&character);
+        assert!(report.valid, "{:?}", report.issues);
+        assert!(codes(&report).contains(&"character.impossibleCondition"));
+
+        // Asking a list parameter for one of its own options is the resolver's
+        // containment rule, not an impossible condition.
+        character.parameters[0].control = ControlKind::MultiSelect;
+        character.parameters[0].default = serde_json::json!([]);
+        character.layers[0].variants[0]
+            .when
+            .insert("armor".to_owned(), serde_json::json!("leather"));
+        assert!(!codes(&validate_character(&character)).contains(&"character.impossibleCondition"));
+    }
+
+    #[test]
+    fn a_character_is_held_to_the_rendering_mode_it_declares() {
+        let mut character = valid_character();
+        character.layers[0].variants[0].visual = LayerVisual::Sprite {
+            asset: "assets/characters/hair.png".to_owned(),
+        };
+
+        let report = validate_character(&character);
+        assert!(!report.valid);
+        assert!(codes(&report).contains(&"character.renderingMismatch"));
+
+        // Declaring the other mode is all it takes; nothing else moves.
+        character.rendering = RenderingMode::AssetComposition;
+        assert!(validate_character(&character).valid);
+    }
+
+    #[test]
+    fn a_colour_binding_must_name_a_declared_parameter() {
+        let mut character = valid_character();
+        character.layers[0].variants[0].visual = LayerVisual::Shape {
+            shape: ShapeKind::Ellipse,
+            color: ColorSource::Parameter("eyeColor".to_owned()),
+        };
+
+        assert!(codes(&validate_character(&character)).contains(&"character.unknownColorParameter"));
+    }
+
+    #[test]
+    fn what_scales_a_character_must_be_a_number_it_declares() {
+        let mut character = valid_character();
+        character.scale_parameter = "height".to_owned();
+        assert!(codes(&validate_character(&character)).contains(&"character.unknownScaleParameter"));
+
+        // Declared, but a colour: still not something to multiply a box by.
+        character.scale_parameter = "hairColor".to_owned();
+        assert!(codes(&validate_character(&character)).contains(&"character.nonNumericScale"));
+    }
+
+    #[test]
+    fn a_box_of_no_size_is_an_error_and_one_that_overhangs_is_a_warning() {
+        let mut character = valid_character();
+        character.layers[0].variants[0].rect = UnitRect::new(0.1, 0.1, 0.0, 0.4);
+        let report = validate_character(&character);
+        assert!(!report.valid);
+        assert!(codes(&report).contains(&"character.emptyRect"));
+
+        character.layers[0].variants[0].rect = UnitRect::new(0.8, 0.1, 0.4, 0.4);
+        let report = validate_character(&character);
+        assert!(report.valid, "an overhang still loads: {:?}", report.issues);
+        assert!(codes(&report).contains(&"character.rectOutOfBox"));
+    }
+
+    #[test]
+    fn duplicate_ids_are_errors_and_a_character_that_draws_nothing_is_a_warning() {
+        let mut character = valid_character();
+        let layer = character.layers[0].clone();
+        character.layers.push(layer);
+        let variant = character.layers[0].variants[0].clone();
+        character.layers[0].variants.push(variant);
+
+        let report = validate_character(&character);
+        let found = codes(&report);
+        assert!(found.contains(&"character.duplicateLayer"), "{found:?}");
+        assert!(found.contains(&"character.duplicateVariant"), "{found:?}");
+
+        character.layers.clear();
+        let report = validate_character(&character);
+        assert!(report.valid);
+        assert!(codes(&report).contains(&"character.noLayers"));
+    }
+
+    #[test]
+    fn a_project_may_only_list_characters_that_are_loaded() {
+        let (worlds, tile_sets) = loaded_ids();
+        let mut project = project();
+        project.characters = vec![crate::project::ContentRef {
+            id: "human_player".to_owned(),
+            path: "characters/human_player.json".to_owned(),
+        }];
+
+        assert!(
+            codes(&validate_project(&project, loaded(&worlds, &tile_sets)))
+                .contains(&"project.unloadedCharacter")
+        );
+
+        let characters = vec!["human_player".to_owned()];
+        assert!(
+            validate_project(
+                &project,
+                LoadedContent {
+                    characters: &characters,
+                    ..loaded(&worlds, &tile_sets)
+                },
+            )
+            .valid
+        );
     }
 
     #[test]

@@ -421,6 +421,13 @@ async function recordTranscript(page, baseUrl, scenario) {
         engine.loadTitleScreen(await text('/content/' + manifest.titleScreen.path)),
       );
     }
+    // Character definitions are content the manifest lists, so the project will
+    // not load without them either
+    // (docs/adr/ADR-0028-character-definitions.md).
+    content.characters = [];
+    for (const entry of manifest.characters ?? []) {
+      content.characters.push(parse(engine.loadCharacter(await text('/content/' + entry.path))));
+    }
     content.settings = null;
     if (manifest.settings) {
       content.settings = parse(

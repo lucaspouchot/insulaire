@@ -39,6 +39,10 @@ the `zones` its maps are grouped into, and the `tileSets` and `worlds` it ships,
 each as `{ id, path }`. A delivered client build boots from it (ADR-0018); the
 editor regenerates it whenever the set of maps or zones changes.
 
+The manifest also lists the project's **characters**, each as `{ id, path }`:
+the definitions that say how a kind of character is drawn (ADR-0028). A project
+may ship none.
+
 The manifest also names the game's **settings** declaration
 (`content/settings.json`): sections, groups and fields described with the same
 control vocabulary the application's own settings use. The engine validates and
@@ -87,6 +91,42 @@ Templates currently live in a built-in registry
 (`crates/world/src/template.rs`) rather than in content files. The indirection
 is what matters: worlds reference an id, so templates can become content later
 without touching a single world file.
+
+## CharacterDefinition
+
+*How a kind of character is drawn, and what may be chosen about one.* Authored
+content, one file per definition, listed by the project (ADR-0028).
+
+```text
+CharacterDefinition
+  id, name, category, rendering, scaleParameter
+  parameters[]   ControlDefinition — the same vocabulary as settings
+  layers[]
+    id
+    variants[]
+      id, when{ parameterId: value }, rect[x,y,w,h], visual
+```
+
+A definition describes a *family*; a set of chosen values — a **customisation**
+— describes one member of it. Neither is runtime state: a customisation is a
+plain map of values, which is what lets it be authored, saved or chosen at
+character creation without a type of its own.
+
+```text
+CharacterDefinition + values ──> resolve() ──> ResolvedCharacter ──> renderer
+```
+
+`ResolvedCharacter` is the only thing a renderer sees: an ordered list of boxes
+in unit space, each with a sprite path or a shape and a literal colour. It holds
+no definition, no lookup and no category — the same pipeline draws the player,
+a merchant and a dragon.
+
+**No type here is specific to the player.** The player's character is one
+`CharacterDefinition` among the project's, and the reason to keep it that way is
+that the alternative — a `PlayerAppearance` beside an `NpcAppearance` — is a
+renderer multiplied by a bestiary.
+
+---
 
 ## ScenarioDefinition
 

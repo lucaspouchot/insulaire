@@ -1,0 +1,63 @@
+{
+  "id": "human_player",
+  "schemaVersion": 1,
+  "name": "Human Player",
+  "category": "player",
+  "rendering": "procedural",
+  "scaleParameter": "height",
+  "parameters": [
+    {
+      "id": "gender",
+      "labelKey": "game.character.gender",
+      "control": "select",
+      "default": "female",
+      "options": [
+        { "value": "female", "labelKey": "game.character.genderFemale" },
+        { "value": "male", "labelKey": "game.character.genderMale" }
+      ]
+    },
+    {
+      "id": "hairColor",
+      "labelKey": "game.character.hairColor",
+      "control": "color",
+      "default": "#4b3621"
+    },
+    {
+      "id": "height",
+      "labelKey": "game.character.height",
+      "helpKey": "game.character.heightHelp",
+      "control": "slider",
+      "default": 1,
+      "min": 0.85,
+      "max": 1.15,
+      "step": 0.05
+    }
+  ],
+  "layers": [
+    {
+      "id": "legs",
+      "variants": [
+        { "id": "default", "rect": [0.4, 0.72, 0.2, 0.26], "visual": { "kind": "shape", "shape": "rect", "color": { "fixed": "#3d4a5c" } } }
+      ]
+    },
+    {
+      "id": "body",
+      "variants": [
+        { "id": "female", "when": { "gender": "female" }, "rect": [0.28, 0.4, 0.44, 0.36], "visual": { "kind": "shape", "shape": "triangle", "color": { "fixed": "#7a5c3e" } } },
+        { "id": "default", "rect": [0.34, 0.4, 0.32, 0.34], "visual": { "kind": "shape", "shape": "rect", "color": { "fixed": "#7a5c3e" } } }
+      ]
+    },
+    {
+      "id": "head",
+      "variants": [
+        { "id": "default", "rect": [0.41, 0.18, 0.18, 0.22], "visual": { "kind": "shape", "shape": "ellipse", "color": { "fixed": "#e8c39e" } } }
+      ]
+    },
+    {
+      "id": "hair",
+      "variants": [
+        { "id": "default", "rect": [0.395, 0.15, 0.21, 0.14], "visual": { "kind": "shape", "shape": "ellipse", "color": { "parameter": "hairColor" } } }
+      ]
+    }
+  ]
+}

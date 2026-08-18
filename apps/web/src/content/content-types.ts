@@ -188,6 +188,8 @@ export interface ProjectDefinition {
   zones?: ZoneDefinition[];
   tileSets: ContentRef[];
   worlds: ContentRef[];
+  /** Character definitions to load. Absent means the project ships none. */
+  characters?: ContentRef[];
   /** The title screen a client opens on. Absent means it starts on a map. */
   titleScreen?: ContentRef;
   /** The settings this game offers. The application's own are not content. */
@@ -351,3 +353,119 @@ export interface SettingsDefinition {
 
 /** Values by field id, as stored and as `createGame` receives them. */
 export type SettingsValues = Record<string, SettingValue>;
+
+export const CHARACTER_SCHEMA_VERSION = 1;
+
+/**
+ * What a character definition is used for.
+ *
+ * Filing, not behaviour: neither the resolver nor the renderer reads it. It
+ * exists so an editor can group definitions and a later feature can ask for
+ * "the playable ones" without a naming convention
+ * (`docs/adr/ADR-0028-character-definitions.md`).
+ */
+export type CharacterCategory = 'player' | 'npc' | 'enemy' | 'monster' | 'other';
+
+/** How a character's layers are drawn. A definition declares one and is held to it. */
+export type RenderingMode = 'procedural' | 'assetComposition';
+
+/** A drawing primitive. Closed: a shape is something the renderer implements. */
+export type ShapeKind = 'rect' | 'ellipse' | 'triangle';
+
+/**
+ * Where a shape's colour comes from.
+ *
+ * `parameter` is what makes "hair colour" a choice instead of one variant per
+ * colour: the layer reads the value the customisation holds.
+ */
+export type ColorSource = { fixed: string } | { parameter: string };
+
+/** What one layer puts on screen. */
+export type LayerVisual =
+  | { kind: 'sprite'; asset: string }
+  | { kind: 'shape'; shape: ShapeKind; color: ColorSource };
+
+/**
+ * A box in the character's unit square: `[x, y, width, height]`.
+ *
+ * `0..1` on both axes, origin top-left, y down — the canvas convention. Unit
+ * space is what lets one definition be drawn as a map token or a full portrait
+ * without a second set of numbers.
+ */
+export type UnitRect = [number, number, number, number];
+
+/** One appearance a layer can take, and the choices it answers to. */
+export interface LayerVariant {
+  id: string;
+  /**
+   * Parameter values this variant requires; absent means "always".
+   *
+   * Every entry must match. A parameter holding a list matches a scalar it
+   * *contains*, so one variant can answer "is a helmet worn".
+   */
+  when?: Record<string, SettingValue>;
+  /** Where it is drawn. Absent fills the whole unit square. */
+  rect?: UnitRect;
+  visual: LayerVisual;
+}
+
+/** One piece a character is drawn from. Layers draw back to front. */
+export interface CharacterLayer {
+  id: string;
+  /** The appearances it can take, most specific first — the first match wins. */
+  variants: LayerVariant[];
+}
+
+/**
+ * How a kind of character can be drawn, and what may be chosen about it.
+ *
+ * Mirrors `crates/world/src/character.rs`. A parameter is a
+ * {@link ControlDefinition} — the settings vocabulary — so the component that
+ * renders a volume slider renders "height" too. `scope` is not part of this
+ * format and is ignored on a character's parameters.
+ */
+export interface CharacterDefinition {
+  id: string;
+  schemaVersion: number;
+  /** Shown in the editor. Not player-facing, so not a key. */
+  name?: string;
+  category?: CharacterCategory;
+  rendering?: RenderingMode;
+  /** The choices it offers, in author order. A definition may offer none. */
+  parameters?: ControlDefinition[];
+  /** The pieces it is drawn from, back to front. */
+  layers?: CharacterLayer[];
+  /** Id of a numeric parameter whose value scales the whole character. */
+  scaleParameter?: string;
+}
+
+/** Chosen values by parameter id — a character's customisation. */
+export type CharacterValues = Record<string, SettingValue>;
+
+/** A visual with nothing left to look up. */
+export type ResolvedVisual =
+  | { kind: 'sprite'; asset: string }
+  | { kind: 'shape'; shape: ShapeKind; color: string };
+
+/** One layer of a resolved character, ready to draw. */
+export interface ResolvedLayer {
+  layer: string;
+  variant: string;
+  rect: UnitRect;
+  visual: ResolvedVisual;
+}
+
+/**
+ * A character, resolved: an ordered list of things to draw.
+ *
+ * Produced by the Rust resolver, never assembled here — the editor preview and
+ * the game draw the same payload, which is what makes the preview honest.
+ */
+export interface ResolvedCharacter {
+  character: string;
+  category: CharacterCategory;
+  /** The customisation actually applied, defaults filled in. */
+  values: CharacterValues;
+  /** What to draw, back to front. */
+  layers: ResolvedLayer[];
+}

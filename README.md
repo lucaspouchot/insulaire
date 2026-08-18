@@ -167,7 +167,7 @@ into `demo_refuge` — whose own door leads back out.
 ### Other editors
 
 `/editor` is a shell with one tab per module (ADR-0019). **Maps**, **Title
-screen**, **Settings** and **Languages** are implemented; **Characters**,
+screen**, **Settings**, **Languages** and **Characters** are implemented;
 **Assets** and **Scenario** are registered and route to a placeholder describing
 what they will own. Adding one is an entry in `editor-modules.ts` plus a
 component.
@@ -189,6 +189,30 @@ component — and moving a control there is how a field's **default** is set.
 The application's own settings — volumes, interface scale, language, window
 size, seed — are *not* editable there, because they are not content: the
 application implements each one (`app/settings/engine-settings.schema.ts`).
+
+**Characters** edits `characters/*.json`: how a *kind* of character is drawn,
+and what may be chosen about one (ADR-0028). A definition is two lists —
+**parameters**, the choices it offers, written in the same control vocabulary as
+the settings; and **layers**, the pieces it is drawn from, back to front. Each
+layer holds variants, and a variant says which parameter values it answers to
+(`when`), where it is drawn (`rect`, in a `0..1` box), and what it draws: a
+shape with a colour, or an image. The first variant whose conditions hold is the
+one drawn, so specific ones go first; a layer with no match draws nothing.
+
+The preview on the right is the shipping pipeline, not a mock-up: the controls
+are the player's own `control-field`, the resolution is the Rust resolver, and
+the drawing is the renderer the game will use — flip *Gender* to `male` and the
+body swaps variant in front of you.
+
+Nothing here is player-specific. `human_player` is the definition this project
+ships; the same screen creates a merchant, a goblin or a dragon, and `category`
+is filing only — the renderer never reads it. **One binding acts on geometry**:
+*Scaled by* names a numeric parameter that scales the whole character about the
+ground line, which is how a "height" choice is authored without a variant per
+size.
+
+Saving writes the file, declares it in `project.json` if it is new, and creates
+every label key it names in every language.
 
 **Languages** is the translation table: every key, every language, side by side,
 with a filter for what is still untranslated. Saving rewrites one file per
@@ -554,8 +578,12 @@ types the application uses — including the whole change-map loop.
 - **A tick still advances one map.** Zones are authored, validated and edited,
   but the zone-wide tick they exist for is not written: maps outside the one the
   player stands on stay frozen (ADR-0021).
-- **The character, asset and scenario editors are placeholders** — registered
-  tabs describing what they will own, with no implementation (ADR-0019).
+- **The asset and scenario editors are placeholders** — registered tabs
+  describing what they will own, with no implementation (ADR-0019).
+- **Characters are authored but not yet worn.** Definitions are edited,
+  validated and resolved into drawable layers, but no entity on the map is drawn
+  from one and no screen offers a player its choices: map entities still use the
+  `EntityTemplate` visuals (ADR-0028).
 - **No undo/redo**, no layers, no copy/paste in the editor.
 - **Only `pointy` orientation** is implemented; `flat` is in the schema and
   rejected by validation.

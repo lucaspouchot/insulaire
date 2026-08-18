@@ -59,6 +59,9 @@ fn engine_with_shipped_content() -> Engine {
             .unwrap_or_else(|error| panic!("locale `{language}/{namespace}` must load: {error}"));
     }
     engine
+        .load_character(&read("content/characters/human_player.json"))
+        .expect("the shipped character must load");
+    engine
         .load_title_screen(&read("content/menu/title-screen.json"))
         .expect("the shipped title screen must load");
     engine
@@ -110,6 +113,16 @@ fn the_shipped_content_loads_without_errors_or_warnings() {
             )
             .expect("locale file loads");
     }
+
+    let character = engine
+        .load_character(&read("content/characters/human_player.json"))
+        .expect("character loads");
+    assert_eq!(character.id, "human_player");
+    assert!(
+        character.report.issues.is_empty(),
+        "{:?}",
+        character.report.issues
+    );
 
     let title_screen = engine
         .load_title_screen(&read("content/menu/title-screen.json"))
@@ -401,4 +414,61 @@ fn replaying_the_demo_world_is_deterministic() {
         "same seed and same inputs must replay identically"
     );
     assert_eq!(first.last().expect("results").state.tick, 4);
+}
+
+/// The shipped character resolves into something a renderer can draw.
+///
+/// It is the first definition of its kind, and the one every other is copied
+/// from, so "it parses" is not enough: it has to produce layers, honour the
+/// choices it offers, and keep its feet on the ground when it grows.
+#[test]
+fn the_shipped_character_resolves_for_every_choice_it_offers() {
+    let engine = engine_with_shipped_content();
+
+    let resolved = engine
+        .resolve_character("human_player", "{}")
+        .expect("the shipped character resolves");
+    assert_eq!(resolved.layers.len(), 4, "{:?}", resolved.layers);
+
+    // The gender choice swaps a layer's variant rather than the character.
+    let male = engine
+        .resolve_character("human_player", r#"{ "gender": "male" }"#)
+        .expect("resolves");
+    let female = engine
+        .resolve_character("human_player", r#"{ "gender": "female" }"#)
+        .expect("resolves");
+    let body_of = |character: &insulaire_world::ResolvedCharacter| {
+        character
+            .layers
+            .iter()
+            .find(|layer| layer.layer == "body")
+            .expect("a body")
+            .variant
+            .clone()
+    };
+    assert_eq!(body_of(&male), "default");
+    assert_eq!(body_of(&female), "female");
+
+    // The hair colour reaches the layer that draws it.
+    let dyed = engine
+        .resolve_character("human_player", r##"{ "hairColor": "#f2c14e" }"##)
+        .expect("resolves");
+    assert_eq!(
+        dyed.layers[3].visual,
+        insulaire_world::ResolvedVisual::Shape {
+            shape: insulaire_world::ShapeKind::Ellipse,
+            color: "#f2c14e".to_owned(),
+        }
+    );
+
+    // Height scales every layer, and the lowest one still stands on the ground.
+    let tall = engine
+        .resolve_character("human_player", r#"{ "height": 1.15 }"#)
+        .expect("resolves");
+    assert!(tall.layers[0].rect.height() > resolved.layers[0].rect.height());
+    let ground = tall.layers[0].rect.y() + tall.layers[0].rect.height();
+    assert!(
+        (0.9..=1.0).contains(&ground),
+        "the feet left the ground: {ground}"
+    );
 }

@@ -1,0 +1,430 @@
+@let doc = document();
+
+<div class="character-editor">
+  <div class="toolbar">
+    <span class="path">{{ path() || ('ui.editor.character.noFile' | t) }}</span>
+    @if (dirty()) {
+      <span class="dot" [title]="'ui.editor.character.unsaved' | t"></span>
+    }
+    <span class="spacer"></span>
+    @if (errorCount(); as count) {
+      <span class="issues-count">{{ 'ui.editor.character.issueCount' | t: { count: count } }}</span>
+    }
+    @if (!writable()) {
+      <span class="readonly">{{ 'ui.editor.workspace.readOnly' | t }}</span>
+    }
+    <button type="button" (click)="refresh()">{{ 'ui.editor.map.actions.validate' | t }}</button>
+    <button
+      type="button"
+      class="primary"
+      [disabled]="busy() || !writable() || doc === null"
+      (click)="save()"
+    >
+      {{ 'ui.editor.character.save' | t }}
+    </button>
+  </div>
+
+  @if (error(); as failure) {
+    <div class="banner error">{{ failure }}</div>
+  }
+  @if (message(); as note) {
+    <div class="banner ok">{{ note }}</div>
+  }
+  @if (doc !== null && unlisted()) {
+    <div class="banner warn">{{ 'ui.editor.character.unlisted' | t }}</div>
+  }
+
+  @if (loading()) {
+    <p class="hint">{{ 'ui.common.loading' | t }}</p>
+  } @else {
+    <div class="columns">
+      <div class="form">
+        <!-- Every definition in the project. The player's is only the first. -->
+        <section class="panel">
+          <h2>{{ 'ui.editor.character.characters' | t }}</h2>
+          @for (entry of documents(); track entry.id) {
+            <button
+              type="button"
+              class="pick-row"
+              [class.on]="entry.id === doc?.id"
+              (click)="open(entry.id)"
+            >
+              <span class="name">{{ entry.name || entry.id }}</span>
+              <span class="tag">{{ entry.category ?? 'other' }}</span>
+            </button>
+          }
+          @if (documents().length === 0) {
+            <p class="hint">{{ 'ui.editor.character.empty' | t }}</p>
+          }
+          <div class="add">
+            <button type="button" (click)="addCharacter()">
+              {{ 'ui.editor.character.addCharacter' | t }}
+            </button>
+            @if (doc !== null) {
+              <button type="button" class="remove" (click)="removeCharacter()">
+                {{ 'ui.editor.character.removeCharacter' | t }}
+              </button>
+            }
+          </div>
+        </section>
+
+        @if (doc !== null) {
+          <section class="panel">
+            <h2>{{ 'ui.editor.character.definition' | t }}</h2>
+            <label class="row">
+              <span>{{ 'ui.editor.character.id' | t }}</span>
+              <input type="text" [value]="doc.id" (change)="setId($any($event.target).value)" />
+            </label>
+            <label class="row">
+              <span>{{ 'ui.editor.character.name' | t }}</span>
+              <input
+                type="text"
+                [value]="doc.name ?? ''"
+                (change)="setName($any($event.target).value)"
+              />
+            </label>
+            <label class="row">
+              <span>{{ 'ui.editor.character.category' | t }}</span>
+              <select (change)="setCategory($any($event.target).value)">
+                @for (entry of categories; track entry.id) {
+                  <option [value]="entry.id" [selected]="entry.id === (doc.category ?? 'other')">
+                    {{ entry.labelKey | t }}
+                  </option>
+                }
+              </select>
+            </label>
+            <label class="row">
+              <span>{{ 'ui.editor.character.renderingMode' | t }}</span>
+              <select (change)="setRendering($any($event.target).value)">
+                @for (entry of renderingModes; track entry.id) {
+                  <option
+                    [value]="entry.id"
+                    [selected]="entry.id === (doc.rendering ?? 'procedural')"
+                  >
+                    {{ entry.labelKey | t }}
+                  </option>
+                }
+              </select>
+            </label>
+            <label class="row">
+              <span>{{ 'ui.editor.character.scaleParameter' | t }}</span>
+              <select (change)="setScaleParameter($any($event.target).value)">
+                <option value="" [selected]="!doc.scaleParameter">
+                  {{ 'ui.common.none' | t }}
+                </option>
+                @for (parameter of numericParameters(); track parameter.id) {
+                  <option [value]="parameter.id" [selected]="parameter.id === doc.scaleParameter">
+                    {{ parameter.id }}
+                  </option>
+                }
+              </select>
+            </label>
+            <p class="hint">{{ 'ui.editor.character.scaleHint' | t }}</p>
+          </section>
+
+          <!-- The choices this definition offers, in the settings vocabulary. -->
+          <section class="panel">
+            <h2>{{ 'ui.editor.character.parameters' | t }}</h2>
+            @for (parameter of parameters(); track $index; let parameterIndex = $index) {
+              <div class="node field">
+                <div class="line">
+                  <input
+                    type="text"
+                    class="id"
+                    [value]="parameter.id"
+                    [attr.aria-label]="'ui.editor.character.id' | t"
+                    (change)="patchParameter(parameterIndex, { id: $any($event.target).value })"
+                  />
+                  <input
+                    type="text"
+                    [value]="parameter.labelKey"
+                    [attr.aria-label]="'ui.editor.character.labelKey' | t"
+                    (change)="patchParameter(parameterIndex, { labelKey: $any($event.target).value })"
+                  />
+                  <span class="resolved inline" [class.missing]="missingKey(parameter.labelKey)">
+                    {{ preview(parameter.labelKey) }}
+                  </span>
+                  <select
+                    [attr.aria-label]="'ui.editor.character.control' | t"
+                    (change)="setControl(parameterIndex, $any($event.target).value)"
+                  >
+                    @for (kind of controlKinds; track kind) {
+                      <option [value]="kind" [selected]="kind === parameter.control">
+                        {{ kind }}
+                      </option>
+                    }
+                  </select>
+                  <button type="button" (click)="moveParameter(parameterIndex, -1)" title="↑">↑</button>
+                  <button type="button" (click)="moveParameter(parameterIndex, 1)" title="↓">↓</button>
+                  <button type="button" class="remove" (click)="removeParameter(parameterIndex)">×</button>
+                </div>
+
+                @if (isNumeric(parameter.control)) {
+                  <div class="line bounds">
+                    @for (bound of ['min', 'max', 'step']; track bound) {
+                      <label>
+                        <span>{{ bound }}</span>
+                        <input
+                          type="number"
+                          step="any"
+                          [value]="$any(parameter)[bound] ?? ''"
+                          (change)="setBound(parameterIndex, $any(bound), $any($event.target).value)"
+                        />
+                      </label>
+                    }
+                  </div>
+                }
+
+                @if (usesOptions(parameter.control)) {
+                  <div class="options">
+                    @for (option of parameter.options ?? []; track $index; let optionIndex = $index) {
+                      <div class="line">
+                        <input
+                          type="text"
+                          class="id"
+                          [value]="option.value"
+                          [attr.aria-label]="'ui.editor.character.optionValue' | t"
+                          (change)="
+                            patchOption(parameterIndex, optionIndex, {
+                              value: $any($event.target).value,
+                            })
+                          "
+                        />
+                        <input
+                          type="text"
+                          [value]="option.labelKey"
+                          [attr.aria-label]="'ui.editor.character.labelKey' | t"
+                          (change)="
+                            patchOption(parameterIndex, optionIndex, {
+                              labelKey: $any($event.target).value,
+                            })
+                          "
+                        />
+                        <span class="resolved inline" [class.missing]="missingKey(option.labelKey)">
+                          {{ preview(option.labelKey) }}
+                        </span>
+                        <button
+                          type="button"
+                          class="remove"
+                          (click)="removeOption(parameterIndex, optionIndex)"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    }
+                    <button type="button" class="small" (click)="addOption(parameterIndex)">
+                      {{ 'ui.editor.character.addOption' | t }}
+                    </button>
+                  </div>
+                }
+              </div>
+            }
+            @if (parameters().length === 0) {
+              <p class="hint">{{ 'ui.editor.character.noParameters' | t }}</p>
+            }
+            <div class="add">
+              <button type="button" (click)="addParameter()">
+                {{ 'ui.editor.character.addParameter' | t }}
+              </button>
+            </div>
+          </section>
+
+          <!-- The pieces it is drawn from. Order is what covers what. -->
+          <section class="panel">
+            <h2>{{ 'ui.editor.character.layers' | t }}</h2>
+            <p class="hint">{{ 'ui.editor.character.layersHint' | t }}</p>
+            @for (entry of layers(); track $index) {
+              <div class="node" [class.on]="entry.id === layer()?.id">
+                <button
+                  type="button"
+                  class="pick"
+                  [title]="'ui.editor.character.openLayer' | t"
+                  (click)="selectLayer(entry.id)"
+                >
+                  ▸
+                </button>
+                <input
+                  type="text"
+                  class="id"
+                  [value]="entry.id"
+                  [attr.aria-label]="'ui.editor.character.id' | t"
+                  (change)="patchLayer($index, { id: $any($event.target).value })"
+                />
+                <span class="count">
+                  {{ 'ui.editor.character.variantCount' | t: { count: entry.variants.length } }}
+                </span>
+                <button type="button" (click)="moveLayer($index, -1)" title="↑">↑</button>
+                <button type="button" (click)="moveLayer($index, 1)" title="↓">↓</button>
+                <button type="button" class="remove" (click)="removeLayer($index)">×</button>
+              </div>
+            }
+            @if (layers().length === 0) {
+              <p class="hint">{{ 'ui.editor.character.noLayers' | t }}</p>
+            }
+            <div class="add">
+              <button type="button" (click)="addLayer()">
+                {{ 'ui.editor.character.addLayer' | t }}
+              </button>
+            </div>
+          </section>
+
+          @if (layer(); as active) {
+            <section class="panel">
+              <h2>{{ 'ui.editor.character.variantsOf' | t: { layer: active.id } }}</h2>
+              <p class="hint">{{ 'ui.editor.character.variantsHint' | t }}</p>
+              @for (variant of variants(); track $index; let variantIndex = $index) {
+                <div class="node variant">
+                  <div class="line">
+                    <input
+                      type="text"
+                      class="id"
+                      [value]="variant.id"
+                      [attr.aria-label]="'ui.editor.character.id' | t"
+                      (change)="patchVariant(variantIndex, { id: $any($event.target).value })"
+                    />
+                    @if (variant.visual.kind === 'shape') {
+                      <select
+                        [attr.aria-label]="'ui.editor.character.shape' | t"
+                        (change)="setShape(variantIndex, $any($event.target).value)"
+                      >
+                        @for (shape of shapeKinds; track shape.id) {
+                          <option [value]="shape.id" [selected]="shape.id === variant.visual.shape">
+                            {{ shape.labelKey | t }}
+                          </option>
+                        }
+                      </select>
+                      <select
+                        [attr.aria-label]="'ui.editor.character.colorSource' | t"
+                        (change)="setColorSource(variantIndex, $any($event.target).value)"
+                      >
+                        <option value="" [selected]="colorParameter(variant) === ''">
+                          {{ 'ui.editor.character.fixedColor' | t }}
+                        </option>
+                        @for (parameter of parameters(); track parameter.id) {
+                          <option
+                            [value]="parameter.id"
+                            [selected]="parameter.id === colorParameter(variant)"
+                          >
+                            {{ parameter.id }}
+                          </option>
+                        }
+                      </select>
+                      @if (colorParameter(variant) === '') {
+                        <input
+                          type="color"
+                          [value]="fixedColor(variant)"
+                          [attr.aria-label]="'ui.editor.character.fixedColor' | t"
+                          (change)="setFixedColor(variantIndex, $any($event.target).value)"
+                        />
+                      }
+                    } @else {
+                      <input
+                        type="text"
+                        class="asset"
+                        [value]="variant.visual.asset"
+                        [placeholder]="'ui.editor.character.assetPlaceholder' | t"
+                        [attr.aria-label]="'ui.editor.character.asset' | t"
+                        (change)="setAsset(variantIndex, $any($event.target).value)"
+                      />
+                    }
+                    <button type="button" (click)="moveVariant(variantIndex, -1)" title="↑">↑</button>
+                    <button type="button" (click)="moveVariant(variantIndex, 1)" title="↓">↓</button>
+                    <button type="button" class="remove" (click)="removeVariant(variantIndex)">×</button>
+                  </div>
+
+                  <div class="line bounds">
+                    @for (part of ['x', 'y', 'w', 'h']; track part; let partIndex = $index) {
+                      <label>
+                        <span>{{ part }}</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          [value]="(variant.rect ?? [0, 0, 1, 1])[partIndex]"
+                          (change)="
+                            setRect(variantIndex, $any(partIndex), $any($event.target).value)
+                          "
+                        />
+                      </label>
+                    }
+                  </div>
+
+                  @if (parameters().length > 0) {
+                    <div class="line when">
+                      <span class="label">{{ 'ui.editor.character.when' | t }}</span>
+                      @for (parameter of parameters(); track parameter.id) {
+                        <label>
+                          <span>{{ parameter.id }}</span>
+                          <input
+                            type="text"
+                            [value]="condition(variant, parameter.id)"
+                            [placeholder]="'ui.editor.character.anyValue' | t"
+                            (change)="
+                              setCondition(variantIndex, parameter.id, $any($event.target).value)
+                            "
+                          />
+                        </label>
+                      }
+                    </div>
+                  }
+                </div>
+              }
+              <div class="add">
+                <button type="button" (click)="addVariant()">
+                  {{ 'ui.editor.character.addVariant' | t }}
+                </button>
+              </div>
+            </section>
+          }
+        }
+      </div>
+
+      <!-- The player's own view: the real controls, the real resolver, the
+           real renderer. -->
+      <div class="preview">
+        <section class="panel stage">
+          <h2>{{ 'ui.editor.character.preview' | t }}</h2>
+          <canvas #stage class="stage-canvas"></canvas>
+          @if (resolved(); as drawn) {
+            <p class="hint">
+              {{ 'ui.editor.character.drawnLayers' | t: { count: drawn.layers.length } }}
+            </p>
+          }
+        </section>
+
+        @if (parameters().length > 0) {
+          <section class="panel">
+            <h2>{{ 'ui.editor.character.customisation' | t }}</h2>
+            @for (parameter of parameters(); track parameter.id) {
+              @if (isVisible(parameter)) {
+                <app-control-field
+                  [field]="parameter"
+                  [value]="value(parameter)"
+                  (changed)="setValue(parameter.id, $event)"
+                />
+              }
+            }
+          </section>
+        }
+
+        <section class="panel">
+          <h2>{{ 'ui.editor.character.issues' | t }}</h2>
+          @if (blocking().length === 0) {
+            <p class="hint ok">{{ 'ui.editor.character.noIssues' | t }}</p>
+          }
+          @for (issue of blocking(); track $index) {
+            <p class="issue" [class.warn]="issue.severity === 'warning'">
+              <span class="code">{{ issue.code }}</span>
+              <span class="where">{{ issue.path }}</span>
+              {{ issue.message }}
+            </p>
+          }
+          @if (untranslated().length; as count) {
+            <p class="hint">
+              {{ 'ui.editor.character.untranslated' | t: { count: count } }}
+            </p>
+          }
+        </section>
+      </div>
+    </div>
+  }
+</div>

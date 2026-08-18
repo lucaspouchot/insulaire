@@ -62,7 +62,8 @@ use std::collections::BTreeMap;
 
 use insulaire_simulation::{rules, tick, GameState, PendingTransition, SimEvent};
 use insulaire_world::{
-    Hex, ProjectionMode, SettingsDefinition, TitleScreenDefinition, WorldDefinition, WorldGrid,
+    CharacterDefinition, Hex, ProjectionMode, ResolvedCharacter, SettingsDefinition,
+    TitleScreenDefinition, WorldDefinition, WorldGrid,
 };
 
 pub use dto::{
@@ -334,6 +335,7 @@ impl Engine {
                     fallback_color: template.fallback_color.clone(),
                 })
                 .collect(),
+            characters: self.content.character_ids(),
             project: self.content.project().map(Into::into),
         }
     }
@@ -552,6 +554,103 @@ impl Engine {
         json: &str,
     ) -> Result<BTreeMap<String, serde_json::Value>, EngineError> {
         self.resolve_settings(json)
+    }
+
+    // -------------------------------------------------------------- characters
+
+    /// Parses, validates and registers a character definition.
+    ///
+    /// # Errors
+    ///
+    /// See [`ContentRegistry::load_character`].
+    pub fn load_character(&mut self, json: &str) -> Result<LoadOutcome, EngineError> {
+        let (id, report) = self.content.load_character(json)?;
+        Ok(LoadOutcome { id, report })
+    }
+
+    /// Validates a character definition without registering it, keys included.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Parse`] when the JSON is malformed.
+    pub fn validate_character(
+        &self,
+        json: &str,
+    ) -> Result<insulaire_world::ValidationReport, EngineError> {
+        self.content.validate_character_json(json)
+    }
+
+    /// A registered character definition.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::UnknownContent`] when no definition has that id.
+    pub fn character(&self, id: &str) -> Result<CharacterDefinition, EngineError> {
+        self.content
+            .character(id)
+            .cloned()
+            .ok_or_else(|| EngineError::UnknownContent {
+                kind: "character".to_owned(),
+                id: id.to_owned(),
+            })
+    }
+
+    /// Ids of every registered character definition.
+    #[must_use]
+    pub fn character_ids(&self) -> Vec<String> {
+        self.content.character_ids()
+    }
+
+    /// Resolves a definition **passed in** against a customisation.
+    ///
+    /// The editor's door: it holds a definition that is being written and is
+    /// not registered — may not even be valid yet — and still has to show what
+    /// it draws. Resolution is total, so an incomplete definition previews as
+    /// whatever it currently is rather than as an error
+    /// (`docs/adr/ADR-0028-character-definitions.md`).
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Parse`] when the definition or the values are not JSON.
+    pub fn preview_character(
+        &self,
+        character_json: &str,
+        values_json: &str,
+    ) -> Result<ResolvedCharacter, EngineError> {
+        let character: CharacterDefinition =
+            serde_json::from_str(character_json).map_err(|source| EngineError::Parse {
+                what: "character".to_owned(),
+                message: source.to_string(),
+            })?;
+        let values: serde_json::Value =
+            serde_json::from_str(values_json).map_err(|source| EngineError::Parse {
+                what: "character values".to_owned(),
+                message: source.to_string(),
+            })?;
+        Ok(character.resolve(&values))
+    }
+
+    /// Turns a definition plus a customisation into something drawable.
+    ///
+    /// The whole of character rendering that is not the renderer: the editor's
+    /// preview and the game call this, so what an author sees while editing is
+    /// what a player will see (`docs/adr/ADR-0028-character-definitions.md`).
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Parse`] when the values are not JSON, or
+    /// [`EngineError::UnknownContent`] when no definition has that id.
+    pub fn resolve_character(
+        &self,
+        id: &str,
+        values_json: &str,
+    ) -> Result<ResolvedCharacter, EngineError> {
+        let values: serde_json::Value =
+            serde_json::from_str(values_json).map_err(|source| EngineError::Parse {
+                what: "character values".to_owned(),
+                message: source.to_string(),
+            })?;
+        self.content.resolve_character(id, &values)
     }
 
     /// Discards the running game, if any.

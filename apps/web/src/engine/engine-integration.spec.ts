@@ -14,7 +14,12 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { TileSetDefinition, WorldDefinition } from '../content/content-types';
+import {
+  CharacterDefinition,
+  ResolvedCharacter,
+  TileSetDefinition,
+  WorldDefinition,
+} from '../content/content-types';
 import { WorldDocument } from '../content/world-document';
 import { serializeWorld } from '../content/world-serializer';
 import { offsetToAxial, hexDistance } from '../core/hex/hex-coords';
@@ -98,6 +103,11 @@ describe.skipIf(!built)('engine boundary', () => {
   function loadShippedTitleScreen(instance: RawInsulaireEngine): void {
     instance.loadTitleScreen(readText('content/menu/title-screen.json'));
     instance.loadSettings(readText('content/settings.json'));
+  }
+
+  /** Every character definition the manifest lists; the project needs them all. */
+  function loadShippedCharacters(instance: RawInsulaireEngine): void {
+    instance.loadCharacter(readText('content/characters/human_player.json'));
   }
 
   it('reports that it is running as WebAssembly', () => {
@@ -299,6 +309,7 @@ describe.skipIf(!built)('engine boundary', () => {
     instance.loadWorld(readText('content/worlds/demo_refuge.json'));
     loadShippedLocales(instance);
     loadShippedTitleScreen(instance);
+    loadShippedCharacters(instance);
     const project = JSON.parse(instance.loadProject(readText('content/project.json'))) as LoadOutcome;
     expect(project.id).toBe('insulaire');
 
@@ -353,6 +364,7 @@ describe.skipIf(!built)('engine boundary', () => {
       expect(outcome.id).toBe(`${language}/menu`);
     }
     loadShippedTitleScreen(instance);
+    loadShippedCharacters(instance);
     instance.loadProject(readText('content/project.json'));
 
     const fr = JSON.parse(instance.locale('fr')) as LocaleView;
@@ -408,6 +420,7 @@ describe.skipIf(!built)('engine boundary', () => {
         ],
       }),
     );
+    loadShippedCharacters(instance);
     instance.loadProject(readText('content/project.json'));
 
     const fr = JSON.parse(instance.locale('fr')) as LocaleView;
@@ -441,6 +454,7 @@ describe.skipIf(!built)('engine boundary', () => {
     instance.loadLocale('fr', 'menu', readText('content/locales/fr/menu.json'));
     instance.loadLocale('en', 'game', withKey('content/locales/en/game.json', 'Unwritten'));
     instance.loadLocale('fr', 'game', withKey('content/locales/fr/game.json', ''));
+    loadShippedCharacters(instance);
     // The manifest names the default language, which is what a gap falls back to.
     instance.loadProject(readText('content/project.json'));
 
@@ -460,6 +474,92 @@ describe.skipIf(!built)('engine boundary', () => {
     expect(edited.fallbacks).not.toContain('game.settings.unwritten');
     // The worlds the registry held are untouched by a language reset.
     expect((JSON.parse(instance.worldView('demo_world')) as WorldView).worldId).toBe('demo_world');
+  });
+
+  /**
+   * The character pipeline, end to end and through the real types: the shipped
+   * definition loads, resolves into drawable layers, and honours the choices it
+   * offers. The editor's preview is this same call
+   * (`docs/adr/ADR-0028-character-definitions.md`).
+   */
+  it('resolves the shipped character into layers a renderer can draw', () => {
+    const instance = engine();
+    const characterJson = readText('content/characters/human_player.json');
+
+    const outcome = JSON.parse(instance.loadCharacter(characterJson)) as LoadOutcome;
+    expect(outcome.id).toBe('human_player');
+    expect(outcome.report.issues).toEqual([]);
+    expect(JSON.parse(instance.characterIds()) as string[]).toEqual(['human_player']);
+
+    const definition = JSON.parse(instance.character('human_player')) as CharacterDefinition;
+    expect(definition.category).toBe('player');
+    expect(definition.parameters?.map((parameter) => parameter.id)).toEqual([
+      'gender',
+      'hairColor',
+      'height',
+    ]);
+
+    const resolved = JSON.parse(
+      instance.resolveCharacter('human_player', JSON.stringify({ hairColor: '#f2c14e' })),
+    ) as ResolvedCharacter;
+    expect(resolved.layers.map((layer) => layer.layer)).toEqual(['legs', 'body', 'head', 'hair']);
+    // Every colour is resolved on the Rust side: the renderer only fills.
+    expect(resolved.layers[3]?.visual).toEqual({
+      kind: 'shape',
+      shape: 'ellipse',
+      color: '#f2c14e',
+    });
+    // A choice swaps a variant, and the geometry stays in the unit square.
+    const male = JSON.parse(
+      instance.resolveCharacter('human_player', JSON.stringify({ gender: 'male' })),
+    ) as ResolvedCharacter;
+    expect(male.layers[1]?.variant).toBe('default');
+    for (const layer of male.layers) {
+      const [x, y, width, height] = layer.rect;
+      expect(x).toBeGreaterThanOrEqual(0);
+      expect(y).toBeGreaterThanOrEqual(0);
+      expect(x + width).toBeLessThanOrEqual(1);
+      expect(y + height).toBeLessThanOrEqual(1);
+    }
+  });
+
+  /** What the editor previews with: a definition in hand, not registered. */
+  it('previews an unregistered definition and refuses to draw it wrong', () => {
+    const instance = engine();
+    const definition = readJson<CharacterDefinition>('content/characters/human_player.json');
+    definition.rendering = 'assetComposition';
+
+    // Previewing is total, so a definition that cannot load still draws.
+    const resolved = JSON.parse(
+      instance.previewCharacter(JSON.stringify(definition), '{}'),
+    ) as ResolvedCharacter;
+    expect(resolved.layers).toHaveLength(4);
+
+    // Loading it is what refuses: shapes in a file that declares images.
+    const report = JSON.parse(
+      instance.validateCharacter(JSON.stringify(definition)),
+    ) as ValidationReport;
+    expect(report.valid).toBe(false);
+    expect(report.issues.map((issue) => issue.code)).toContain('character.renderingMismatch');
+  });
+
+  it('refuses a project naming a character it never loaded', () => {
+    const instance = engine();
+    instance.loadTileSet(tileSetJson());
+    instance.loadWorld(worldJson());
+    instance.loadWorld(readText('content/worlds/demo_refuge.json'));
+    loadShippedLocales(instance);
+    loadShippedTitleScreen(instance);
+
+    expect(() => instance.loadProject(readText('content/project.json'))).toThrow(
+      /project.unloadedCharacter/,
+    );
+
+    loadShippedCharacters(instance);
+    const outcome = JSON.parse(instance.loadProject(readText('content/project.json'))) as LoadOutcome;
+    expect(outcome.report.valid).toBe(true);
+    const summary = JSON.parse(instance.contentSummary()) as ContentSummary;
+    expect(summary.characters).toEqual(['human_player']);
   });
 
   it('rejects a world with no player, listing the reason', () => {

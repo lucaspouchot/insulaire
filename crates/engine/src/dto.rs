@@ -420,6 +420,8 @@ pub struct ContentSummary {
     pub worlds: Vec<WorldSummary>,
     /// Known entity templates.
     pub templates: Vec<TemplateView>,
+    /// Ids of the loaded character definitions.
+    pub characters: Vec<String>,
     /// The project manifest, when one has been loaded.
     pub project: Option<ProjectView>,
 }

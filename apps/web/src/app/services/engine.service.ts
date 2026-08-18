@@ -14,6 +14,9 @@
 import { Injectable, signal } from '@angular/core';
 
 import {
+  CharacterDefinition,
+  CharacterValues,
+  ResolvedCharacter,
   SettingsDefinition,
   SettingsValues,
   TitleScreenDefinition,
@@ -159,6 +162,56 @@ export class EngineService {
   /** The registered title screen, defaults filled in by the engine. */
   titleScreen(): TitleScreenDefinition {
     return this.parse<TitleScreenDefinition>(() => this.engine().titleScreen());
+  }
+
+  /**
+   * Registers a character definition, before the project that lists it.
+   *
+   * A definition says how a *kind* of character is drawn — the player's, an
+   * NPC's, a monster's — and offers the choices that may be made about one
+   * (`docs/adr/ADR-0028-character-definitions.md`).
+   */
+  loadCharacter(json: string): LoadOutcome {
+    return this.parse<LoadOutcome>(() => this.engine().loadCharacter(json));
+  }
+
+  /** Validates a character definition without registering it, keys included. */
+  validateCharacter(json: string): ValidationReport {
+    return this.parse<ValidationReport>(() => this.engine().validateCharacter(json));
+  }
+
+  /** A registered character definition, defaults filled in by the engine. */
+  character(id: string): CharacterDefinition {
+    return this.parse<CharacterDefinition>(() => this.engine().character(id));
+  }
+
+  /** Ids of every registered character definition. */
+  characterIds(): string[] {
+    return this.parse<string[]>(() => this.engine().characterIds());
+  }
+
+  /**
+   * Turns a definition plus a customisation into something drawable.
+   *
+   * Every host draws what *this* produced: the editor's preview and the game
+   * call the same resolver, so a preview cannot flatter the result.
+   */
+  resolveCharacter(id: string, values: CharacterValues = {}): ResolvedCharacter {
+    return this.parse<ResolvedCharacter>(() =>
+      this.engine().resolveCharacter(id, JSON.stringify(values)),
+    );
+  }
+
+  /**
+   * Resolves a definition **in hand** against a customisation.
+   *
+   * What the editor previews with: the definition being written is not
+   * registered, and may not be valid yet, but it still has to be visible.
+   */
+  previewCharacter(character: CharacterDefinition, values: CharacterValues = {}): ResolvedCharacter {
+    return this.parse<ResolvedCharacter>(() =>
+      this.engine().previewCharacter(JSON.stringify(character), JSON.stringify(values)),
+    );
   }
 
   /** Registers the game's settings declaration, before the project. */

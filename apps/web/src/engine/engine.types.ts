@@ -191,6 +191,8 @@ export interface ContentSummary {
   tileSets: string[];
   worlds: WorldSummary[];
   templates: TemplateView[];
+  /** Ids of the loaded character definitions. */
+  characters: string[];
   project: ProjectView | null;
 }
 
@@ -281,6 +283,12 @@ export interface RawInsulaireEngine {
   loadTitleScreen(json: string): string;
   validateTitleScreen(json: string): string;
   titleScreen(): string;
+  loadCharacter(json: string): string;
+  validateCharacter(json: string): string;
+  character(id: string): string;
+  characterIds(): string;
+  resolveCharacter(id: string, valuesJson: string): string;
+  previewCharacter(characterJson: string, valuesJson: string): string;
   loadSettings(json: string): string;
   validateSettings(json: string): string;
   settings(): string;

@@ -346,6 +346,9 @@ export class ProjectStoreService {
         id: document.id,
         path: `worlds/${document.id}.json`,
       })),
+      // Carried through untouched, like the title screen below: the character
+      // editor owns this list and declares its own files.
+      characters: project.characters,
       // Carried through untouched, like the languages below: these name files
       // the editor does not hold documents for, so regenerating them from what
       // happens to be loaded would drop the title screen and the settings on
@@ -626,6 +629,52 @@ export class ProjectStoreService {
     });
     this.touch();
     return true;
+  }
+
+  /**
+   * Declares a character definition in the manifest, so it is loaded next time
+   * the project is.
+   *
+   * The same door `declareLocaleFile` opens, for the same reason: creating a
+   * character in the editor should not mean hand-editing `project.json` for it
+   * to exist (`docs/adr/ADR-0028-character-definitions.md`).
+   *
+   * @returns `false` when the project already declares that id.
+   */
+  declareCharacter(id: string, path: string): boolean {
+    const project = this.requireProject();
+    const declared = project.characters ?? [];
+    if (declared.some((entry) => entry.id === id)) {
+      return false;
+    }
+    this.projectSignal.set({ ...project, characters: [...declared, { id, path }] });
+    this.touch();
+    return true;
+  }
+
+  /**
+   * Removes a character definition from the manifest.
+   *
+   * @returns `false` when the project does not declare it.
+   */
+  undeclareCharacter(id: string): boolean {
+    const project = this.requireProject();
+    const declared = project.characters ?? [];
+    if (!declared.some((entry) => entry.id === id)) {
+      return false;
+    }
+    this.projectSignal.set({
+      ...project,
+      characters: declared.filter((entry) => entry.id !== id),
+    });
+    this.touch();
+    return true;
+  }
+
+  /** Where a character's file lives, declared or by convention. */
+  characterPath(id: string): string {
+    const declared = this.projectSignal()?.characters?.find((entry) => entry.id === id);
+    return declared?.path ?? `characters/${id}.json`;
   }
 
   // ------------------------------------------------------------------ saving

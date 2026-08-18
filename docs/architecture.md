@@ -78,6 +78,7 @@ The MVP implements the marked parts. Unmarked entries are the planned shape.
 │   ├── worlds/                  # demo_world.json, demo_refuge.json          [MVP]
 │   ├── tilesets/                # mvp_terrain.json                           [MVP]
 │   ├── locales/                 # <language>/<namespace>.json: every displayed string [MVP]
+│   ├── characters/              # how a kind of character is drawn (ADR-0028) [MVP]
 │   ├── menu/                    # title-screen.json: what a client opens on   [MVP]
 │   ├── settings.json            # the settings the game offers                [MVP]
 │   ├── scenarios/
@@ -100,7 +101,7 @@ browser. `cargo test` runs the entire simulation without WASM.
 
 | Crate | Owns | Does not know about |
 |---|---|---|
-| `insulaire-world` | Hex coordinates, `WorldDefinition`, `TileSetDefinition`, entity templates, validation, the flattened `WorldGrid`. | Ticks, rules, entities in motion. |
+| `insulaire-world` | Hex coordinates, `WorldDefinition`, `TileSetDefinition`, `CharacterDefinition` and its resolver, entity templates, validation, the flattened `WorldGrid`. | Ticks, rules, entities in motion. |
 | `insulaire-simulation` | `GameState`, the tick pipeline, movement rules, monster AI, the deterministic RNG. | Serialisation for hosts, JSON, JavaScript. |
 | `insulaire-engine` | The facade, the content registry, the DTOs, the string contract. | `wasm-bindgen`. |
 | `insulaire-wasm` | `#[wasm_bindgen]` declarations. | Everything else — it holds no logic. |
@@ -124,6 +125,9 @@ browser. `cargo test` runs the entire simulation without WASM.
   flags. `just deliver` produces the client zip. See ADR-0018.
 - **Editor module ↔ editor module** — each is a route registered in
   `editor-modules.ts`; they share services, never internals. See ADR-0019.
+- **Character ↔ renderer** — a definition plus a customisation resolves in Rust
+  into an ordered list of boxes with literal colours; the renderer draws it and
+  decides nothing about appearance. See ADR-0028.
 - **Application ↔ game settings** — the shell's settings are declared in code,
   the game's are content; both use one control vocabulary and one resolver, and
   only the game's cross `createGame`. See ADR-0025.

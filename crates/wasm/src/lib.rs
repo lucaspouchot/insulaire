@@ -311,6 +311,77 @@ impl InsulaireEngine {
         self.inner.resolve_settings(values_json).map_err(to_js)
     }
 
+    /// Parses, validates and registers a character definition. Returns a
+    /// `LoadOutcome`.
+    ///
+    /// # Errors
+    ///
+    /// `parse` or `invalidContent`.
+    #[wasm_bindgen(js_name = loadCharacter)]
+    pub fn load_character(&mut self, json: &str) -> Result<String, JsValue> {
+        self.inner.load_character(json).map_err(to_js)
+    }
+
+    /// Validates a character definition *without* registering it, keys
+    /// included. Returns a `ValidationReport`.
+    ///
+    /// # Errors
+    ///
+    /// `parse` when the JSON is malformed.
+    #[wasm_bindgen(js_name = validateCharacter)]
+    pub fn validate_character(&self, json: &str) -> Result<String, JsValue> {
+        self.inner.validate_character(json).map_err(to_js)
+    }
+
+    /// Returns a registered `CharacterDefinition`.
+    ///
+    /// # Errors
+    ///
+    /// `unknownContent` when no definition has that id.
+    #[wasm_bindgen(js_name = character)]
+    pub fn character(&self, id: &str) -> Result<String, JsValue> {
+        self.inner.character(id).map_err(to_js)
+    }
+
+    /// Returns the ids of every registered character definition.
+    ///
+    /// # Errors
+    ///
+    /// A JSON error payload; not reachable in practice.
+    #[wasm_bindgen(js_name = characterIds)]
+    pub fn character_ids(&self) -> Result<String, JsValue> {
+        self.inner.character_ids().map_err(to_js)
+    }
+
+    /// Resolves a definition **passed in** against a customisation — the
+    /// editor's preview, for content that is not registered yet. Returns a
+    /// `ResolvedCharacter`.
+    ///
+    /// # Errors
+    ///
+    /// `parse` when either argument is not JSON.
+    #[wasm_bindgen(js_name = previewCharacter)]
+    pub fn preview_character(
+        &self,
+        character_json: &str,
+        values_json: &str,
+    ) -> Result<String, JsValue> {
+        self.inner
+            .preview_character(character_json, values_json)
+            .map_err(to_js)
+    }
+
+    /// Resolves a definition against a customisation such as
+    /// `{"hairColor":"#f2c14e"}`. Returns a `ResolvedCharacter`.
+    ///
+    /// # Errors
+    ///
+    /// `parse` or `unknownContent`.
+    #[wasm_bindgen(js_name = resolveCharacter)]
+    pub fn resolve_character(&self, id: &str, values_json: &str) -> Result<String, JsValue> {
+        self.inner.resolve_character(id, values_json).map_err(to_js)
+    }
+
     /// Returns the current `GameSnapshot`.
     ///
     /// # Errors

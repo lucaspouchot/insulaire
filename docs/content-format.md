@@ -270,6 +270,9 @@ starts. It is what a delivered client build boots from (ADR-0018).
     { "id": "demo_world", "path": "worlds/demo_world.json" },
     { "id": "demo_refuge", "path": "worlds/demo_refuge.json" }
   ],
+  "characters": [
+    { "id": "human_player", "path": "characters/human_player.json" }
+  ],
   "titleScreen": { "id": "main", "path": "menu/title-screen.json" },
   "settings": { "id": "insulaire_game", "path": "settings.json" },
   "locales": {
@@ -291,6 +294,7 @@ starts. It is what a delivered client build boots from (ADR-0018).
 | `zones` | `{ id, name }[]` | no | Zones the maps are grouped into; the **first is the default**. Absent means one implicit `default` zone. See *Zones* above. |
 | `tileSets` | `{ id, path }[]` | no | Tile sets to load; `path` is relative to the content root. |
 | `worlds` | `{ id, path }[]` | yes | Worlds to load. Every world reachable through a link must be listed. |
+| `characters` | `{ id, path }[]` | no | Character definitions to load. See *CharacterDefinition* below. Absent means the project ships none. |
 | `locales` | `{ default, languages }` | no | Languages the game is available in. See *Locales* below. Absent means the application's own languages, and no content translations. |
 | `titleScreen` | `{ id, path }` | no | The screen a client opens on. See *TitleScreenDefinition* below. Absent means the game starts on a map. |
 | `settings` | `{ id, path }` | no | The settings this game offers. See *SettingsDefinition* below. The application's own settings are not content. |
@@ -446,6 +450,130 @@ resolve, so they cannot disagree.
 
 ---
 
+## CharacterDefinition
+
+`content/characters/*.json` describes **how a kind of character is drawn, and
+what may be chosen about one** (ADR-0028). The player's character is one of
+them; an NPC, a monster or a boss is another, and nothing in the format is
+specific to any of those.
+
+```json
+{
+  "id": "human_player",
+  "schemaVersion": 1,
+  "name": "Human Player",
+  "category": "player",
+  "rendering": "procedural",
+  "scaleParameter": "height",
+  "parameters": [
+    {
+      "id": "gender",
+      "labelKey": "game.character.gender",
+      "control": "select",
+      "default": "female",
+      "options": [
+        { "value": "female", "labelKey": "game.character.genderFemale" },
+        { "value": "male", "labelKey": "game.character.genderMale" }
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "id": "body",
+      "variants": [
+        { "id": "female", "when": { "gender": "female" }, "rect": [0.28, 0.4, 0.44, 0.36], "visual": { "kind": "shape", "shape": "triangle", "color": { "fixed": "#7a5c3e" } } },
+        { "id": "default", "rect": [0.34, 0.4, 0.32, 0.34], "visual": { "kind": "shape", "shape": "rect", "color": { "fixed": "#7a5c3e" } } }
+      ]
+    }
+  ]
+}
+```
+
+A definition plus a set of chosen values is resolved into a flat, ordered list
+of things to draw:
+
+```text
+CharacterDefinition + values ──> resolve() ──> ResolvedCharacter ──> renderer
+```
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `id` | string | yes | Stable id; must match the manifest's entry. |
+| `schemaVersion` | integer | yes | `1`. |
+| `name` | string | no | Shown in the editor. Not player-facing, so not a key. |
+| `category` | `player` \| `npc` \| `enemy` \| `monster` \| `other` | no | Filing only. **Never read by the resolver or the renderer.** Default `other`. |
+| `rendering` | `procedural` \| `assetComposition` | no | How its layers are drawn. Every variant must match it. Default `procedural`. |
+| `parameters[]` | `ControlDefinition[]` | no | The choices it offers. A definition may offer none. |
+| `layers[]` | see below | no | The pieces it is drawn from, **back to front**. |
+| `scaleParameter` | string | no | Id of a numeric parameter that scales the whole character about the ground line. Empty means no scaling. |
+
+### Parameters
+
+A parameter **is** a `ControlDefinition` — the same vocabulary as
+*SettingsDefinition* above, and resolved by the same rule: defaults fill the
+gaps, a wrong type or an undeclared option falls back to the default, a number
+outside its bounds is clamped, and an unknown key is dropped.
+
+`scope` is **not part of this format**: it says when a *setting* may change, and
+means nothing to a character. The editor never writes it and the engine never
+reads it here.
+
+### Layers and variants
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `layers[].id` | string | yes | Stable id, unique in the definition. |
+| `layers[].variants[]` | see below | no | The appearances it can take, **most specific first**. |
+| `variants[].id` | string | yes | Stable id, unique within its layer. |
+| `variants[].when` | `{ parameterId: value }` | no | Values this variant requires. Absent means "always". |
+| `variants[].rect` | `[x, y, width, height]` | no | Where it is drawn, in the unit square. Defaults to the whole square. |
+| `variants[].visual` | see below | yes | What it draws. |
+
+**The first variant whose conditions hold is the one drawn**, so author order is
+priority. A layer with no matching variant draws nothing, which is how an
+optional piece is authored.
+
+Every entry of `when` must match. A parameter holding a **list** matches a
+scalar it *contains*, so `{ "equipment": "helmet" }` asks whether a helmet was
+chosen among several.
+
+`rect` is `0..1` on both axes, origin top-left, **y down** — so the same
+definition draws as a map token or a full-height portrait. Drawing outside the
+square is allowed (a warning) because a wing may overhang.
+
+### Visuals
+
+```json
+{ "kind": "shape", "shape": "ellipse", "color": { "parameter": "hairColor" } }
+{ "kind": "sprite", "asset": "assets/characters/hair_long.png" }
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `kind` | `shape` \| `sprite` | Which of the two below. Must match the definition's `rendering`. |
+| `shape` | `rect` \| `ellipse` \| `triangle` | For `shape`. A triangle stands on the bottom edge of its box. |
+| `color` | `{ "fixed": css }` or `{ "parameter": id }` | For `shape`. A parameter binding reads the value the customisation holds; a value that is not a string draws as `#ff00ff`. |
+| `asset` | string | For `sprite`. Path under the content root. |
+
+### ResolvedCharacter
+
+What `resolveCharacter` and `previewCharacter` return, and the only thing a
+renderer needs. Colours are already resolved and boxes already scaled:
+
+```json
+{
+  "character": "human_player",
+  "category": "player",
+  "values": { "gender": "female", "hairColor": "#4b3621", "height": 1 },
+  "layers": [
+    { "layer": "body", "variant": "female", "rect": [0.28, 0.4, 0.44, 0.36],
+      "visual": { "kind": "shape", "shape": "triangle", "color": "#7a5c3e" } }
+  ]
+}
+```
+
+---
+
 ## Entity templates
 
 `templateId` resolves against a **built-in registry** in
@@ -536,6 +664,19 @@ exposed across the boundary as `validateLinks()` and `loadProject()`.
 | `settings.emptyRange` / `settings.invalidStep` | `min` above `max`, or a step that is not positive. |
 | `settings.invalidDefault` / `settings.defaultOutOfRange` | The default is not a value the control accepts, or is outside the bounds. |
 | `settings.unknownCondition` | A `showIf` points at a field nobody declares. |
+| `project.unloadedCharacter` / `project.duplicateCharacter` | The manifest names a character that is not loaded, or lists one twice. |
+| `character.missingId` / `character.unsupportedSchemaVersion` | Character header problems. |
+| `character.missingParameterId` / `character.duplicateParameter` | A parameter has no id, or two share one. |
+| `character.missingLabelKey` / `character.noOptions` / `character.duplicateOption` / `character.emptyRange` / `character.invalidStep` / `character.invalidDefault` / `character.defaultOutOfRange` | A parameter breaks a control rule. Same checks as the `settings.*` codes above, under this file's namespace. |
+| `character.unknownCondition` | A parameter's `showIf` points at a parameter nobody declares. |
+| `character.missingLayerId` / `character.duplicateLayer` | A layer has no id, or two share one. |
+| `character.missingVariantId` / `character.duplicateVariant` | A variant has no id, or a layer declares one twice. |
+| `character.unknownConditionParameter` | A variant's `when` names a parameter that is not declared. |
+| `character.emptyRect` | A variant's box has zero width or height. |
+| `character.renderingMismatch` | A variant's visual is not the kind the definition's `rendering` declares. |
+| `character.missingAsset` / `character.missingColor` | A sprite variant has no image, or a shape variant no colour. |
+| `character.unknownColorParameter` | A colour binding names a parameter that is not declared. |
+| `character.unknownScaleParameter` / `character.nonNumericScale` | `scaleParameter` names nothing, or names a control that is not numeric. |
 | `tileSet.empty` / `tileSet.paletteTooLarge` / `tile.duplicateId` / `tile.missingVisualId` | Tile set problems. |
 
 **Warnings** (content loads):
@@ -549,6 +690,10 @@ exposed across the boundary as `validateLinks()` and `loadProject()`.
 | `locale.unknownKey` | Content references a key no language defines. It renders as itself until the language editor gives it text (`docs/adr/ADR-0027-authoring-creates-keys.md`). |
 | `titleScreen.instantSplash` | A splash that lasts 0 ms and cannot be skipped will never be seen. |
 | `settings.unusedOptions` | A control that does not choose from a list declares options. |
+| `character.unusedOptions` | As above, for a character parameter. |
+| `character.noLayers` / `character.emptyLayer` | A character draws nothing, or a layer has no variant. |
+| `character.impossibleCondition` | A variant waits for a value its parameter's control can never hold, so it is never drawn. |
+| `character.rectOutOfBox` | A variant draws outside the unit square. Legal — a wing may overhang — and far more often a typo. |
 
 ---
 
@@ -563,6 +708,10 @@ The editor writes worlds through
     { "at": [5, 1], "tile": "mountain" }
   ],
 ```
+
+`content/characters/*.json` follow the same principle with the **variant** as
+the record: one per line, conditions, geometry and visual visible at once
+(`apps/web/src/content/character-serializer.ts`).
 
 `content/worlds/*.json` are written the same way, so an exported world diffs
 cleanly against a hand-edited one. Tests assert that both shipped worlds and

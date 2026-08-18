@@ -231,6 +231,47 @@ so that what a player sees and what `createGame` receives cannot disagree.
 
 Errors: `parse` when the values are not a JSON object.
 
+### `loadCharacter(json: string): LoadOutcome`
+
+Registers a `CharacterDefinition` — how a kind of character is drawn, and what
+may be chosen about one (ADR-0028). Load it before `loadProject`, which refuses
+a manifest naming a character that is not loaded.
+
+Errors: `parse`, `invalidContent` (`character.renderingMismatch`,
+`character.unknownColorParameter`, …).
+
+### `validateCharacter(json: string): ValidationReport`
+
+The editor's pre-save check: the definition's own validation plus the keys it
+references, resolved against the loaded languages. Registers nothing.
+
+### `character(id: string): CharacterDefinition`
+
+A registered definition, defaults filled in.
+
+Errors: `unknownContent` when no definition has that id.
+
+### `characterIds(): string[]`
+
+Ids of every registered definition, sorted.
+
+### `resolveCharacter(id: string, valuesJson: string): ResolvedCharacter`
+
+Resolves a **registered** definition against a customisation, producing the flat
+ordered list of things to draw described in `docs/content-format.md`. Values go
+through the same rule as `resolveSettings`, and every colour is resolved here —
+a host draws what this returned and decides nothing about appearance.
+
+Errors: `parse`, `unknownContent`.
+
+### `previewCharacter(characterJson: string, valuesJson: string): ResolvedCharacter`
+
+The same resolution for a definition **passed in** rather than registered: what
+the editor previews content it is still writing with. Resolution is total, so an
+incomplete definition previews as whatever it currently is instead of failing.
+
+Errors: `parse` when either argument is not JSON.
+
 ### `resetContent(): void`
 
 Forgets every loaded tile set, world, locale, title screen, settings declaration
@@ -299,7 +340,8 @@ is the same validator `loadWorld` runs (ADR-0015).
 ### `contentSummary(): ContentSummary`
 
 What the registry holds: tile set ids, world summaries, the entity templates
-this build knows, and `project` — the loaded manifest as
+this build knows, the ids of the loaded character definitions, and `project` —
+the loaded manifest as
 `{ id, name, startWorld, worldIds, languages }`, or `null` when none was loaded.
 Each language is `{ id, name, isDefault }`, in author order: what a language
 picker is built from.

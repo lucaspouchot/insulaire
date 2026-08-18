@@ -20,5 +20,13 @@
     "identity": "Identité",
     "chronicleName": "Nom de la chronique",
     "bannerColour": "Couleur de bannière"
+  },
+  "character": {
+    "gender": "Genre",
+    "genderFemale": "Féminin",
+    "genderMale": "Masculin",
+    "hairColor": "Couleur des cheveux",
+    "height": "Taille",
+    "heightHelp": "La stature du personnage."
   }
 }

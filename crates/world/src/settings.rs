@@ -298,20 +298,34 @@ impl SettingsDefinition {
     /// cannot disagree about what an out-of-range or unknown entry means.
     #[must_use]
     pub fn resolve(&self, values: &Value) -> BTreeMap<String, Value> {
-        let supplied = values.as_object();
-        let mut resolved = BTreeMap::new();
-
-        for (_, field) in self.fields() {
-            let value = supplied
-                .and_then(|map| map.get(&field.id))
-                .filter(|value| field.accepts(value))
-                .map(|value| field.clamp(value.clone()))
-                .unwrap_or_else(|| field.default.clone());
-            resolved.insert(field.id.clone(), value);
-        }
-
-        resolved
+        resolve_controls(self.fields().map(|(_, field)| field), values)
     }
+}
+
+/// Resolves values against a list of controls, whatever declared them.
+///
+/// The rule in one place, for both callers: a settings file and a character's
+/// parameters are the same vocabulary, so "unknown key dropped, wrong type
+/// refused, number clamped, gap filled with the default" cannot come to mean
+/// two different things (`docs/adr/ADR-0028-character-definitions.md`).
+#[must_use]
+pub fn resolve_controls<'a>(
+    controls: impl Iterator<Item = &'a ControlDefinition>,
+    values: &Value,
+) -> BTreeMap<String, Value> {
+    let supplied = values.as_object();
+    let mut resolved = BTreeMap::new();
+
+    for field in controls {
+        let value = supplied
+            .and_then(|map| map.get(&field.id))
+            .filter(|value| field.accepts(value))
+            .map(|value| field.clamp(value.clone()))
+            .unwrap_or_else(|| field.default.clone());
+        resolved.insert(field.id.clone(), value);
+    }
+
+    resolved
 }
 
 #[cfg(test)]

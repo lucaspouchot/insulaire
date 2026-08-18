@@ -58,12 +58,7 @@ export const EDITOR_MODULES: readonly EditorModule[] = [
     id: 'character',
     titleKey: 'ui.editor.modules.character.title',
     summaryKey: 'ui.editor.modules.character.summary',
-    status: 'planned',
-    planKeys: [
-      'ui.editor.modules.character.plans.templates',
-      'ui.editor.modules.character.plans.decks',
-      'ui.editor.modules.character.plans.validation',
-    ],
+    status: 'available',
   },
   {
     id: 'asset',
