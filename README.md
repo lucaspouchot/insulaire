@@ -461,11 +461,29 @@ sudo apt install libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
   libsoup-3.0-dev libgtk-3-dev librsvg2-dev patchelf
 ```
 
-Under WSL, `scripts/tauri.mjs` drops the Windows `/mnt/…` entries from `PATH`
-before invoking the CLI. Without that, `linuxdeploy` — which walks every `PATH`
-entry while building the AppImage — hits a `Permission denied` inside
-`/mnt/c/WINDOWS/...` and the bundling fails with a bare
-`failed to run linuxdeploy`. Nothing to do by hand.
+```bash
+sudo pacman -S webkit2gtk-4.1 libsoup3 gtk3 librsvg patchelf
+```
+
+`linuxdeploy`, which builds the AppImage, reports everything that goes wrong to
+it as the same bare `failed to run linuxdeploy`. `scripts/tauri.mjs` therefore
+handles the three host conditions known to trigger it, so that none of them
+costs a release build to identify:
+
+- **Under WSL**, it drops the Windows `/mnt/…` entries from `PATH` before
+  invoking the CLI. `linuxdeploy` walks every `PATH` entry, hits a
+  `Permission denied` inside `/mnt/c/WINDOWS/...`, and throws.
+- **`patchelf`** is checked before the build and reported as itself. It is in
+  the package lists above, so the usual cause of its absence is not a missing
+  package but a version manager — `pyenv`, `asdf` — whose shim sits earlier on
+  `PATH` and fails for anything not installed in the selected environment.
+- **On a host that relocates its libraries with relr** (`.relr.dyn`, Arch and
+  any recent distribution; not the `ubuntu-22.04` the release workflow builds
+  the AppImage on), it sets `NO_STRIP`. The `strip` bundled inside
+  `linuxdeploy` predates that section type and fails on every library it is
+  handed. The resulting AppImage is larger, which beats not existing.
+
+Nothing to do by hand for any of them beyond installing `patchelf`.
 
 The web build has not gone anywhere: it is what `npm run dev` serves, what the
 editor runs in, and it still hosts fine on any static host, `<base href>`
