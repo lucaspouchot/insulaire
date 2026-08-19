@@ -23,6 +23,21 @@
 //! the body breathe is four keyframes on one track, and the head, the hair and
 //! the arms breathe with it.
 //!
+//! # Poses, not sprite ids
+//!
+//! Movement is only half of an animation: a walk cycle also *redraws* the legs,
+//! and a character seen from the side is drawn from different art entirely. An
+//! animation says which by setting **pose values** — an ordinary key/value map
+//! that joins the customisation for the moment it is in force, so a layer picks
+//! its sprite through the same `when` conditions it already uses for hair
+//! colour or armour (`docs/adr/ADR-0033-animations-set-pose-values.md`).
+//!
+//! [`Animation::pose`] holds for the whole animation (`view: side`), and
+//! [`Animation::poses`] overrides it frame by frame (`step: contact`). A
+//! keyframe never names a variant: naming one would make the animation choose
+//! for a single layer, and the choice would then have to be repeated for every
+//! build, every armour and every size that layer already varies with.
+//!
 //! # Everything is whole pixels
 //!
 //! A [`Transform`] is a translation in canvas pixels and nothing else. Rotation
@@ -42,6 +57,7 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 /// Most frames an animation may declare.
 ///
@@ -185,7 +201,7 @@ pub enum Interpolation {
 /// `{ "frame": 1, "offset": [0, -2] }` rather than nesting a `transform`
 /// object around two numbers. The *type* keeps the concept; the file keeps the
 /// diff readable.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Keyframe {
     /// Which frame of the animation this value is written at, `0`-based.
@@ -200,6 +216,26 @@ pub struct Keyframe {
 
 fn is_step(interpolation: &Interpolation) -> bool {
     matches!(interpolation, Interpolation::Step)
+}
+
+/// The pose values one frame of an animation sets.
+///
+/// The values are flattened into the entry, so a file reads
+/// `{ "frame": 1, "step": "pass" }` rather than nesting a `values` object
+/// around one pair. One line per frame is the whole point: a four-frame walk
+/// cycle declares its four leg poses in four lines, and every layer that has
+/// something to say about a `step` answers all four of them at once.
+///
+/// `frame` is therefore the one key a pose may not use; serde reads it as the
+/// frame number.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PoseKey {
+    /// Which frame of the animation these values are set at, `0`-based.
+    pub frame: u32,
+    /// What they are, laid over the animation's own [`Animation::pose`].
+    #[serde(flatten)]
+    pub values: BTreeMap<String, Value>,
 }
 
 /// Everything one node does over the course of an animation.
@@ -297,7 +333,23 @@ pub struct Animation {
     /// Name shown in the editor. Not player-facing text, so not a key.
     #[serde(default)]
     pub name: String,
+    /// Id of the animation this one is the **mirror image** of.
+    ///
+    /// A character that walks left walks right the same way, seen the other way
+    /// round. Rather than author the second one, an animation may say it *is*
+    /// the first one flipped: it takes its source's timing, its tracks and its
+    /// sprites, and the whole canvas is drawn mirrored. Nothing else about it
+    /// is read — its own `frames`, `tracks` and `looping` are ignored.
+    ///
+    /// A mirror of a mirror is refused (`character.chainedMirror`), which is
+    /// what keeps this one hop rather than a chain to walk.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mirror_of: Option<String>,
     /// How many frames long it is, `1..=`[`MAX_ANIMATION_FRAMES`].
+    ///
+    /// Defaulted rather than required, because a mirror declares no timing of
+    /// its own — it borrows its source's.
+    #[serde(default = "default_frames")]
     pub frames: u32,
     /// How long each frame lasts, in milliseconds.
     #[serde(default = "default_frame_duration")]
@@ -305,6 +357,22 @@ pub struct Animation {
     /// Whether it starts again when it ends.
     #[serde(default)]
     pub looping: bool,
+    /// Pose values that hold for the **whole** animation.
+    ///
+    /// What is true of every frame of it: a walk seen from the side is
+    /// `{ "view": "side" }`, and every layer with a side-on drawing says so
+    /// once, in the `when` of one variant, rather than once per frame.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub pose: BTreeMap<String, Value>,
+    /// Pose values set frame by frame, laid over [`Self::pose`].
+    ///
+    /// What changes *within* the animation: which leg is forward. An entry is
+    /// the complete set of overrides for its frame rather than a delta on the
+    /// entry before it, and it **holds** — before the first it is the first,
+    /// after the last it is the last — because a drawing does not fade into
+    /// another one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub poses: Vec<PoseKey>,
     /// What moves, and when. A node with no track follows its parent.
     #[serde(default)]
     pub tracks: Vec<AnimationTrack>,
@@ -314,14 +382,21 @@ const fn default_frame_duration() -> u32 {
     DEFAULT_FRAME_DURATION_MS
 }
 
+const fn default_frames() -> u32 {
+    1
+}
+
 impl Default for Animation {
     fn default() -> Self {
         Self {
             id: String::new(),
             name: String::new(),
+            mirror_of: None,
             frames: 1,
             frame_duration_ms: DEFAULT_FRAME_DURATION_MS,
             looping: false,
+            pose: BTreeMap::new(),
+            poses: Vec::new(),
             tracks: Vec::new(),
         }
     }
@@ -372,6 +447,44 @@ impl Animation {
     #[must_use]
     pub const fn time_of(&self, frame: u32) -> u32 {
         frame.saturating_mul(self.frame_duration_ms)
+    }
+
+    /// `true` when this animation is another one seen the other way round.
+    #[must_use]
+    pub const fn is_mirror(&self) -> bool {
+        self.mirror_of.is_some()
+    }
+
+    /// The pose in force at this time: [`Self::pose`] under [`Self::poses`].
+    ///
+    /// These are the values a layer's `when` conditions are tested against
+    /// alongside the customisation, which is what lets one line of a variant
+    /// answer a whole animation and four lines answer a walk cycle
+    /// (`docs/adr/ADR-0033-animations-set-pose-values.md`).
+    #[must_use]
+    pub fn pose_at(&self, time_ms: u32) -> BTreeMap<String, Value> {
+        let mut merged = self.pose.clone();
+        if let Some(key) = self.pose_key_at(self.position_at(time_ms)) {
+            merged.extend(
+                key.values
+                    .iter()
+                    .map(|(id, value)| (id.clone(), value.clone())),
+            );
+        }
+        merged
+    }
+
+    /// The pose entry in force at `position`, in frames.
+    ///
+    /// The last one at or before it, and failing that the first one written at
+    /// all: a pose holds in both directions, the same way a hand-drawn sprite
+    /// stays on screen until it is replaced.
+    fn pose_key_at(&self, position: f64) -> Option<&PoseKey> {
+        self.poses
+            .iter()
+            .filter(|key| f64::from(key.frame) <= position)
+            .reduce(|best, key| if key.frame >= best.frame { key } else { best })
+            .or_else(|| self.poses.iter().min_by_key(|key| key.frame))
     }
 
     /// Every node's **local** transform at this time.
@@ -580,6 +693,118 @@ mod tests {
         assert_eq!(animation.duration_ms(), 0);
         assert_eq!(animation.frame_at(500), 0);
         assert!(animation.local_transforms(500).is_empty());
+    }
+
+    /// §12: an animation redraws by setting pose values, not by naming a
+    /// sprite — one line per frame, and every layer reads it.
+    #[test]
+    fn a_pose_is_set_for_the_whole_animation_and_again_per_frame() {
+        let walk: Animation = serde_json::from_str(
+            r#"{ "id": "walk", "frames": 4, "frameDurationMs": 100, "looping": true,
+                 "pose": { "view": "side" },
+                 "poses": [
+                    { "frame": 0, "step": "contact" },
+                    { "frame": 1, "step": "pass" },
+                    { "frame": 2, "step": "contactBack" },
+                    { "frame": 3, "step": "passBack" } ] }"#,
+        )
+        .expect("parse");
+
+        let step_at = |time| walk.pose_at(time)["step"].as_str().map(str::to_owned);
+        assert_eq!(step_at(0).as_deref(), Some("contact"));
+        assert_eq!(step_at(100).as_deref(), Some("pass"));
+        assert_eq!(step_at(250).as_deref(), Some("contactBack"));
+        assert_eq!(step_at(300).as_deref(), Some("passBack"));
+        // It loops with everything else.
+        assert_eq!(step_at(400).as_deref(), Some("contact"));
+
+        // The animation-wide value is in force at every one of them.
+        for time in [0, 100, 200, 300, 999] {
+            assert_eq!(walk.pose_at(time)["view"], serde_json::json!("side"));
+        }
+    }
+
+    /// A pose entry holds until the next one: a frame that sets nothing is a
+    /// frame that changed nothing, not a frame that cleared the pose.
+    #[test]
+    fn a_pose_holds_across_the_frames_that_set_nothing() {
+        let animation: Animation = serde_json::from_str(
+            r#"{ "id": "a", "frames": 4, "frameDurationMs": 100,
+                 "poses": [ { "frame": 0, "step": "open" },
+                            { "frame": 3, "step": "closed" } ] }"#,
+        )
+        .expect("parse");
+
+        for time in [0, 100, 200] {
+            assert_eq!(animation.pose_at(time)["step"], serde_json::json!("open"));
+        }
+        assert_eq!(animation.pose_at(300)["step"], serde_json::json!("closed"));
+    }
+
+    /// A pose that only starts at frame 2 is still in force at frame 0:
+    /// holding backwards is what a first entry means.
+    #[test]
+    fn a_pose_holds_before_the_first_frame_that_sets_one() {
+        let animation: Animation = serde_json::from_str(
+            r#"{ "id": "a", "frames": 4, "poses": [ { "frame": 2, "step": "late" } ] }"#,
+        )
+        .expect("parse");
+        assert_eq!(animation.pose_at(0)["step"], serde_json::json!("late"));
+    }
+
+    /// A frame's value wins over the animation's, which is what "laid over"
+    /// means — and any JSON scalar works, not only strings.
+    #[test]
+    fn a_frame_overrides_the_animation_wide_pose() {
+        let animation: Animation = serde_json::from_str(
+            r#"{ "id": "a", "frames": 2, "frameDurationMs": 100,
+                 "pose": { "view": "side", "airborne": false },
+                 "poses": [ { "frame": 0, "airborne": false },
+                            { "frame": 1, "airborne": true } ] }"#,
+        )
+        .expect("parse");
+
+        assert_eq!(animation.pose_at(0)["airborne"], serde_json::json!(false));
+        assert_eq!(animation.pose_at(100)["airborne"], serde_json::json!(true));
+        assert_eq!(animation.pose_at(100)["view"], serde_json::json!("side"));
+    }
+
+    #[test]
+    fn an_animation_that_sets_no_pose_has_none() {
+        assert!(idle().pose_at(120).is_empty());
+    }
+
+    /// A pose entry is one readable line, frame and values side by side.
+    #[test]
+    fn a_pose_entry_writes_its_values_beside_its_frame() {
+        let animation: Animation = serde_json::from_str(
+            r#"{ "id": "a", "frames": 2, "poses": [ { "frame": 1, "step": "pass" } ] }"#,
+        )
+        .expect("parse");
+        let json = serde_json::to_string(&animation.poses[0]).expect("serialise");
+        assert_eq!(json, r#"{"frame":1,"step":"pass"}"#);
+    }
+
+    /// A mirror carries nothing but the id it reflects; the file says so and
+    /// nothing else.
+    #[test]
+    fn a_mirror_parses_with_no_timing_of_its_own() {
+        let mirror: Animation = serde_json::from_str(
+            r#"{ "id": "walking_right", "name": "Walking right",
+                 "mirrorOf": "walking_left" }"#,
+        )
+        .expect("parse");
+
+        assert!(mirror.is_mirror());
+        assert_eq!(mirror.mirror_of.as_deref(), Some("walking_left"));
+        assert!(mirror.tracks.is_empty());
+        assert!(!idle().is_mirror());
+
+        let json = serde_json::to_string(&mirror).expect("serialise");
+        assert_eq!(
+            serde_json::from_str::<Animation>(&json).expect("reparse"),
+            mirror
+        );
     }
 
     #[test]

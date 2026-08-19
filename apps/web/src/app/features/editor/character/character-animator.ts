@@ -18,6 +18,13 @@
  * global**: the numbers an author types are what this node does *on top of*
  * what it inherits, and the number beside them is what the hierarchy made of
  * that. They are different questions and they are shown as different things.
+ *
+ * The second one it has to keep visible is **moving against redrawing**. A
+ * track moves a node; a *pose* says what the character is drawn as, and it is
+ * read by whichever layers have something to say about it rather than aimed at
+ * one (`docs/adr/ADR-0033-animations-set-pose-values.md`). So the pose has its
+ * own row at the top of the timeline, above every node, and its own editor —
+ * because it belongs to the animation and not to a node.
  */
 
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
@@ -30,13 +37,18 @@ import {
   Interpolation,
   Keyframe,
   PixelOffset,
+  PoseKey,
   ResolvedCharacter,
+  SettingValue,
   blankAnimation,
   clampDuration,
   clampFrames,
   freeId,
   heldOffset,
   keyframeAt,
+  heldPose,
+  poseAt,
+  poseValue,
   MAX_ANIMATION_FRAMES,
 } from './character-editor.types';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
@@ -51,6 +63,23 @@ interface TimelineCell {
   readonly key: boolean;
   /** `true` when the track holds a value here because of an earlier keyframe. */
   readonly held: boolean;
+}
+
+/** One cell of the pose row: what the animation sets at that frame. */
+interface PoseCell {
+  readonly frame: number;
+  /** `true` when the animation sets a pose at exactly this frame. */
+  readonly key: boolean;
+  /** `true` when an earlier frame's pose is still in force here. */
+  readonly held: boolean;
+  /** What is in force, shortened to fit a cell. Empty when nothing is. */
+  readonly label: string;
+}
+
+/** One editable line of a pose: a key and the value it holds. */
+interface PoseRow {
+  readonly key: string;
+  readonly value: string;
 }
 
 /** One row of the timeline: a node and its frames. */
@@ -107,10 +136,107 @@ export class CharacterAnimator {
     return this.animations().find((animation) => animation.id === id) ?? null;
   });
 
+  /** `true` when the open animation is another one seen the other way round. */
+  protected readonly isMirror = computed(() => this.animation()?.mirrorOf != null);
+
+  /**
+   * The animation whose timing and tracks are actually being edited.
+   *
+   * A mirror has none of its own — it borrows its source's — so a mirror shows
+   * no timeline at all rather than an editable copy of somebody else's.
+   */
+  protected readonly played = computed<Animation | null>(() => {
+    const open = this.animation();
+    if (open === null || !open.mirrorOf) {
+      return open;
+    }
+    const source = this.animations().find((entry) => entry.id === open.mirrorOf);
+    return source === undefined || source.mirrorOf ? null : source;
+  });
+
+  /** The animations a mirror may reflect: every real one but itself. */
+  protected readonly mirrorSources = computed<readonly Animation[]>(() => {
+    const open = this.animationId();
+    return this.animations().filter((entry) => entry.id !== open && !entry.mirrorOf);
+  });
+
   /** `0 … frames - 1`, for the timeline's header and every row. */
   protected readonly frames = computed<readonly number[]>(() => {
-    const count = this.animation()?.frames ?? 0;
+    const count = this.played()?.frames ?? 0;
     return Array.from({ length: count }, (_value, index) => index);
+  });
+
+  /**
+   * Every key some variant of this character waits on, and the values it waits
+   * for, so the pose editor can offer them instead of asking an author to
+   * retype a string that has to match exactly.
+   *
+   * A pose is only ever felt through a `when`, so this list is precisely the
+   * vocabulary a pose can usefully speak.
+   */
+  protected readonly conditionKeys = computed<readonly string[]>(() =>
+    [
+      ...new Set(
+        this.rows().flatMap(({ layer }) =>
+          (layer.variants ?? []).flatMap((variant) => Object.keys(variant.when ?? {})),
+        ),
+      ),
+    ].sort(),
+  );
+
+  /** The values some variant waits for, across every key. */
+  protected readonly conditionValues = computed<readonly string[]>(() =>
+    [
+      ...new Set(
+        this.rows().flatMap(({ layer }) =>
+          (layer.variants ?? []).flatMap((variant) =>
+            Object.values(variant.when ?? {}).map((value) => String(value)),
+          ),
+        ),
+      ),
+    ].sort(),
+  );
+
+  /** The pose the animation holds for its whole length, as editable lines. */
+  protected readonly animationPose = computed<readonly PoseRow[]>(() =>
+    rowsOf(this.played()?.pose ?? {}),
+  );
+
+  /** The pose written at the selected frame, if the animation writes one. */
+  protected readonly framePose = computed<readonly PoseRow[]>(() => {
+    const key = poseAt(this.played(), this.frame());
+    return key === undefined ? [] : rowsOf(withoutFrame(key));
+  });
+
+  /** `true` when the selected frame sets a pose of its own. */
+  protected readonly hasFramePose = computed(
+    () => poseAt(this.played(), this.frame()) !== undefined,
+  );
+
+  /**
+   * The pose row of the timeline: what is in force at each frame.
+   *
+   * It sits above every node because it is not a node's — a pose is read by
+   * whichever layers have something to say about it, which may be all of them
+   * or none.
+   */
+  protected readonly poseRow = computed<readonly PoseCell[]>(() => {
+    const animation = this.played();
+    if (animation === null) {
+      return [];
+    }
+    const written = new Set((animation.poses ?? []).map((key) => key.frame));
+    return this.frames().map((frame) => {
+      const held = heldPose(animation, frame);
+      return {
+        frame,
+        key: written.has(frame),
+        held: held !== undefined && !written.has(frame),
+        label: Object.values(held === undefined ? {} : withoutFrame(held))
+          .map((value) => String(value))
+          .join(' '),
+      };
+    });
   });
 
   /**
@@ -121,7 +247,7 @@ export class CharacterAnimator {
    * mean adding a track before being able to see where it goes.
    */
   protected readonly timeline = computed<readonly TimelineRow[]>(() => {
-    const animation = this.animation();
+    const animation = this.played();
     if (animation === null) {
       return [];
     }
@@ -147,7 +273,7 @@ export class CharacterAnimator {
 
   /** The track driving the selected node in the open animation. */
   protected readonly track = computed<AnimationTrack | undefined>(() => {
-    const animation = this.animation();
+    const animation = this.played();
     const node = this.node();
     return animation === null || node === null ? undefined : trackOf(animation, node);
   });
@@ -214,7 +340,9 @@ export class CharacterAnimator {
     this.edit((draft) => {
       draft.animations = (draft.animations ?? []).filter((animation) => animation.id !== id);
     });
-    this.animationPicked.emit(this.animations().find((animation) => animation.id !== id)?.id ?? null);
+    this.animationPicked.emit(
+      this.animations().find((animation) => animation.id !== id)?.id ?? null,
+    );
   }
 
   protected pick(id: string): void {
@@ -317,7 +445,7 @@ export class CharacterAnimator {
     if (node === null) {
       return;
     }
-    this.patchAnimation((animation) => {
+    this.patchPlayed((animation) => {
       const keyframe = keyframeAt(trackOf(animation, node), frame);
       if (keyframe !== undefined) {
         keyframe.interpolation = interpolation as Interpolation;
@@ -330,13 +458,126 @@ export class CharacterAnimator {
     this.writeKeyframe(this.local());
   }
 
+  // -------------------------------------------------------------------- pose
+
+  /**
+   * Adds a line to the pose — either the animation's own or this frame's.
+   *
+   * The first key a character already waits on, so the common case is one
+   * click and then a value: an author who has written `when: { view: 'side' }`
+   * on a layer has already said what the animation should set.
+   */
+  protected addPose(scope: 'animation' | 'frame'): void {
+    const taken = (scope === 'animation' ? this.animationPose() : this.framePose()).map(
+      (row) => row.key,
+    );
+    const suggested = this.conditionKeys().find((key) => !taken.includes(key));
+    this.patchPose(scope, (values) => {
+      values[freeId(suggested ?? 'view', taken)] = '';
+    });
+  }
+
+  protected removePose(scope: 'animation' | 'frame', key: string): void {
+    this.patchPose(scope, (values) => {
+      delete values[key];
+    });
+  }
+
+  /** Renames one line of the pose, keeping its place in the order. */
+  protected setPoseKey(scope: 'animation' | 'frame', from: string, raw: string): void {
+    const to = raw.trim();
+    if (to.length === 0 || to === from || to === 'frame') {
+      return;
+    }
+    this.patchPose(scope, (values) => {
+      // Rebuilt rather than deleted and re-added, so renaming a key does not
+      // move its line to the bottom of the file.
+      for (const [id, value] of Object.entries({ ...values })) {
+        delete values[id];
+        values[id === from ? to : id] = value;
+      }
+    });
+  }
+
+  protected setPoseValue(scope: 'animation' | 'frame', key: string, raw: string): void {
+    this.patchPose(scope, (values) => {
+      values[key] = poseValue(raw);
+    });
+  }
+
+  /** Gives this frame a pose of its own, or takes the one it had away. */
+  protected toggleFramePose(): void {
+    const frame = this.frame();
+    this.patchPlayed((animation) => {
+      const poses = animation.poses ?? [];
+      const existing = poses.find((key) => key.frame === frame);
+      animation.poses =
+        existing === undefined
+          ? [...poses, { frame }].sort((left, right) => left.frame - right.frame)
+          : poses.filter((key) => key.frame !== frame);
+    });
+  }
+
+  /** Edits one of the two pose maps: the animation's, or this frame's. */
+  private patchPose(
+    scope: 'animation' | 'frame',
+    mutate: (values: Record<string, SettingValue>) => void,
+  ): void {
+    const frame = this.frame();
+    this.patchPlayed((animation) => {
+      if (scope === 'animation') {
+        const pose = { ...(animation.pose ?? {}) };
+        mutate(pose);
+        animation.pose = pose;
+        return;
+      }
+      const poses = [...(animation.poses ?? [])];
+      const index = poses.findIndex((candidate) => candidate.frame === frame);
+      const values = index === -1 ? {} : withoutFrame(poses[index] as PoseKey);
+      mutate(values);
+
+      const written: PoseKey = { frame, ...values };
+      if (index === -1) {
+        poses.push(written);
+        poses.sort((left, right) => left.frame - right.frame);
+      } else {
+        poses[index] = written;
+      }
+      animation.poses = poses;
+    });
+  }
+
+  /**
+   * Turns the open animation into the mirror image of another, or back into
+   * one of its own.
+   *
+   * Becoming a mirror drops the tracks and the pose it had: neither would ever
+   * be read again, and a file carrying them says something about itself that
+   * is not true.
+   */
+  protected setMirrorOf(source: string): void {
+    this.patchAnimation((animation) => {
+      if (source.length === 0) {
+        delete animation.mirrorOf;
+        animation.frames ??= 4;
+        animation.tracks ??= [];
+        return;
+      }
+      animation.mirrorOf = source;
+      animation.tracks = [];
+      delete animation.pose;
+      delete animation.poses;
+    });
+    this.framePicked.emit(0);
+  }
+
   protected removeKeyframe(): void {
     const node = this.node();
     const frame = this.frame();
     if (node === null) {
       return;
     }
-    this.patchAnimation((animation) => {
+    this.patchPlayed((animation) => {
       const track = trackOf(animation, node);
       if (track === undefined) {
         return;
@@ -345,9 +586,7 @@ export class CharacterAnimator {
       // A track with nothing in it is noise in the file and a warning in the
       // report, so removing the last keyframe removes the track.
       if (track.keyframes.length === 0) {
-        animation.tracks = (animation.tracks ?? []).filter(
-          (candidate) => candidate.node !== node,
-        );
+        animation.tracks = (animation.tracks ?? []).filter((candidate) => candidate.node !== node);
       }
     });
   }
@@ -358,7 +597,7 @@ export class CharacterAnimator {
     if (node === null) {
       return;
     }
-    this.patchAnimation((animation) => {
+    this.patchPlayed((animation) => {
       animation.tracks = (animation.tracks ?? []).filter((track) => track.node !== node);
     });
   }
@@ -373,7 +612,7 @@ export class CharacterAnimator {
     if (node === null) {
       return;
     }
-    this.patchAnimation((animation) => {
+    this.patchPlayed((animation) => {
       const tracks = animation.tracks ?? [];
       let track = tracks.find((candidate) => candidate.node === node);
       if (track === undefined) {
@@ -397,7 +636,24 @@ export class CharacterAnimator {
 
   /** Edits the open animation in a copy of the definition. */
   private patchAnimation(mutate: (animation: Animation) => void): void {
-    const id = this.animationId();
+    this.patchById(this.animationId(), mutate);
+  }
+
+  /**
+   * Edits the animation whose tracks are actually playing.
+   *
+   * The same as {@link patchAnimation} unless a mirror is open, and a mirror
+   * has no tracks — which is why every timeline action is disabled there
+   * rather than quietly writing into the animation it reflects.
+   */
+  private patchPlayed(mutate: (animation: Animation) => void): void {
+    if (this.isMirror()) {
+      return;
+    }
+    this.patchById(this.played()?.id ?? null, mutate);
+  }
+
+  private patchById(id: string | null, mutate: (animation: Animation) => void): void {
     this.edit((draft) => {
       const animation = (draft.animations ?? []).find((candidate) => candidate.id === id);
       if (animation !== undefined) {
@@ -412,6 +668,17 @@ export class CharacterAnimator {
     mutate(draft);
     this.changed.emit(draft);
   }
+}
+
+/** A pose map as editable lines, in the order it was written. */
+function rowsOf(values: Record<string, SettingValue>): PoseRow[] {
+  return Object.entries(values).map(([key, value]) => ({ key, value: String(value) }));
+}
+
+/** A pose entry's values, without the frame number they sit beside. */
+function withoutFrame(key: PoseKey): Record<string, SettingValue> {
+  const { frame: _frame, ...values } = key;
+  return values as Record<string, SettingValue>;
 }
 
 /** The track driving this node, if the animation has one. */

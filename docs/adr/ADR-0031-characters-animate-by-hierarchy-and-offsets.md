@@ -1,7 +1,17 @@
 # ADR-0031 — Characters Animate by a Layer Hierarchy and Whole-Pixel Offsets
 
 ## Status
-Accepted. Extends `docs/adr/ADR-0028-character-definitions.md` and
+Accepted, and everything decided here stands. Extended three times since:
+`docs/adr/ADR-0032-per-frame-sprites-and-mirrored-animations.md` made an
+animation able to change what is drawn and to be another one mirrored;
+`docs/adr/ADR-0033-animations-set-pose-values.md` replaced the first half of
+that with pose values a variant's `when` selects on; and
+`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md` made the hierarchy
+decided here **place** the character as well as animate it — an attachment
+point, which this ADR introduced and left unread, is now what a child is
+measured from.
+
+Extends `docs/adr/ADR-0028-character-definitions.md` and
 `docs/adr/ADR-0029-characters-are-composed-sprites.md`; neither is overturned.
 A layer still draws one sprite, placed in whole pixels on a declared canvas, and
 a definition plus a customisation still resolves to a flat list of sprites to

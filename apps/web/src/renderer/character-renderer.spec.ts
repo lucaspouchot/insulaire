@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { ResolvedCharacter, ResolvedLayer } from '../content/content-types';
+import { PixelRect, ResolvedCharacter, ResolvedLayer } from '../content/content-types';
 import { CharacterBox, drawCharacter, pixelUnder, placement } from './character-renderer';
 
 /**
@@ -21,6 +21,8 @@ function recordingContext() {
     setLineDash: vi.fn(),
     save: vi.fn(),
     restore: vi.fn(),
+    translate: vi.fn(),
+    scale: vi.fn(),
   };
 }
 
@@ -31,16 +33,21 @@ const CANVAS = { width: 64, height: 128 };
  * A resolved character the renderer can draw.
  *
  * `offset` is filled in here rather than at every call: it is what the
- * animation moved a layer by, already applied to `rect`, and the renderer
- * never reads it (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+ * animation moved a layer by and `origin` is the frame its box was measured
+ * from — both already applied to `rect`, and the renderer reads neither
+ * (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`).
  */
-function character(layers: Omit<ResolvedLayer, 'offset'>[]): ResolvedCharacter {
+function character(
+  layers: Omit<ResolvedLayer, 'offset' | 'origin'>[],
+  mirrored = false,
+): ResolvedCharacter {
   return {
     character: 'c',
     category: 'player',
     resolution: CANVAS,
     values: {},
-    layers: layers.map((layer) => ({ ...layer, offset: [0, 0] })),
+    mirrored,
+    layers: layers.map((layer) => ({ ...layer, offset: [0, 0], origin: [0, 0] })),
   };
 }
 
@@ -113,6 +120,62 @@ describe('pixelUnder', () => {
 });
 
 describe('drawCharacter', () => {
+  /**
+   * The one drawing decision this file makes: a mirrored character is the
+   * whole canvas reflected about its own centre line, layers and pixels
+   * together (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+   */
+  it('reflects a mirrored character about its own canvas, not its box', () => {
+    const context = recordingContext();
+    const image = {} as CanvasImageSource;
+    const layers = [
+      {
+        layer: 'legs',
+        variant: 'stride',
+        rect: [18, 66, 28, 57] as const,
+        asset: 'a.png',
+        tint: '',
+      },
+    ];
+
+    drawCharacter(
+      context as unknown as CanvasRenderingContext2D,
+      character(
+        layers.map((layer) => ({ ...layer, rect: [...layer.rect] as PixelRect })),
+        true,
+      ),
+      BOX,
+      { image: () => image },
+    );
+
+    // placement(): zoom 3, originX 4. The canvas is 64 wide, so the axis sits
+    // at 4 + 64 * 3 / 2 and the translation is twice that.
+    expect(context.translate).toHaveBeenCalledWith(4 * 2 + 64 * 3, 0);
+    expect(context.scale).toHaveBeenCalledWith(-1, 1);
+    // Saved and restored, so the mirror does not leak into whatever draws next.
+    expect(context.save).toHaveBeenCalled();
+    expect(context.restore).toHaveBeenCalled();
+    // Smoothing is re-asserted after the flip: some engines reset it there,
+    // and a smoothed sprite is the whole thing this pipeline avoids.
+    expect(context.imageSmoothingEnabled).toBe(false);
+    // The boxes are untouched — only the canvas moved.
+    expect(context.drawImage).toHaveBeenCalledWith(image, 4 + 18 * 3, 16 + 66 * 3, 28 * 3, 57 * 3);
+  });
+
+  it('draws an unmirrored character without touching the transform', () => {
+    const context = recordingContext();
+    drawCharacter(
+      context as unknown as CanvasRenderingContext2D,
+      character([
+        { layer: 'body', variant: 'd', rect: [21, 12, 22, 54], asset: 'a.png', tint: '' },
+      ]),
+      BOX,
+      { image: () => ({}) as CanvasImageSource },
+    );
+    expect(context.translate).not.toHaveBeenCalled();
+    expect(context.scale).not.toHaveBeenCalled();
+  });
+
   it('turns off smoothing and blits each sprite at the zoomed box', () => {
     const context = recordingContext();
     const image = {} as CanvasImageSource;
@@ -182,9 +245,7 @@ describe('drawCharacter', () => {
 
     drawCharacter(
       context as unknown as CanvasRenderingContext2D,
-      character([
-        { layer: 'flat', variant: 'v', rect: [10, 10, 0, 20], asset: 'a.png', tint: '' },
-      ]),
+      character([{ layer: 'flat', variant: 'v', rect: [10, 10, 0, 20], asset: 'a.png', tint: '' }]),
       BOX,
       { image: () => ({}) as CanvasImageSource },
     );
@@ -200,9 +261,9 @@ describe('drawCharacter', () => {
   it('recolours a tinted sprite through an offscreen canvas', () => {
     const scratch = recordingContext();
     const element = { width: 0, height: 0, getContext: () => scratch };
-    const created = vi.spyOn(document, 'createElement').mockReturnValue(
-      element as unknown as HTMLElement,
-    );
+    const created = vi
+      .spyOn(document, 'createElement')
+      .mockReturnValue(element as unknown as HTMLElement);
     const context = recordingContext();
     const image = {} as CanvasImageSource;
 

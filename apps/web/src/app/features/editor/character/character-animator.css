@@ -164,7 +164,10 @@
 .head,
 .track {
   display: grid;
-  grid-template-columns: 96px repeat(var(--frames), 20px);
+  /* Cells grow into the width there is, down to a square when a long
+     animation needs one — which is what lets a pose cell carry its value on a
+     four-frame walk and fall back to a marker on a forty-frame one. */
+  grid-template-columns: 96px repeat(var(--frames), minmax(20px, 1fr));
   align-items: center;
   gap: 2px;
 }
@@ -225,6 +228,80 @@
 .cell.key {
   background: var(--accent);
   border-color: var(--accent);
+}
+
+/* The pose row is separated from the node rows by a rule, because it is not
+   one of them: it belongs to the animation, and every node may read it. */
+.pose-track {
+  margin-bottom: 3px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pose-track .node-name {
+  font-weight: 700;
+  color: var(--text-dim);
+}
+
+/* A pose cell carries its value, because "contact" says more at a glance than
+   a coloured square does. */
+.cell.pose {
+  overflow: hidden;
+  padding: 0 3px;
+  font-family: var(--mono);
+  font-size: 9px;
+  line-height: 14px;
+  color: var(--text-dim);
+}
+
+.cell.pose.key {
+  color: var(--bg);
+}
+
+.pose-label {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A mirror owns nothing the timeline edits, and says so by looking inert. */
+.transform.locked,
+.pose-editor.locked {
+  opacity: 0.6;
+}
+
+/* What the character is drawn as, above what moves it. */
+.pose-editor {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.pose-editor h4 {
+  margin: 10px 0 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+
+.pose-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.pose-line input {
+  width: 100%;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.hint.warn {
+  color: var(--warn);
 }
 
 .cell.at {

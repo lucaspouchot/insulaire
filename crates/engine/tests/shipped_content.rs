@@ -439,7 +439,7 @@ fn the_shipped_character_resolves_for_every_choice_it_offers() {
             "cape",
             "hairBack",
             "body",
-            "boots",
+            "legs",
             "top",
             "skirt",
             "hairFront"
@@ -498,7 +498,7 @@ fn the_shipped_character_resolves_for_every_choice_it_offers() {
 /// The shipped character breathes, and the skeleton is what makes it cheap.
 ///
 /// Its idle drives one node — the body — and every layer that hangs off it
-/// moves too, while the boots stay planted on the ground because they hang off
+/// moves too, while the legs stay planted on the ground because they hang off
 /// nothing (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
 #[test]
 fn the_shipped_character_plays_its_idle_through_the_hierarchy() {
@@ -538,10 +538,9 @@ fn the_shipped_character_plays_its_idle_through_the_hierarchy() {
             "`{layer}` did not follow the body"
         );
     }
-    assert!(
-        offset_of(&up, "boots").is_zero(),
-        "the boots left the ground"
-    );
+    // The legs hang off nothing, so the feet stay on the ground while the
+    // torso breathes above them.
+    assert!(offset_of(&up, "legs").is_zero(), "the feet left the ground");
 
     // Frame 3, the bottom: the hair's own keyframe adds to what it inherited.
     let down = engine
@@ -556,4 +555,142 @@ fn the_shipped_character_plays_its_idle_through_the_hierarchy() {
         .expect("five loops later")
         .layers;
     assert_eq!(looped, rest.layers);
+}
+
+/// The shipped walk cycle: a leg sprite per frame, and the other direction for
+/// free.
+///
+/// This is the pair the whole per-frame-sprite feature exists for — the legs
+/// change drawing four times a cycle while everything else about them stays
+/// what the customisation said, and `walking_right` is the same cycle with one
+/// flag set (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+#[test]
+fn the_shipped_character_walks_left_and_mirrors_it_to_walk_right() {
+    let engine = engine_with_shipped_content();
+    let definition = engine.character("human_player").expect("the definition");
+    let walk = definition
+        .animation("walking_left")
+        .expect("a walking_left animation");
+    assert!(walk.looping);
+    assert_eq!(walk.frames, 4);
+
+    let variant_of = |resolved: &insulaire_world::ResolvedCharacter, layer: &str| {
+        resolved
+            .layers
+            .iter()
+            .find(|drawn| drawn.layer == layer)
+            .unwrap_or_else(|| panic!("a `{layer}` layer"))
+            .variant
+            .clone()
+    };
+    let legs_of = |resolved: &insulaire_world::ResolvedCharacter| {
+        resolved
+            .layers
+            .iter()
+            .find(|drawn| drawn.layer == "legs")
+            .expect("a legs layer")
+            .clone()
+    };
+
+    // At rest the legs stand and the character faces the reader; the walk sets
+    // `view: side` for its whole length and a `step` for each of its frames.
+    let rest = engine
+        .resolve_character("human_player", "{}", None, 0)
+        .expect("rest");
+    assert_eq!(legs_of(&rest).variant, "stand");
+    assert_eq!(
+        variant_of(&rest, "body"),
+        "default",
+        "the rest pose is the front view"
+    );
+
+    let expected = ["sideContact", "sidePass", "sideContactBack", "sidePassBack"];
+    for (frame, variant) in expected.iter().enumerate() {
+        let posed = engine
+            .resolve_character(
+                "human_player",
+                "{}",
+                Some("walking_left"),
+                walk.time_of(frame as u32),
+            )
+            .expect("a walk frame");
+        let legs = legs_of(&posed);
+        assert_eq!(&legs.variant, variant, "frame {frame}");
+        // The sprite changes; the box it is drawn in does not.
+        assert_eq!(legs.rect, legs_of(&rest).rect, "frame {frame}");
+        // Every layer with a side-on drawing takes it, for one line of `when`
+        // and no per-frame repetition at all.
+        for layer in ["body", "top", "skirt", "hairBack", "cape", "hairFront"] {
+            assert!(
+                variant_of(&posed, layer).to_lowercase().contains("side"),
+                "layer `{layer}` is not drawn side-on at frame {frame}"
+            );
+        }
+        // Every sprite the cycle draws is a file this repository ships.
+        for drawn in &posed.layers {
+            let path = repo_root().join("content").join(&drawn.asset);
+            assert!(path.is_file(), "missing sprite: {}", path.display());
+        }
+        assert!(!posed.mirrored);
+    }
+
+    // The cape steps in front of the body while the walk plays, chosen by the
+    // same condition that chose its side-on drawing — and it is behind again
+    // the moment nothing is playing.
+    let sideways = engine
+        .resolve_character("human_player", "{}", Some("walking_left"), 0)
+        .expect("a walk frame");
+    let order = |resolved: &insulaire_world::ResolvedCharacter, layer: &str| {
+        resolved
+            .layers
+            .iter()
+            .position(|drawn| drawn.layer == layer)
+            .unwrap_or_else(|| panic!("a `{layer}` layer"))
+    };
+    assert!(order(&sideways, "cape") > order(&sideways, "body"));
+    assert!(order(&rest, "cape") < order(&rest, "body"));
+
+    // Boxes are measured from the joint their layer hangs off, and the engine
+    // is what turns that back into a place on the canvas.
+    let top = sideways
+        .layers
+        .iter()
+        .find(|drawn| drawn.layer == "top")
+        .expect("a top layer");
+    assert_eq!(top.origin, insulaire_world::PixelOffset::new(32, 36));
+    assert_eq!(top.rect, insulaire_world::PixelRect::new(23, 36, 18, 14));
+
+    // A pose combines with the customisation instead of replacing it: plate
+    // armour seen from the side is its own drawing, chosen by both at once.
+    let plated = engine
+        .resolve_character(
+            "human_player",
+            r#"{"armor":"plate"}"#,
+            Some("walking_left"),
+            0,
+        )
+        .expect("plated");
+    assert_eq!(variant_of(&plated, "top"), "plateSide");
+
+    // walking_right is authored as nothing but a reflection: same sprites,
+    // same boxes, same clock, drawn the other way round.
+    for time in [0_u32, 130, 260, 390, 1_000] {
+        let left = engine
+            .resolve_character("human_player", "{}", Some("walking_left"), time)
+            .expect("left");
+        let right = engine
+            .resolve_character("human_player", "{}", Some("walking_right"), time)
+            .expect("right");
+
+        assert!(right.mirrored, "at {time}ms");
+        assert_eq!(left.layers, right.layers, "at {time}ms");
+        assert_eq!(right.pose.expect("pose").animation, "walking_right");
+    }
+
+    // It is a *mirror*, so it carries no timing or tracks of its own.
+    let mirror = definition
+        .animation("walking_right")
+        .expect("a walking_right animation");
+    assert_eq!(mirror.mirror_of.as_deref(), Some("walking_left"));
+    assert!(mirror.tracks.is_empty());
 }

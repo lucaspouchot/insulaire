@@ -460,14 +460,15 @@ specific to any of those.
 A character is **composed of sprites** on a pixel canvas it declares
 (ADR-0029). There is no procedural drawing vocabulary: a layer names an image.
 
-Its layers also form a **tree**, and it may declare **animations** that move
-nodes of that tree by whole pixels over time (ADR-0031). Both are optional: a
-definition with neither resolves exactly as it did before they existed.
+Its layers also form a **tree**: a layer hangs off a joint on another one and is
+**placed from there** (ADR-0034), and **animations** move nodes of that tree by
+whole pixels over time (ADR-0031). Both are optional — a definition of roots and
+no animation is a flat stack of sprites, which is how it started.
 
 ```json
 {
   "id": "human_player",
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "name": "Human Player",
   "category": "player",
   "resolution": { "width": 64, "height": 128 },
@@ -500,7 +501,7 @@ CharacterDefinition + values ──> resolve() ──> ResolvedCharacter ──>
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `id` | string | yes | Stable id; must match the manifest's entry. |
-| `schemaVersion` | integer | yes | `2` — the sprite format (ADR-0029). `1` was ADR-0028's primitives on a unit square and is gone. |
+| `schemaVersion` | integer | yes | `3` — anchor-relative boxes (ADR-0034). `2` was ADR-0029's absolute ones; `1` was ADR-0028's primitives on a unit square. Both are gone. |
 | `name` | string | no | Shown in the editor. Not player-facing, so not a key. |
 | `category` | `player` \| `npc` \| `enemy` \| `monster` \| `other` | no | Filing only. **Never read by the resolver or the renderer.** Default `other`. |
 | `resolution` | `{ width, height }` | no | The pixel canvas the sprites are authored on, `1..=256` a side. Default `64 × 128`. |
@@ -532,12 +533,13 @@ reads it here.
 |---|---|---|---|
 | `layers[].id` | string | yes | Stable id, unique in the definition. |
 | `layers[].parent` | string | no | Id of the layer this one hangs off. Absent makes it a root. **Not the draw order** — see *The skeleton* below. |
-| `layers[].parentAnchor` | string | no | Which of the parent's `anchors` it hangs off. |
-| `layers[].anchors[]` | `{ id, at: [x, y] }[]` | no | Named points other layers may hang off, in canvas pixels. |
+| `layers[].parentAnchor` | string | no | Which of the parent's `anchors` it hangs off, and is **placed from**. Absent measures from the parent's own origin. |
+| `layers[].anchors[]` | `{ id, at: [x, y] }[]` | no | Named points other layers hang off, measured from **this layer's own origin**. |
 | `layers[].variants[]` | see below | no | The appearances it can take, **most specific first**. |
 | `variants[].id` | string | yes | Stable id, unique within its layer. |
 | `variants[].when` | `{ parameterId: value }` | no | Values this variant requires. Absent means "always". |
-| `variants[].rect` | `[x, y, width, height]` | no | Where the sprite goes on the canvas, in **whole pixels**. `x`/`y` may be negative. |
+| `variants[].rect` | `[x, y, width, height]` | no | Where the sprite goes, in **whole pixels**, measured from the joint its layer hangs off. `x`/`y` are commonly negative. |
+| `variants[].order` | integer | no | Where this variant draws in the stack, overriding the author order. Default `0`. See *Draw order*. |
 | `variants[].sprite` | `{ asset, tint? }` | yes | The image it draws. |
 
 **The first variant whose conditions hold is the one drawn**, so author order is
@@ -548,10 +550,13 @@ Every entry of `when` must match. A parameter holding a **list** matches a
 scalar it *contains*, so `{ "equipment": "helmet" }` asks whether a helmet was
 chosen among several.
 
-`rect` is the sprite's box on the canvas. It should be the image's own pixel
-size — any other size stretches it — and the editor fills it in from the image
-when one is picked. A box reaching outside the canvas is legal (a cape
-overhangs) and reported as a warning.
+`rect` is the sprite's box, and its `width`/`height` should be the image's own
+pixel size — any other size stretches it — which the editor fills in from the
+image when one is picked. Its `x`/`y` are measured from **the joint its layer
+hangs off**, not from the canvas, so a sprite drawn to sit exactly on that joint
+is `[0, 0, width, height]` and negative values are ordinary (see *The
+skeleton*). A box that *lands* outside the canvas is legal — a cape overhangs —
+and reported as a warning.
 
 ### Sprites and tints
 
@@ -573,34 +578,73 @@ hair sprite serve every hair colour instead of one image per colour. A
 
 ### The skeleton
 
-`parent` makes the layers a **tree**, which is what an animation's offsets
-compose down: a body that drops two pixels takes the head, the hair and
-everything else hanging off it with it (ADR-0031).
+`parent` makes the layers a **tree**, and the tree **places** the character as
+well as animating it (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`):
 
-The tree is **independent of the draw order**. Layers are still drawn in author
-order, back to front; a cape is drawn *behind* the body and still *hangs off*
-it, and the format keeps those two statements apart.
-
-```json
-{ "id": "body", "anchors": [{ "id": "neck", "at": [32, 40] }], "variants": [ … ] },
-{ "id": "head", "parent": "body", "parentAnchor": "neck", "variants": [ … ] }
+```text
+origin(root)  = the canvas origin
+origin(child) = origin(parent) + the anchor it names on that parent
+rect          = origin(layer) + the box in the file
+anchor.at     = measured from its own layer's origin
 ```
 
-An **attachment point** is a named place on a layer, in canvas pixels. It moves
-nothing on its own: the rest pose is already exact, so an anchor that also
-displaced its child would be a second way of saying where a sprite goes. It
-exists so a link reads as "the body's neck" rather than as coordinates, so the
-editor can draw the skeleton through the joints, and because it is the pivot a
-rotation will turn about the day there is one.
+```json
+{ "id": "body", "anchors": [{ "id": "shoulders", "at": [32, 36] }], "variants": [
+    { "id": "default", "rect": [21, 12, 22, 54], "sprite": { … } } ] },
+{ "id": "top", "parent": "body", "parentAnchor": "shoulders", "variants": [
+    { "id": "leather", "rect": [-9, 0, 18, 14], "sprite": { … } } ] }
+```
+
+The chest piece is nine pixels left of the shoulders and level with them. Move
+the shoulders and it follows; move the body and everything under it follows.
+A sprite drawn so its own corner sits on the joint is `[0, 0, w, h]`.
+
+A **root** hangs off nothing, so its box is a canvas position and its anchors
+read as canvas coordinates. Every other layer's anchors travel with it.
+
+An animation's offsets compose into the same frames, so a body that drops two
+pixels takes the head, the hair and everything hanging off it with it
+(ADR-0031). The resolved payload carries the absolute box **and** the `origin`
+it was measured from, so a renderer needs none of this and an editor can turn a
+click back into the number in the file.
+
+The tree is still **independent of the draw order**. Layers are drawn in author
+order, back to front; a cape hangs off the body and is drawn behind it, and the
+format keeps those two statements apart — until a variant says otherwise.
 
 A `parent` naming a layer nobody declares, an `anchors` id used twice, a
 `parentAnchor` the parent does not declare, and a chain of parents that loops
-are all errors.
+are all errors. A layer whose `parent` is missing is placed as a root, and one
+whose `parentAnchor` is missing is placed at its parent's origin: the file does
+not load, but the picture still arrives.
+
+### Draw order
+
+Layers draw back to front in the order they are declared. A **variant** may step
+out of that order:
+
+```json
+{ "id": "sideWorn", "when": { "cape": true, "view": "side" },
+  "rect": [1, -6, 14, 76], "order": 1, "sprite": { … } }
+```
+
+Everything sorts by `order` first and by declaration second, stably: `1` draws
+over every `0`, `-1` behind, and layers sharing an order keep the file's
+sequence. The cape above hangs behind the body normally and drapes over the near
+shoulder when the character is seen from the side.
+
+It is on the **variant** because that is where a condition already lives — the
+`when` that chose the side-on drawing is the one that moves it forward, and a
+customisation can do the same thing (armour worn over a cloak) with no new
+vocabulary.
 
 ### Animations
 
-An animation says nothing about *what* is drawn — only about **offsets from the
-rest pose**, per node, per frame.
+An animation is two statements. Its **tracks** say what moves: offsets from the
+rest pose, per node, per frame. Its **pose** says what is drawn: values that
+join the customisation while it plays, so layers pick their sprites through the
+`when` conditions they already have
+(`docs/adr/ADR-0033-animations-set-pose-values.md`).
 
 ```json
 "animations": [
@@ -638,6 +682,13 @@ rest pose**, per node, per frame.
 | `keyframes[].frame` | integer | yes | `0`-based, and less than the animation's `frames`. |
 | `keyframes[].offset` | `[x, y]` | no | Translation from the rest pose, in **whole pixels**. Default `[0, 0]`. |
 | `keyframes[].interpolation` | `step` \| `linear` | no | How it reaches the next keyframe. Default `step`. |
+| `pose` | `{ key: value }` | no | Pose values that hold for the whole animation. See *Poses*. |
+| `poses[]` | see below | no | Pose values set frame by frame, laid over `pose`. |
+| `poses[].frame` | integer | yes | `0`-based, and less than the animation's `frames`. |
+| `poses[].<key>` | any JSON scalar | no | A pose value, flattened beside the frame number. `frame` is therefore a reserved key. |
+
+`frames`, `frameDurationMs`, `looping`, `pose`, `poses` and `tracks` are all
+absent on a **mirror** — see *Mirrored animations* below.
 
 **A node with no track does not sit still — it follows its parent.** That is the
 whole point: the idle above drives one node, and every layer hanging off `body`
@@ -658,6 +709,90 @@ wraps, and one that does not stops inside its last frame. There is **no
 rotation and no scale**, because either would resample the art ADR-0029 exists
 to keep sharp.
 
+### Poses
+
+An animation may set **pose values**, and while it plays they join the resolved
+customisation. Nothing reads them directly: a layer picks them up through its
+variants' `when`, which is the same mechanism that answers "is a cape worn" or
+"what colour is the hair".
+
+```json
+{
+  "id": "walking_left", "frames": 4, "frameDurationMs": 130, "looping": true,
+  "pose": { "view": "side" },
+  "poses": [
+    { "frame": 0, "step": "contact" },
+    { "frame": 1, "step": "pass" },
+    { "frame": 2, "step": "contactBack" },
+    { "frame": 3, "step": "passBack" }
+  ],
+  "tracks": [ … ]
+}
+```
+
+`pose` is what is true of the whole animation; `poses` overrides it frame by
+frame. Layers then answer whichever part they have something to say about:
+
+```json
+{ "id": "body", "variants": [
+  { "id": "side", "when": { "view": "side" }, "rect": [21, 12, 22, 54], "sprite": { … } },
+  { "id": "default", "rect": [21, 12, 22, 54], "sprite": { … } } ] },
+{ "id": "legs", "variants": [
+  { "id": "sideContact", "when": { "step": "contact", "view": "side" }, "sprite": { … } },
+  { "id": "sidePass",    "when": { "step": "pass",    "view": "side" }, "sprite": { … } },
+  { "id": "stand", "sprite": { … } } ] }
+```
+
+The body says `view: side` once and answers every frame; the legs say it once
+per drawing, because they *are* four drawings. **The file is as long as the art
+is.**
+
+**A `when` key may name a parameter or a pose key, and a variant does not know
+which.** `{ "armor": "plate", "view": "side" }` is one condition, half chosen by
+the player and half by the animation — which is what lets a pose combine with a
+customisation instead of overriding it.
+
+A pose **holds** in both directions, like a hand-drawn sprite rather than a
+tween: before the first entry it is the first, after the last it is the last,
+and a frame that sets nothing keeps what was set before it. It is never
+interpolated.
+
+Two things a pose deliberately cannot do. It never joins the resolved
+character's `values` — it is reported separately, on `pose.values`, because it
+is what the character is *doing* and not what was chosen about it. And it never
+reaches a **tint**, which is resolved from the customisation alone: an animation
+redraws a layer, it does not repaint one.
+
+A pose key is an undeclared string. Both directions of the coupling are checked
+instead: a `when` naming neither a parameter nor a pose is an error
+(`character.unknownConditionParameter`), and a pose key no variant waits on is a
+warning (`character.unreadPoseKey`) — otherwise it is invisible, because the
+animation plays and nothing happens.
+
+### Mirrored animations
+
+A character walking right walks left the same way, seen the other way round.
+Rather than author the second one, an animation may say it **is** the first one
+flipped:
+
+```json
+{ "id": "walking_right", "name": "Walking right", "mirrorOf": "walking_left" }
+```
+
+That is the whole file entry. A mirror takes its source's `frames`,
+`frameDurationMs`, `looping`, `tracks` and sprites; **its own are never read**,
+and declaring `tracks` on one is a warning (`character.mirrorWithTracks`). What
+changes is a single flag on the resolved character: `mirrored`, which asks the
+host to draw the whole canvas reflected about its own vertical centre.
+
+Flipping the *boxes* without flipping the pixels inside them would be a
+character taken apart and put back wrong, so mirroring is a statement about the
+output as a whole rather than a per-layer geometry change.
+
+A mirror of a mirror is refused (`character.chainedMirror`): one hop, never a
+chain to walk. A mirror whose source is missing is an error
+(`character.unknownMirrorSource`) and still resolves — flipped, at rest.
+
 ### ResolvedCharacter
 
 What `resolveCharacter` and `previewCharacter` return, and the only thing a
@@ -674,6 +809,7 @@ renderer needs — no lookup, no definition, no customisation:
       "offset": [0, 0],
       "asset": "assets/characters/hair_front.png", "tint": "#8b5a2b" }
   ],
+  "mirrored": false,
   "pose": { "animation": "idle", "frame": 1, "timeMs": 140 }
 }
 ```
@@ -685,6 +821,10 @@ not a colour.
 which is why the renderer needed no change. `offset` is how far the animation
 moved the layer from its rest pose, inherited transforms included — a renderer
 ignores it, and an editor uses it to say what the hierarchy did.
+
+`mirrored` asks the host to draw the **whole canvas** flipped left-to-right,
+about the canvas's own centre line. It is the only thing a mirrored animation
+changes; every box and every sprite is the source animation's.
 
 `pose` is **absent** on a rest pose, and absent when the animation id asked for
 is one the definition does not declare — resolving is total, so an editor
@@ -790,7 +930,7 @@ exposed across the boundary as `validateLinks()` and `loadProject()`.
 | `character.invalidResolution` | A canvas side is `0` or above `256`. |
 | `character.missingLayerId` / `character.duplicateLayer` | A layer has no id, or two share one. |
 | `character.missingVariantId` / `character.duplicateVariant` | A variant has no id, or a layer declares one twice. |
-| `character.unknownConditionParameter` | A variant's `when` names a parameter that is not declared. |
+| `character.unknownConditionParameter` | A variant's `when` names something that is neither a declared parameter nor a pose key any animation sets. |
 | `character.emptyRect` | A variant's box has zero width or height, so its sprite would not be drawn. |
 | `character.missingAsset` | A variant names no image. |
 | `character.invalidAssetPath` | An asset path is absolute, a URL, or steps outside the content root. |
@@ -807,6 +947,10 @@ exposed across the boundary as `validateLinks()` and `loadProject()`.
 | `character.duplicateTrack` | One animation drives the same node twice. |
 | `character.keyframeOutOfRange` | A keyframe sits past the animation's last frame. |
 | `character.duplicateKeyframe` | A track writes the same frame twice. |
+| `character.poseFrameOutOfRange` | A `poses` entry sits past the animation's last frame. |
+| `character.duplicatePoseFrame` | An animation sets a pose twice at the same frame. |
+| `character.unknownMirrorSource` | A `mirrorOf` names an animation nobody declares. |
+| `character.chainedMirror` | A `mirrorOf` names an animation that is itself a mirror. |
 | `tileSet.empty` / `tileSet.paletteTooLarge` / `tile.duplicateId` / `tile.missingVisualId` | Tile set problems. |
 
 **Warnings** (content loads):
@@ -825,6 +969,10 @@ exposed across the boundary as `validateLinks()` and `loadProject()`.
 | `character.impossibleCondition` | A variant waits for a value its parameter's control can never hold, so it is never drawn. |
 | `character.anchorWithoutParent` | A layer names an attachment point but hangs off nothing. Always a leftover. |
 | `character.emptyTrack` | An animation declares a track with no keyframe, so it does nothing. |
+| `character.emptyPose` | A `poses` entry sets no value, so that frame changes nothing. |
+| `character.unreadPoseKey` | An animation sets a key no variant of this character waits on, so it changes nothing. |
+| `character.mirrorWithPose` | A mirror sets a pose of its own, which is never read — the source's pose is what plays. |
+| `character.mirrorWithTracks` | A mirror declares tracks of its own, which are never read. |
 | `character.rectOutOfCanvas` | A variant reaches outside the declared canvas. Legal — a cape overhangs — and far more often a box left over from a smaller sprite. |
 
 ---
@@ -842,7 +990,7 @@ The editor writes worlds through
 ```
 
 `content/characters/*.json` follow the same principle with the **variant** — and,
-for an animation, the **keyframe** — as
+for an animation, the **keyframe** and the **pose entry** — as
 the record: one per line, conditions, geometry and visual visible at once
 (`apps/web/src/content/character-serializer.ts`).
 
@@ -870,9 +1018,12 @@ a version bump: every optional field has a `serde` default. Renaming or removing
 a field, or changing the meaning of an existing one, requires bumping
 `WORLD_SCHEMA_VERSION` and adding an explicit migration.
 
-`CHARACTER_SCHEMA_VERSION` is at **2**. Version 1 was ADR-0028's format, where a
-layer could be a coloured rectangle, ellipse or triangle placed on a unit square
-of floats; ADR-0029 replaced it with one sprite per layer on a declared pixel
-canvas. Nothing reads version 1 — before 1.0 a breaking change is the answer
-rather than a migration (`CLAUDE.md`, "Versioning") — so a file written against
-it must be rewritten, not converted.
+`CHARACTER_SCHEMA_VERSION` is at **3**. Version 3 places a child layer's box
+relative to the attachment point it hangs off (ADR-0034); version 2 was
+ADR-0029's, where every box was absolute on the canvas; version 1 was
+ADR-0028's, where a layer could be a coloured rectangle, ellipse or triangle on
+a unit square of floats. Nothing reads 1 or 2 — before 1.0 a breaking change is
+the answer rather than a migration (`CLAUDE.md`, "Versioning") — so a file
+written against either must be rewritten, not converted. Rewriting a version-2
+file means subtracting, from every child layer's `rect`, the canvas position of
+the joint it hangs off.

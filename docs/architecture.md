@@ -79,7 +79,7 @@ The MVP implements the marked parts. Unmarked entries are the planned shape.
 │   ├── worlds/                  # demo_world.json, demo_refuge.json          [MVP]
 │   ├── tilesets/                # mvp_terrain.json                           [MVP]
 │   ├── locales/                 # <language>/<namespace>.json: every displayed string [MVP]
-│   ├── characters/              # how a character is drawn and moves (ADR-0028, ADR-0031) [MVP]
+│   ├── characters/              # how a character is drawn and moves (ADR-0028, ADR-0031, ADR-0034) [MVP]
 │   ├── assets/                  # images: title art, character sprites          [MVP]
 │   ├── menu/                    # title-screen.json: what a client opens on   [MVP]
 │   ├── settings.json            # the settings the game offers                [MVP]
@@ -133,7 +133,9 @@ browser. `cargo test` runs the entire simulation without WASM.
 - **Character ↔ animation** — the layers form a tree, and an animation is a list
   of whole-pixel offsets from the rest pose, per node, per frame. Offsets
   compose down the tree, the resolver bakes them into the boxes it produces, and
-  the renderer never learns that time exists. See ADR-0031.
+  the renderer never learns that time exists. A keyframe may also name which
+  variant its node draws, and an animation may be another one mirrored — the
+  renderer's one placement decision. See ADR-0031, ADR-0033 and ADR-0034.
 - **Composing ↔ painting** — the same stage does both: the preview draws the
   resolved character, and in paint mode it writes into the image behind the open
   layer. The pixels are a framework-free buffer in `content/sprite-document.ts`

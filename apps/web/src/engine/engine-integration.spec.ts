@@ -179,9 +179,9 @@ describe.skipIf(!built)('engine boundary', () => {
     expect(result.state.player?.at).toEqual(target);
 
     const monsterAfter = result.state.entities.filter((entity) => entity.kind === 'monster');
-    expect(monsterAfter.some((monster, index) => monster.at.join() !== monsterBefore[index]?.at.join())).toBe(
-      true,
-    );
+    expect(
+      monsterAfter.some((monster, index) => monster.at.join() !== monsterBefore[index]?.at.join()),
+    ).toBe(true);
 
     expect(result.events.some((event) => event.type === 'tickAdvanced')).toBe(true);
     expect(result.events.filter((event) => event.type === 'entityMoved').length).toBeGreaterThan(1);
@@ -198,9 +198,7 @@ describe.skipIf(!built)('engine boundary', () => {
     expect(result.accepted).toBe(false);
     expect(result.rejection?.code).toBe('notAdjacent');
     expect(result.state).toEqual(start);
-    expect(result.events).toEqual([
-      { type: 'actionRejected', reason: result.rejection },
-    ]);
+    expect(result.events).toEqual([{ type: 'actionRejected', reason: result.rejection }]);
   });
 
   it('only reports legal moves that the engine will actually accept', () => {
@@ -227,7 +225,9 @@ describe.skipIf(!built)('engine boundary', () => {
 
       const fresh = loaded();
       fresh.createGame('demo_world', 1, '{}');
-      const result = JSON.parse(fresh.dispatch(JSON.stringify({ type: 'moveTo', to }))) as CommandResult;
+      const result = JSON.parse(
+        fresh.dispatch(JSON.stringify({ type: 'moveTo', to })),
+      ) as CommandResult;
       expect(result.accepted).toBe(legal.has(to.join()));
     }
   });
@@ -261,13 +261,16 @@ describe.skipIf(!built)('engine boundary', () => {
       Math.min(
         ...snapshot.entities
           .filter((entity) => entity.kind === 'monster')
-          .map((monster) => hexDistance(offsetToAxial({ col: monster.at[0], row: monster.at[1] }), playerAxial)),
+          .map((monster) =>
+            hexDistance(offsetToAxial({ col: monster.at[0], row: monster.at[1] }), playerAxial),
+          ),
       );
 
     const before = distanceOf(start);
     let last = start;
     for (let i = 0; i < 20; i += 1) {
-      last = (JSON.parse(instance.dispatch(JSON.stringify({ type: 'wait' }))) as CommandResult).state;
+      last = (JSON.parse(instance.dispatch(JSON.stringify({ type: 'wait' }))) as CommandResult)
+        .state;
     }
 
     expect(last.tick).toBe(20);
@@ -290,7 +293,9 @@ describe.skipIf(!built)('engine boundary', () => {
 
     const instance = engine();
     instance.loadTileSet(JSON.stringify(tileSet));
-    const outcome = JSON.parse(instance.loadWorld(serializeWorld(document.toDefinition()))) as LoadOutcome;
+    const outcome = JSON.parse(
+      instance.loadWorld(serializeWorld(document.toDefinition())),
+    ) as LoadOutcome;
 
     expect(outcome.report.valid).toBe(true);
     const snapshot = JSON.parse(instance.createGame(outcome.id, 1, '{}')) as GameSnapshot;
@@ -310,7 +315,9 @@ describe.skipIf(!built)('engine boundary', () => {
     loadShippedLocales(instance);
     loadShippedTitleScreen(instance);
     loadShippedCharacters(instance);
-    const project = JSON.parse(instance.loadProject(readText('content/project.json'))) as LoadOutcome;
+    const project = JSON.parse(
+      instance.loadProject(readText('content/project.json')),
+    ) as LoadOutcome;
     expect(project.id).toBe('insulaire');
 
     expect((JSON.parse(instance.validateLinks()) as ValidationReport).valid).toBe(true);
@@ -411,9 +418,7 @@ describe.skipIf(!built)('engine boundary', () => {
               {
                 id: 'g',
                 labelKey: 'menu.play',
-                fields: [
-                  { id: 'f', labelKey: 'menu.play', control: 'toggle', default: false },
-                ],
+                fields: [{ id: 'f', labelKey: 'menu.play', control: 'toggle', default: false }],
               },
             ],
           },
@@ -502,13 +507,18 @@ describe.skipIf(!built)('engine boundary', () => {
     ]);
 
     const resolved = JSON.parse(
-      instance.resolveCharacter('human_player', JSON.stringify({ hairColor: '#f2c14e' }), undefined, 0),
+      instance.resolveCharacter(
+        'human_player',
+        JSON.stringify({ hairColor: '#f2c14e' }),
+        undefined,
+        0,
+      ),
     ) as ResolvedCharacter;
     expect(resolved.layers.map((layer) => layer.layer)).toEqual([
       'cape',
       'hairBack',
       'body',
-      'boots',
+      'legs',
       'top',
       'skirt',
       'hairFront',
@@ -543,16 +553,14 @@ describe.skipIf(!built)('engine boundary', () => {
 
   /**
    * The animation pipeline, end to end and through the real types: one track
-   * moves the body, the hierarchy moves what hangs off it, and the boots stay
+   * moves the body, the hierarchy moves what hangs off it, and the legs stay
    * on the ground (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
    */
   it('plays the shipped idle through the layer hierarchy', () => {
     const instance = engine();
     loadShippedCharacters(instance);
 
-    const definition = JSON.parse(
-      instance.character('human_player'),
-    ) as CharacterDefinition;
+    const definition = JSON.parse(instance.character('human_player')) as CharacterDefinition;
     const idle = definition.animations?.find((animation) => animation.id === 'idle');
     expect(idle?.looping).toBe(true);
     expect(idle?.frames).toBe(4);
@@ -560,8 +568,9 @@ describe.skipIf(!built)('engine boundary', () => {
     expect(idle?.tracks).toHaveLength(2);
 
     const at = (timeMs: number): ResolvedCharacter =>
-      JSON.parse(instance.resolveCharacter('human_player', '{}', 'idle', timeMs)) as
-        ResolvedCharacter;
+      JSON.parse(
+        instance.resolveCharacter('human_player', '{}', 'idle', timeMs),
+      ) as ResolvedCharacter;
     const offsetOf = (resolved: ResolvedCharacter, layer: string): number =>
       resolved.layers.find((drawn) => drawn.layer === layer)?.offset[1] ?? Number.NaN;
 
@@ -576,7 +585,7 @@ describe.skipIf(!built)('engine boundary', () => {
     for (const layer of ['body', 'cape', 'hairBack', 'hairFront', 'top', 'skirt']) {
       expect(offsetOf(up, layer)).toBe(-1);
     }
-    expect(offsetOf(up, 'boots')).toBe(0);
+    expect(offsetOf(up, 'legs')).toBe(0);
 
     // Frame 3: the hair's own keyframe adds to what it inherited.
     const down = at(duration * 3);
@@ -595,6 +604,83 @@ describe.skipIf(!built)('engine boundary', () => {
       instance.resolveCharacter('human_player', '{}', 'walk', 3_000),
     ) as ResolvedCharacter;
     expect(unknown.pose).toBeUndefined();
+  });
+
+  /**
+   * The shipped walk cycle, through the real WASM build: a leg sprite per
+   * frame, and the other direction authored as one line
+   * (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+   */
+  it('walks the shipped character left, and mirrors it to walk right', () => {
+    const instance = engine();
+    loadShippedCharacters(instance);
+
+    const at = (animation: string, timeMs: number): ResolvedCharacter =>
+      JSON.parse(
+        instance.resolveCharacter('human_player', '{}', animation, timeMs),
+      ) as ResolvedCharacter;
+    const legs = (resolved: ResolvedCharacter) =>
+      resolved.layers.find((layer) => layer.layer === 'legs');
+
+    // Every layer that has a side-on drawing takes it for the whole
+    // animation, and the legs take a different one every frame.
+    const frames = ['sideContact', 'sidePass', 'sideContactBack', 'sidePassBack'];
+    const rest = JSON.parse(
+      instance.resolveCharacter('human_player', '{}', undefined, 0),
+    ) as ResolvedCharacter;
+    expect(legs(rest)?.variant).toBe('stand');
+
+    for (const [index, variant] of frames.entries()) {
+      const posed = at('walking_left', index * 130);
+      expect(legs(posed)?.variant).toBe(variant);
+      expect(legs(posed)?.rect).toEqual(legs(rest)?.rect);
+      expect(posed.mirrored).toBe(false);
+      // The body says `view: side` once and answers all four frames.
+      expect(posed.layers.find((layer) => layer.layer === 'body')?.variant).toBe('side');
+      expect(posed.pose?.values?.['view']).toBe('side');
+    }
+
+    // The cape steps in front of the body while the walk plays, chosen by the
+    // same condition that chose its side-on drawing.
+    const sideways = at('walking_left', 0);
+    const order = sideways.layers.map((layer) => layer.layer);
+    expect(order.indexOf('cape')).toBeGreaterThan(order.indexOf('body'));
+    const rest2 = JSON.parse(
+      instance.resolveCharacter('human_player', '{}', undefined, 0),
+    ) as ResolvedCharacter;
+    const restOrder = rest2.layers.map((layer) => layer.layer);
+    expect(restOrder.indexOf('cape')).toBeLessThan(restOrder.indexOf('body'));
+
+    // Boxes are measured from the joint their layer hangs off, and the engine
+    // is what turns that back into a place on the canvas.
+    const top = sideways.layers.find((layer) => layer.layer === 'top');
+    // The shoulders anchor is at 32, 36 and the top's box is -9, 0 from it.
+    expect(top?.origin).toEqual([32, 36]);
+    expect(top?.rect).toEqual([23, 36, 18, 14]);
+
+    // A pose is not a customisation: it chose the variants and it is reported,
+    // but it never joins the values the character was resolved with.
+    const posed = at('walking_left', 130);
+    expect(posed.pose?.values?.['step']).toBe('pass');
+    expect(posed.values['step']).toBeUndefined();
+
+    // And it combines with the customisation rather than replacing it: plate
+    // armour seen from the side is its own drawing, chosen by both at once.
+    const plated = JSON.parse(
+      instance.resolveCharacter('human_player', '{"armor":"plate"}', 'walking_left', 0),
+    ) as ResolvedCharacter;
+    expect(plated.layers.find((layer) => layer.layer === 'top')?.variant).toBe('plateSide');
+
+    // walking_right is walking_left with one flag different — same sprites,
+    // same boxes, same clock.
+    for (const timeMs of [0, 130, 260, 390, 1_000]) {
+      const left = at('walking_left', timeMs);
+      const right = at('walking_right', timeMs);
+      expect(right.mirrored).toBe(true);
+      expect(right.layers).toEqual(left.layers);
+      expect(right.pose?.animation).toBe('walking_right');
+      expect(right.pose?.frame).toBe(left.pose?.frame);
+    }
   });
 
   /** What the editor previews with: a definition in hand, not registered. */
@@ -633,7 +719,9 @@ describe.skipIf(!built)('engine boundary', () => {
     );
 
     loadShippedCharacters(instance);
-    const outcome = JSON.parse(instance.loadProject(readText('content/project.json'))) as LoadOutcome;
+    const outcome = JSON.parse(
+      instance.loadProject(readText('content/project.json')),
+    ) as LoadOutcome;
     expect(outcome.report.valid).toBe(true);
     const summary = JSON.parse(instance.contentSummary()) as ContentSummary;
     expect(summary.characters).toEqual(['human_player']);
@@ -641,12 +729,16 @@ describe.skipIf(!built)('engine boundary', () => {
 
   it('rejects a world with no player, listing the reason', () => {
     const definition = readJson<WorldDefinition>('content/worlds/demo_world.json');
-    definition.entities = (definition.entities ?? []).filter((entity) => entity.templateId !== 'player');
+    definition.entities = (definition.entities ?? []).filter(
+      (entity) => entity.templateId !== 'player',
+    );
 
     const instance = engine();
     instance.loadTileSet(tileSetJson());
 
-    const report = JSON.parse(instance.validateWorld(serializeWorld(definition))) as ValidationReport;
+    const report = JSON.parse(
+      instance.validateWorld(serializeWorld(definition)),
+    ) as ValidationReport;
     expect(report.valid).toBe(false);
     expect(report.issues.map((issue) => issue.code)).toContain('world.missingPlayer');
   });

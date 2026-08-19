@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use serde_json::Value;
 
-use crate::animation::{Animation, MAX_ANIMATION_FRAMES};
+use crate::animation::{Animation, PixelOffset, MAX_ANIMATION_FRAMES};
 use crate::character::{
     CharacterDefinition, CharacterLayer, ColorSource, LayerVariant, CHARACTER_SCHEMA_VERSION,
     MAX_SPRITE_RESOLUTION,
@@ -1423,6 +1423,11 @@ fn parameter_issues(character: &CharacterDefinition) -> Vec<ValidationIssue> {
 fn layer_issues(character: &CharacterDefinition) -> Vec<ValidationIssue> {
     let mut issues = Vec::new();
     let mut layer_ids: BTreeSet<&str> = BTreeSet::new();
+    let poses = pose_keys(character);
+    // Boxes are measured from the joint their layer hangs off, so whether one
+    // fits the canvas is a question about where it *lands*, not about the
+    // numbers in the file (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`).
+    let places = character.placements(None, 0);
 
     if character.layers.is_empty() {
         issues.push(ValidationIssue::warning(
@@ -1495,7 +1500,14 @@ fn layer_issues(character: &CharacterDefinition) -> Vec<ValidationIssue> {
                     ),
                 ));
             }
-            issues.extend(variant_issues(character, &path, layer, variant));
+            let origin = places
+                .get(layer.id.as_str())
+                .copied()
+                .unwrap_or_default()
+                .origin;
+            issues.extend(variant_issues(
+                character, &path, layer, variant, &poses, origin,
+            ));
         }
     }
 
@@ -1603,6 +1615,13 @@ fn animation_issues(character: &CharacterDefinition) -> Vec<ValidationIssue> {
             ));
         }
 
+        if let Some(source_id) = animation.mirror_of.as_deref() {
+            issues.extend(mirror_issues(character, &path, animation, source_id));
+            // A mirror borrows its source's timing and tracks, so judging its
+            // own would be judging fields nothing reads.
+            continue;
+        }
+
         if animation.frames == 0 || animation.frames > MAX_ANIMATION_FRAMES {
             issues.push(ValidationIssue::error(
                 "character.invalidFrameCount",
@@ -1625,7 +1644,175 @@ fn animation_issues(character: &CharacterDefinition) -> Vec<ValidationIssue> {
             ));
         }
 
+        issues.extend(pose_issues(character, &path, animation));
         issues.extend(track_issues(character, &path, animation));
+    }
+
+    issues
+}
+
+/// The pose values an animation sets: on frames it has, once each, and read by
+/// at least one variant.
+///
+/// The last of those is the check that matters. A pose is only ever felt
+/// through a `when` condition, so a key nothing tests is an animation that
+/// changes nothing — almost always a typo on one side or the other, and
+/// otherwise invisible (`docs/adr/ADR-0033-animations-set-pose-values.md`).
+fn pose_issues(
+    character: &CharacterDefinition,
+    path: &str,
+    animation: &Animation,
+) -> Vec<ValidationIssue> {
+    let mut issues = Vec::new();
+    let read = condition_keys(character);
+    let mut frames: BTreeSet<u32> = BTreeSet::new();
+
+    for (index, key) in animation.poses.iter().enumerate() {
+        let path = format!("{path}.poses[{index}]");
+        if animation.frames > 0 && key.frame >= animation.frames {
+            issues.push(ValidationIssue::error(
+                "character.poseFrameOutOfRange",
+                format!("{path}.frame"),
+                format!(
+                    "animation `{}` sets a pose at frame {}, past its {} frames",
+                    animation.id, key.frame, animation.frames
+                ),
+            ));
+        }
+        if !frames.insert(key.frame) {
+            issues.push(ValidationIssue::error(
+                "character.duplicatePoseFrame",
+                format!("{path}.frame"),
+                format!(
+                    "animation `{}` sets a pose twice at frame {}",
+                    animation.id, key.frame
+                ),
+            ));
+        }
+        if key.values.is_empty() {
+            issues.push(ValidationIssue::warning(
+                "character.emptyPose",
+                path.clone(),
+                format!(
+                    "animation `{}` sets nothing at frame {}",
+                    animation.id, key.frame
+                ),
+            ));
+        }
+    }
+
+    let set = animation
+        .pose
+        .keys()
+        .map(|id| (id, format!("{path}.pose")))
+        .chain(animation.poses.iter().enumerate().flat_map(|(index, key)| {
+            key.values
+                .keys()
+                .map(move |id| (id, format!("{path}.poses[{index}]")))
+        }));
+    for (id, at) in set {
+        if !read.contains(id.as_str()) {
+            issues.push(ValidationIssue::warning(
+                "character.unreadPoseKey",
+                at,
+                format!(
+                    "animation `{}` sets `{id}`, which no variant of this character waits on, so \
+                     it changes nothing",
+                    animation.id
+                ),
+            ));
+        }
+    }
+
+    issues
+}
+
+/// Every key some variant's `when` tests, whatever it turns out to name.
+fn condition_keys(character: &CharacterDefinition) -> BTreeSet<&str> {
+    character
+        .layers
+        .iter()
+        .flat_map(|layer| layer.variants.iter())
+        .flat_map(|variant| variant.when.keys())
+        .map(String::as_str)
+        .collect()
+}
+
+/// Every key some animation sets, at any moment of it.
+///
+/// The other half of the namespace a `when` condition draws from: a variant may
+/// wait on a declared parameter, or on something an animation puts there while
+/// it plays.
+fn pose_keys(character: &CharacterDefinition) -> BTreeSet<&str> {
+    character
+        .animations
+        .iter()
+        .flat_map(|animation| {
+            animation.pose.keys().chain(
+                animation
+                    .poses
+                    .iter()
+                    .flat_map(|key: &crate::animation::PoseKey| key.values.keys()),
+            )
+        })
+        .map(String::as_str)
+        .collect()
+}
+
+/// An animation that is another one flipped: the source must exist, and must
+/// not itself be a mirror.
+fn mirror_issues(
+    character: &CharacterDefinition,
+    path: &str,
+    animation: &Animation,
+    source_id: &str,
+) -> Vec<ValidationIssue> {
+    let mut issues = Vec::new();
+
+    match character.animation(source_id) {
+        None => issues.push(ValidationIssue::error(
+            "character.unknownMirrorSource",
+            format!("{path}.mirrorOf"),
+            format!(
+                "animation `{}` mirrors `{source_id}`, which is not declared",
+                animation.id
+            ),
+        )),
+        Some(source) if source.is_mirror() => issues.push(ValidationIssue::error(
+            "character.chainedMirror",
+            format!("{path}.mirrorOf"),
+            format!(
+                "animation `{}` mirrors `{source_id}`, which is itself a mirror",
+                animation.id
+            ),
+        )),
+        Some(_) => {}
+    }
+
+    if !animation.pose.is_empty() || !animation.poses.is_empty() {
+        issues.push(ValidationIssue::warning(
+            "character.mirrorWithPose",
+            format!("{path}.pose"),
+            format!(
+                "animation `{}` mirrors `{source_id}` and sets a pose of its own, which is never \
+                 read — the source's pose is what plays",
+                animation.id
+            ),
+        ));
+    }
+
+    if !animation.tracks.is_empty() {
+        // Not an error — it still plays — but the tracks are dead weight, and
+        // an author who wrote them expected them to do something.
+        issues.push(ValidationIssue::warning(
+            "character.mirrorWithTracks",
+            format!("{path}.tracks"),
+            format!(
+                "animation `{}` mirrors `{source_id}` and declares tracks of its own, which are \
+                 never read",
+                animation.id
+            ),
+        ));
     }
 
     issues
@@ -1709,19 +1896,27 @@ fn variant_issues(
     path: &str,
     layer: &CharacterLayer,
     variant: &LayerVariant,
+    poses: &BTreeSet<&str>,
+    origin: PixelOffset,
 ) -> Vec<ValidationIssue> {
     let mut issues = Vec::new();
 
     for (id, required) in &variant.when {
         let Some(parameter) = character.parameter(id) else {
-            issues.push(ValidationIssue::error(
-                "character.unknownConditionParameter",
-                format!("{path}.when"),
-                format!(
-                    "variant `{}` of layer `{}` waits on parameter `{id}`, which is not declared",
-                    variant.id, layer.id
-                ),
-            ));
+            // Not a parameter — but a condition may equally wait on something
+            // an animation sets while it plays, and that is how a side-on
+            // drawing is chosen (`character.rs`, `resolve_at`).
+            if !poses.contains(id.as_str()) {
+                issues.push(ValidationIssue::error(
+                    "character.unknownConditionParameter",
+                    format!("{path}.when"),
+                    format!(
+                        "variant `{}` of layer `{}` waits on `{id}`, which is neither a parameter \
+                         of this character nor a pose any of its animations sets",
+                        variant.id, layer.id
+                    ),
+                ));
+            }
             continue;
         };
         if !parameter_allows(parameter, required) {
@@ -1749,14 +1944,14 @@ fn variant_issues(
                 variant.id, layer.id
             ),
         ));
-    } else if !variant.rect.fits(character.resolution) {
+    } else if !variant.rect.moved(origin).fits(character.resolution) {
         // Drawing off the canvas is legal — a cape overhangs on purpose — but
         // it is far more often a box left over from a smaller sprite.
         issues.push(ValidationIssue::warning(
             "character.rectOutOfCanvas",
             format!("{path}.rect"),
             format!(
-                "variant `{}` of layer `{}` reaches outside the {}x{} canvas",
+                "variant `{}` of layer `{}` lands outside the {}x{} canvas",
                 variant.id, layer.id, character.resolution.width, character.resolution.height
             ),
         ));
@@ -1886,7 +2081,7 @@ fn tile_at_is_passable(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::animation::{Interpolation, Keyframe, Transform};
+    use crate::animation::{Animation, Interpolation, Keyframe, PoseKey, Transform};
     use crate::character::{ColorSource, PixelRect, SpriteResolution};
     use crate::hex::OffsetCoord;
     use crate::settings::ControlKind;
@@ -2643,7 +2838,7 @@ mod tests {
                       "variants": [ { "id": "d", "rect": [20, 40, 24, 76],
                                       "sprite": { "asset": "assets/characters/body.png" } } ] },
                     { "id": "head", "parent": "body", "parentAnchor": "neck",
-                      "variants": [ { "id": "d", "rect": [24, 12, 16, 28],
+                      "variants": [ { "id": "d", "rect": [-8, -28, 16, 28],
                                       "sprite": { "asset": "assets/characters/head.png" } } ] }
                 ],
                 "animations": [
@@ -2818,6 +3013,163 @@ mod tests {
         assert!(!report.valid);
         assert!(found.contains(&"character.keyframeOutOfRange"), "{found:?}");
         assert!(found.contains(&"character.duplicateKeyframe"), "{found:?}");
+    }
+
+    /// A `when` may wait on a parameter or on a pose, and on nothing else.
+    /// Both halves of that are checked, because a typo in either is a variant
+    /// that silently never draws.
+    #[test]
+    fn a_condition_may_wait_on_a_pose_an_animation_sets() {
+        let mut character = animated_character();
+        character.layers[1].variants[0]
+            .when
+            .insert("view".to_owned(), serde_json::json!("side"));
+
+        // Nothing sets `view` yet, so the condition names nothing at all.
+        let report = validate_character(&character);
+        let found = codes(&report);
+        assert!(!report.valid);
+        assert!(
+            found.contains(&"character.unknownConditionParameter"),
+            "{found:?}"
+        );
+
+        // The animation sets it, and the pair is now a complete statement.
+        character.animations[0]
+            .pose
+            .insert("view".to_owned(), serde_json::json!("side"));
+        let report = validate_character(&character);
+        assert!(report.valid, "unexpected issues: {:?}", report.issues);
+    }
+
+    /// The mirror image of that check: a pose no variant reads changes nothing,
+    /// which is a typo one way round or the other.
+    #[test]
+    fn a_pose_nobody_waits_on_is_reported() {
+        let mut character = animated_character();
+        character.animations[0]
+            .pose
+            .insert("view".to_owned(), serde_json::json!("side"));
+
+        let report = validate_character(&character);
+        let found = codes(&report);
+        // A warning, not an error: the file still loads and still plays.
+        assert!(report.valid, "{:?}", report.issues);
+        assert!(found.contains(&"character.unreadPoseKey"), "{found:?}");
+    }
+
+    #[test]
+    fn a_pose_must_land_inside_the_animation_and_on_a_frame_of_its_own() {
+        let mut character = animated_character();
+        character.layers[1].variants[0]
+            .when
+            .insert("step".to_owned(), serde_json::json!("pass"));
+        for frame in [9, 1, 1] {
+            character.animations[0].poses.push(PoseKey {
+                frame,
+                values: [("step".to_owned(), serde_json::json!("pass"))]
+                    .into_iter()
+                    .collect(),
+            });
+        }
+        character.animations[0].poses.push(PoseKey {
+            frame: 2,
+            values: std::collections::BTreeMap::new(),
+        });
+
+        let report = validate_character(&character);
+        let found = codes(&report);
+        assert!(!report.valid);
+        assert!(
+            found.contains(&"character.poseFrameOutOfRange"),
+            "{found:?}"
+        );
+        assert!(found.contains(&"character.duplicatePoseFrame"), "{found:?}");
+        assert!(found.contains(&"character.emptyPose"), "{found:?}");
+    }
+
+    #[test]
+    fn a_mirror_must_name_an_animation_that_exists_and_is_not_itself_a_mirror() {
+        let mut character = animated_character();
+        character.animations.push(Animation {
+            id: "walking_right".to_owned(),
+            mirror_of: Some("walking_left".to_owned()),
+            ..Animation::default()
+        });
+
+        let report = validate_character(&character);
+        assert!(!report.valid);
+        assert!(codes(&report).contains(&"character.unknownMirrorSource"));
+
+        // Pointed at the real one, it is fine — and carries no timing of its own.
+        character.animations[1].mirror_of = Some("idle".to_owned());
+        let report = validate_character(&character);
+        assert!(report.valid, "unexpected issues: {:?}", report.issues);
+
+        // A mirror of a mirror is refused: one hop, never a chain.
+        character.animations.push(Animation {
+            id: "third".to_owned(),
+            mirror_of: Some("walking_right".to_owned()),
+            ..Animation::default()
+        });
+        let report = validate_character(&character);
+        assert!(!report.valid);
+        assert!(codes(&report).contains(&"character.chainedMirror"));
+    }
+
+    /// A mirror borrows its source's pose as it borrows everything else, so one
+    /// of its own is dead weight — and dead weight that looks like it works.
+    #[test]
+    fn a_mirror_that_sets_its_own_pose_is_reported() {
+        let mut character = animated_character();
+        character.animations.push(Animation {
+            id: "walking_right".to_owned(),
+            mirror_of: Some("idle".to_owned()),
+            pose: [("view".to_owned(), serde_json::json!("side"))]
+                .into_iter()
+                .collect(),
+            ..Animation::default()
+        });
+
+        let report = validate_character(&character);
+        let found = codes(&report);
+        assert!(report.valid, "{:?}", report.issues);
+        assert!(found.contains(&"character.mirrorWithPose"), "{found:?}");
+    }
+
+    /// A mirror's own tracks are never read, so writing them is always a
+    /// misunderstanding worth reporting — but it still plays.
+    #[test]
+    fn a_mirror_that_declares_tracks_is_a_warning() {
+        let mut character = animated_character();
+        let tracks = character.animations[0].tracks.clone();
+        character.animations.push(Animation {
+            id: "backwards".to_owned(),
+            mirror_of: Some("idle".to_owned()),
+            tracks,
+            ..Animation::default()
+        });
+
+        let report = validate_character(&character);
+        assert!(report.valid);
+        assert!(codes(&report).contains(&"character.mirrorWithTracks"));
+    }
+
+    /// A mirror declares no `frames`, and must not be judged as if it had.
+    #[test]
+    fn a_mirror_is_not_judged_on_the_timing_it_does_not_declare() {
+        let mut character = animated_character();
+        character.animations.push(Animation {
+            id: "walking_right".to_owned(),
+            mirror_of: Some("idle".to_owned()),
+            frames: 1,
+            ..Animation::default()
+        });
+
+        let report = validate_character(&character);
+        let found = codes(&report);
+        assert!(report.valid, "unexpected issues: {:?}", report.issues);
+        assert!(!found.contains(&"character.invalidFrameCount"), "{found:?}");
     }
 
     #[test]

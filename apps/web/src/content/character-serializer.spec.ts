@@ -163,12 +163,104 @@ describe('serializeCharacter', () => {
       ],
     });
 
-    expect(json).toContain('      "anchors": [\n        { "id": "neck", "at": [32, 40] }\n      ],');
+    expect(json).toContain(
+      '      "anchors": [\n        { "id": "neck", "at": [32, 40] }\n      ],',
+    );
     expect(json).toContain('      "parent": "body",\n      "parentAnchor": "neck",');
     expect(json).toContain('        { "frame": 0, "offset": [0, 0] },\n');
     expect(json).toContain('{ "frame": 1, "offset": [0, -2], "interpolation": "linear" },\n');
     // `step` is the default, so writing it would be noise in every diff.
     expect(json).toContain('        { "frame": 2, "offset": [0, 0] }\n');
+  });
+
+  it('writes a draw order only when a variant steps out of the author one', () => {
+    const json = serializeCharacter({
+      id: 'walker',
+      schemaVersion: 3,
+      parameters: [],
+      layers: [
+        {
+          id: 'cape',
+          variants: [
+            {
+              id: 'front',
+              when: { view: 'side' },
+              rect: [1, -6, 14, 76],
+              order: 1,
+              sprite: { asset: 'a/cape_side.png' },
+            },
+            { id: 'worn', rect: [-20, -9, 40, 95], sprite: { asset: 'a/cape.png' } },
+          ],
+        },
+      ],
+    });
+
+    expect(json).toContain('"rect": [1, -6, 14, 76], "order": 1, "sprite"');
+    // Zero is the author order, which every layer already has.
+    expect(json).toContain('"rect": [-20, -9, 40, 95], "sprite"');
+  });
+
+  it('writes the pose above the tracks, one line per frame', () => {
+    const json = serializeCharacter({
+      id: 'walker',
+      schemaVersion: 2,
+      parameters: [],
+      layers: [{ id: 'legs', variants: [] }],
+      animations: [
+        {
+          id: 'walking_left',
+          frames: 2,
+          pose: { view: 'side' },
+          poses: [
+            { frame: 0, step: 'contact' },
+            { frame: 1, step: 'pass', airborne: true },
+          ],
+          tracks: [{ node: 'legs', keyframes: [{ frame: 0, offset: [0, 0] }] }],
+        },
+      ],
+    });
+
+    expect(json).toContain('      "pose": { "view": "side" },\n');
+    expect(json).toContain('        { "frame": 0, "step": "contact" },\n');
+    expect(json).toContain('        { "frame": 1, "step": "pass", "airborne": true }\n');
+    // What the character is drawn as, then how far it moved from there.
+    expect(json.indexOf('"pose"')).toBeLessThan(json.indexOf('"tracks"'));
+  });
+
+  it('writes no pose for an animation that sets none', () => {
+    const json = serializeCharacter({
+      id: 'walker',
+      schemaVersion: 2,
+      parameters: [],
+      layers: [{ id: 'legs', variants: [] }],
+      animations: [{ id: 'idle', frames: 2, tracks: [] }],
+    });
+
+    expect(json).not.toContain('"pose"');
+    expect(json).not.toContain('"poses"');
+  });
+
+  it('writes a mirror as nothing but the animation it reflects', () => {
+    const json = serializeCharacter({
+      id: 'walker',
+      schemaVersion: 2,
+      parameters: [],
+      layers: [{ id: 'legs', variants: [] }],
+      animations: [
+        { id: 'walking_left', name: 'Walking left', frames: 2, looping: true, tracks: [] },
+        { id: 'walking_right', name: 'Walking right', mirrorOf: 'walking_left' },
+      ],
+    });
+
+    expect(json).toContain(
+      '    {\n      "id": "walking_right",\n      "name": "Walking right",\n' +
+        '      "mirrorOf": "walking_left"\n    }\n',
+    );
+    // Its timing belongs to its source, so none of it is written.
+    const mirror = json.slice(json.indexOf('"walking_right"'));
+    expect(mirror).not.toContain('"frames"');
+    expect(mirror).not.toContain('"looping"');
+    expect(mirror).not.toContain('"tracks"');
   });
 
   it('writes no animations list for a character that does not move', () => {

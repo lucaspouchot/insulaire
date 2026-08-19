@@ -153,6 +153,17 @@ feature lands that the current sequence would not notice.
 change in that order surfaces as a diff instead of as a rejection. `clicks` are
 fractions of the canvas box. A page that has no canvas needs `"canvas": false`.
 
+`press` clicks **named controls** in order, capturing a screen after each, for a
+page whose interesting part is behind one — a tab, a mode switch, a panel that
+starts shut. Fractions of a canvas cannot reach those, and a module nobody opens
+is a module this harness does not guard:
+
+```jsonc
+"press": [
+  { "name": "editor-character-animation", "selector": ".form .tabs button:nth-of-type(4)" }
+]
+```
+
 Rules for the scenario: it must stay deterministic (no wall-clock, no random),
 it must keep at least one rejected command (the rejection path is a rule too),
 and a new page or mode is not covered until it is listed in `pages`.

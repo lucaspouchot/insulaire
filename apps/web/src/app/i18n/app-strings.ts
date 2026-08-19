@@ -256,9 +256,41 @@ const EN: StringTree = {
         anchorsHint:
           'Attachment points are named places on this layer that others can hang off — a neck, a hair line, the grip of a hand. They move nothing on their own; they are where the skeleton is drawn, and what a rotation will one day turn about.',
         addAnchor: 'Add attachment point',
+        poseCondition:
+          'Set by an animation rather than chosen by the player: this drawing applies while an animation poses the character this way.',
+        order: 'z',
+        orderHint:
+          'Where this variant sits in the stack. 0 is the order the layers are listed in; 1 draws it over everything at 0, -1 behind. This is how a cape passes in front of the body when the character is seen from the side.',
+        measuredFrom:
+          'Boxes below are measured from {parent} · {anchor}, which is at {x}, {y} on the canvas. A sprite drawn to sit on that joint is 0, 0.',
+        measuredFromCanvas:
+          'This layer hangs off nothing, so its boxes are measured from the canvas corner.',
+        tabCharacter: 'Character',
+        tabParameters: 'Choices',
+        tabLayers: 'Layers',
+        tabAnimation: 'Animation',
         animations: 'Animations',
         noAnimations: 'This character does not move yet.',
         addAnimation: 'New animation',
+        mirrorOf: 'Mirror of',
+        notAMirror: 'Nothing — its own animation',
+        mirrorHint:
+          'This is {source} seen the other way round: its timing, its pose and its keyframes, drawn flipped. Edit {source} and both directions follow.',
+        mirrorBroken: 'It mirrors an animation that no longer exists, so it plays nothing.',
+        pose: 'Pose',
+        poseCellLabel: 'Frame {frame}, pose {pose}',
+        poseOf: 'What {animation} draws',
+        poseHint:
+          'A pose does not move anything — it says what the character is drawn as, and every layer waiting on one of these values answers at once. A body seen from the side needs one line here and one condition on its variant, however many frames the animation is.',
+        poseAlways: 'For the whole animation',
+        poseAlwaysEmpty: 'This animation changes nothing about what is drawn.',
+        poseAtFrame: 'At frame {frame}',
+        poseHeld: 'This frame holds the pose set before it.',
+        poseKey: 'Pose key',
+        poseValue: 'Pose value',
+        addPose: 'Add a value',
+        addFramePose: 'Set a pose here',
+        removeFramePose: 'Hold the previous pose',
         removeAnimation: 'Delete animation',
         frames: 'Frames',
         frameCount: '{count} frames',
@@ -362,7 +394,8 @@ const EN: StringTree = {
         badKey: 'A key needs at least a namespace and a name, e.g. menu.play.',
         save: 'Save languages',
         saved: 'Wrote {count} locale file(s)',
-        savedWithManifest: 'Wrote {count} locale file(s) and declared the new one(s) in project.json',
+        savedWithManifest:
+          'Wrote {count} locale file(s) and declared the new one(s) in project.json',
         created: 'Created {count} key(s) — the Languages tab is where their text is written.',
         empty: 'No key matches this filter.',
         hint: 'Greyed keys come from the application; typing here overrides them for this project.',
@@ -848,9 +881,41 @@ const FR: StringTree = {
         anchorsHint:
           'Les points d’attache sont des endroits nommés de cette couche auxquels d’autres peuvent s’accrocher — une nuque, une naissance de cheveux, la poignée d’une arme. Ils ne déplacent rien par eux-mêmes : c’est là que le squelette est tracé, et c’est autour d’eux qu’une rotation tournera un jour.',
         addAnchor: 'Ajouter un point d’attache',
+        poseCondition:
+          'Posée par une animation plutôt que choisie par le joueur : ce dessin s’applique tant qu’une animation pose le personnage ainsi.',
+        order: 'z',
+        orderHint:
+          'La place de cette variante dans la pile. 0 suit l’ordre de la liste des couches ; 1 la dessine par-dessus tous les 0, -1 derrière. C’est ainsi qu’une cape passe devant le corps quand le personnage est vu de profil.',
+        measuredFrom:
+          'Les boîtes ci-dessous partent de {parent} · {anchor}, situé à {x}, {y} sur le canevas. Un sprite dessiné pile sur ce point vaut 0, 0.',
+        measuredFromCanvas:
+          'Cette couche ne s’accroche à rien : ses boîtes partent du coin du canevas.',
+        tabCharacter: 'Personnage',
+        tabParameters: 'Choix',
+        tabLayers: 'Couches',
+        tabAnimation: 'Animation',
         animations: 'Animations',
         noAnimations: 'Ce personnage ne bouge pas encore.',
         addAnimation: 'Nouvelle animation',
+        mirrorOf: 'Miroir de',
+        notAMirror: 'Rien — sa propre animation',
+        mirrorHint:
+          'C’est {source} vue dans l’autre sens : son rythme, sa pose et ses clés, dessinés en miroir. Modifiez {source} et les deux directions suivent.',
+        mirrorBroken: 'Elle reflète une animation qui n’existe plus : elle ne joue rien.',
+        pose: 'Pose',
+        poseCellLabel: 'Image {frame}, pose {pose}',
+        poseOf: 'Ce que {animation} dessine',
+        poseHint:
+          'Une pose ne déplace rien : elle dit ce que le personnage dessine, et toutes les couches qui attendent l’une de ces valeurs répondent d’un coup. Un corps de profil demande une ligne ici et une condition sur sa variante, quel que soit le nombre d’images.',
+        poseAlways: 'Pour toute l’animation',
+        poseAlwaysEmpty: 'Cette animation ne change rien à ce qui est dessiné.',
+        poseAtFrame: 'À l’image {frame}',
+        poseHeld: 'Cette image tient la pose posée avant elle.',
+        poseKey: 'Clé de pose',
+        poseValue: 'Valeur de pose',
+        addPose: 'Ajouter une valeur',
+        addFramePose: 'Poser ici',
+        removeFramePose: 'Tenir la pose précédente',
         removeAnimation: 'Supprimer l’animation',
         frames: 'Images',
         frameCount: '{count} images',
@@ -936,7 +1001,8 @@ const FR: StringTree = {
         savedManifest: 'déclaré dans project.json',
         invalid: 'Le personnage est invalide ; rien n’a été écrit.',
         unsaved: 'Modifié depuis le dernier enregistrement',
-        unlisted: 'Ce personnage n’est pas encore listé dans project.json ; l’enregistrer l’ajoute.',
+        unlisted:
+          'Ce personnage n’est pas encore listé dans project.json ; l’enregistrer l’ajoute.',
         unreadable:
           'project.json déclare {files}, qui n’a pas pu être lu. Vérifiez le chemin et que le fichier est du JSON valide.',
         noFile: 'Aucun personnage ouvert',
@@ -970,8 +1036,7 @@ const FR: StringTree = {
           saveMapTooltip:
             'Écrit cette carte dans le dossier de contenu, avec project.json si le manifeste a changé.',
           saveProject: 'Enregistrer le projet',
-          saveProjectTooltip:
-            'Écrit toutes les cartes et project.json dans le dossier de contenu.',
+          saveProjectTooltip: 'Écrit toutes les cartes et project.json dans le dossier de contenu.',
           importJson: 'Importer un JSON',
           reload: 'Recharger content/',
         },

@@ -58,6 +58,8 @@ import {
   AttachmentPoint,
   CATEGORIES,
   CONTROL_KINDS,
+  EDITOR_TABS,
+  EditorTab,
   CharacterCategory,
   CharacterDefinition,
   CharacterLayer,
@@ -66,8 +68,10 @@ import {
   ControlKind,
   HierarchyRow,
   LayerVariant,
+  DEFAULT_FRAME_DURATION_MS,
   MAX_SPRITE_RESOLUTION,
   PixelOffset,
+  PixelRect,
   ResolvedCharacter,
   SettingValue,
   SpriteResolution,
@@ -102,7 +106,10 @@ import {
 import { I18nService } from '../../../i18n/i18n.service';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
 import { ControlField } from '../../../settings/control-field';
-import { ContentWorkspaceService, WorkspaceFile } from '../../../services/content-workspace.service';
+import {
+  ContentWorkspaceService,
+  WorkspaceFile,
+} from '../../../services/content-workspace.service';
 import { CharacterPose, EngineService } from '../../../services/engine.service';
 import { LocaleAuthoringService } from '../../../services/locale-authoring.service';
 import { CharacterLibraryService } from '../../../services/character-library.service';
@@ -259,6 +266,14 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
   /** `true` while the preview draws the bones and joints over the character. */
   protected readonly skeleton = signal(false);
 
+  /**
+   * Which module of the left column is open.
+   *
+   * `layers` by default: it is the one an author reaches for on opening a
+   * character, and the one the preview beside it is showing.
+   */
+  protected readonly tab = signal<EditorTab>('layers');
+
   /** The running playback loop, if any. */
   private clock: number | null = null;
   /** When the loop last advanced, so a dropped frame does not skip time. */
@@ -272,6 +287,7 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
 
   protected readonly categories = CATEGORIES;
   protected readonly controlKinds = CONTROL_KINDS;
+  protected readonly TABS = EDITOR_TABS;
   protected readonly maxResolution = MAX_SPRITE_RESOLUTION;
   protected readonly usesOptions = usesOptions;
   protected readonly isNumeric = isNumeric;
@@ -339,6 +355,25 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
     () => this.document()?.parameters ?? [],
   );
 
+  /**
+   * How many things a tab holds, shown beside its name.
+   *
+   * The point of a tab bar is knowing what is behind the ones that are shut;
+   * a count is the cheapest true thing to say about each.
+   */
+  protected tabCount(tab: EditorTab): number {
+    switch (tab) {
+      case 'parameters':
+        return this.parameters().length;
+      case 'layers':
+        return this.layers().length;
+      case 'animation':
+        return this.animations().length;
+      default:
+        return 0;
+    }
+  }
+
   protected readonly layers = computed<readonly CharacterLayer[]>(
     () => this.document()?.layers ?? [],
   );
@@ -364,6 +399,23 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
   protected readonly animation = computed<Animation | null>(() => {
     const id = this.animationIdSignal();
     return this.animations().find((animation) => animation.id === id) ?? null;
+  });
+
+  /**
+   * The animation whose clock and tracks actually run.
+   *
+   * Itself, unless it is a mirror — a mirror borrows its source's timing, so
+   * the playback loop and the timeline have to read the source or they would
+   * be counting frames nothing has (`docs/adr/ADR-0031-characters-animate-by-
+   * hierarchy-and-offsets.md`).
+   */
+  protected readonly played = computed<Animation | null>(() => {
+    const open = this.animation();
+    if (open === null || !open.mirrorOf) {
+      return open;
+    }
+    const source = this.animations().find((entry) => entry.id === open.mirrorOf);
+    return source === undefined || source.mirrorOf ? null : source;
   });
 
   /**
@@ -406,8 +458,18 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
   });
 
   /** `true` when a drag on the stage would write a keyframe. */
+  /**
+   * `true` when a drag on the stage would write a keyframe.
+   *
+   * Never on a mirror: it has no tracks of its own, and a drag that silently
+   * edited the animation it reflects would move the *other* direction too.
+   */
   protected readonly posable = computed(
-    () => !this.painting() && this.animation() !== null && this.layer() !== null,
+    () =>
+      !this.painting() &&
+      this.animation() !== null &&
+      this.animation()?.mirrorOf == null &&
+      this.layer() !== null,
   );
 
   /** The layer the pixel tools edit: the open one, as the resolver drew it. */
@@ -540,7 +602,7 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
     // animation still existing: deleting the one being played must stop it
     // rather than leave a timer running against a definition nobody has.
     effect(() => {
-      if (this.playing() && this.animation() !== null) {
+      if (this.playing() && this.played() !== null) {
         this.startClock();
       } else {
         this.stopClock();
@@ -587,9 +649,10 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
 
       // An animation that does not loop is over when it is over; leaving the
       // loop running would burn a frame a tick to redraw the same picture.
-      const animation = this.animation();
+      const animation = this.played();
       if (animation !== null && animation.looping !== true) {
-        const duration = animation.frames * (animation.frameDurationMs ?? 120);
+        const duration =
+          (animation.frames ?? 1) * (animation.frameDurationMs ?? DEFAULT_FRAME_DURATION_MS);
         if (this.timeMs() >= duration) {
           this.timeMs.set(Math.max(0, duration - 1));
           this.playing.set(false);
@@ -640,12 +703,12 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
    * disagree about which frame is on screen.
    */
   protected scrubTo(frame: number): void {
-    const animation = this.animation();
+    const animation = this.played();
     if (animation === null) {
       return;
     }
     this.playing.set(false);
-    this.timeMs.set(Math.max(0, frame) * (animation.frameDurationMs ?? 120));
+    this.timeMs.set(Math.max(0, frame) * (animation.frameDurationMs ?? DEFAULT_FRAME_DURATION_MS));
     this.repose();
   }
 
@@ -792,8 +855,14 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
       resolution: { width: 64, height: 128 },
       parameters: [],
       layers: [
-        { id: 'body', variants: [{ id: 'default', rect: [20, 40, 24, 76], sprite: { asset: '' } }] },
-        { id: 'head', variants: [{ id: 'default', rect: [24, 12, 16, 28], sprite: { asset: '' } }] },
+        {
+          id: 'body',
+          variants: [{ id: 'default', rect: [20, 40, 24, 76], sprite: { asset: '' } }],
+        },
+        {
+          id: 'head',
+          variants: [{ id: 'default', rect: [24, 12, 16, 28], sprite: { asset: '' } }],
+        },
       ],
     };
 
@@ -1079,7 +1148,7 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
    * attachment point on the old parent means nothing on the new one.
    */
   protected setParent(parentId: string): void {
-    this.editLayer((draft) => {
+    this.rebasing((draft) => {
       if (parentId.length === 0) {
         delete draft.parent;
       } else {
@@ -1090,11 +1159,109 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
   }
 
   protected setParentAnchor(anchorId: string): void {
-    this.editLayer((draft) => {
+    this.rebasing((draft) => {
       if (anchorId.length === 0) {
         delete draft.parentAnchor;
       } else {
         draft.parentAnchor = anchorId;
+      }
+    });
+  }
+
+  /**
+   * Changes where the open layer hangs **without moving it on the canvas**.
+   *
+   * A box is measured from the joint it hangs off, so changing the joint
+   * changes what every number in the layer means: re-parenting a head onto a
+   * shoulder would otherwise throw it across the canvas, and an author would
+   * have to type its position back in from nothing
+   * (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`).
+   *
+   * So the boxes are rebased by the difference between the old frame and the
+   * new one, and the picture is unchanged. Moving a layer is a separate act
+   * from deciding what it follows.
+   */
+  private rebasing(mutate: (draft: CharacterLayer) => void): void {
+    const id = this.layer()?.id;
+    const before = this.originOf(this.document(), id);
+    this.editLayer(mutate);
+    // `editLayer` has published a new document; the frame is read off it.
+    const after = this.originOf(this.document(), id);
+    const dx = before[0] - after[0];
+    const dy = before[1] - after[1];
+    if (dx === 0 && dy === 0) {
+      return;
+    }
+    this.editLayer((draft) => {
+      for (const variant of draft.variants ?? []) {
+        const rect = variant.rect ?? [0, 0, 0, 0];
+        variant.rect = [rect[0] + dx, rect[1] + dy, rect[2], rect[3]];
+      }
+      // The layer's own anchors are measured from its frame too, so whatever
+      // hangs off *them* would move a second time if they were left alone.
+      for (const anchor of draft.anchors ?? []) {
+        anchor.at = [anchor.at[0] + dx, anchor.at[1] + dy];
+      }
+    });
+  }
+
+  /**
+   * Where a layer's frame sits on the canvas, at rest.
+   *
+   * The engine's walk, mirrored here because this one question is asked
+   * *between* two edits — the resolved character is a frame behind, and a
+   * rebase that used it would rebase onto the old parent.
+   */
+  private originOf(document: CharacterDefinition | null, id: string | undefined): PixelOffset {
+    const layers = document?.layers ?? [];
+    let origin: PixelOffset = [0, 0];
+    const chain: CharacterLayer[] = [];
+    const seen = new Set<string>();
+    let node = layers.find((layer) => layer.id === id);
+    while (node !== undefined && !seen.has(node.id)) {
+      seen.add(node.id);
+      chain.push(node);
+      const parent: string | undefined = node.parent ?? undefined;
+      node = parent === undefined ? undefined : layers.find((layer) => layer.id === parent);
+    }
+    for (let index = chain.length - 1; index > 0; index -= 1) {
+      const parent = chain[index] as CharacterLayer;
+      const child = chain[index - 1] as CharacterLayer;
+      const at = (parent.anchors ?? []).find((anchor) => anchor.id === child.parentAnchor)?.at;
+      if (at !== undefined) {
+        origin = [origin[0] + at[0], origin[1] + at[1]];
+      }
+    }
+    return origin;
+  }
+
+  /**
+   * Where the open layer's frame sits: what its boxes are measured from.
+   *
+   * Read off the **resolved** character, so it is the engine's answer and not
+   * a second calculation that could disagree with the preview.
+   */
+  protected readonly openOrigin = computed<PixelOffset>(() => {
+    const open = this.layer()?.id;
+    return this.resolved()?.layers.find((drawn) => drawn.layer === open)?.origin ?? [0, 0];
+  });
+
+  /** Moves a variant out of the author order, or back into it. */
+  protected setOrder(index: number, raw: string): void {
+    const parsed = Number.parseFloat(raw);
+    if (!Number.isFinite(parsed)) {
+      return;
+    }
+    this.editLayer((draft) => {
+      const variant = draft.variants[index];
+      if (variant === undefined) {
+        return;
+      }
+      const order = Math.round(parsed);
+      if (order === 0) {
+        delete variant.order;
+      } else {
+        variant.order = order;
       }
     });
   }
@@ -1385,6 +1552,40 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
   // -------------------------------------------------------------- conditions
 
   /** The value a variant waits for on this parameter, or `''` for "any". */
+  /**
+   * Everything a variant may wait on: the declared parameters, and the pose
+   * keys the character's animations set.
+   *
+   * One namespace, because that is what a `when` reads
+   * (`docs/adr/ADR-0033-animations-set-pose-values.md`). Offering only the
+   * parameters would leave a condition like `view: side` in the file and
+   * nowhere on screen — invisible and uneditable, which is how it was until
+   * this list existed.
+   */
+  protected readonly conditionFields = computed<readonly { id: string; pose: boolean }[]>(() => {
+    const declared = this.parameters().map((parameter) => parameter.id);
+    const poses = new Set<string>();
+    for (const animation of this.animations()) {
+      for (const key of Object.keys(animation.pose ?? {})) {
+        poses.add(key);
+      }
+      for (const entry of animation.poses ?? []) {
+        for (const key of Object.keys(entry)) {
+          if (key !== 'frame') {
+            poses.add(key);
+          }
+        }
+      }
+    }
+    return [
+      ...declared.map((id) => ({ id, pose: false })),
+      ...[...poses]
+        .filter((id) => !declared.includes(id))
+        .sort()
+        .map((id) => ({ id, pose: true })),
+    ];
+  });
+
   protected condition(variant: LayerVariant, parameterId: string): string {
     const held = variant.when?.[parameterId];
     if (held === undefined) {
@@ -1683,7 +1884,7 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
    * @returns `true` when the pointer was taken for a drag
    */
   private beginPose(event: PointerEvent): boolean {
-    const animation = this.animation();
+    const animation = this.played();
     const node = this.layer()?.id;
     const at = this.canvasPixel(event);
     if (!this.posable() || animation === null || node === undefined || at === null) {
@@ -1715,12 +1916,10 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
       drag.base[0] + (at.x - drag.from.x),
       drag.base[1] + (at.y - drag.from.y),
     ];
-    const animationId = this.animation()?.id;
+    const animationId = this.played()?.id;
     const frame = this.poseFrame();
     this.edit((draft) => {
-      const animation = (draft.animations ?? []).find(
-        (candidate) => candidate.id === animationId,
-      );
+      const animation = (draft.animations ?? []).find((candidate) => candidate.id === animationId);
       if (animation === undefined) {
         return;
       }
@@ -1741,18 +1940,28 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
     });
   }
 
-  /** The canvas pixel a pointer is over, in the character's own coordinates. */
+  /**
+   * The canvas pixel a pointer is over, in the character's own coordinates.
+   *
+   * Un-mirrored on the way back: the stage may be showing the character
+   * flipped, and a click means the pixel it *points at*, not the one that
+   * would be there if it were facing the other way.
+   */
   private canvasPixel(event: PointerEvent): { x: number; y: number } | null {
     const canvas = this.canvasRef()?.nativeElement;
     if (canvas === undefined) {
       return null;
     }
-    return pixelUnder(
+    const at = pixelUnder(
       { x: event.clientX, y: event.clientY },
       canvas.getBoundingClientRect(),
       this.view.box,
       this.view,
     );
+    if (at === null || this.resolved()?.mirrored !== true) {
+      return at;
+    }
+    return { x: this.resolution().width - 1 - at.x, y: at.y };
   }
 
   /** Paints from the last point to this one, so a fast drag is still a line. */
@@ -1957,21 +2166,24 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
    * outside is dropped a layer down, by the plot itself.
    */
   private pixelAt(event: PointerEvent): { x: number; y: number } | null {
-    const canvas = this.canvasRef()?.nativeElement;
-    const target = this.target();
-    if (canvas === undefined || target === null) {
+    // The **resolved** box, not the authored one: a child's `rect` is measured
+    // from the joint it hangs off, so the file's numbers are not where the
+    // sprite is (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`).
+    const box = this.drawnRect();
+    if (box === null) {
       return null;
     }
     // Through the renderer's own inverse, measured off the element: a pointer
     // is reported in screen pixels and the stage was drawn in layout pixels,
     // and the interface scale is the factor between them.
-    const at = pixelUnder(
-      { x: event.clientX, y: event.clientY },
-      canvas.getBoundingClientRect(),
-      this.view.box,
-      this.view,
-    );
-    return at === null ? null : { x: at.x - target.rect[0], y: at.y - target.rect[1] };
+    const at = this.canvasPixel(event);
+    return at === null ? null : { x: at.x - box[0], y: at.y - box[1] };
+  }
+
+  /** Where the open layer's sprite actually landed, animation included. */
+  private drawnRect(): PixelRect | null {
+    const open = this.layer()?.id;
+    return this.resolved()?.layers.find((drawn) => drawn.layer === open)?.rect ?? null;
   }
 
   // ----------------------------------------------------------------- drawing
@@ -2047,10 +2259,20 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
     if (this.painting() && zoom >= GRID_ZOOM) {
       this.strokeGrid(context, resolved.resolution, zoom, originX, originY);
     }
+
+    // The overlays are drawn in canvas coordinates, so a mirrored character
+    // needs them reflected too — a selection box on the wrong side of the
+    // figure is worse than none at all.
+    context.save();
+    if (resolved.mirrored) {
+      context.translate(originX * 2 + resolved.resolution.width * zoom, 0);
+      context.scale(-1, 1);
+    }
     if (this.skeleton()) {
       this.strokeSkeleton(context, zoom, originX, originY);
     }
     this.strokeOpenLayer(context, zoom, originX, originY);
+    context.restore();
     this.zoom.set(zoom);
   }
 
@@ -2091,17 +2313,19 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
       if (parent === undefined) {
         continue;
       }
-      // Where it hangs: the named attachment point, moved by whatever the
-      // animation did to the layer that owns it.
+      // Where it hangs: the named attachment point, measured from its own
+      // layer's frame — which is what the child was placed from, so the bone
+      // ends exactly where the placement started.
       const anchor = this.layers()
         .find((candidate) => candidate.id === parentId)
         ?.anchors?.find((candidate) => candidate.id === layer.parentAnchor);
       const from = anchor
-        ? point(anchor.at[0] + parent.offset[0], anchor.at[1] + parent.offset[1])
-        : point(parent.rect[0] + parent.rect[2] / 2, parent.rect[1] + parent.rect[3] / 2);
+        ? point(parent.origin[0] + anchor.at[0], parent.origin[1] + anchor.at[1])
+        : point(parent.origin[0], parent.origin[1]);
       const to = point(child.rect[0] + child.rect[2] / 2, child.rect[1] + child.rect[3] / 2);
 
-      context.strokeStyle = layer.id === selected || parentId === selected ? JOINT_COLOR : BONE_COLOR;
+      context.strokeStyle =
+        layer.id === selected || parentId === selected ? JOINT_COLOR : BONE_COLOR;
       context.beginPath();
       context.moveTo(from[0], from[1]);
       context.lineTo(to[0], to[1]);
@@ -2117,7 +2341,7 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
         continue;
       }
       for (const anchor of layer.anchors ?? []) {
-        const [x, y] = point(anchor.at[0] + placed.offset[0], anchor.at[1] + placed.offset[1]);
+        const [x, y] = point(placed.origin[0] + anchor.at[0], placed.origin[1] + anchor.at[1]);
         context.beginPath();
         context.arc(x, y, radius, 0, Math.PI * 2);
         context.fill();

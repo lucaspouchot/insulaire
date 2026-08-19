@@ -18,11 +18,15 @@
  * ]
  * ```
  *
- * An **animation** follows the same rule with the *keyframe* as the unit: one
- * per line, frame and offset side by side, so "the body drops a pixel later in
- * the loop" is one changed line.
+ * An **animation** follows the same rule with the *keyframe* as the unit, and
+ * again with the *pose*: one per line, frame and value side by side, so "the
+ * body drops a pixel later in the loop" and "frame 2 is the other contact" are
+ * each one changed line.
  *
  * ```json
+ * "poses": [
+ *   { "frame": 1, "step": "pass" }
+ * ],
  * "keyframes": [
  *   { "frame": 1, "offset": [0, -2] }
  * ]
@@ -30,8 +34,10 @@
  *
  * What is dropped is what parses back to the value dropped: an empty `name`,
  * `helpKey`, `unit`, `options`, `min`, `max`, `step`, `showIf`, `when` or
- * `tint`, an absent `parent`, `parentAnchor` or `anchors`, a `step`
- * interpolation, and the whole `animations` list when a character has none.
+ * `tint`, an absent `parent`, `parentAnchor` or `anchors`, a zero variant
+ * `order`, an empty `pose` or `poses`, a `step` interpolation, and the whole
+ * `animations` list when a character has none. A `mirrorOf` animation writes nothing but its id, name
+ * and source.
  * `category` and `resolution` are always written — they are what the
  * file is *about*, and a reader should not have to know the defaults. `scope` is
  * never written: it belongs to the settings vocabulary and means nothing to a
@@ -49,6 +55,8 @@ import {
   LayerVariant,
   PixelOffset,
   PixelRect,
+  PoseKey,
+  SettingValue,
 } from './content-types';
 
 /** The canvas a definition that names none is authored on. */
@@ -197,13 +205,41 @@ function animationLines(animation: Animation, indent: number): string[] {
   if (animation.name) {
     lines.push(`${pad}  "name": ${JSON.stringify(animation.name)},`);
   }
-  lines.push(`${pad}  "frames": ${JSON.stringify(animation.frames)},`);
+
+  // A mirror is three lines and no more: its timing, its tracks and its
+  // sprites all belong to the animation it reflects, and writing fields
+  // nothing reads is how a file starts lying about itself.
+  if (animation.mirrorOf) {
+    lines.push(`${pad}  "mirrorOf": ${JSON.stringify(animation.mirrorOf)}`);
+    lines.push(`${pad}}`);
+    return lines;
+  }
+
+  lines.push(`${pad}  "frames": ${JSON.stringify(animation.frames ?? 1)},`);
   lines.push(
     `${pad}  "frameDurationMs": ${JSON.stringify(
       animation.frameDurationMs ?? DEFAULT_FRAME_DURATION_MS,
     )},`,
   );
   lines.push(`${pad}  "looping": ${JSON.stringify(animation.looping === true)},`);
+
+  // The pose comes before the tracks because it is read first: what the
+  // character is drawn *as*, then how far it moved from there.
+  const pose = animation.pose ?? {};
+  if (Object.keys(pose).length > 0) {
+    lines.push(`${pad}  "pose": ${values(pose)},`);
+  }
+
+  const poses = animation.poses ?? [];
+  if (poses.length > 0) {
+    lines.push(`${pad}  "poses": [`);
+    lines.push(
+      ...poses.map(
+        (key, index) => `${pad}    ${poseLine(key)}` + (index === poses.length - 1 ? '' : ','),
+      ),
+    );
+    lines.push(`${pad}  ],`);
+  }
 
   const tracks = animation.tracks ?? [];
   lines.push(`${pad}  "tracks": [`);
@@ -242,6 +278,25 @@ function keyframeLine(keyframe: Keyframe): string {
   return `{ ${entries.join(', ')} }`;
 }
 
+/** A whole pose entry on one line, its values flattened beside its frame. */
+function poseLine(key: PoseKey): string {
+  const entries = [`"frame": ${JSON.stringify(key.frame)}`];
+  for (const [id, value] of Object.entries(key)) {
+    if (id !== 'frame' && value !== undefined) {
+      entries.push(`${JSON.stringify(id)}: ${JSON.stringify(value)}`);
+    }
+  }
+  return `{ ${entries.join(', ')} }`;
+}
+
+/** A flat map of pose values on one line, in the order it was written. */
+function values(map: Record<string, SettingValue>): string {
+  const entries = Object.entries(map).map(
+    ([id, value]) => `${JSON.stringify(id)}: ${JSON.stringify(value)}`,
+  );
+  return `{ ${entries.join(', ')} }`;
+}
+
 /** `[x, y]`, spaced like every other coordinate in the format. */
 function offset(point: PixelOffset): string {
   return `[${point.map((value) => JSON.stringify(value)).join(', ')}]`;
@@ -258,6 +313,9 @@ function variantLine(variant: LayerVariant): string {
     entries.push(`"when": { ${conditions} }`);
   }
   entries.push(`"rect": ${rect(variant.rect ?? [0, 0, 0, 0])}`);
+  if (variant.order) {
+    entries.push(`"order": ${JSON.stringify(variant.order)}`);
+  }
   entries.push(`"sprite": ${sprite(variant)}`);
   return `{ ${entries.join(', ')} }`;
 }

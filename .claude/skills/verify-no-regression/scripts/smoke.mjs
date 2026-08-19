@@ -539,6 +539,23 @@ async function capturePages(browser, baseUrl, scenario, viewport, outDir, log) {
       await settle(page, spec.settleMs ?? 1500);
       shots.push(await capture(page, spec.name, outDir));
 
+      // A named control, for a page whose interesting part is behind one.
+      // Fractions of a canvas cannot reach a tab, and a module nobody opens is
+      // a module this harness does not guard.
+      for (const [index, press] of (spec.press ?? []).entries()) {
+        const box = await page.evaluate(`(() => {
+          const el = document.querySelector(${JSON.stringify(press.selector)});
+          if (!el) return null;
+          el.scrollIntoView({ block: 'center' });
+          const r = el.getBoundingClientRect();
+          return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+        })()`);
+        if (!box) throw new Error(`${spec.name}: no element matching ${press.selector}`);
+        await page.click(Math.round(box.x), Math.round(box.y));
+        await settle(page, press.settleMs ?? 800);
+        shots.push(await capture(page, press.name ?? `${spec.name}-press-${index + 1}`, outDir));
+      }
+
       for (const [index, [fx, fy]] of (spec.clicks ?? []).entries()) {
         const box = await canvasBox(page);
         if (!box) throw new Error(`${spec.name}: no canvas to click on`);

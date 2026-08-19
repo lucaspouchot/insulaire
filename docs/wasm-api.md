@@ -270,7 +270,12 @@ resolveCharacter(
 Resolves a **registered** definition against a customisation, at a moment of an
 animation, producing the flat ordered list of sprites described in
 `docs/content-format.md`: a canvas resolution and, per layer, a whole-pixel box,
-an asset path and a resolved tint. Values go through the same rule as
+an asset path and a resolved tint. The boxes are **absolute** whatever the file
+measured them from, and the list is in **draw order**, back to front, with any
+`order` a variant declared already applied — a host blits it as it stands
+(`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`). Each layer also
+carries the `origin` its authored box was measured from, which an editor needs
+and a renderer ignores. Values go through the same rule as
 `resolveSettings`, and every tint is resolved here — a host blits what this
 returned and decides nothing about appearance.
 
@@ -279,6 +284,15 @@ the engine wraps a looping animation and holds a finished one on its last frame
 (ADR-0031). The animation's offset is **already in each layer's `rect`**, so a
 renderer needs no animation code at all; the payload also carries the `offset`
 that was applied and a `pose` saying which frame it is.
+
+An animation may also set **pose values**, which join the customisation while it
+plays and are what a variant's `when` selects on, so `layers[].variant` and
+`layers[].asset` can differ frame to frame
+(`docs/adr/ADR-0033-animations-set-pose-values.md`). The pose in force is
+reported on `pose.values`; it is deliberately **not** merged into `values`,
+which stay the customisation as given. A **mirrored** animation (`mirrorOf`)
+returns its source's layers unchanged with `mirrored: true`, which asks the host
+to draw the whole canvas flipped — the one thing a renderer has to act on.
 
 `undefined` is the rest pose, and **so is an animation id the definition does
 not declare** — that is not an error, because an editor previewing a definition

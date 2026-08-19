@@ -41,14 +41,19 @@
 //!
 //! # Layers are nodes
 //!
-//! A layer is also a **node of a tree**: it may name a [`CharacterLayer::parent`],
-//! and an animation's offsets compose down that tree, so a body that drops two
-//! pixels takes the head, the hair and everything attached to them with it
-//! (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+//! A layer is also a **node of a tree**: it may name a [`CharacterLayer::parent`]
+//! and one of that parent's [`AttachmentPoint`]s, and it is **placed from
+//! there**. A child's [`LayerVariant::rect`] is measured from the joint it
+//! hangs off, so a sprite drawn to sit exactly on its anchor is `[0, 0, w, h]`
+//! and moving the parent moves everything under it — position and animation
+//! alike (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`). A root has
+//! no joint to hang off, so its box is measured from the canvas.
 //!
-//! The tree is **not** the draw order. Layers are still drawn in author order,
-//! back to front, and `parent` is a separate reference — a head is drawn over a
-//! body *and* hangs off it, and those are two different statements.
+//! The tree is **not** the draw order. Layers are drawn in author order, back
+//! to front, and `parent` is a separate reference — a head is drawn over a body
+//! *and* hangs off it, and those are two different statements. A variant may
+//! override that order with [`LayerVariant::order`], which is how a cape passes
+//! in front of the body it normally hangs behind.
 //!
 //! # What is deliberately absent
 //!
@@ -59,6 +64,7 @@
 //! a rotation is a field appearing there rather than a change to what a
 //! keyframe is.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
@@ -69,12 +75,14 @@ use crate::settings::{resolve_controls, ControlDefinition};
 
 /// Highest character schema version this build understands.
 ///
-/// `2` is the sprite format of `docs/adr/ADR-0029-characters-are-composed-
-/// sprites.md`: a layer draws an image placed in whole pixels on a declared
-/// canvas. Version `1` was ADR-0028's, where a layer could also be a coloured
-/// primitive placed on a unit square, and no file of it survives — pre-1.0,
-/// there is no reader for it and none is coming (`CLAUDE.md`, "Versioning").
-pub const CHARACTER_SCHEMA_VERSION: u32 = 2;
+/// `3` places a child layer's box **relative to the attachment point it hangs
+/// off**, so the hierarchy positions the character instead of only animating it
+/// (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`). `2` was
+/// ADR-0029's, where every box was absolute on the canvas; `1` was ADR-0028's,
+/// where a layer could also be a coloured primitive on a unit square. No file
+/// of either survives — pre-1.0, there is no reader for them and none is
+/// coming (`CLAUDE.md`, "Versioning").
+pub const CHARACTER_SCHEMA_VERSION: u32 = 3;
 
 /// Largest sprite canvas a character may declare, on either side.
 ///
@@ -272,11 +280,34 @@ pub struct LayerVariant {
     /// "wearing a helmet" without enumerating every other piece of equipment.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub when: BTreeMap<String, Value>,
-    /// Where it is drawn on the character's canvas.
+    /// Where it is drawn, **relative to the point its layer hangs off**.
+    ///
+    /// A child measures from its parent's [`CharacterLayer::parent_anchor`],
+    /// so a sprite drawn to sit on that joint is `[0, 0, width, height]`; a
+    /// root measures from the canvas origin, because it hangs off nothing
+    /// (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`).
     #[serde(default)]
     pub rect: PixelRect,
+    /// Where this variant is drawn in the stack, overriding the author order.
+    ///
+    /// Layers are drawn back to front in the order they are declared, and
+    /// this moves one out of that order while it applies: everything sorts by
+    /// `order` first and by declaration second, so a variant with `1` is drawn
+    /// over every `0` and `0`s keep the order the file gives them.
+    ///
+    /// It is on the **variant** rather than the layer or the animation because
+    /// that is where a condition already lives. A cape that passes in front of
+    /// the body when the character is seen from the side is the same `when`
+    /// that chose the side-on drawing, with one more field
+    /// (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`).
+    #[serde(default, skip_serializing_if = "is_zero_order")]
+    pub order: i32,
     /// What it draws.
     pub sprite: Sprite,
+}
+
+const fn is_zero_order(order: &i32) -> bool {
+    *order == 0
 }
 
 impl LayerVariant {
@@ -304,15 +335,17 @@ fn holds(held: &Value, required: &Value) -> bool {
 
 /// A named point on a layer, for another layer to hang off.
 ///
-/// `at` is a position on the character's canvas, in the same pixels every other
-/// coordinate here is in — the *neck*, the *hair line*, the *grip of a hand*.
+/// `at` is measured from its **own layer's** origin, in the same whole pixels
+/// every other coordinate here is in — the *neck*, the *hair line*, the *grip
+/// of a hand*. A root layer's origin is the canvas origin, so a root's anchors
+/// read as canvas positions; every other layer's anchors travel with it.
 ///
-/// An attachment point does not move anything on its own. It exists so a
-/// parent/child link can be authored as "the head's hair anchor" instead of a
-/// pair of coordinates nobody can check, so the editor can draw the skeleton
-/// through the joints rather than through the corners of boxes, and because it
-/// is the pivot a rotation will turn about the day there is one
-/// (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+/// An attachment point is what a child is **placed from**: a layer naming
+/// `parent` and `parent_anchor` measures its box from that joint
+/// (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`). It is also what
+/// lets the editor draw the skeleton through the joints rather than through the
+/// corners of boxes, and it is the pivot a rotation will turn about the day
+/// there is one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AttachmentPoint {
@@ -340,7 +373,8 @@ pub struct CharacterLayer {
     /// Id of the layer this one hangs off. Absent makes it a root.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
-    /// Which of the parent's [`Self::anchors`] it hangs off, if it names one.
+    /// Which of the parent's [`Self::anchors`] it hangs off, and is **placed
+    /// from**. Absent measures from the parent's own origin.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_anchor: Option<String>,
     /// Points other layers may hang off.
@@ -360,6 +394,12 @@ impl CharacterLayer {
     #[must_use]
     pub fn variant_for(&self, values: &BTreeMap<String, Value>) -> Option<&LayerVariant> {
         self.variants.iter().find(|variant| variant.matches(values))
+    }
+
+    /// The variant with this id, if this layer declares it.
+    #[must_use]
+    pub fn variant(&self, id: &str) -> Option<&LayerVariant> {
+        self.variants.iter().find(|variant| variant.id == id)
     }
 
     /// The attachment point with this id, if this layer declares it.
@@ -466,14 +506,19 @@ impl CharacterDefinition {
     /// order matters (§23 of `docs/implementing-character-animator.md`):
     ///
     /// 1. resolve the customisation — defaults, clamps, unknown keys dropped;
-    /// 2. pick a variant per layer and resolve its tint, from *those* values;
-    /// 3. evaluate the animation into a local transform per node;
-    /// 4. compose those down the hierarchy into a global transform per node;
-    /// 5. move each layer's box by its node's offset.
+    /// 2. lay the animation's pose over it, giving the state to select from;
+    /// 3. pick a variant per layer from *that*, and resolve its tint from the
+    ///    customisation alone;
+    /// 4. evaluate the animation into a local transform per node;
+    /// 5. compose those down the hierarchy, together with the attachment points
+    ///    each node hangs off, into a frame per node;
+    /// 6. place each layer's box in its node's frame, and sort by draw order.
     ///
-    /// An animation therefore never touches what a layer *is* — only where it
-    /// is. A hair layer tinted from `hairColor` keeps that colour through every
-    /// frame, because the tint was resolved before the animation was read.
+    /// An animation therefore chooses *which drawing* through the same
+    /// conditions a customisation does, and moves it separately
+    /// (`docs/adr/ADR-0033-animations-set-pose-values.md`). Tints are resolved
+    /// from the customisation only: a hair layer tinted from `hairColor` keeps
+    /// that colour through every frame, and no animation can repaint it.
     ///
     /// It is deterministic and total: an unknown animation id resolves to the
     /// rest pose rather than an error, which is what lets the editor preview a
@@ -486,34 +531,61 @@ impl CharacterDefinition {
         time_ms: u32,
     ) -> ResolvedCharacter {
         let resolved = self.resolve_values(values);
-        let playing = animation.and_then(|id| self.animation(id));
-        let offsets = self.offsets_at(playing, time_ms);
+        let requested = animation.and_then(|id| self.animation(id));
+        // A mirror borrows everything from its source and changes only the
+        // direction it is drawn in. A source that is missing — or is itself a
+        // mirror — leaves nothing to play, and validation reports it.
+        let playing = requested.and_then(|animation| self.source_of(animation));
+        let placements = self.placements(playing, time_ms);
+        let pose = playing
+            .map(|animation| animation.pose_at(time_ms))
+            .unwrap_or_default();
+        // What the `when` conditions are actually tested against: the
+        // customisation with the pose laid over it. One namespace, so a variant
+        // reads "plate armour, seen from the side" as one condition and does
+        // not have to know which half of it the animation contributed.
+        let state = if pose.is_empty() {
+            Cow::Borrowed(&resolved)
+        } else {
+            let mut merged = resolved.clone();
+            merged.extend(pose.clone());
+            Cow::Owned(merged)
+        };
 
-        let layers = self
+        let mut layers: Vec<(i32, ResolvedLayer)> = self
             .layers
             .iter()
             .filter_map(|layer| {
-                let variant = layer.variant_for(&resolved)?;
-                let offset = offsets
+                let variant = layer.variant_for(&state)?;
+                let placement = placements
                     .get(layer.id.as_str())
                     .copied()
-                    .unwrap_or_default()
-                    .offset;
-                Some(ResolvedLayer {
-                    layer: layer.id.clone(),
-                    variant: variant.id.clone(),
-                    rect: variant.rect.moved(offset),
-                    offset,
-                    asset: variant.sprite.asset.clone(),
-                    tint: variant
-                        .sprite
-                        .tint
-                        .as_ref()
-                        .map(|tint| tint.resolve(&resolved))
-                        .unwrap_or_default(),
-                })
+                    .unwrap_or_default();
+                Some((
+                    variant.order,
+                    ResolvedLayer {
+                        layer: layer.id.clone(),
+                        variant: variant.id.clone(),
+                        // The box the host blits: the authored one, measured
+                        // from wherever this node's frame ended up.
+                        rect: variant.rect.moved(placement.origin),
+                        origin: placement.origin,
+                        offset: placement.offset,
+                        asset: variant.sprite.asset.clone(),
+                        tint: variant
+                            .sprite
+                            .tint
+                            .as_ref()
+                            .map(|tint| tint.resolve(&resolved))
+                            .unwrap_or_default(),
+                    },
+                ))
             })
             .collect();
+        // Stable, so `order` moves a variant out of the author order and
+        // everything sharing an order keeps the order the file gives it.
+        layers.sort_by_key(|(order, _)| *order);
+        let layers = layers.into_iter().map(|(_, layer)| layer).collect();
 
         ResolvedCharacter {
             character: self.id.clone(),
@@ -521,69 +593,107 @@ impl CharacterDefinition {
             resolution: self.resolution,
             values: resolved,
             layers,
-            pose: playing.map(|animation| ResolvedPose {
+            mirrored: requested.is_some_and(Animation::is_mirror),
+            pose: requested.map(|animation| ResolvedPose {
                 animation: animation.id.clone(),
-                frame: animation.frame_at(time_ms),
+                // The *source's* clock: a mirror has no timing of its own.
+                frame: playing.map_or(0, |source| source.frame_at(time_ms)),
                 time_ms,
+                values: pose,
             }),
         }
     }
 
-    /// Every node's **global** transform at this moment.
+    /// The animation whose tracks actually play when this one is asked for.
     ///
-    /// The composition of §3: a node's global transform is its parent's global
-    /// transform with its own local one applied on top, so a local correction
-    /// adds to what was inherited rather than replacing it. Composing
-    /// translations is adding them, so this is the sum of the local transforms
-    /// along the chain from the node up to its root.
+    /// Itself, unless it is a mirror — in which case its source, and only if
+    /// that source is not a mirror too.
+    #[must_use]
+    pub fn source_of<'a>(&'a self, animation: &'a Animation) -> Option<&'a Animation> {
+        match animation.mirror_of.as_deref() {
+            None => Some(animation),
+            Some(id) => self.animation(id).filter(|source| !source.is_mirror()),
+        }
+    }
+
+    /// Where every node's local frame sits on the canvas, and how far the
+    /// animation moved it.
     ///
-    /// Only nodes the animation actually moved are walked, and only nodes that
-    /// end up moved are returned — the common case is two tracks and thirty
-    /// layers that follow, and thirty identities are worth neither the walk nor
-    /// the map entry.
+    /// The composition of §3, now carrying position as well as movement: a
+    /// node's frame is its parent's frame, plus the attachment point it hangs
+    /// off, plus its own local transform. Translations compose by adding, so
+    /// this is a walk from the node up to its root and back down
+    /// (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`).
     ///
-    /// A parent chain that loops stops at the repeat rather than recursing:
-    /// a cycle is a content error and validation reports it
+    /// The second component is the animation's contribution alone — what the
+    /// hierarchy *moved*, with the static placement taken out — because that is
+    /// the number an editor shows beside the one an author typed.
+    ///
+    /// A parent chain that loops stops at the repeat rather than recursing: a
+    /// cycle is a content error and validation reports it
     /// (`character.circularHierarchy`), but the resolver still owes a picture.
     #[must_use]
-    pub fn offsets_at(
+    pub fn placements(
         &self,
         animation: Option<&Animation>,
         time_ms: u32,
-    ) -> BTreeMap<&str, Transform> {
+    ) -> BTreeMap<&str, Placement> {
         let locals = animation
             .map(|animation| animation.local_transforms(time_ms))
             .unwrap_or_default();
-        if locals.is_empty() {
-            return BTreeMap::new();
-        }
-
         self.layers
             .iter()
-            .filter_map(|layer| {
-                let global = self.compose_up(layer, &locals);
-                (!global.is_identity()).then_some((layer.id.as_str(), global))
-            })
+            .map(|layer| (layer.id.as_str(), self.place(layer, &locals)))
             .collect()
     }
 
-    /// This node's local transform composed with every ancestor's.
-    fn compose_up(&self, layer: &CharacterLayer, locals: &BTreeMap<&str, Transform>) -> Transform {
-        let mut global = Transform::identity();
+    /// Where one node's frame sits, walking its ancestors from the root down.
+    fn place(&self, layer: &CharacterLayer, locals: &BTreeMap<&str, Transform>) -> Placement {
+        let mut chain: Vec<&CharacterLayer> = Vec::new();
         let mut seen: BTreeSet<&str> = BTreeSet::new();
         let mut node = Some(layer);
-
         while let Some(current) = node {
             if !seen.insert(current.id.as_str()) {
                 break;
             }
-            if let Some(local) = locals.get(current.id.as_str()) {
-                global = global.compose(*local);
-            }
+            chain.push(current);
+            // A `parent` naming nothing makes this node a root, which is what
+            // the editor shows too; validation is what names the dangling id.
             node = current.parent.as_deref().and_then(|id| self.layer(id));
         }
-        global
+
+        let mut placement = Placement::default();
+        let mut parent: Option<&CharacterLayer> = None;
+        for current in chain.iter().rev() {
+            // Into the joint this node hangs off, before anything it does
+            // itself: a child is placed *from* its anchor.
+            if let Some(anchor) = parent.and_then(|parent| {
+                current
+                    .parent_anchor
+                    .as_deref()
+                    .and_then(|id| parent.anchor(id))
+            }) {
+                placement.origin = placement.origin.compose(anchor.at);
+            }
+            if let Some(local) = locals.get(current.id.as_str()) {
+                placement.origin = placement.origin.compose(local.offset);
+                placement.offset = placement.offset.compose(local.offset);
+            }
+            parent = Some(current);
+        }
+        placement
     }
+}
+
+/// Where a node's local coordinate frame ended up.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Placement {
+    /// The frame's position on the canvas, animation included. A layer's box
+    /// and its anchors are both measured from here.
+    pub origin: PixelOffset,
+    /// How much of that came from the animation, inherited transforms
+    /// included — the static placement taken out.
+    pub offset: PixelOffset,
 }
 
 /// One layer of a resolved character, ready to draw.
@@ -594,8 +704,17 @@ pub struct ResolvedLayer {
     pub layer: String,
     /// Id of the variant that applied.
     pub variant: String,
-    /// Where to draw it on the character's canvas, **animation included**.
+    /// Where to draw it on the character's canvas, **placement and animation
+    /// included** — an absolute box, whatever the file measured it from.
     pub rect: PixelRect,
+    /// Where this node's local frame ended up on the canvas.
+    ///
+    /// What the authored box and the layer's anchors were measured from
+    /// (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`). A renderer
+    /// ignores it; an editor needs it to turn a click back into the number an
+    /// author typed.
+    #[serde(default)]
+    pub origin: PixelOffset,
     /// How far the animation moved it from its rest pose, inherited transforms
     /// included. Already applied to [`Self::rect`]; a renderer ignores it, and
     /// an editor uses it to say what the hierarchy did.
@@ -621,6 +740,10 @@ pub struct ResolvedPose {
     pub frame: u32,
     /// The time it was asked for, in milliseconds since the animation started.
     pub time_ms: u32,
+    /// The pose values in force at that moment, which is what chose the
+    /// variants. Empty when the animation sets none.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub values: BTreeMap<String, Value>,
 }
 
 /// A character, resolved: an ordered list of sprites to draw.
@@ -641,6 +764,14 @@ pub struct ResolvedCharacter {
     pub values: BTreeMap<String, Value>,
     /// What to draw, back to front.
     pub layers: Vec<ResolvedLayer>,
+    /// Whether to draw the whole canvas flipped left-to-right.
+    ///
+    /// A statement about the *output*, not about any layer: a character walking
+    /// right is one walking left seen the other way round, and mirroring the
+    /// canvas is the only way to get it — flipping the boxes without flipping
+    /// the pixels inside them is a character taken apart and put back wrong.
+    #[serde(default)]
+    pub mirrored: bool,
     /// The animation and moment this pose came from. Absent is the rest pose.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pose: Option<ResolvedPose>,
@@ -891,11 +1022,11 @@ mod tests {
               "variants": [ { "id": "d", "rect": [20, 40, 24, 76],
                               "sprite": { "asset": "a/body.png" } } ] },
             { "id": "head", "parent": "body", "parentAnchor": "neck",
-              "anchors": [ { "id": "hairline", "at": [32, 14] } ],
-              "variants": [ { "id": "d", "rect": [24, 12, 16, 28],
+              "anchors": [ { "id": "hairline", "at": [0, -26] } ],
+              "variants": [ { "id": "d", "rect": [-8, -28, 16, 28],
                               "sprite": { "asset": "a/head.png" } } ] },
             { "id": "hair", "parent": "head", "parentAnchor": "hairline",
-              "variants": [ { "id": "d", "rect": [23, 8, 18, 20],
+              "variants": [ { "id": "d", "rect": [-9, -4, 18, 20],
                               "sprite": { "asset": "a/hair.png" } } ] },
             { "id": "leftArm", "parent": "body",
               "variants": [ { "id": "d", "rect": [14, 44, 8, 34],
@@ -962,6 +1093,17 @@ mod tests {
                 .expect("neck")
                 .at,
             PixelOffset::new(32, 40)
+        );
+        // The body is a root, so its anchor reads as a canvas position; the
+        // head's is measured from the head, and travels with it.
+        assert_eq!(
+            knight
+                .layer("head")
+                .expect("head")
+                .anchor("hairline")
+                .expect("hairline")
+                .at,
+            PixelOffset::new(0, -26)
         );
         assert!(knight.layer("body").expect("body").parent.is_none());
         assert!(knight.animation("idle").is_some());
@@ -1149,6 +1291,318 @@ mod tests {
         knight.layer_mut("body").parent = Some("body".to_owned());
         let posed = knight.resolve_at(&serde_json::json!({}), Some("idle"), 360);
         assert_eq!(drawn(&posed, "body").offset, PixelOffset::new(0, 2));
+    }
+
+    // ------------------------------------------------- placement, draw order
+
+    /// §2 of ADR-0034: a child's box is measured from the joint it hangs off,
+    /// so the numbers in the file are a distance from a neck rather than a
+    /// position on a canvas.
+    #[test]
+    fn a_child_is_placed_from_the_anchor_it_hangs_off() {
+        let knight = knight();
+        let rest = knight.resolve(&serde_json::json!({}));
+
+        // neck at (32, 40); the head's box is (-8, -28) from there.
+        assert_eq!(drawn(&rest, "head").rect, PixelRect::new(24, 12, 16, 28));
+        assert_eq!(drawn(&rest, "head").origin, PixelOffset::new(32, 40));
+        // The hairline is (0, -26) from the head's own origin, and the hair is
+        // (-9, -4) from that: two joints deep, and still whole pixels.
+        assert_eq!(drawn(&rest, "hair").origin, PixelOffset::new(32, 14));
+        assert_eq!(drawn(&rest, "hair").rect, PixelRect::new(23, 10, 18, 20));
+        // A root hangs off nothing, so its frame is the canvas.
+        assert_eq!(drawn(&rest, "body").origin, PixelOffset::default());
+        assert_eq!(drawn(&rest, "body").rect, PixelRect::new(20, 40, 24, 76));
+    }
+
+    /// The point of measuring from the joint: moving the parent moves the
+    /// child, with no animation involved at all.
+    #[test]
+    fn moving_an_anchor_moves_everything_hanging_off_it() {
+        let mut knight = knight();
+        let before = knight.resolve(&serde_json::json!({}));
+        knight.layer_mut("body").anchors[0].at = PixelOffset::new(30, 44);
+
+        let after = knight.resolve(&serde_json::json!({}));
+        for layer in ["head", "hair"] {
+            assert_eq!(
+                drawn(&after, layer).rect.x(),
+                drawn(&before, layer).rect.x() - 2,
+                "`{layer}` did not follow the neck"
+            );
+            assert_eq!(
+                drawn(&after, layer).rect.y(),
+                drawn(&before, layer).rect.y() + 4,
+            );
+        }
+        // The body itself, and anything hanging off its origin rather than off
+        // the neck, is where it was.
+        assert_eq!(drawn(&after, "body").rect, drawn(&before, "body").rect);
+        assert_eq!(drawn(&after, "armor").rect, drawn(&before, "armor").rect);
+    }
+
+    /// A child naming no anchor measures from its parent's own origin, which
+    /// is what the arms and the armour of the fixture do.
+    #[test]
+    fn a_child_with_no_anchor_measures_from_its_parents_origin() {
+        let rest = knight().resolve(&serde_json::json!({}));
+        assert_eq!(drawn(&rest, "armor").origin, PixelOffset::default());
+        assert_eq!(drawn(&rest, "armor").rect, PixelRect::new(19, 44, 26, 24));
+    }
+
+    /// An anchor a parent does not declare places the child at the parent's
+    /// origin rather than nowhere: validation reports it
+    /// (`character.unknownAnchor`), and the picture still arrives.
+    #[test]
+    fn an_unknown_anchor_falls_back_to_the_parents_origin() {
+        let mut knight = knight();
+        knight.layer_mut("head").parent_anchor = Some("elbow".to_owned());
+        let rest = knight.resolve(&serde_json::json!({}));
+        assert_eq!(drawn(&rest, "head").origin, PixelOffset::default());
+    }
+
+    /// The animation still composes on top of the placement, and it is
+    /// reported apart from it — the offset is what *moved*, not where it is.
+    #[test]
+    fn an_animation_moves_a_placed_child_without_disturbing_where_it_hangs() {
+        let knight = knight();
+        let rest = knight.resolve(&serde_json::json!({}));
+        let posed = knight.resolve_at(&serde_json::json!({}), Some("idle"), 120);
+
+        assert_eq!(drawn(&posed, "hair").offset, PixelOffset::new(0, -2));
+        assert_eq!(drawn(&posed, "hair").origin, PixelOffset::new(32, 12));
+        assert_eq!(
+            drawn(&posed, "hair").rect.y(),
+            drawn(&rest, "hair").rect.y() - 2
+        );
+    }
+
+    /// §3 of ADR-0034: a variant may step out of the author order, and
+    /// everything sharing an order keeps the order the file gives it.
+    #[test]
+    fn a_variant_may_draw_out_of_the_author_order() {
+        let mut knight = knight();
+        let order = |resolved: &ResolvedCharacter| {
+            resolved
+                .layers
+                .iter()
+                .map(|layer| layer.layer.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            order(&knight.resolve(&serde_json::json!({}))),
+            ["body", "head", "hair", "leftArm", "rightArm", "armor"]
+        );
+
+        // The armour steps in front of everything; the left arm steps behind.
+        knight.layer_mut("armor").variants[0].order = 1;
+        knight.layer_mut("leftArm").variants[0].order = -1;
+        assert_eq!(
+            order(&knight.resolve(&serde_json::json!({}))),
+            ["leftArm", "body", "head", "hair", "rightArm", "armor"]
+        );
+    }
+
+    /// And because the order is on a *variant*, a condition already chooses
+    /// it: the same `when` that picks a drawing picks where it sits.
+    #[test]
+    fn a_pose_can_bring_a_layer_to_the_front() {
+        let mut knight = knight();
+        let side = LayerVariant {
+            id: "side".to_owned(),
+            when: [("view".to_owned(), serde_json::json!("side"))]
+                .into_iter()
+                .collect(),
+            rect: PixelRect::new(14, 44, 8, 34),
+            order: 1,
+            sprite: Sprite {
+                asset: "a/arm_side.png".to_owned(),
+                tint: None,
+            },
+        };
+        knight.layer_mut("leftArm").variants.insert(0, side);
+        knight.animations[0]
+            .pose
+            .insert("view".to_owned(), serde_json::json!("side"));
+
+        let rest = knight.resolve(&serde_json::json!({}));
+        assert_eq!(rest.layers.last().expect("a layer").layer, "armor");
+
+        let posed = knight.resolve_at(&serde_json::json!({}), Some("idle"), 0);
+        assert_eq!(posed.layers.last().expect("a layer").layer, "leftArm");
+    }
+
+    // ------------------------------------------- per-frame sprites, mirroring
+
+    /// A walker: a body and a leg layer each drawn differently from the side,
+    /// a four-frame cycle that says so in five lines of pose, and the same
+    /// cycle declared again as its mirror image.
+    const WALKER: &str = r#"{
+        "id": "walker", "schemaVersion": 2, "resolution": { "width": 32, "height": 64 },
+        "parameters": [
+            { "id": "build", "labelKey": "k", "control": "select", "default": "thin",
+              "options": [ { "value": "thin", "labelKey": "k" },
+                           { "value": "heavy", "labelKey": "k" } ] }
+        ],
+        "layers": [
+            { "id": "body", "variants": [
+                { "id": "sideHeavy", "when": { "view": "side", "build": "heavy" },
+                  "rect": [10, 4, 12, 34], "sprite": { "asset": "a/body_side_heavy.png" } },
+                { "id": "side", "when": { "view": "side" }, "rect": [10, 4, 12, 34],
+                  "sprite": { "asset": "a/body_side.png" } },
+                { "id": "front", "rect": [10, 4, 12, 34],
+                  "sprite": { "asset": "a/body.png" } } ] },
+            { "id": "legs", "parent": "body", "variants": [
+                { "id": "sideContact", "when": { "view": "side", "step": "contact" },
+                  "rect": [10, 38, 12, 24], "sprite": { "asset": "a/legs_contact.png" } },
+                { "id": "sidePass", "when": { "view": "side", "step": "pass" },
+                  "rect": [10, 38, 12, 24], "sprite": { "asset": "a/legs_pass.png" } },
+                { "id": "stand", "rect": [10, 38, 12, 24],
+                  "sprite": { "asset": "a/legs_stand.png" } } ] }
+        ],
+        "animations": [
+            { "id": "walking_left", "name": "Walking left", "frames": 4,
+              "frameDurationMs": 120, "looping": true,
+              "pose": { "view": "side" },
+              "poses": [
+                { "frame": 0, "step": "contact" },
+                { "frame": 1, "step": "pass" },
+                { "frame": 2, "step": "contact" },
+                { "frame": 3, "step": "pass" } ],
+              "tracks": [
+                { "node": "body", "keyframes": [
+                    { "frame": 0, "offset": [0, 0] },
+                    { "frame": 1, "offset": [0, -1] },
+                    { "frame": 2, "offset": [0, 0] },
+                    { "frame": 3, "offset": [0, -1] } ] } ] },
+            { "id": "walking_right", "name": "Walking right",
+              "mirrorOf": "walking_left" }
+        ]
+    }"#;
+
+    fn walker() -> CharacterDefinition {
+        serde_json::from_str(WALKER).expect("parse")
+    }
+
+    /// §12: the animation redraws the character, frame by frame, through the
+    /// conditions the customisation already uses.
+    #[test]
+    fn a_pose_chooses_the_sprite_each_layer_draws() {
+        let walker = walker();
+
+        // At rest no pose is set, so the unconditional variants win.
+        let rest = walker.resolve(&serde_json::json!({}));
+        assert_eq!(drawn(&rest, "body").variant, "front");
+        assert_eq!(drawn(&rest, "legs").asset, "a/legs_stand.png");
+
+        let at = |time| walker.resolve_at(&serde_json::json!({}), Some("walking_left"), time);
+        // The body is drawn side-on for the whole animation: one line of
+        // `when`, four frames.
+        for time in [0, 120, 240, 360] {
+            assert_eq!(drawn(&at(time), "body").asset, "a/body_side.png");
+        }
+        // The legs change with the step.
+        assert_eq!(drawn(&at(0), "legs").asset, "a/legs_contact.png");
+        assert_eq!(drawn(&at(120), "legs").asset, "a/legs_pass.png");
+        assert_eq!(drawn(&at(240), "legs").variant, "sideContact");
+    }
+
+    /// The point of poses over sprite ids: a layer that already varies with a
+    /// parameter keeps varying with it while the animation plays, and the
+    /// animation said nothing about that parameter.
+    #[test]
+    fn a_pose_combines_with_the_customisation_rather_than_replacing_it() {
+        let walker = walker();
+        let heavy = serde_json::json!({ "build": "heavy" });
+
+        assert_eq!(
+            drawn(&walker.resolve(&heavy), "body").asset,
+            "a/body.png",
+            "no animation: the front drawing, which this character has only one of"
+        );
+        let posed = walker.resolve_at(&heavy, Some("walking_left"), 120);
+        assert_eq!(drawn(&posed, "body").asset, "a/body_side_heavy.png");
+        // And the light build takes the other side-on drawing at the same frame.
+        let thin = walker.resolve_at(&serde_json::json!({}), Some("walking_left"), 120);
+        assert_eq!(drawn(&thin, "body").asset, "a/body_side.png");
+    }
+
+    /// A pose value is not a customisation value: it chose the variant, and it
+    /// is reported as part of the pose, but it never joins `values`.
+    #[test]
+    fn a_pose_is_reported_without_joining_the_customisation() {
+        let posed = walker().resolve_at(&serde_json::json!({}), Some("walking_left"), 120);
+        let pose = posed.pose.clone().expect("a pose");
+
+        assert_eq!(pose.values["view"], serde_json::json!("side"));
+        assert_eq!(pose.values["step"], serde_json::json!("pass"));
+        assert!(!posed.values.contains_key("view"));
+        assert!(!posed.values.contains_key("step"));
+    }
+
+    /// A pose value nothing tests changes nothing: it is a condition waiting
+    /// for a reader, and validation is what points that out.
+    #[test]
+    fn a_pose_nobody_reads_leaves_the_character_as_it_was() {
+        let mut walker = walker();
+        walker.animations[0].pose.clear();
+        walker.animations[0]
+            .pose
+            .insert("nowhere".to_owned(), serde_json::json!(true));
+
+        let posed = walker.resolve_at(&serde_json::json!({}), Some("walking_left"), 0);
+        assert_eq!(drawn(&posed, "body").variant, "front");
+        assert_eq!(drawn(&posed, "legs").variant, "stand");
+    }
+
+    /// A mirror is its source, drawn the other way round: same sprites, same
+    /// pose, same offsets, same clock — one flag different.
+    #[test]
+    fn a_mirror_plays_its_source_and_asks_to_be_flipped() {
+        let walker = walker();
+        let left = walker.resolve_at(&serde_json::json!({}), Some("walking_left"), 120);
+        let right = walker.resolve_at(&serde_json::json!({}), Some("walking_right"), 120);
+
+        assert!(!left.mirrored);
+        assert!(right.mirrored);
+        // Everything else is the source's, geometry included: the flip is a
+        // statement about the canvas, not a rewriting of the boxes.
+        assert_eq!(left.layers, right.layers);
+
+        // The pose names what was *asked for*, on the source's clock.
+        let pose = right.pose.expect("a pose");
+        assert_eq!(pose.animation, "walking_right");
+        assert_eq!(pose.frame, 1);
+        assert_eq!(pose.time_ms, 120);
+        assert_eq!(pose.values["step"], serde_json::json!("pass"));
+    }
+
+    #[test]
+    fn a_mirror_loops_on_its_sources_timing() {
+        let walker = walker();
+        let at = |time| walker.resolve_at(&serde_json::json!({}), Some("walking_right"), time);
+        // The source is four frames of 120ms; a whole cycle later it repeats.
+        assert_eq!(at(120).layers, at(120 + 480 * 4).layers);
+        assert_eq!(at(360).pose.expect("pose").frame, 3);
+    }
+
+    /// A mirror whose source is missing still draws — flipped, at rest. The
+    /// file does not load (`character.unknownMirrorSource`), but resolving is
+    /// total and the editor previews whatever is currently written.
+    #[test]
+    fn a_mirror_with_no_source_resolves_to_a_flipped_rest_pose() {
+        let mut walker = walker();
+        walker.animations[1].mirror_of = Some("nowhere".to_owned());
+
+        let posed = walker.resolve_at(&serde_json::json!({}), Some("walking_right"), 120);
+        assert!(posed.mirrored);
+        assert_eq!(posed.layers, walker.resolve(&serde_json::json!({})).layers);
+        assert_eq!(posed.pose.expect("pose").frame, 0);
+    }
+
+    #[test]
+    fn a_rest_pose_is_never_mirrored() {
+        assert!(!walker().resolve(&serde_json::json!({})).mirrored);
     }
 
     /// A definition with no hierarchy and no animations resolves exactly as it

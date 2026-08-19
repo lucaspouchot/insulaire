@@ -28,6 +28,8 @@ import {
   DEFAULT_FRAME_DURATION_MS,
   Keyframe,
   LayerVariant,
+  PoseKey,
+  SettingValue,
   MAX_ANIMATION_FRAMES,
   MAX_SPRITE_RESOLUTION,
   PixelOffset,
@@ -56,6 +58,7 @@ export type {
   LayerVariant,
   PixelOffset,
   PixelRect,
+  PoseKey,
   ResolvedCharacter,
   ResolvedLayer,
   SettingValue,
@@ -72,6 +75,23 @@ export const CATEGORIES: readonly { readonly id: CharacterCategory; readonly lab
     { id: 'monster', labelKey: 'ui.editor.character.categories.monster' },
     { id: 'other', labelKey: 'ui.editor.character.categories.other' },
   ];
+
+/**
+ * Which module of the editor's left column is open.
+ *
+ * Grouped by the question each answers — which character, what may be chosen
+ * about it, what it is drawn from, how it moves — because seven panels stacked
+ * in one scroller meant scrolling past four to reach the fifth.
+ */
+export type EditorTab = 'character' | 'parameters' | 'layers' | 'animation';
+
+/** The tabs, in the order they are offered, with their labels. */
+export const EDITOR_TABS: readonly { readonly id: EditorTab; readonly labelKey: string }[] = [
+  { id: 'character', labelKey: 'ui.editor.character.tabCharacter' },
+  { id: 'parameters', labelKey: 'ui.editor.character.tabParameters' },
+  { id: 'layers', labelKey: 'ui.editor.character.tabLayers' },
+  { id: 'animation', labelKey: 'ui.editor.character.tabAnimation' },
+];
 
 /**
  * The control kinds a character parameter may use.
@@ -218,6 +238,41 @@ export function heldOffset(track: AnimationTrack | undefined, frame: number): Pi
   const sorted = [...keyframes].sort((left, right) => left.frame - right.frame);
   const previous = sorted.filter((keyframe) => keyframe.frame <= frame).at(-1);
   return (previous ?? sorted[0])?.offset ?? [0, 0];
+}
+
+/** The pose an animation writes at exactly this frame, if it writes one. */
+export function poseAt(animation: Animation | null, frame: number): PoseKey | undefined {
+  return (animation?.poses ?? []).find((key) => key.frame === frame);
+}
+
+/**
+ * The pose in force at this frame, whichever frame wrote it.
+ *
+ * The engine's rule, mirrored for the timeline to draw: the last entry at or
+ * before this frame, and failing that the first one written at all — a pose
+ * holds in both directions (`crates/world/src/animation.rs`).
+ */
+export function heldPose(animation: Animation | null, frame: number): PoseKey | undefined {
+  const poses = [...(animation?.poses ?? [])].sort((left, right) => left.frame - right.frame);
+  return poses.filter((key) => key.frame <= frame).at(-1) ?? poses[0];
+}
+
+/**
+ * What an author typed, as the value a `when` condition will be compared with.
+ *
+ * `true`, `false` and numbers are read as themselves, because that is what a
+ * toggle and a slider put in the customisation — a pose that wrote the string
+ * `"true"` would never match a variant waiting for the boolean.
+ */
+export function poseValue(raw: string): SettingValue {
+  const text = raw.trim();
+  if (text === 'true' || text === 'false') {
+    return text === 'true';
+  }
+  if (text.length > 0 && Number.isFinite(Number(text))) {
+    return Number(text);
+  }
+  return raw;
 }
 
 /**

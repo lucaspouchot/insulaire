@@ -15,6 +15,16 @@
  * a **whole-number** zoom, and integer destination coordinates. Half a pixel of
  * drift is a seam between two layers that were drawn to touch
  * (`docs/adr/ADR-0029-characters-are-composed-sprites.md`).
+ *
+ * # Mirroring
+ *
+ * The one decision this file makes is *where* to draw, and a mirrored
+ * character is the one case where that is not simply the box it was given: the
+ * whole canvas is flipped about its own vertical centre, layers and pixels
+ * together. That is what lets one authored walk cycle serve both directions
+ * (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`). It is
+ * still not an appearance decision — the resolver said `mirrored`, and this
+ * only obeys it.
  */
 
 import { ResolvedCharacter, ResolvedLayer, SpriteResolution } from '../content/content-types';
@@ -118,8 +128,26 @@ export function drawCharacter(
   const { zoom, originX, originY } = placement(character.resolution, box);
   context.imageSmoothingEnabled = false;
 
+  // Flipped about the canvas's own centre line, so a mirrored character stands
+  // exactly where an unmirrored one would. Reflecting about the *box* instead
+  // would slide the figure sideways whenever the box is wider than the canvas,
+  // which is most of the time.
+  const flipped = character.mirrored === true;
+  if (flipped) {
+    context.save();
+    context.translate(originX * 2 + character.resolution.width * zoom, 0);
+    context.scale(-1, 1);
+    // `scale(-1, 1)` re-enables smoothing on some engines; it is a per-context
+    // flag and has to be set after the transform, not before.
+    context.imageSmoothingEnabled = false;
+  }
+
   for (const layer of character.layers) {
     drawLayer(context, layer, zoom, originX, originY, sprites);
+  }
+
+  if (flipped) {
+    context.restore();
   }
 }
 

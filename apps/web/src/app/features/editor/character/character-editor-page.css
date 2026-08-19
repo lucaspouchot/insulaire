@@ -71,6 +71,55 @@
   overflow: auto;
 }
 
+/* The left column's modules, one at a time. Sticky, because the point of the
+   bar is moving between them without first scrolling back to find it. */
+.tabs {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  background: var(--bg);
+}
+
+.tabs button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  justify-content: center;
+  padding: 6px 4px;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.tabs button.on {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+}
+
+.tabs .count {
+  padding: 0 4px;
+  font-family: var(--mono);
+  font-size: 9px;
+  line-height: 14px;
+  border-radius: 7px;
+  background: var(--bg-raised);
+}
+
+/* The layer list is bounded so the panels under it — the skeleton and the
+   variants of whatever is selected — stay on screen with it. */
+.layer-list {
+  max-height: 30vh;
+  overflow-y: auto;
+}
+
 .panel {
   margin-bottom: 12px;
   padding: 10px 12px;
@@ -460,4 +509,15 @@ button.small {
   margin-right: 6px;
   font-family: var(--mono);
   color: var(--text-dim);
+}
+
+/* A condition an animation sets rather than the player: the same control, told
+   apart, because one is a choice and the other is a pose
+   (`docs/adr/ADR-0033-animations-set-pose-values.md`). */
+.line.when label.pose span {
+  color: var(--accent);
+}
+
+.line.when label.pose input {
+  border-color: var(--accent-dim);
 }

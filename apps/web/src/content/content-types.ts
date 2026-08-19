@@ -289,14 +289,7 @@ export const SETTINGS_SCHEMA_VERSION = 1;
  * (`docs/adr/ADR-0025-settings.md`).
  */
 export type ControlKind =
-  | 'toggle'
-  | 'checkbox'
-  | 'select'
-  | 'multiSelect'
-  | 'slider'
-  | 'number'
-  | 'text'
-  | 'color';
+  'toggle' | 'checkbox' | 'select' | 'multiSelect' | 'slider' | 'number' | 'text' | 'color';
 
 /** When a setting may be changed. */
 export type SettingScope = 'session' | 'newGame';
@@ -418,20 +411,38 @@ export interface LayerVariant {
    * *contains*, so one variant can answer "is a helmet worn".
    */
   when?: Record<string, SettingValue>;
-  /** Where it is drawn on the character's canvas. */
+  /**
+   * Where it is drawn, **relative to the point its layer hangs off**.
+   *
+   * A child measures from its parent's `parentAnchor`, so a sprite drawn to sit
+   * on that joint is `[0, 0, width, height]`; a root measures from the canvas
+   * origin (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`).
+   */
   rect?: PixelRect;
+  /**
+   * Where this variant is drawn in the stack, overriding the author order.
+   *
+   * Everything sorts by `order` first and by declaration second, so a variant
+   * with `1` draws over every `0` and the `0`s keep the file's order. It is on
+   * the variant because that is where a condition already lives: a cape that
+   * passes in front of the body when the character is seen from the side is
+   * the same `when` that chose the side-on drawing, with one more field.
+   */
+  order?: number;
   sprite: Sprite;
 }
 
 /**
  * A named point on a layer, for another layer to hang off.
  *
- * `at` is a position on the character's canvas — the neck, the hair line, the
- * grip of a hand. It moves nothing on its own: it exists so a parent/child link
- * reads as "the head's hair anchor" instead of a pair of coordinates, so the
- * editor can draw the skeleton through the joints, and because it is the pivot
- * a rotation will turn about the day there is one
- * (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+ * `at` is measured from its **own layer's** origin — the neck, the hair line,
+ * the grip of a hand. A root's origin is the canvas origin, so a root's anchors
+ * read as canvas positions; every other layer's anchors travel with it.
+ *
+ * It is what a child is **placed from**
+ * (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`). It is also what
+ * lets the editor draw the skeleton through the joints, and it is the pivot a
+ * rotation will turn about the day there is one.
  */
 export interface AttachmentPoint {
   id: string;
@@ -441,15 +452,19 @@ export interface AttachmentPoint {
 /**
  * One piece a character is drawn from. Layers draw back to front.
  *
- * A layer is also a **node**: `parent` makes it hang off another one, and an
- * animation's offsets compose down that tree. Parentage and draw order are
- * independent — a cape is drawn behind the body and still moves with it.
+ * A layer is also a **node**: `parent` makes it hang off another one, it is
+ * *placed* from the anchor it names there, and an animation's offsets compose
+ * down the same tree. Parentage and draw order stay independent — a cape hangs
+ * off the body and is drawn behind it, until a variant says otherwise.
  */
 export interface CharacterLayer {
   id: string;
   /** Id of the layer this one hangs off. Absent makes it a root. */
   parent?: string | null;
-  /** Which of the parent's anchors it hangs off, if it names one. */
+  /**
+   * Which of the parent's anchors it hangs off, and is **placed from**.
+   * Absent measures from the parent's own origin.
+   */
   parentAnchor?: string | null;
   /** Points other layers may hang off. */
   anchors?: AttachmentPoint[];
@@ -491,6 +506,20 @@ export interface Keyframe {
   interpolation?: Interpolation;
 }
 
+/**
+ * The pose values one frame of an animation sets.
+ *
+ * The values are flattened beside the frame number, so a file reads
+ * `{ "frame": 1, "step": "pass" }`. `frame` is therefore the one key a pose
+ * may not use.
+ */
+export interface PoseKey {
+  /** Which frame of the animation these values are set at, `0`-based. */
+  frame: number;
+  /** The values, laid over the animation's own {@link Animation.pose}. */
+  [key: string]: SettingValue | undefined;
+}
+
 /** Everything one node does over the course of an animation. */
 export interface AnimationTrack {
   /** Id of the layer this track drives. */
@@ -501,22 +530,52 @@ export interface AnimationTrack {
 /**
  * A named movement a character can play.
  *
- * An animation says nothing about what is drawn — only about **offsets from
- * the rest pose**, per node, per frame. A node with no track does not sit
- * still: it follows its parent, because offsets compose down the tree. That is
- * what keeps a walk cycle from being thirty copies of a character.
+ * Two halves, and they answer different questions. {@link tracks} say what
+ * **moves**: offsets from the rest pose, per node, per frame, composing down
+ * the layer tree so a node with no track follows its parent. {@link pose} and
+ * {@link poses} say what is **drawn**: values that join the customisation for
+ * as long as the animation is playing, so a layer picks its sprite through the
+ * same `when` conditions it already uses for hair colour or armour
+ * (`docs/adr/ADR-0033-animations-set-pose-values.md`).
  */
 export interface Animation {
   /** Stable id, unique within the definition — `idle`, `walk`, `attack`. */
   id: string;
   /** Shown in the editor. Not player-facing, so not a key. */
   name?: string;
-  /** How many frames long it is, `1..=`{@link MAX_ANIMATION_FRAMES}. */
-  frames: number;
+  /**
+   * Id of the animation this one is the **mirror image** of.
+   *
+   * A character walking right walks left the same way, seen the other way
+   * round. A mirror takes its source's timing, tracks and sprites, and the
+   * whole canvas is drawn flipped; nothing else about it is read. A mirror of
+   * a mirror is refused.
+   */
+  mirrorOf?: string | null;
+  /**
+   * How many frames long it is, `1..=`{@link MAX_ANIMATION_FRAMES}.
+   *
+   * Optional because a mirror declares no timing of its own.
+   */
+  frames?: number;
   /** How long each frame lasts, in milliseconds. */
   frameDurationMs?: number;
   /** Whether it starts again when it ends. */
   looping?: boolean;
+  /**
+   * Pose values that hold for the **whole** animation.
+   *
+   * What is true of every frame of it: a walk seen from the side is
+   * `{ view: 'side' }`, and every layer with a side-on drawing says so once.
+   */
+  pose?: Record<string, SettingValue>;
+  /**
+   * Pose values set frame by frame, laid over {@link pose}.
+   *
+   * Each entry is the complete set of overrides for its frame, and it holds —
+   * before the first it is the first, after the last it is the last.
+   */
+  poses?: PoseKey[];
   /** What moves, and when. */
   tracks?: AnimationTrack[];
 }
@@ -552,8 +611,17 @@ export type CharacterValues = Record<string, SettingValue>;
 export interface ResolvedLayer {
   layer: string;
   variant: string;
-  /** Where to draw it on the canvas, **animation included**. */
+  /**
+   * Where to draw it on the canvas, **placement and animation included** — an
+   * absolute box, whatever the file measured it from.
+   */
   rect: PixelRect;
+  /**
+   * Where this node's local frame ended up: what the authored box and the
+   * layer's anchors were measured from. A renderer ignores it; an editor needs
+   * it to turn a click back into the number an author typed.
+   */
+  origin: PixelOffset;
   /**
    * How far the animation moved it from its rest pose, inherited transforms
    * included. Already applied to {@link rect}; a renderer ignores it, and an
@@ -573,6 +641,11 @@ export interface ResolvedPose {
   frame: number;
   /** The time it was asked for, in milliseconds since the animation started. */
   timeMs: number;
+  /**
+   * The pose values in force at that moment, which is what chose the variants.
+   * Absent when the animation sets none.
+   */
+  values?: Record<string, SettingValue>;
 }
 
 /**
@@ -590,6 +663,14 @@ export interface ResolvedCharacter {
   values: CharacterValues;
   /** What to draw, back to front. */
   layers: ResolvedLayer[];
+  /**
+   * Whether to draw the whole canvas flipped left-to-right.
+   *
+   * A statement about the *output*, not about any layer. Flipping the boxes
+   * without flipping the pixels inside them is a character taken apart and put
+   * back wrong, so the renderer mirrors the canvas as a whole.
+   */
+  mirrored: boolean;
   /** The animation and moment this pose came from. Absent is the rest pose. */
   pose?: ResolvedPose;
 }

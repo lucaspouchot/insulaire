@@ -1,6 +1,6 @@
 {
   "id": "human_player",
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "name": "Human Player",
   "category": "player",
   "resolution": { "width": 64, "height": 128 },
@@ -45,7 +45,8 @@
       "parent": "body",
       "parentAnchor": "shoulders",
       "variants": [
-        { "id": "worn", "when": { "cape": true }, "rect": [12, 27, 40, 95], "sprite": { "asset": "assets/characters/cape.png" } }
+        { "id": "sideWorn", "when": { "cape": true, "view": "side" }, "rect": [1, -6, 14, 76], "order": 1, "sprite": { "asset": "assets/characters/cape_side.png" } },
+        { "id": "worn", "when": { "cape": true }, "rect": [-20, -9, 40, 95], "sprite": { "asset": "assets/characters/cape.png" } }
       ]
     },
     {
@@ -53,7 +54,8 @@
       "parent": "body",
       "parentAnchor": "hairline",
       "variants": [
-        { "id": "long", "when": { "hairStyle": "long" }, "rect": [20, 17, 24, 48], "sprite": { "asset": "assets/characters/hair_back.png", "tint": { "parameter": "hairColor" } } }
+        { "id": "longSide", "when": { "hairStyle": "long", "view": "side" }, "rect": [0, 2, 12, 46], "sprite": { "asset": "assets/characters/hair_back_side.png", "tint": { "parameter": "hairColor" } } },
+        { "id": "long", "when": { "hairStyle": "long" }, "rect": [-12, 3, 24, 48], "sprite": { "asset": "assets/characters/hair_back.png", "tint": { "parameter": "hairColor" } } }
       ]
     },
     {
@@ -64,13 +66,18 @@
         { "id": "waist", "at": [32, 60] }
       ],
       "variants": [
-        { "id": "default", "rect": [21, 12, 22, 107], "sprite": { "asset": "assets/characters/body.png" } }
+        { "id": "side", "when": { "view": "side" }, "rect": [21, 12, 22, 54], "sprite": { "asset": "assets/characters/body_side.png" } },
+        { "id": "default", "rect": [21, 12, 22, 54], "sprite": { "asset": "assets/characters/body.png" } }
       ]
     },
     {
-      "id": "boots",
+      "id": "legs",
       "variants": [
-        { "id": "default", "rect": [23, 101, 18, 22], "sprite": { "asset": "assets/characters/boots.png" } }
+        { "id": "sideContact", "when": { "step": "contact", "view": "side" }, "rect": [18, 66, 28, 57], "sprite": { "asset": "assets/characters/legs_side_contact.png" } },
+        { "id": "sidePass", "when": { "step": "pass", "view": "side" }, "rect": [18, 66, 28, 57], "sprite": { "asset": "assets/characters/legs_side_pass.png" } },
+        { "id": "sideContactBack", "when": { "step": "contactBack", "view": "side" }, "rect": [18, 66, 28, 57], "sprite": { "asset": "assets/characters/legs_side_contact_back.png" } },
+        { "id": "sidePassBack", "when": { "step": "passBack", "view": "side" }, "rect": [18, 66, 28, 57], "sprite": { "asset": "assets/characters/legs_side_pass_back.png" } },
+        { "id": "stand", "rect": [18, 66, 28, 57], "sprite": { "asset": "assets/characters/legs_stand.png" } }
       ]
     },
     {
@@ -78,8 +85,10 @@
       "parent": "body",
       "parentAnchor": "shoulders",
       "variants": [
-        { "id": "plate", "when": { "armor": "plate" }, "rect": [23, 36, 18, 14], "sprite": { "asset": "assets/characters/top_plate.png" } },
-        { "id": "leather", "rect": [23, 36, 18, 14], "sprite": { "asset": "assets/characters/top_leather.png" } }
+        { "id": "plateSide", "when": { "armor": "plate", "view": "side" }, "rect": [-9, 0, 18, 14], "sprite": { "asset": "assets/characters/top_plate_side.png" } },
+        { "id": "leatherSide", "when": { "view": "side" }, "rect": [-9, 0, 18, 14], "sprite": { "asset": "assets/characters/top_leather_side.png" } },
+        { "id": "plate", "when": { "armor": "plate" }, "rect": [-9, 0, 18, 14], "sprite": { "asset": "assets/characters/top_plate.png" } },
+        { "id": "leather", "rect": [-9, 0, 18, 14], "sprite": { "asset": "assets/characters/top_leather.png" } }
       ]
     },
     {
@@ -87,7 +96,8 @@
       "parent": "body",
       "parentAnchor": "waist",
       "variants": [
-        { "id": "default", "rect": [19, 59, 26, 22], "sprite": { "asset": "assets/characters/skirt.png" } }
+        { "id": "side", "when": { "view": "side" }, "rect": [-13, -1, 26, 22], "sprite": { "asset": "assets/characters/skirt_side.png" } },
+        { "id": "default", "rect": [-13, -1, 26, 22], "sprite": { "asset": "assets/characters/skirt.png" } }
       ]
     },
     {
@@ -95,7 +105,8 @@
       "parent": "body",
       "parentAnchor": "hairline",
       "variants": [
-        { "id": "default", "rect": [23, 10, 18, 20], "sprite": { "asset": "assets/characters/hair_front.png", "tint": { "parameter": "hairColor" } } }
+        { "id": "side", "when": { "view": "side" }, "rect": [-9, -4, 18, 20], "sprite": { "asset": "assets/characters/hair_front_side.png", "tint": { "parameter": "hairColor" } } },
+        { "id": "default", "rect": [-9, -4, 18, 20], "sprite": { "asset": "assets/characters/hair_front.png", "tint": { "parameter": "hairColor" } } }
       ]
     }
   ],
@@ -124,6 +135,45 @@
           ]
         }
       ]
+    },
+    {
+      "id": "walking_left",
+      "name": "Walking left",
+      "frames": 4,
+      "frameDurationMs": 130,
+      "looping": true,
+      "pose": { "view": "side" },
+      "poses": [
+        { "frame": 0, "step": "contact" },
+        { "frame": 1, "step": "pass" },
+        { "frame": 2, "step": "contactBack" },
+        { "frame": 3, "step": "passBack" }
+      ],
+      "tracks": [
+        {
+          "node": "body",
+          "keyframes": [
+            { "frame": 0, "offset": [0, 0] },
+            { "frame": 1, "offset": [0, -1] },
+            { "frame": 2, "offset": [0, 0] },
+            { "frame": 3, "offset": [0, -1] }
+          ]
+        },
+        {
+          "node": "cape",
+          "keyframes": [
+            { "frame": 0, "offset": [0, 0] },
+            { "frame": 1, "offset": [1, 0] },
+            { "frame": 2, "offset": [0, 0] },
+            { "frame": 3, "offset": [1, 0] }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "walking_right",
+      "name": "Walking right",
+      "mirrorOf": "walking_left"
     }
   ]
 }

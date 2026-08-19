@@ -104,26 +104,45 @@ CharacterDefinition
   parameters[]   ControlDefinition — the same vocabulary as settings
   layers[]
     id
-    parent, parentAnchor    which layer it hangs off, and where
-    anchors[]               id, at[x,y] — named joints others hang off
+    parent, parentAnchor    which layer it hangs off, and the joint it
+                            is placed from
+    anchors[]               id, at[x,y] — joints, from this layer's origin
     variants[]
-      id, when{ parameterId: value }, rect[x,y,w,h], sprite{ asset, tint? }
+      id, when{ key: value }, rect[x,y,w,h] from the joint,
+      order (draw order override), sprite{ asset, tint? }
   animations[]
     id, name, frames, frameDurationMs, looping
+    mirrorOf                this animation is another one, flipped
+    pose{ key: value }      what it draws, for its whole length
+    poses[]                 frame, then the values that frame sets
     tracks[]
       node                  a layer id
       keyframes[]           frame, offset[x,y], interpolation
 ```
 
-`parent` makes the layers a **tree**, and it is *not* the draw order: layers are
-still drawn in author order, back to front, so a cape is drawn behind the body
-and still hangs off it (ADR-0031).
+`parent` makes the layers a **tree**, and the tree **places** the character: a
+child's box is measured from the joint it hangs off, so a sprite drawn to sit on
+that joint is `[0, 0, w, h]` and moving a parent moves everything under it
+(ADR-0034). A root hangs off nothing, so its box is a canvas position.
 
-An animation holds **offsets from the rest pose**, never poses. A node with no
-track is not still — it follows its parent, because offsets compose down the
-tree and a node's own keyframe *adds to* what it inherits. That is what keeps a
-character with thirty layers and ten animations from storing three hundred
-positions.
+The tree is *not* the draw order: layers are drawn in author order, back to
+front, so a cape hangs off the body and is drawn behind it — until a variant's
+`order` steps out of that order, which is how the same cape drapes over the near
+shoulder when the character is seen from the side.
+
+An animation is two statements. Its **tracks** hold offsets from the rest pose:
+a node with no track is not still — it follows its parent, because offsets
+compose down the tree and a node's own keyframe *adds to* what it inherits.
+That is what keeps a character with thirty layers and ten animations from
+storing three hundred positions.
+
+Its **pose** holds what the character is drawn *as*. Those values join the
+customisation while it plays, and layers pick them up through the `when` they
+already have — so a `when` key names a parameter or a pose key and a variant
+does not know which (ADR-0033). One line says a whole animation is the side
+view; four lines say which leg is forward. And `mirrorOf` makes a whole
+animation the reflection of another, so walking right is one line rather than a
+second cycle to keep in step.
 
 A definition describes a *family*; a set of chosen values — a **customisation**
 — describes one member of it. Neither is runtime state: a customisation is a
@@ -139,10 +158,14 @@ ordered list of whole-pixel boxes, each with an image to blit and a literal
 tint. It holds no definition, no lookup and no category — the same pipeline
 draws the player, a merchant and a dragon.
 
-The animation's offset is **already in each box**, which is why adding
-animation changed no renderer. The payload carries the offset that was applied
-and the `pose` it came from for an *editor* to read; the renderer ignores both,
-and never learns that time exists.
+The placement and the animation's offset are **already in each box**, which is
+why neither changed a renderer. The payload carries the `origin` each box was
+measured from, the offset that was applied, and the `pose` it came from —
+animation, frame and the pose values in force — for an *editor* to read; the
+renderer ignores all three,
+and never learns that time exists. The one exception is `mirrored`: reflecting
+the boxes without reflecting the pixels inside them is a character taken apart
+and put back wrong, so the renderer flips the canvas as a whole.
 
 A character's **size** is its canvas, not a scale factor: a rat is authored at
 32×32 and a dragon at 256×256, and a host zooms each by a whole number
