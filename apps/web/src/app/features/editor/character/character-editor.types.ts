@@ -182,9 +182,8 @@ export function move<T>(items: T[], index: number, delta: number): void {
 /**
  * How many frames a freshly created animation is, and how long each lasts.
  *
- * Four frames of an eighth of a second is the breathing idle of
- * `docs/implementing-character-animator.md` §10 — the animation an author is
- * most likely to be creating when they press the button.
+ * Four frames of an eighth of a second is a breathing idle — the animation an
+ * author is most likely to be creating when they press the button.
  */
 const NEW_ANIMATION_FRAMES = 4;
 

@@ -36,3 +36,7 @@ Thumbs.db
 # skill. The baseline is per-machine on purpose: it holds screenshots taken by
 # this machine's browser and fonts.
 /.smoke/
+
+# Generated: documentation and sketches produced by ia to help with design and implementation. These are not source files, but rather artifacts of the design process.
+/docs/implementing-*.md
+/docs/sketch*.png

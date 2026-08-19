@@ -503,7 +503,8 @@ impl CharacterDefinition {
     /// something drawable.
     ///
     /// This is the whole of "character rendering" outside the renderer, and the
-    /// order matters (§23 of `docs/implementing-character-animator.md`):
+    /// order matters, because an animation must never overwrite what the
+    /// customisation resolved:
     ///
     /// 1. resolve the customisation — defaults, clamps, unknown keys dropped;
     /// 2. lay the animation's pose over it, giving the state to select from;
@@ -619,9 +620,9 @@ impl CharacterDefinition {
     /// Where every node's local frame sits on the canvas, and how far the
     /// animation moved it.
     ///
-    /// The composition of §3, now carrying position as well as movement: a
-    /// node's frame is its parent's frame, plus the attachment point it hangs
-    /// off, plus its own local transform. Translations compose by adding, so
+    /// Local transforms composed into global ones, now carrying position as
+    /// well as movement: a node's frame is its parent's frame, plus the
+    /// attachment point it hangs off, plus its own local transform. Translations compose by adding, so
     /// this is a walk from the node up to its root and back down
     /// (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`).
     ///
@@ -781,8 +782,10 @@ pub struct ResolvedCharacter {
 mod tests {
     use super::*;
 
-    /// A customisable player, drawn by combining sprites: the first scenario of
-    /// `docs/implementing-character-editor.md`, as it is actually authored.
+    /// A customisable player, drawn by combining sprites: hair whose style is
+    /// chosen and whose colour is a tint, and a cape that may be absent
+    /// entirely. The smallest definition that exercises every way a
+    /// customisation can reach the picture.
     const PLAYER: &str = r##"{
         "id": "human_player",
         "schemaVersion": 1,
@@ -1012,9 +1015,9 @@ mod tests {
 
     // ----------------------------------------------------------- hierarchy
 
-    /// The skeleton of §28: a body with a head, hair on the head, two arms and
-    /// a piece of armour — and a four-frame breathing idle that only ever
-    /// mentions the body.
+    /// A hierarchy deep enough to be worth composing: a body with a head, hair
+    /// on the head, two arms and a piece of armour — and a four-frame breathing
+    /// idle that only ever mentions the body.
     const SKELETON: &str = r#"{
         "id": "knight", "schemaVersion": 2, "resolution": { "width": 64, "height": 128 },
         "layers": [
@@ -1115,8 +1118,8 @@ mod tests {
         assert_eq!(knight, reparsed);
     }
 
-    /// §25, propagation: the animation names only the body, and the whole
-    /// character moves with it.
+    /// Propagation: the animation names only the body, and the whole character
+    /// moves with it.
     #[test]
     fn a_parents_offset_reaches_every_descendant() {
         let knight = knight();
@@ -1138,8 +1141,8 @@ mod tests {
         }
     }
 
-    /// §25, local correction: a child's own keyframe *adds* to what it
-    /// inherited rather than replacing it.
+    /// Local correction: a child's own keyframe *adds* to what it inherited
+    /// rather than replacing it.
     #[test]
     fn a_local_correction_adds_to_the_inherited_transform() {
         let mut knight = knight();
@@ -1164,8 +1167,8 @@ mod tests {
         assert_eq!(drawn(&posed, "hair").offset, PixelOffset::new(1, -1));
     }
 
-    /// §25, partial tracks: everything that has no track is still drawn, in
-    /// its rest pose or its parent's.
+    /// Partial tracks: everything that has no track is still drawn, in its
+    /// rest pose or its parent's.
     #[test]
     fn a_partial_animation_still_draws_the_whole_character() {
         let knight = knight();
@@ -1214,7 +1217,7 @@ mod tests {
         assert!(unknown.pose.is_none());
     }
 
-    /// §25, loop: a full cycle later, the character is where it started.
+    /// Looping: a full cycle later, the character is where it started.
     #[test]
     fn a_looping_animation_comes_back_to_its_first_frame() {
         let knight = knight();
@@ -1223,7 +1226,7 @@ mod tests {
         assert_eq!(first.layers, later.layers);
     }
 
-    /// §25, determinism: same time, same data, same picture.
+    /// Determinism: same time, same data, same picture.
     #[test]
     fn resolution_is_deterministic() {
         let knight = knight();
@@ -1235,7 +1238,7 @@ mod tests {
         }
     }
 
-    /// §22: the animation moves the node and leaves the procedural resolution
+    /// The animation moves the node and leaves the resolved customisation
     /// alone — a tinted layer keeps its colour through every frame.
     #[test]
     fn an_animation_does_not_disturb_the_resolved_parameters() {
@@ -1295,9 +1298,9 @@ mod tests {
 
     // ------------------------------------------------- placement, draw order
 
-    /// §2 of ADR-0034: a child's box is measured from the joint it hangs off,
-    /// so the numbers in the file are a distance from a neck rather than a
-    /// position on a canvas.
+    /// A child's box is measured from the joint it hangs off, so the numbers
+    /// in the file are a distance from a neck rather than a position on a
+    /// canvas (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`).
     #[test]
     fn a_child_is_placed_from_the_anchor_it_hangs_off() {
         let knight = knight();
@@ -1377,8 +1380,9 @@ mod tests {
         );
     }
 
-    /// §3 of ADR-0034: a variant may step out of the author order, and
-    /// everything sharing an order keeps the order the file gives it.
+    /// A variant may step out of the author order, and everything sharing an
+    /// order keeps the order the file gives it
+    /// (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`).
     #[test]
     fn a_variant_may_draw_out_of_the_author_order() {
         let mut knight = knight();
@@ -1484,7 +1488,7 @@ mod tests {
         serde_json::from_str(WALKER).expect("parse")
     }
 
-    /// §12: the animation redraws the character, frame by frame, through the
+    /// The animation redraws the character, frame by frame, through the
     /// conditions the customisation already uses.
     #[test]
     fn a_pose_chooses_the_sprite_each_layer_draws() {
@@ -1605,8 +1609,9 @@ mod tests {
         assert!(!walker().resolve(&serde_json::json!({})).mirrored);
     }
 
-    /// A definition with no hierarchy and no animations resolves exactly as it
-    /// did before either existed (§27).
+    /// An animation is optional, and adding the concept changed nothing for a
+    /// definition that declares none: no hierarchy and no animations resolves
+    /// exactly as it did before either existed.
     #[test]
     fn a_definition_without_animations_is_untouched() {
         let player = player();

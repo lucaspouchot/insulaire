@@ -2826,8 +2826,8 @@ mod tests {
         assert!(!found.iter().any(|code| code.starts_with("settings.")));
     }
 
-    /// A character with a hierarchy and a working idle: the shape §28 asks for,
-    /// and the fixture every animation check bends.
+    /// A character with a hierarchy and a working idle: a definition that has
+    /// nothing to report, and the fixture every animation check bends.
     fn animated_character() -> CharacterDefinition {
         character(
             r#"{

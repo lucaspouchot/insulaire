@@ -508,7 +508,8 @@ impl Animation {
 mod tests {
     use super::*;
 
-    /// The breathing idle of `docs/implementing-character-animator.md`, §10.
+    /// The breathing idle: four frames, looping, and one track that lifts the
+    /// body two pixels and sets it back down.
     fn idle() -> Animation {
         serde_json::from_str(
             r#"{
@@ -572,7 +573,8 @@ mod tests {
         assert_eq!(animation.time_of(3), 360);
     }
 
-    /// §20: `time > duration` comes back to the beginning.
+    /// Past its length a looping animation comes back to the beginning, and
+    /// one that does not loop stays on the pose it finished on.
     #[test]
     fn a_looping_animation_wraps_and_a_finished_one_holds_its_last_frame() {
         let animation = idle();
@@ -670,7 +672,7 @@ mod tests {
         assert!(animation.local_transforms(0).is_empty());
     }
 
-    /// §25: same time, same data, same answer — every time.
+    /// Same time, same data, same answer — every time.
     #[test]
     fn evaluation_is_deterministic() {
         let animation = idle();
@@ -695,8 +697,8 @@ mod tests {
         assert!(animation.local_transforms(500).is_empty());
     }
 
-    /// §12: an animation redraws by setting pose values, not by naming a
-    /// sprite — one line per frame, and every layer reads it.
+    /// An animation redraws by setting pose values, not by naming a sprite —
+    /// one line per frame, and every layer reads it.
     #[test]
     fn a_pose_is_set_for_the_whole_animation_and_again_per_frame() {
         let walk: Animation = serde_json::from_str(

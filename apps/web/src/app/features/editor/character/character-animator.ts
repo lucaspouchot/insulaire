@@ -11,8 +11,9 @@
  * It draws nothing. The preview belongs to the page, which resolves the
  * definition through the Rust engine at the moment this component names, so an
  * author watches the *runtime's* answer rather than a mock-up of one
- * (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`, §18 of
- * `docs/implementing-character-animator.md`).
+ * (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`). A
+ * preview with an evaluator of its own would be a second answer, and the one an
+ * author trusted would be the wrong one.
  *
  * The distinction the interface has to keep visible is **local against
  * global**: the numbers an author types are what this node does *on top of*

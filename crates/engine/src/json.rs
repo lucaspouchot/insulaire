@@ -1191,8 +1191,9 @@ mod tests {
         );
     }
 
-    /// A character with a skeleton and a four-frame idle: the shape of §28 of
-    /// `docs/implementing-character-animator.md`, across the string boundary.
+    /// A character with a skeleton and a four-frame idle, carried across the
+    /// string boundary: the smallest definition that proves placement and
+    /// animation survive being serialised.
     const ANIMATED: &str = r#"{
         "id": "knight", "schemaVersion": 2, "resolution": { "width": 64, "height": 128 },
         "layers": [

@@ -1876,9 +1876,8 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
   /**
    * Starts dragging the selected node, if an animation is open.
    *
-   * §16 of `docs/implementing-character-animator.md`: moving a node in the
-   * preview is how a pose is authored, and what it writes is the node's
-   * **local** transform at the frame on screen. Everything below it follows,
+   * Moving a node in the preview is how a pose is authored, and what it writes
+   * is the node's **local** transform at the frame on screen. Everything below it follows,
    * because the composition is the engine's and nothing here bypasses it.
    *
    * @returns `true` when the pointer was taken for a drag
@@ -2279,10 +2278,10 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
   /**
    * The bones and joints, drawn over the character.
    *
-   * §17: the thing that makes a positioning problem diagnosable. A line runs
-   * from where a layer hangs — its parent's attachment point when it names one,
-   * the parent's centre otherwise — to the child's own centre, and every
-   * attachment point is marked. Both ends move with the animation, because
+   * What makes a positioning problem diagnosable: a line runs from where a
+   * layer hangs — its parent's attachment point when it names one, the parent's
+   * own origin otherwise — to the child's centre, and every attachment point is
+   * marked. Both ends move with the animation, because
    * both are read off the *resolved* boxes rather than the authored ones.
    *
    * Editor-only: nothing in this method exists in the runtime's renderer.
