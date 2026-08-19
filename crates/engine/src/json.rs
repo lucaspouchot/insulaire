@@ -1059,18 +1059,22 @@ mod tests {
 
     const CHARACTER: &str = r##"{
         "id": "human_player", "schemaVersion": 1, "name": "Human Player",
-        "category": "player", "rendering": "procedural", "scaleParameter": "height",
+        "category": "player", "resolution": { "width": 64, "height": 128 },
         "parameters": [
             { "id": "hairColor", "labelKey": "game.character.hairColor",
               "control": "color", "default": "#4b3621" },
-            { "id": "height", "labelKey": "game.character.height", "control": "slider",
-              "default": 1.0, "min": 0.85, "max": 1.15, "step": 0.05 }
+            { "id": "cape", "labelKey": "game.character.cape", "control": "toggle",
+              "default": true }
         ],
         "layers": [
+            { "id": "cape", "variants": [
+                { "id": "worn", "when": { "cape": true }, "rect": [12, 27, 40, 95],
+                  "sprite": { "asset": "assets/characters/cape.png" } }
+            ] },
             { "id": "hair", "variants": [
-                { "id": "default", "rect": [0.38, 0.08, 0.24, 0.14],
-                  "visual": { "kind": "shape", "shape": "ellipse",
-                              "color": { "parameter": "hairColor" } } }
+                { "id": "default", "rect": [23, 10, 18, 20],
+                  "sprite": { "asset": "assets/characters/hair_front.png",
+                              "tint": { "parameter": "hairColor" } } }
             ] }
         ]
     }"##;
@@ -1086,20 +1090,26 @@ mod tests {
 
         let definition = json(&engine.character("human_player").expect("definition"));
         assert_eq!(definition["category"], "player");
+        assert_eq!(definition["resolution"]["width"], 64);
         assert_eq!(definition["parameters"][0]["id"], "hairColor");
 
         // The customisation crosses as values and comes back as geometry: the
-        // host draws what Rust resolved, and resolves nothing itself.
+        // host blits what Rust resolved, and resolves nothing itself.
         let resolved = json(
             &engine
                 .resolve_character("human_player", r##"{ "hairColor": "#f2c14e" }"##)
                 .expect("resolve"),
         );
         assert_eq!(resolved["character"], "human_player");
-        assert_eq!(resolved["values"]["height"], 1.0);
-        assert_eq!(resolved["layers"][0]["layer"], "hair");
-        assert_eq!(resolved["layers"][0]["visual"]["kind"], "shape");
-        assert_eq!(resolved["layers"][0]["visual"]["color"], "#f2c14e");
+        assert_eq!(resolved["resolution"]["height"], 128);
+        assert_eq!(resolved["layers"][1]["layer"], "hair");
+        assert_eq!(
+            resolved["layers"][1]["asset"],
+            "assets/characters/hair_front.png"
+        );
+        assert_eq!(resolved["layers"][1]["tint"], "#f2c14e");
+        // An untinted sprite says so as an empty string, not as a colour.
+        assert_eq!(resolved["layers"][0]["tint"], "");
     }
 
     #[test]
@@ -1111,13 +1121,13 @@ mod tests {
             &engine
                 .resolve_character(
                     "human_player",
-                    r#"{ "height": 9.0, "hairColor": 3, "unknown": true }"#,
+                    r#"{ "cape": "yes", "hairColor": 3, "unknown": true }"#,
                 )
                 .expect("resolve"),
         );
 
-        // Clamped, refused, dropped — exactly what a settings payload gets.
-        assert_eq!(resolved["values"]["height"], 1.15);
+        // Refused, refused, dropped — exactly what a settings payload gets.
+        assert_eq!(resolved["values"]["cape"], true);
         assert_eq!(resolved["values"]["hairColor"], "#4b3621");
         assert!(resolved["values"].get("unknown").is_none());
     }
@@ -1130,30 +1140,32 @@ mod tests {
 
         let resolved = json(
             &engine
-                .preview_character(CHARACTER, r#"{ "height": 1.15 }"#)
+                .preview_character(CHARACTER, r#"{ "cape": false }"#)
                 .expect("preview"),
         );
         assert_eq!(resolved["character"], "human_player");
-        assert_eq!(resolved["values"]["height"], 1.15);
+        assert_eq!(resolved["values"]["cape"], false);
+        // The cape's only variant waits on it, so the layer is simply not there.
+        assert_eq!(resolved["layers"][0]["layer"], "hair");
         // Nothing was registered by previewing it.
         assert_eq!(
             code(&engine.character("human_player").unwrap_err()),
             "unknownContent"
         );
 
-        // A definition whose colour binding names nothing still previews, in
-        // the colour that says so.
+        // A definition whose tint binding names nothing still previews, in the
+        // colour that says so.
         let broken = json(
             &engine
                 .preview_character(
                     r##"{ "id": "wip", "schemaVersion": 1, "layers": [{ "id": "hair",
-                          "variants": [{ "id": "v", "visual": { "kind": "shape",
-                          "shape": "ellipse", "color": { "parameter": "absent" } } }] }] }"##,
+                          "variants": [{ "id": "v", "rect": [0, 0, 8, 8], "sprite": {
+                          "asset": "a.png", "tint": { "parameter": "absent" } } }] }] }"##,
                     "{}",
                 )
                 .expect("preview"),
         );
-        assert_eq!(broken["layers"][0]["visual"]["color"], "#ff00ff");
+        assert_eq!(broken["layers"][0]["tint"], "#ff00ff");
 
         assert_eq!(
             code(&engine.preview_character("{", "{}").unwrap_err()),
@@ -1166,16 +1178,17 @@ mod tests {
         let mut engine = loaded();
         let error = engine
             .load_character(
-                r##"{ "id": "broken", "schemaVersion": 1, "rendering": "procedural",
+                r##"{ "id": "broken", "schemaVersion": 1,
                       "layers": [{ "id": "hair", "variants": [
-                        { "id": "default", "visual": { "kind": "shape", "shape": "ellipse",
-                          "color": { "parameter": "hairColor" } } }
+                        { "id": "default", "rect": [0, 0, 24, 30],
+                          "sprite": { "asset": "assets/characters/hair.png",
+                                      "tint": { "parameter": "hairColor" } } }
                       ] }] }"##,
             )
             .unwrap_err();
 
         assert_eq!(code(&error), "invalidContent");
-        assert!(error.contains("character.unknownColorParameter"), "{error}");
+        assert!(error.contains("character.unknownTintParameter"), "{error}");
         assert_eq!(
             code(&engine.character("broken").unwrap_err()),
             "unknownContent"

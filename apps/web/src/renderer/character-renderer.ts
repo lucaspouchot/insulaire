@@ -5,14 +5,19 @@
  * context and a box, and it draws. It is also the *whole* of character
  * rendering on this side of the boundary — every decision about what a
  * character looks like was made by the Rust resolver, and what arrives here is
- * an ordered list of boxes with colours already resolved
+ * an ordered list of sprites with their boxes and tints already resolved
  * (`docs/adr/ADR-0028-character-definitions.md`).
  *
- * That is what makes the editor's preview honest: it runs this same function
- * over the same payload the game will draw.
+ * # Pixels stay pixels
+ *
+ * A character is authored on a canvas of a few dozen pixels a side and drawn
+ * much larger, so everything here exists to keep that honest: smoothing off,
+ * a **whole-number** zoom, and integer destination coordinates. Half a pixel of
+ * drift is a seam between two layers that were drawn to touch
+ * (`docs/adr/ADR-0029-characters-are-composed-sprites.md`).
  */
 
-import { ResolvedCharacter, ResolvedLayer, UnitRect } from '../content/content-types';
+import { ResolvedCharacter, ResolvedLayer, SpriteResolution } from '../content/content-types';
 
 /** Where on the canvas a character is drawn, in CSS pixels. */
 export interface CharacterBox {
@@ -28,16 +33,81 @@ export interface SpriteSource {
   image(asset: string): CanvasImageSource | null;
 }
 
+/** The canvas element's rendered box, as `getBoundingClientRect()` gives it. */
+export interface StageBounds {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+}
+
 /** Outline drawn where a sprite should be but is not loaded. */
 const MISSING_SPRITE_COLOR = '#f0736a';
+
+/**
+ * How the character's canvas sits inside the box it is drawn in.
+ *
+ * The zoom is a whole number so one authored pixel is a square block of screen
+ * pixels; the remainder becomes a margin, and the character is centred in it
+ * and sat on the bottom of the box — a character stands on the ground rather
+ * than floating in the middle of it.
+ */
+export function placement(
+  resolution: SpriteResolution,
+  box: CharacterBox,
+): { zoom: number; originX: number; originY: number } {
+  const zoom = Math.max(
+    1,
+    Math.floor(Math.min(box.width / resolution.width, box.height / resolution.height)),
+  );
+  return {
+    zoom,
+    originX: Math.round(box.x + (box.width - resolution.width * zoom) / 2),
+    originY: Math.round(box.y + box.height - resolution.height * zoom),
+  };
+}
+
+/**
+ * The canvas pixel a pointer is over, given where the stage was drawn.
+ *
+ * The inverse of {@link placement}, and it lives beside it deliberately: an
+ * editor's click lands on the pixel it points at only for as long as the two
+ * agree, so they are read together or not at all
+ * (`docs/adr/ADR-0030-the-editor-paints-its-sprites.md`).
+ *
+ * `bounds` is the canvas element's **rendered** box and `box` is the box it was
+ * **drawn** in. Those are different units the moment anything scales the page —
+ * the interface scale zooms the whole shell (`app/app.css`) — and dividing one
+ * by the other is what keeps a pointer honest without having to know what did
+ * the scaling, or that anything did.
+ *
+ * @returns the canvas pixel, which may be outside the canvas
+ */
+export function pixelUnder(
+  point: { readonly x: number; readonly y: number },
+  bounds: StageBounds,
+  box: CharacterBox,
+  view: { readonly zoom: number; readonly originX: number; readonly originY: number },
+): { x: number; y: number } | null {
+  if (bounds.width <= 0 || bounds.height <= 0 || view.zoom <= 0) {
+    return null;
+  }
+  const localX = ((point.x - bounds.left) * box.width) / bounds.width;
+  const localY = ((point.y - bounds.top) * box.height) / bounds.height;
+  return {
+    x: Math.floor((localX - view.originX) / view.zoom),
+    y: Math.floor((localY - view.originY) / view.zoom),
+  };
+}
 
 /**
  * Draws a resolved character into `box`.
  *
  * Layers are drawn in the order the resolver produced, which is back to front.
  * A sprite whose image is not available yet leaves a dashed outline rather than
- * nothing: an author moving a layer they cannot see is worse off than one
- * looking at a placeholder.
+ * nothing: an author placing a layer they cannot see is worse off than one
+ * looking at a placeholder, and it is also how a definition is blocked out
+ * before there is any art.
  */
 export function drawCharacter(
   context: CanvasRenderingContext2D,
@@ -45,63 +115,76 @@ export function drawCharacter(
   box: CharacterBox,
   sprites?: SpriteSource,
 ): void {
+  const { zoom, originX, originY } = placement(character.resolution, box);
+  context.imageSmoothingEnabled = false;
+
   for (const layer of character.layers) {
-    drawLayer(context, layer, box, sprites);
+    drawLayer(context, layer, zoom, originX, originY, sprites);
   }
 }
 
 function drawLayer(
   context: CanvasRenderingContext2D,
   layer: ResolvedLayer,
-  box: CharacterBox,
+  zoom: number,
+  originX: number,
+  originY: number,
   sprites?: SpriteSource,
 ): void {
-  const { x, y, width, height } = place(layer.rect, box);
-  if (width <= 0 || height <= 0) {
+  const [rectX, rectY, rectWidth, rectHeight] = layer.rect;
+  if (rectWidth <= 0 || rectHeight <= 0) {
     return;
   }
 
-  if (layer.visual.kind === 'sprite') {
-    const image = sprites?.image(layer.visual.asset) ?? null;
-    if (image === null) {
-      outlineMissing(context, x, y, width, height);
-      return;
-    }
+  const x = originX + rectX * zoom;
+  const y = originY + rectY * zoom;
+  const width = rectWidth * zoom;
+  const height = rectHeight * zoom;
+
+  const image = sprites?.image(layer.asset) ?? null;
+  if (image === null) {
+    outlineMissing(context, x, y, width, height);
+    return;
+  }
+
+  if (layer.tint.length === 0) {
     context.drawImage(image, x, y, width, height);
     return;
   }
-
-  context.fillStyle = layer.visual.color;
-  switch (layer.visual.shape) {
-    case 'rect':
-      context.fillRect(x, y, width, height);
-      return;
-    case 'ellipse':
-      context.beginPath();
-      context.ellipse(x + width / 2, y + height / 2, width / 2, height / 2, 0, 0, Math.PI * 2);
-      context.fill();
-      return;
-    case 'triangle':
-      // Standing on the bottom edge of its box, apex at the top centre: the
-      // orientation a character is built from — a skirt, a wing, a horn.
-      context.beginPath();
-      context.moveTo(x, y + height);
-      context.lineTo(x + width, y + height);
-      context.lineTo(x + width / 2, y);
-      context.closePath();
-      context.fill();
-  }
+  context.drawImage(tinted(image, layer.tint, rectWidth, rectHeight), x, y, width, height);
 }
 
-/** A unit box mapped onto the canvas box it is drawn in. */
-export function place(rect: UnitRect, box: CharacterBox): CharacterBox {
-  const [x, y, width, height] = rect;
-  return {
-    x: box.x + x * box.width,
-    y: box.y + y * box.height,
-    width: width * box.width,
-    height: height * box.height,
-  };
+/**
+ * The sprite recoloured, at its authored size.
+ *
+ * `multiply` keeps the drawing's own shading — a near-white sprite becomes the
+ * tint, its darker pixels become darker shades of it — and `destination-in`
+ * puts the original alpha back, so the fill does not spill into the
+ * transparent margin. This is what lets one greyscale hair sprite serve every
+ * hair colour.
+ */
+function tinted(
+  image: CanvasImageSource,
+  color: string,
+  width: number,
+  height: number,
+): CanvasImageSource {
+  const scratch = document.createElement('canvas');
+  scratch.width = width;
+  scratch.height = height;
+  const context = scratch.getContext('2d');
+  if (context === null) {
+    return image;
+  }
+
+  context.imageSmoothingEnabled = false;
+  context.drawImage(image, 0, 0, width, height);
+  context.globalCompositeOperation = 'multiply';
+  context.fillStyle = color;
+  context.fillRect(0, 0, width, height);
+  context.globalCompositeOperation = 'destination-in';
+  context.drawImage(image, 0, 0, width, height);
+  return scratch;
 }
 
 function outlineMissing(
@@ -114,12 +197,12 @@ function outlineMissing(
   context.save();
   context.strokeStyle = MISSING_SPRITE_COLOR;
   context.setLineDash([4, 3]);
-  context.strokeRect(x, y, width, height);
+  context.strokeRect(x + 0.5, y + 0.5, width - 1, height - 1);
   context.restore();
 }
 
 /**
- * Loads and caches the images an asset-composed character needs.
+ * Loads and caches the images a character needs.
  *
  * Loading is asynchronous and drawing is not, so a first draw shows outlines
  * and `onLoad` asks for another once an image has arrived. Nothing here knows
@@ -139,6 +222,9 @@ export class SpriteCache implements SpriteSource {
 
   /** The image for `asset`, starting its load the first time it is asked for. */
   image(asset: string): CanvasImageSource | null {
+    if (asset.length === 0) {
+      return null;
+    }
     const cached = this.images.get(asset);
     if (cached !== undefined) {
       return cached;
@@ -159,6 +245,12 @@ export class SpriteCache implements SpriteSource {
     });
     image.src = this.resolveUrl(asset);
     return null;
+  }
+
+  /** The natural size of a loaded image, for the editor to fit a box to it. */
+  naturalSize(asset: string): { width: number; height: number } | null {
+    const image = this.images.get(asset);
+    return image == null ? null : { width: image.naturalWidth, height: image.naturalHeight };
   }
 
   /** Forgets every image, so edited assets are fetched again. */

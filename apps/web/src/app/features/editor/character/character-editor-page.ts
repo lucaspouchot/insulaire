@@ -21,6 +21,13 @@
  * `character-renderer.ts` — the same three pieces the game will use. What an
  * author sees here is what a player gets.
  *
+ * The preview is also the **drawing surface**. A character is made of small
+ * PNGs, and an editor that could place them but not paint them would send an
+ * author to another tool for every pixel; so the stage opens the sprite behind
+ * the layer being edited and writes into it — pencil, eraser, eyedropper, the
+ * character's own palette, and a whole-number zoom
+ * (`docs/adr/ADR-0030-the-editor-paints-its-sprites.md`).
+ *
  * Labels are keys: this screen picks and **creates** them — saving writes every
  * key the file names into every language, empty — and the language editor is
  * where their text is written (ADR-0023,
@@ -50,34 +57,94 @@ import {
   ControlDefinition,
   ControlKind,
   LayerVariant,
-  RENDERING_MODES,
-  RenderingMode,
+  MAX_SPRITE_RESOLUTION,
   ResolvedCharacter,
-  SHAPE_KINDS,
   SettingValue,
-  ShapeKind,
+  SpriteResolution,
   blankVariant,
+  clampResolution,
   freeId,
   isNumeric,
   move,
   usesOptions,
 } from './character-editor.types';
-import { CHARACTER_SCHEMA_VERSION, ContentRef } from '../../../../content/content-types';
+import {
+  CHARACTER_SCHEMA_VERSION,
+  ContentRef,
+  ResolvedLayer,
+} from '../../../../content/content-types';
 import { serializeCharacter } from '../../../../content/character-serializer';
+import { PALETTE_SIZE, SpriteDocument } from '../../../../content/sprite-document';
 import { ValidationReport } from '../../../../engine/engine.types';
 import { assetUrl } from '../../../../core/asset-url';
-import { SpriteCache, drawCharacter } from '../../../../renderer/character-renderer';
+import {
+  CharacterBox,
+  SpriteCache,
+  SpriteSource,
+  drawCharacter,
+  pixelUnder,
+  placement,
+} from '../../../../renderer/character-renderer';
 import { I18nService } from '../../../i18n/i18n.service';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
 import { ControlField } from '../../../settings/control-field';
-import { ContentWorkspaceService } from '../../../services/content-workspace.service';
+import { ContentWorkspaceService, WorkspaceFile } from '../../../services/content-workspace.service';
 import { EngineService } from '../../../services/engine.service';
 import { LocaleAuthoringService } from '../../../services/locale-authoring.service';
 import { CharacterLibraryService } from '../../../services/character-library.service';
 import { CONTENT_ROOT, ProjectStoreService } from '../../../services/project-store.service';
 
-/** Height of the preview's drawing box, in CSS pixels. */
-const PREVIEW_HEIGHT = 320;
+/** Height of the preview's drawing box, in CSS pixels.
+ *
+ * Chosen so a 128-pixel-tall canvas — the shape most standing characters are
+ * authored at — reaches a 3× zoom rather than stopping at 2×.
+ */
+const PREVIEW_HEIGHT = 400;
+
+/** Where an uploaded sprite goes: a convention, not a rule. */
+const ASSET_DIR = 'assets/characters';
+
+/** The tint picker's entry for "a colour written in the file". */
+const FIXED_TINT = '#fixed';
+
+/**
+ * The zooms the pixel tools step through, in screen pixels per authored pixel.
+ *
+ * Whole numbers, for the reason the renderer's zoom is one: a pixel is a square
+ * block of screen pixels or it is a smear
+ * (`docs/adr/ADR-0029-characters-are-composed-sprites.md`).
+ */
+const ZOOM_STEPS: readonly number[] = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32];
+
+/**
+ * The largest the stage may get, in CSS pixels a side.
+ *
+ * A 256-pixel canvas at 32x is an 8192-pixel one, which is a browser tab
+ * spending a hundred megabytes to show one sprite. The zoom stops where the
+ * stage would.
+ */
+const MAX_STAGE = 3072;
+
+/** From this zoom up, the stage rules the pixel grid. */
+const GRID_ZOOM = 8;
+
+/** Smallest a transparency square may get on screen, in CSS pixels. */
+const MIN_CHECKER = 6;
+
+/**
+ * The largest backing store the stage may allocate, in pixels a side.
+ *
+ * Browsers refuse a canvas past a few thousand pixels a side and fail by
+ * drawing nothing, so the density is what gives way when the stage is already
+ * as large as {@link MAX_STAGE} allows.
+ */
+const MAX_BACKING = 4096;
+
+/** How many colours the palette carries over from previous strokes. */
+const RECENT_COLORS = 8;
+
+/** What a click on the stage does. */
+type PaintTool = 'pencil' | 'eraser' | 'picker';
 
 @Component({
   selector: 'app-character-editor-page',
@@ -85,6 +152,14 @@ const PREVIEW_HEIGHT = 320;
   templateUrl: './character-editor-page.html',
   styleUrl: './character-editor-page.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  // Undo is a keystroke wherever the pointer happens to be, so the listener is
+  // on the document — and refuses to fire while a form field holds the caret.
+  // The unload guard is the only thing standing between painted pixels and a
+  // closed tab, since they live in memory until they are written.
+  host: {
+    '(document:keydown)': 'onKeyDown($event)',
+    '(window:beforeunload)': 'onUnload($event)',
+  },
 })
 export class CharacterEditorPage implements AfterViewInit, OnDestroy {
   private readonly store = inject(ProjectStoreService);
@@ -95,6 +170,7 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
   private readonly library = inject(CharacterLibraryService);
 
   private readonly canvasRef = viewChild<ElementRef<HTMLCanvasElement>>('stage');
+  private readonly frameRef = viewChild<ElementRef<HTMLElement>>('frame');
 
   /** Every definition the project holds, by id, as edited. */
   private readonly documentsSignal = signal<readonly CharacterDefinition[]>([]);
@@ -108,19 +184,54 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
   protected readonly error = signal<string | null>(null);
   protected readonly busy = signal(false);
   protected readonly loading = signal(true);
+  /** Paths the manifest declares that could not be read. */
+  protected readonly unreadable = signal<readonly string[]>([]);
 
   /** The customisation the preview is showing. */
   protected readonly values = signal<CharacterValues>({});
+  /** Content files the workspace holds, for the asset picker. */
+  protected readonly files = signal<readonly WorkspaceFile[]>([]);
   /** What the resolver made of the open definition and those values. */
   protected readonly resolved = signal<ResolvedCharacter | null>(null);
+  /** Whole-number zoom the preview settled on, for the readout. */
+  protected readonly zoom = signal(1);
+
+  /** `true` while the stage is a drawing surface rather than a preview. */
+  protected readonly painting = signal(false);
+  /** What the pointer does on the stage. */
+  protected readonly tool = signal<PaintTool>('pencil');
+  /** The colour the pencil paints with. */
+  protected readonly color = signal('#c9b28a');
+  /** The zoom the author asked for; `null` fits the character to the stage. */
+  protected readonly paintZoom = signal<number | null>(null);
+  /** Colours used lately, so a tone carries from one sprite to the next. */
+  private readonly recent = signal<readonly string[]>([]);
+  /** Bumped by every stroke, so the palette and the buttons re-read the pixels. */
+  private readonly strokes = signal(0);
+  /** The two greys of the transparency checker, read from the theme once. */
+  private checker: readonly [string, string] | null = null;
+
+  /** The sprites open for editing, by content path. */
+  private readonly sessions = new Map<string, SpriteDocument>();
+  /** Paths being decoded, so the effect asks for each of them only once. */
+  private readonly opening = new Set<string>();
+  /** Where the pointer was when it last painted, in the sprite's own pixels. */
+  private stroking: { x: number; y: number } | null = null;
+  /**
+   * What the last draw put on the stage, for turning a click into a pixel.
+   *
+   * The box is kept with the placement because a pointer arrives in the box the
+   * *element* occupies, which the interface scale has multiplied, and only the
+   * box we drew in says what that means (`app/app.css`).
+   */
+  private view = { zoom: 1, originX: 0, originY: 0, box: { x: 0, y: 0, width: 1, height: 1 } };
 
   /** Which layer the variant editor is showing. */
   private readonly layerIdSignal = signal<string | null>(null);
 
   protected readonly categories = CATEGORIES;
-  protected readonly renderingModes = RENDERING_MODES;
-  protected readonly shapeKinds = SHAPE_KINDS;
   protected readonly controlKinds = CONTROL_KINDS;
+  protected readonly maxResolution = MAX_SPRITE_RESOLUTION;
   protected readonly usesOptions = usesOptions;
   protected readonly isNumeric = isNumeric;
 
@@ -128,6 +239,15 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
     (asset) => assetUrl(`${CONTENT_ROOT}/${asset}`),
     () => this.draw(),
   );
+  /**
+   * What the preview draws with: the file, unless the author is painting it.
+   *
+   * An open sprite shadows the cache, so a stroke shows up in the composed
+   * character as it is painted rather than after a save and a reload.
+   */
+  private readonly source: SpriteSource = {
+    image: (asset) => this.sessions.get(asset)?.surface() ?? this.sprites.image(asset),
+  };
   private resizeObserver: ResizeObserver | null = null;
 
   /** Every definition, in project order. */
@@ -164,13 +284,18 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
     );
   });
 
-  protected readonly parameters = computed<readonly ControlDefinition[]>(
-    () => this.document()?.parameters ?? [],
+  /** The canvas the open definition is authored on. */
+  protected readonly resolution = computed<SpriteResolution>(
+    () => this.document()?.resolution ?? { width: 64, height: 128 },
   );
 
-  /** Parameters that could drive a scale: the numeric ones. */
-  protected readonly numericParameters = computed<readonly ControlDefinition[]>(() =>
-    this.parameters().filter((parameter) => isNumeric(parameter.control)),
+  /** Every image in the content directory, which is what a variant may name. */
+  protected readonly images = computed<readonly WorkspaceFile[]>(() =>
+    this.files().filter((file) => /\.(png|gif|webp)$/i.test(file.path)),
+  );
+
+  protected readonly parameters = computed<readonly ControlDefinition[]>(
+    () => this.document()?.parameters ?? [],
   );
 
   protected readonly layers = computed<readonly CharacterLayer[]>(
@@ -186,6 +311,91 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
   protected readonly variants = computed<readonly LayerVariant[]>(
     () => this.layer()?.variants ?? [],
   );
+
+  /** The layer the pixel tools edit: the open one, as the resolver drew it. */
+  protected readonly target = computed<ResolvedLayer | null>(() => {
+    const open = this.layer()?.id;
+    return this.resolved()?.layers.find((drawn) => drawn.layer === open) ?? null;
+  });
+
+  /** The pixels behind that layer, once its image has been decoded. */
+  protected readonly sprite = computed<SpriteDocument | null>(() => {
+    this.strokes();
+    const asset = this.target()?.asset ?? '';
+    return asset.length === 0 ? null : (this.sessions.get(asset) ?? null);
+  });
+
+  /**
+   * `true` when the layer's box is not the image's own size.
+   *
+   * Painting would then have to map a click through a stretch, and every
+   * stroke would land on a pixel the author did not point at. The editor says
+   * so and offers *Fit to image*, rather than guessing which pixel was meant.
+   */
+  protected readonly stretched = computed(() => {
+    const target = this.target();
+    const sprite = this.sprite();
+    return (
+      target !== null &&
+      sprite !== null &&
+      (target.rect[2] !== sprite.width || target.rect[3] !== sprite.height)
+    );
+  });
+
+  /** `true` when a click on the stage would put a pixel somewhere. */
+  protected readonly paintable = computed(() => this.sprite() !== null && !this.stretched());
+
+  /**
+   * The colours to offer, most reachable first.
+   *
+   * The sprite's own tones lead, then the rest of this character's, then what
+   * has been used lately. A palette made of the drawing is what keeps two
+   * layers on the same browns instead of drifting a few values apart — which
+   * is the whole difference between a figure and a collage.
+   */
+  protected readonly palette = computed<readonly string[]>(() => {
+    this.strokes();
+    const active = this.target()?.asset ?? '';
+    const colors: string[] = [];
+    const add = (found: readonly string[]): void => {
+      for (const color of found) {
+        if (!colors.includes(color)) {
+          colors.push(color);
+        }
+      }
+    };
+    add(this.sessions.get(active)?.palette() ?? []);
+    for (const [asset, sprite] of this.sessions) {
+      if (asset !== active) {
+        add(sprite.palette(8));
+      }
+    }
+    add(this.recent());
+    return colors.slice(0, PALETTE_SIZE);
+  });
+
+  /** Images holding pixels the content directory has not been told about. */
+  protected readonly unsavedSprites = computed<readonly string[]>(() => {
+    this.strokes();
+    return [...this.sessions].filter(([, sprite]) => sprite.unsaved).map(([asset]) => asset);
+  });
+
+  protected readonly canUndo = computed(() => {
+    this.strokes();
+    return this.sprite()?.canUndo === true;
+  });
+
+  protected readonly canRedo = computed(() => {
+    this.strokes();
+    return this.sprite()?.canRedo === true;
+  });
+
+  /** The zooms this canvas may be shown at without a stage nobody can hold. */
+  protected readonly zoomSteps = computed<readonly number[]>(() => {
+    const longest = Math.max(this.resolution().width, this.resolution().height);
+    const steps = ZOOM_STEPS.filter((step) => step * longest <= MAX_STAGE);
+    return steps.length === 0 ? [1] : steps;
+  });
 
   /**
    * Issues that would stop the runtime loading this file.
@@ -212,16 +422,32 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
     // changed it — an edit, a preview choice, or opening another definition.
     effect(() => {
       this.resolved();
+      this.strokes();
+      this.painting();
+      this.paintZoom();
       this.draw();
+    });
+    // Every sprite the character draws is opened, not just the one being
+    // edited: that is what makes the palette the *character's* palette, and
+    // what makes switching layers instant rather than a decode away.
+    effect(() => {
+      if (!this.painting()) {
+        return;
+      }
+      for (const drawn of this.resolved()?.layers ?? []) {
+        this.requireSprite(drawn.asset);
+      }
     });
     void this.load();
   }
 
   ngAfterViewInit(): void {
-    const canvas = this.canvasRef()?.nativeElement;
-    if (canvas !== undefined) {
+    // The frame is observed, never the canvas: the canvas is sized *by* the
+    // draw, so watching it would be watching our own output.
+    const frame = this.frameRef()?.nativeElement;
+    if (frame !== undefined) {
       this.resizeObserver = new ResizeObserver(() => this.draw());
-      this.resizeObserver.observe(canvas);
+      this.resizeObserver.observe(frame);
     }
     this.draw();
   }
@@ -240,16 +466,40 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
       // Registered as well as fetched: the *runtime* holds these, and this
       // screen is about to replace one of them.
       await this.library.ensureLoaded();
+      await this.refreshFiles();
 
       const declared = this.store.project()?.characters ?? [];
       const documents = await Promise.all(declared.map((entry) => this.fetchCharacter(entry)));
       this.documentsSignal.set(documents.filter((document) => document !== null));
+      // A declared character that will not open used to vanish without a word,
+      // which is indistinguishable from one that was never declared — and it is
+      // the editor, not the author, that knows the difference.
+      this.unreadable.set(
+        declared.filter((_entry, index) => documents[index] === null).map((entry) => entry.path),
+      );
       this.openIdSignal.set(this.documentsSignal()[0]?.id ?? null);
       this.refresh();
     } catch (cause) {
       this.error.set(describe(cause));
     } finally {
       this.loading.set(false);
+    }
+  }
+
+  /**
+   * Re-reads what the content directory holds, for the asset picker.
+   *
+   * A read-only workspace answers nothing, which is not an error: the picker is
+   * then empty and a path can still be typed by hand.
+   */
+  private async refreshFiles(): Promise<void> {
+    if (this.workspace.status() === null) {
+      return;
+    }
+    try {
+      this.files.set(await this.workspace.list());
+    } catch {
+      // Reported by the workspace service; the editor stays usable without it.
     }
   }
 
@@ -324,9 +574,10 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
   /**
    * Adds a definition to the project and opens it.
    *
-   * It starts as a body and a head so the preview shows a character rather than
-   * an empty box: a new definition should be something to change, not something
-   * to build from nothing.
+   * It starts with a body and a head layer, placed but unpainted: the preview
+   * draws an outline where each sprite will go, so a definition can be blocked
+   * out before any art exists and the first thing an author does is point a
+   * layer at an image.
    */
   protected addCharacter(): void {
     const id = freeId(
@@ -338,29 +589,11 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
       schemaVersion: CHARACTER_SCHEMA_VERSION,
       name: id,
       category: 'other',
-      rendering: 'procedural',
+      resolution: { width: 64, height: 128 },
       parameters: [],
       layers: [
-        {
-          id: 'body',
-          variants: [
-            {
-              id: 'default',
-              rect: [0.34, 0.4, 0.32, 0.45],
-              visual: { kind: 'shape', shape: 'rect', color: { fixed: '#7a5c3e' } },
-            },
-          ],
-        },
-        {
-          id: 'head',
-          variants: [
-            {
-              id: 'default',
-              rect: [0.41, 0.18, 0.18, 0.22],
-              visual: { kind: 'shape', shape: 'ellipse', color: { fixed: '#e8c39e' } },
-            },
-          ],
-        },
+        { id: 'body', variants: [{ id: 'default', rect: [20, 40, 24, 76], sprite: { asset: '' } }] },
+        { id: 'head', variants: [{ id: 'default', rect: [24, 12, 16, 28], sprite: { asset: '' } }] },
       ],
     };
 
@@ -409,32 +642,21 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
   }
 
   /**
-   * Changes how the character is drawn, and takes its variants with it.
+   * Resizes the canvas the sprites are authored on.
    *
-   * The engine refuses a definition whose variants contradict its declared
-   * mode, so switching modes converts every visual rather than producing a file
-   * that cannot load on a single click.
+   * Layers are **not** moved with it: a box is a position on the grid the art
+   * was drawn on, and silently rescaling every layer would move sprites off
+   * the pixels they were painted for. Validation reports whatever now hangs
+   * off the edge (`character.rectOutOfCanvas`).
    */
-  protected setRendering(rendering: string): void {
-    const mode = rendering as RenderingMode;
+  protected setResolution(side: 'width' | 'height', raw: string): void {
+    const value = clampResolution(Number.parseFloat(raw));
     this.edit((draft) => {
-      draft.rendering = mode;
-      for (const layer of draft.layers ?? []) {
-        for (const variant of layer.variants) {
-          if (mode === 'assetComposition' && variant.visual.kind === 'shape') {
-            variant.visual = { kind: 'sprite', asset: '' };
-          } else if (mode === 'procedural' && variant.visual.kind === 'sprite') {
-            variant.visual = { kind: 'shape', shape: 'rect', color: { fixed: '#7a5c3e' } };
-          }
-        }
-      }
-    });
-  }
-
-  /** Binds — or unbinds, given `''` — the parameter that scales the character. */
-  protected setScaleParameter(id: string): void {
-    this.edit((draft) => {
-      draft.scaleParameter = id;
+      const current = draft.resolution ?? { width: 64, height: 128 };
+      draft.resolution =
+        side === 'width'
+          ? { width: value, height: current.height }
+          : { width: current.width, height: value };
     });
   }
 
@@ -485,9 +707,9 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
     this.edit((draft) => {
       const removed = draft.parameters?.[index];
       draft.parameters?.splice(index, 1);
-      if (removed !== undefined && draft.scaleParameter === removed.id) {
-        // A binding to a parameter that no longer exists would not validate.
-        draft.scaleParameter = '';
+      if (removed !== undefined) {
+        // A tint bound to a parameter that no longer exists would not validate.
+        dropTint(draft, removed.id);
       }
     });
   }
@@ -521,9 +743,6 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
         delete parameter.min;
         delete parameter.max;
         delete parameter.step;
-        if (draft.scaleParameter === parameter.id) {
-          draft.scaleParameter = '';
-        }
       }
     });
   }
@@ -619,11 +838,11 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
       'layer',
       this.layers().map((layer) => layer.id),
     );
-    const rendering = this.document()?.rendering ?? 'procedural';
+    const resolution = this.resolution();
     this.edit((draft) => {
       draft.layers = [
         ...(draft.layers ?? []),
-        { id, variants: [blankVariant('default', rendering)] },
+        { id, variants: [blankVariant('default', resolution)] },
       ];
     });
     this.selectLayer(id);
@@ -662,7 +881,7 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
       layer.variants.map((variant) => variant.id),
     );
     this.editLayer((draft) => {
-      draft.variants.push(blankVariant(id, this.document()?.rendering ?? 'procedural'));
+      draft.variants.push(blankVariant(id, this.resolution()));
     });
   }
 
@@ -686,7 +905,12 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
     this.editLayer((draft) => move(draft.variants, index, delta));
   }
 
-  /** Sets one corner or side of a variant's box, in unit space. */
+  /**
+   * Sets one corner or side of a variant's box, in canvas pixels.
+   *
+   * Rounded on the way in: half a pixel of offset is a seam between two layers
+   * that were drawn to touch.
+   */
   protected setRect(index: number, part: 0 | 1 | 2 | 3, raw: string): void {
     const parsed = Number.parseFloat(raw);
     if (!Number.isFinite(parsed)) {
@@ -697,70 +921,166 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
       if (variant === undefined) {
         return;
       }
-      const rect: [number, number, number, number] = [...(variant.rect ?? [0, 0, 1, 1])];
-      rect[part] = parsed;
+      const rect: [number, number, number, number] = [...(variant.rect ?? [0, 0, 0, 0])];
+      rect[part] = Math.round(parsed);
       variant.rect = rect;
     });
   }
 
-  protected setShape(index: number, shape: string): void {
+  /**
+   * Points a variant at an image, and fits its box to it.
+   *
+   * Fitting on pick is what makes the common case correct without thinking
+   * about it: a sprite drawn 24x30 wants a 24x30 box, and any other size
+   * stretches pixel art. The author can still resize it afterwards.
+   */
+  protected setAsset(index: number, asset: string): void {
+    const trimmed = asset.trim();
     this.editLayer((draft) => {
       const variant = draft.variants[index];
-      if (variant?.visual.kind === 'shape') {
-        variant.visual.shape = shape as ShapeKind;
+      if (variant !== undefined) {
+        variant.sprite = { ...variant.sprite, asset: trimmed };
+      }
+    });
+    if (trimmed.length > 0) {
+      void this.fitToImage(index, trimmed);
+    }
+  }
+
+  /**
+   * Sets a variant's box to the image's own pixel size, once it has loaded.
+   *
+   * The image may not be in the cache yet, so this waits for it rather than
+   * guessing — and does nothing at all if it never arrives.
+   */
+  protected async fitToImage(index: number, asset?: string): Promise<void> {
+    const variant = this.variants()[index];
+    const path = asset ?? variant?.sprite.asset ?? '';
+    if (path.length === 0) {
+      return;
+    }
+    const size = await this.measure(path);
+    if (size === null) {
+      return;
+    }
+    this.editLayer((draft) => {
+      const target = draft.variants[index];
+      if (target !== undefined) {
+        const rect = target.rect ?? [0, 0, 0, 0];
+        target.rect = [rect[0], rect[1], size.width, size.height];
       }
     });
   }
 
-  protected setAsset(index: number, asset: string): void {
-    this.editLayer((draft) => {
-      const variant = draft.variants[index];
-      if (variant?.visual.kind === 'sprite') {
-        variant.visual.asset = asset.trim();
-      }
+  /** The natural size of an image under the content root, or `null`. */
+  private async measure(asset: string): Promise<{ width: number; height: number } | null> {
+    const open = this.sessions.get(asset);
+    if (open !== undefined) {
+      // An edited sprite is its own truth: the file may still be the old size.
+      return { width: open.width, height: open.height };
+    }
+    const cached = this.sprites.naturalSize(asset);
+    if (cached !== null) {
+      return cached;
+    }
+    const image = await this.loadImage(asset);
+    return image === null ? null : { width: image.naturalWidth, height: image.naturalHeight };
+  }
+
+  /** Loads one content image, resolving to `null` when it is not there. */
+  private loadImage(asset: string): Promise<HTMLImageElement | null> {
+    return new Promise((resolve) => {
+      const image = new Image();
+      image.addEventListener('load', () => resolve(image));
+      image.addEventListener('error', () => resolve(null));
+      image.src = assetUrl(`${CONTENT_ROOT}/${asset}`);
     });
   }
 
   /**
-   * Points a shape's colour at a parameter, or back at a fixed colour.
+   * Uploads an image into the content directory and points a variant at it.
    *
-   * `''` means fixed; anything else is a parameter id. This is the choice that
-   * turns "brown hair" into "the hair colour the player picked".
+   * The same door the title editor opens, at the same convention: an author
+   * with a PNG should not have to leave the editor to use it
+   * (`docs/adr/ADR-0022-authoring-content-workspace.md`).
    */
-  protected setColorSource(index: number, parameterId: string): void {
+  protected async uploadAsset(event: Event, index: number): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (file === undefined) {
+      return;
+    }
+    input.value = '';
+
+    this.busy.set(true);
+    this.error.set(null);
+    try {
+      const path = `${ASSET_DIR}/${file.name}`;
+      await this.workspace.write(path, file);
+      await this.refreshFiles();
+      // The cache may hold a "missing" entry for this path from a previous
+      // draw, and the file on disk has just changed under it either way.
+      this.sprites.clear();
+      this.setAsset(index, path);
+      this.message.set(this.i18n.t('ui.editor.character.uploaded', { file: path }));
+    } catch (cause) {
+      this.error.set(describe(cause));
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  /**
+   * Points a variant's tint at a parameter, at a fixed colour, or nowhere.
+   *
+   * `''` is no tint — the sprite is drawn as authored — and a parameter id is
+   * what turns "brown hair" into "the hair colour the player picked", with one
+   * greyscale sprite instead of one per colour.
+   */
+  protected setTintSource(index: number, source: string): void {
     this.editLayer((draft) => {
       const variant = draft.variants[index];
-      if (variant?.visual.kind !== 'shape') {
+      if (variant === undefined) {
         return;
       }
-      variant.visual.color =
-        parameterId.length === 0 ? { fixed: '#7a5c3e' } : { parameter: parameterId };
-    });
-  }
-
-  protected setFixedColor(index: number, color: string): void {
-    this.editLayer((draft) => {
-      const variant = draft.variants[index];
-      if (variant?.visual.kind === 'shape') {
-        variant.visual.color = { fixed: color };
+      if (source.length === 0) {
+        variant.sprite = { asset: variant.sprite.asset };
+      } else if (source === FIXED_TINT) {
+        variant.sprite = { ...variant.sprite, tint: { fixed: '#ffffff' } };
+      } else {
+        variant.sprite = { ...variant.sprite, tint: { parameter: source } };
       }
     });
   }
 
-  /** The parameter a variant's colour is bound to, or `''` when it is fixed. */
-  protected colorParameter(variant: LayerVariant): string {
-    if (variant.visual.kind !== 'shape') {
+  protected setFixedTint(index: number, color: string): void {
+    this.editLayer((draft) => {
+      const variant = draft.variants[index];
+      if (variant !== undefined) {
+        variant.sprite = { ...variant.sprite, tint: { fixed: color } };
+      }
+    });
+  }
+
+  /** What the tint picker shows: `''`, {@link FIXED_TINT}, or a parameter id. */
+  protected tintSource(variant: LayerVariant): string {
+    const tint = variant.sprite.tint;
+    if (!tint) {
       return '';
     }
-    return 'parameter' in variant.visual.color ? variant.visual.color.parameter : '';
+    return 'parameter' in tint ? tint.parameter : FIXED_TINT;
   }
 
   /** The colour written in the file, for the swatch that edits it. */
-  protected fixedColor(variant: LayerVariant): string {
-    if (variant.visual.kind !== 'shape' || !('fixed' in variant.visual.color)) {
-      return '#000000';
-    }
-    return variant.visual.color.fixed;
+  protected fixedTint(variant: LayerVariant): string {
+    const tint = variant.sprite.tint;
+    return tint && 'fixed' in tint ? tint.fixed : '#ffffff';
+  }
+
+  /** `true` when this variant names an image the content directory does not hold. */
+  protected assetMissing(variant: LayerVariant): boolean {
+    const asset = variant.sprite.asset;
+    return asset.length > 0 && !this.files().some((file) => file.path === asset);
   }
 
   // -------------------------------------------------------------- conditions
@@ -892,6 +1212,14 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
       // A definition nobody lists is a definition nobody loads, so saving one
       // declares it — and writes the manifest that now names it.
       const parts = [this.i18n.t('ui.editor.character.saved', { file: path })];
+
+      // The art goes with the definition. An author who painted and pressed
+      // Save meant both, and a sprite left only in a tab is a sprite lost.
+      const written = await this.writeSprites();
+      if (written > 0) {
+        parts.push(this.i18n.t('ui.editor.character.spritesSaved', { count: written }));
+      }
+
       this.store.declareCharacter(document.id, path);
       if (this.store.manifestNeedsWriting()) {
         await this.workspace.writeJson('project.json', this.store.projectJson());
@@ -931,46 +1259,537 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
     return created.length;
   }
 
+  // ------------------------------------------------------------------ pixels
+
+  /** Turns the stage into a drawing surface, or back into a preview. */
+  protected togglePaint(): void {
+    this.finishStroke();
+    this.painting.update((on) => !on);
+  }
+
+  protected setTool(tool: PaintTool): void {
+    this.tool.set(tool);
+  }
+
+  protected setColor(color: string): void {
+    this.color.set(color);
+    this.remember(color);
+  }
+
+  /** The zoom in force: the one asked for, or the one the fit settled on. */
+  protected effectiveZoom(): number {
+    return this.paintZoom() ?? this.zoom();
+  }
+
+  protected zoomBy(delta: number): void {
+    const steps = this.zoomSteps();
+    const from = steps.findIndex((step) => step >= this.effectiveZoom());
+    const at = from < 0 ? steps.length - 1 : from;
+    const next = steps[Math.min(steps.length - 1, Math.max(0, at + delta))];
+    if (next !== undefined) {
+      this.paintZoom.set(next);
+    }
+  }
+
+  /** Back to the zoom that fits the whole character in the stage. */
+  protected fitZoom(): void {
+    this.paintZoom.set(null);
+  }
+
+  /**
+   * Zooms with the wheel, but only while a modifier is held.
+   *
+   * A zoomed stage is a scrolling one, and a plain wheel over a scrolling thing
+   * means scroll. Taking that away is how a drawing tool becomes unusable.
+   */
+  protected onWheel(event: WheelEvent): void {
+    if (!(event.ctrlKey || event.metaKey)) {
+      return;
+    }
+    event.preventDefault();
+    this.zoomBy(event.deltaY < 0 ? 1 : -1);
+  }
+
+  protected onPointerDown(event: PointerEvent): void {
+    const sprite = this.sprite();
+    const at = this.pixelAt(event);
+    if (!this.painting() || sprite === null || at === null || !sprite.holds(at.x, at.y)) {
+      return;
+    }
+    event.preventDefault();
+    // Alt is the eyedropper wherever you are: reaching for the tool to take a
+    // colour and reaching back to use it is two clicks around every stroke.
+    if (this.tool() === 'picker' || event.altKey) {
+      this.pick(at.x, at.y);
+      return;
+    }
+    if (this.stretched()) {
+      return;
+    }
+    (event.target as HTMLElement).setPointerCapture(event.pointerId);
+    sprite.begin();
+    this.stroking = at;
+    this.paintTo(at.x, at.y);
+  }
+
+  protected onPointerMove(event: PointerEvent): void {
+    if (this.stroking === null) {
+      return;
+    }
+    const at = this.pixelAt(event);
+    if (at !== null) {
+      this.paintTo(at.x, at.y);
+    }
+  }
+
+  protected onPointerUp(): void {
+    this.finishStroke();
+  }
+
+  /** Paints from the last point to this one, so a fast drag is still a line. */
+  private paintTo(x: number, y: number): void {
+    const sprite = this.sprite();
+    const from = this.stroking;
+    if (sprite === null || from === null) {
+      return;
+    }
+    const color = this.tool() === 'eraser' ? null : this.color();
+    if (sprite.stroke(from.x, from.y, x, y, color)) {
+      // Drawn here rather than through the effect: a pencil a frame behind the
+      // pointer is a pencil nobody can aim.
+      this.draw();
+    }
+    this.stroking = { x, y };
+  }
+
+  /** Closes the open stroke, which is what makes it one step of the undo. */
+  private finishStroke(): void {
+    if (this.stroking === null) {
+      return;
+    }
+    this.stroking = null;
+    this.sprite()?.end();
+    if (this.tool() === 'pencil') {
+      this.remember(this.color());
+    }
+    this.touchSprites();
+  }
+
+  /** Takes the colour under the pointer, then goes back to drawing with it. */
+  private pick(x: number, y: number): void {
+    const found = this.sprite()?.colorAt(x, y) ?? null;
+    if (found === null) {
+      return;
+    }
+    this.color.set(found);
+    this.remember(found);
+    this.tool.set('pencil');
+  }
+
+  protected undo(): void {
+    if (this.sprite()?.undo() === true) {
+      this.touchSprites();
+    }
+  }
+
+  protected redo(): void {
+    if (this.sprite()?.redo() === true) {
+      this.touchSprites();
+    }
+  }
+
+  /** Undo and redo, wherever the pointer is — but never while typing. */
+  protected onKeyDown(event: KeyboardEvent): void {
+    if (!this.painting() || isTyping(event.target) || !(event.ctrlKey || event.metaKey)) {
+      return;
+    }
+    const key = event.key.toLowerCase();
+    if (key === 'z') {
+      event.preventDefault();
+      if (event.shiftKey) {
+        this.redo();
+      } else {
+        this.undo();
+      }
+    } else if (key === 'y') {
+      event.preventDefault();
+      this.redo();
+    }
+  }
+
+  /** Asks the browser to confirm before pixels nobody has written are lost. */
+  protected onUnload(event: BeforeUnloadEvent): void {
+    if (this.unsavedSprites().length > 0) {
+      event.preventDefault();
+    }
+  }
+
+  /**
+   * Creates a transparent image the size of the layer's box, and paints on it.
+   *
+   * Without it the pixel tools would only ever edit art made somewhere else,
+   * which is the wrong half of the job: a layer blocked out on the canvas
+   * should be paintable where it stands.
+   */
+  protected createImage(): void {
+    const document = this.document();
+    const layer = this.layer();
+    const index = this.targetVariantIndex();
+    const variant = this.variants()[index];
+    if (document === null || layer === null || variant === undefined) {
+      return;
+    }
+    const [, , width, height] = variant.rect ?? [0, 0, 16, 16];
+    const path = `${ASSET_DIR}/${document.id}_${layer.id}_${variant.id}.png`;
+    const sprite = SpriteDocument.blank(width, height);
+    // It exists nowhere else, so it owes the disk a write from the moment it is
+    // created rather than from its first stroke.
+    sprite.markUnsaved();
+    this.sessions.set(path, sprite);
+    this.touchSprites();
+
+    this.editLayer((draft) => {
+      const target = draft.variants[index];
+      if (target !== undefined) {
+        target.sprite = { ...target.sprite, asset: path };
+      }
+    });
+    this.painting.set(true);
+  }
+
+  /** Which variant of the open layer is the one on screen. */
+  private targetVariantIndex(): number {
+    const drawn = this.target();
+    const variants = this.variants();
+    if (drawn === null) {
+      return variants.length > 0 ? 0 : -1;
+    }
+    return variants.findIndex((variant) => variant.id === drawn.variant);
+  }
+
+  /** Writes every edited sprite into the content directory. */
+  protected async saveSprites(): Promise<void> {
+    this.busy.set(true);
+    this.error.set(null);
+    this.message.set(null);
+    try {
+      const written = await this.writeSprites();
+      this.message.set(this.i18n.t('ui.editor.character.spritesSaved', { count: written }));
+    } catch (cause) {
+      this.error.set(describe(cause));
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  /**
+   * Writes the edited sprites, one PNG each.
+   *
+   * @returns how many were written
+   */
+  private async writeSprites(): Promise<number> {
+    const pending = [...this.sessions].filter(([, sprite]) => sprite.unsaved);
+    if (pending.length === 0) {
+      return 0;
+    }
+    for (const [asset, sprite] of pending) {
+      await this.workspace.write(asset, await sprite.toBlob());
+      sprite.markSaved();
+    }
+    await this.refreshFiles();
+    // The cache holds the bytes these paths used to have — including a
+    // "missing" entry for one that has only just been created.
+    this.sprites.clear();
+    this.touchSprites();
+    return pending.length;
+  }
+
+  /** Opens a sprite for editing, at most once per path. */
+  private requireSprite(asset: string): void {
+    if (asset.length === 0 || this.sessions.has(asset) || this.opening.has(asset)) {
+      return;
+    }
+    this.opening.add(asset);
+    void this.openSprite(asset);
+  }
+
+  private async openSprite(asset: string): Promise<void> {
+    try {
+      const image = await this.loadImage(asset);
+      const sprite = image === null ? null : SpriteDocument.fromImage(image);
+      if (sprite === null) {
+        // A path naming nothing is already reported as a missing asset, and the
+        // stage draws the outline the renderer draws for one.
+        return;
+      }
+      this.sessions.set(asset, sprite);
+      this.touchSprites();
+    } finally {
+      this.opening.delete(asset);
+    }
+  }
+
+  private remember(color: string): void {
+    this.recent.update((colors) =>
+      [color, ...colors.filter((held) => held !== color)].slice(0, RECENT_COLORS),
+    );
+  }
+
+  /** Tells the view that the pixels moved. */
+  private touchSprites(): void {
+    this.strokes.update((count) => count + 1);
+  }
+
+  /**
+   * Where in the edited sprite this pointer is, in the sprite's own pixels.
+   *
+   * Deliberately unbounded: a drag that leaves the sprite and comes back is one
+   * stroke, and the line between two points is the part that matters. What is
+   * outside is dropped a layer down, by the plot itself.
+   */
+  private pixelAt(event: PointerEvent): { x: number; y: number } | null {
+    const canvas = this.canvasRef()?.nativeElement;
+    const target = this.target();
+    if (canvas === undefined || target === null) {
+      return null;
+    }
+    // Through the renderer's own inverse, measured off the element: a pointer
+    // is reported in screen pixels and the stage was drawn in layout pixels,
+    // and the interface scale is the factor between them.
+    const at = pixelUnder(
+      { x: event.clientX, y: event.clientY },
+      canvas.getBoundingClientRect(),
+      this.view.box,
+      this.view,
+    );
+    return at === null ? null : { x: at.x - target.rect[0], y: at.y - target.rect[1] };
+  }
+
   // ----------------------------------------------------------------- drawing
 
   /**
    * Draws the resolved character into the preview canvas.
    *
    * The same function the game will draw with, over the same payload — the
-   * preview has no drawing code of its own.
+   * preview has no drawing code of its own. What it adds is what only an
+   * *editor* needs: the canvas bounds, a box around the layer being edited so
+   * an author can see what they are moving, and — once the zoom is high enough
+   * for it to mean anything — the pixel grid they are painting on.
    */
   private draw(): void {
     const canvas = this.canvasRef()?.nativeElement;
+    const frame = this.frameRef()?.nativeElement;
     const resolved = this.resolved();
-    if (canvas === undefined) {
+    if (canvas === undefined || frame === undefined) {
       return;
     }
 
-    const ratio = Math.min(window.devicePixelRatio || 1, 3);
-    const width = Math.max(1, Math.floor(canvas.clientWidth));
+    // Two stages, one drawing: fitted to the panel until a zoom is asked for,
+    // and then the canvas at exactly that zoom — where it is often larger than
+    // the panel and scrolls inside it. The zoom is not the paint mode's: an
+    // author looking closely at a sprite is not necessarily about to paint it.
+    const explicit = this.paintZoom();
+    const resolution = resolved?.resolution ?? this.resolution();
+    const width =
+      explicit === null ? Math.max(1, Math.floor(frame.clientWidth)) : resolution.width * explicit;
+    const height = explicit === null ? PREVIEW_HEIGHT : resolution.height * explicit;
+
+    // The shell is zoomed by the interface scale, so a layout pixel is not a
+    // screen pixel (`app/app.css`). The backing store follows the *screen*, or
+    // a scaled interface would resample the sprites this whole pipeline exists
+    // not to resample. Measured rather than read from the setting: whatever
+    // scales the page, the element knows by how much.
+    // Rounded to a percent, which is what the setting is: `clientWidth` is a
+    // whole number and the rect is not, so an unscaled shell measures 1.0007
+    // and would move the backing store for nothing.
+    const measured =
+      frame.clientWidth > 0 ? frame.getBoundingClientRect().width / frame.clientWidth : 1;
+    const shell = Math.round(measured * 100) / 100;
+    // A device ratio buys nothing once one authored pixel is a block four
+    // screen pixels wide, and at these sizes it costs a great deal of memory.
+    const dense =
+      explicit !== null && explicit >= 4 ? 1 : Math.min(window.devicePixelRatio || 1, 3);
+    const ratio = Math.min(dense * shell, MAX_BACKING / Math.max(width, height));
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
     canvas.width = Math.floor(width * ratio);
-    canvas.height = Math.floor(PREVIEW_HEIGHT * ratio);
+    canvas.height = Math.floor(height * ratio);
 
     const context = canvas.getContext('2d');
     if (context === null) {
       return;
     }
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
-    context.clearRect(0, 0, width, PREVIEW_HEIGHT);
+    context.clearRect(0, 0, width, height);
     if (resolved === null) {
       return;
     }
 
-    // A portrait-shaped box, centred: a character is taller than it is wide,
-    // and the unit square is square, so the box is what gives it proportions.
-    const height = PREVIEW_HEIGHT;
-    const boxWidth = height * 0.55;
-    drawCharacter(
-      context,
-      resolved,
-      { x: (width - boxWidth) / 2, y: 0, width: boxWidth, height },
-      this.sprites,
+    const box: CharacterBox = { x: 0, y: 0, width, height };
+    // Asked of the renderer rather than assumed, so a click lands on the pixel
+    // it points at: the stage and the drawing agree because they are the same
+    // calculation.
+    const { zoom, originX, originY } = placement(resolved.resolution, box);
+    this.view = { zoom, originX, originY, box };
+
+    this.paintTransparency(context, resolved.resolution, zoom, originX, originY);
+    this.strokeCanvasBounds(context, resolved.resolution, zoom, originX, originY);
+    drawCharacter(context, this.painted(resolved), box, this.source);
+    if (this.painting() && zoom >= GRID_ZOOM) {
+      this.strokeGrid(context, resolved.resolution, zoom, originX, originY);
+    }
+    this.strokeOpenLayer(context, zoom, originX, originY);
+    this.zoom.set(zoom);
+  }
+
+  /**
+   * The character as the stage shows it while painting.
+   *
+   * The edited layer loses its tint. What the pencil writes is the file, and a
+   * file seen through a multiply is not the thing being edited — an author
+   * matching two greys would be matching them through a colour that is not in
+   * either of them (`docs/adr/ADR-0030-the-editor-paints-its-sprites.md`).
+   */
+  private painted(resolved: ResolvedCharacter): ResolvedCharacter {
+    const target = this.target();
+    if (!this.painting() || target === null || target.tint.length === 0) {
+      return resolved;
+    }
+    return {
+      ...resolved,
+      layers: resolved.layers.map((layer) => (layer === target ? { ...layer, tint: '' } : layer)),
+    };
+  }
+
+  /** One line per authored pixel, once they are big enough to aim at. */
+  private strokeGrid(
+    context: CanvasRenderingContext2D,
+    resolution: SpriteResolution,
+    zoom: number,
+    originX: number,
+    originY: number,
+  ): void {
+    context.save();
+    context.strokeStyle = 'rgba(147, 161, 177, 0.16)';
+    context.lineWidth = 1;
+    context.beginPath();
+    for (let x = 1; x < resolution.width; x += 1) {
+      context.moveTo(originX + x * zoom + 0.5, originY);
+      context.lineTo(originX + x * zoom + 0.5, originY + resolution.height * zoom);
+    }
+    for (let y = 1; y < resolution.height; y += 1) {
+      context.moveTo(originX, originY + y * zoom + 0.5);
+      context.lineTo(originX + resolution.width * zoom, originY + y * zoom + 0.5);
+    }
+    context.stroke();
+    context.restore();
+  }
+
+  /**
+   * The checkerboard that says "nothing is drawn here", on the canvas itself.
+   *
+   * Its squares are a whole number of **authored** pixels, so it reads as the
+   * grid being painted on and zooms with it. A fixed screen size — which is
+   * what a CSS background is — puts a second grid on the stage at a different
+   * scale from the first, and at any real zoom the two disagree visibly.
+   *
+   * It covers the authored canvas and nothing else, which also makes the canvas
+   * itself visible as a region rather than as a dashed line around everything.
+   */
+  private paintTransparency(
+    context: CanvasRenderingContext2D,
+    resolution: SpriteResolution,
+    zoom: number,
+    originX: number,
+    originY: number,
+  ): void {
+    const [light, dark] = this.checkerColors();
+    const width = resolution.width * zoom;
+    const height = resolution.height * zoom;
+
+    context.save();
+    context.fillStyle = light;
+    context.fillRect(originX, originY, width, height);
+
+    // How many authored pixels one square is: one, unless one would be too
+    // small to read, in which case as few as still clear MIN_CHECKER.
+    const step = Math.max(1, Math.ceil(MIN_CHECKER / zoom));
+    const square = step * zoom;
+    context.fillStyle = dark;
+    for (let row = 0; row * step < resolution.height; row += 1) {
+      for (let column = row % 2; column * step < resolution.width; column += 2) {
+        context.fillRect(
+          originX + column * square,
+          originY + row * square,
+          Math.min(square, width - column * square),
+          Math.min(square, height - row * square),
+        );
+      }
+    }
+    context.restore();
+  }
+
+  /**
+   * The checker's two greys, taken from the theme rather than written here.
+   *
+   * Read once: `getComputedStyle` is a style recalculation, and this runs on
+   * every frame of a drag.
+   */
+  private checkerColors(): readonly [string, string] {
+    if (this.checker === null) {
+      const canvas = this.canvasRef()?.nativeElement;
+      const style = canvas === undefined ? null : getComputedStyle(canvas);
+      this.checker = [
+        style?.getPropertyValue('--bg').trim() || '#0d1117',
+        style?.getPropertyValue('--bg-raised').trim() || '#1c242f',
+      ];
+    }
+    return this.checker;
+  }
+
+  /** The authored canvas, so an author sees what their pixels are measured in. */
+  private strokeCanvasBounds(
+    context: CanvasRenderingContext2D,
+    resolution: SpriteResolution,
+    zoom: number,
+    originX: number,
+    originY: number,
+  ): void {
+    context.save();
+    context.strokeStyle = 'rgba(147, 161, 177, 0.35)';
+    context.setLineDash([2, 3]);
+    context.strokeRect(
+      originX + 0.5,
+      originY + 0.5,
+      resolution.width * zoom - 1,
+      resolution.height * zoom - 1,
     );
+    context.restore();
+  }
+
+  /** A box around the layer open in the form, drawn over the character. */
+  private strokeOpenLayer(
+    context: CanvasRenderingContext2D,
+    zoom: number,
+    originX: number,
+    originY: number,
+  ): void {
+    const open = this.layer()?.id;
+    const drawn = this.resolved()?.layers.find((layer) => layer.layer === open);
+    if (drawn === undefined) {
+      return;
+    }
+    const [x, y, layerWidth, layerHeight] = drawn.rect;
+    context.save();
+    context.strokeStyle = '#ffd166';
+    context.lineWidth = 1;
+    context.strokeRect(
+      originX + x * zoom - 0.5,
+      originY + y * zoom - 0.5,
+      layerWidth * zoom + 1,
+      layerHeight * zoom + 1,
+    );
+    context.restore();
   }
 
   // ---------------------------------------------------------------- plumbing
@@ -984,6 +1803,23 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
         mutate(layer);
       }
     });
+  }
+}
+
+/**
+ * Drops every tint bound to a parameter that no longer exists.
+ *
+ * A dangling binding does not validate, and the author deleting a parameter is
+ * not saying "and break every layer that read it".
+ */
+function dropTint(draft: CharacterDefinition, parameterId: string): void {
+  for (const layer of draft.layers ?? []) {
+    for (const variant of layer.variants) {
+      const tint = variant.sprite.tint;
+      if (tint && 'parameter' in tint && tint.parameter === parameterId) {
+        variant.sprite = { asset: variant.sprite.asset };
+      }
+    }
   }
 }
 
@@ -1037,6 +1873,11 @@ function parseValue(raw: string): SettingValue {
     // Not JSON, so it is the text itself.
   }
   return raw;
+}
+
+/** `true` when a keystroke belongs to a form field rather than to the stage. */
+function isTyping(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && /^(input|textarea|select)$/i.test(target.tagName);
 }
 
 function describe(cause: unknown): string {

@@ -1,62 +1,86 @@
 {
   "id": "human_player",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "name": "Human Player",
   "category": "player",
-  "rendering": "procedural",
-  "scaleParameter": "height",
+  "resolution": { "width": 64, "height": 128 },
   "parameters": [
     {
-      "id": "gender",
-      "labelKey": "game.character.gender",
+      "id": "hairStyle",
+      "labelKey": "game.character.hairStyle",
       "control": "select",
-      "default": "female",
+      "default": "long",
       "options": [
-        { "value": "female", "labelKey": "game.character.genderFemale" },
-        { "value": "male", "labelKey": "game.character.genderMale" }
+        { "value": "long", "labelKey": "game.character.hairLong" },
+        { "value": "short", "labelKey": "game.character.hairShort" }
       ]
     },
     {
       "id": "hairColor",
       "labelKey": "game.character.hairColor",
       "control": "color",
-      "default": "#4b3621"
+      "default": "#8b5a2b"
     },
     {
-      "id": "height",
-      "labelKey": "game.character.height",
-      "helpKey": "game.character.heightHelp",
-      "control": "slider",
-      "default": 1,
-      "min": 0.85,
-      "max": 1.15,
-      "step": 0.05
+      "id": "armor",
+      "labelKey": "game.character.armor",
+      "helpKey": "game.character.armorHelp",
+      "control": "select",
+      "default": "leather",
+      "options": [
+        { "value": "leather", "labelKey": "game.character.armorLeather" },
+        { "value": "plate", "labelKey": "game.character.armorPlate" }
+      ]
+    },
+    {
+      "id": "cape",
+      "labelKey": "game.character.cape",
+      "control": "toggle",
+      "default": true
     }
   ],
   "layers": [
     {
-      "id": "legs",
+      "id": "cape",
       "variants": [
-        { "id": "default", "rect": [0.4, 0.72, 0.2, 0.26], "visual": { "kind": "shape", "shape": "rect", "color": { "fixed": "#3d4a5c" } } }
+        { "id": "worn", "when": { "cape": true }, "rect": [12, 27, 40, 95], "sprite": { "asset": "assets/characters/cape.png" } }
+      ]
+    },
+    {
+      "id": "hairBack",
+      "variants": [
+        { "id": "long", "when": { "hairStyle": "long" }, "rect": [20, 17, 24, 48], "sprite": { "asset": "assets/characters/hair_back.png", "tint": { "parameter": "hairColor" } } }
       ]
     },
     {
       "id": "body",
       "variants": [
-        { "id": "female", "when": { "gender": "female" }, "rect": [0.28, 0.4, 0.44, 0.36], "visual": { "kind": "shape", "shape": "triangle", "color": { "fixed": "#7a5c3e" } } },
-        { "id": "default", "rect": [0.34, 0.4, 0.32, 0.34], "visual": { "kind": "shape", "shape": "rect", "color": { "fixed": "#7a5c3e" } } }
+        { "id": "default", "rect": [21, 12, 22, 107], "sprite": { "asset": "assets/characters/body.png" } }
       ]
     },
     {
-      "id": "head",
+      "id": "boots",
       "variants": [
-        { "id": "default", "rect": [0.41, 0.18, 0.18, 0.22], "visual": { "kind": "shape", "shape": "ellipse", "color": { "fixed": "#e8c39e" } } }
+        { "id": "default", "rect": [23, 101, 18, 22], "sprite": { "asset": "assets/characters/boots.png" } }
       ]
     },
     {
-      "id": "hair",
+      "id": "top",
       "variants": [
-        { "id": "default", "rect": [0.395, 0.15, 0.21, 0.14], "visual": { "kind": "shape", "shape": "ellipse", "color": { "parameter": "hairColor" } } }
+        { "id": "plate", "when": { "armor": "plate" }, "rect": [23, 36, 18, 14], "sprite": { "asset": "assets/characters/top_plate.png" } },
+        { "id": "leather", "rect": [23, 36, 18, 14], "sprite": { "asset": "assets/characters/top_leather.png" } }
+      ]
+    },
+    {
+      "id": "skirt",
+      "variants": [
+        { "id": "default", "rect": [19, 59, 26, 22], "sprite": { "asset": "assets/characters/skirt.png" } }
+      ]
+    },
+    {
+      "id": "hairFront",
+      "variants": [
+        { "id": "default", "rect": [23, 10, 18, 20], "sprite": { "asset": "assets/characters/hair_front.png", "tint": { "parameter": "hairColor" } } }
       ]
     }
   ]

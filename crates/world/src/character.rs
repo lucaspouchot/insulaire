@@ -1,13 +1,13 @@
-//! Character definitions: how a *kind* of character is drawn, and what may be
+//! Character definitions: how a kind of character is drawn, and what may be
 //! chosen about one.
 //!
 //! Nothing here knows what a player is. A [`CharacterDefinition`] describes a
 //! family of characters — the player's, a merchant, a goblin, a dragon — as a
 //! list of **parameters** (the choices a definition offers) and a list of
-//! **layers** (the pieces it is drawn from). A set of chosen values is a
+//! **layers** (the sprites it is drawn from). A set of chosen values is a
 //! *customisation*, and [`CharacterDefinition::resolve`] turns the two into a
-//! [`ResolvedCharacter`]: a flat, ordered list of things to draw, with every
-//! colour already resolved.
+//! [`ResolvedCharacter`]: a flat, ordered list of sprites to blit, with every
+//! tint already resolved.
 //!
 //! ```text
 //! CharacterDefinition + values ──> resolve() ──> ResolvedCharacter ──> renderer
@@ -18,22 +18,33 @@
 //! and the renderer never reads [`CharacterCategory`] — a category is how an
 //! author files a definition, not how it is drawn.
 //!
+//! # Everything is pixels
+//!
+//! A definition declares its [`SpriteResolution`]: the canvas its sprites are
+//! authored on, at most [`MAX_SPRITE_RESOLUTION`] on a side. Every layer is
+//! placed on that canvas with an integer [`PixelRect`], because pixel art
+//! placed at a fractional position is pixel art with a seam down the middle
+//! (`docs/adr/ADR-0029-characters-are-composed-sprites.md`).
+//!
+//! Size differences between *kinds* of character are the canvas, not a scale
+//! factor: a rat is authored at 32×32 and a dragon at 256×256, and the host
+//! draws each at its native size times a whole-number zoom.
+//!
 //! # Parameters are settings
 //!
 //! A parameter *is* a [`ControlDefinition`], the vocabulary the settings screen
-//! already speaks (`docs/adr/ADR-0025-settings.md`). "Hair colour" is a
-//! `select`, "height" is a `slider`, and both are rendered by the component
+//! already speaks (`docs/adr/ADR-0025-settings.md`). "Hair style" is a
+//! `select`, "hair colour" is a `color`, and both are rendered by the component
 //! that renders a volume slider. Values are resolved by the same function, so
 //! an unknown option or an out-of-range number means the same thing here as it
 //! does there.
 //!
 //! # What is deliberately absent
 //!
-//! Animation. A variant draws one thing, and a character is a still image
-//! today. The shape that leaves room for the rest is
-//! [`LayerVisual`]: a layer resolves to *a visual*, so `Sprite` gaining frames,
-//! or a third variant of the enum appearing, changes neither the definition's
-//! structure nor the resolver.
+//! Animation. A variant names one image, and a character is a still frame
+//! today. The shape that leaves room for the rest is [`Sprite`]: a layer
+//! resolves to *a sprite*, so frames, directions and sheet coordinates are
+//! fields appearing there rather than a change to what a definition is.
 
 use std::collections::BTreeMap;
 
@@ -43,11 +54,24 @@ use serde_json::Value;
 use crate::settings::{resolve_controls, ControlDefinition};
 
 /// Highest character schema version this build understands.
-pub const CHARACTER_SCHEMA_VERSION: u32 = 1;
-
-/// Colour drawn when a `parameter` colour binding resolves to nothing.
 ///
-/// Validation refuses a binding that names an undeclared parameter, so this is
+/// `2` is the sprite format of `docs/adr/ADR-0029-characters-are-composed-
+/// sprites.md`: a layer draws an image placed in whole pixels on a declared
+/// canvas. Version `1` was ADR-0028's, where a layer could also be a coloured
+/// primitive placed on a unit square, and no file of it survives — pre-1.0,
+/// there is no reader for it and none is coming (`CLAUDE.md`, "Versioning").
+pub const CHARACTER_SCHEMA_VERSION: u32 = 2;
+
+/// Largest sprite canvas a character may declare, on either side.
+///
+/// A cap rather than a preference: the editor draws the canvas, the renderer
+/// zooms it by whole numbers, and a definition that asked for 4096 would be a
+/// texture, not a character.
+pub const MAX_SPRITE_RESOLUTION: u32 = 256;
+
+/// Colour drawn when a `parameter` tint resolves to nothing.
+///
+/// Validation refuses a tint that names an undeclared parameter, so this is
 /// only reached when a *declared* parameter holds something that is not a
 /// colour — visible, obviously wrong, and not a panic.
 pub const UNRESOLVED_COLOR: &str = "#ff00ff";
@@ -76,43 +100,105 @@ pub enum CharacterCategory {
     Other,
 }
 
-/// How a character's layers are drawn.
+/// The canvas a character's sprites are authored on, in pixels.
 ///
-/// A definition declares one and validation holds it to it, so "this character
-/// is built from images" is a fact about the file rather than something you
-/// discover by reading every variant.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+/// Every [`PixelRect`] in the definition is a position on *this* grid, so the
+/// renderer knows how big the character is without loading a single image.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub enum RenderingMode {
-    /// Shapes described by the definition itself, drawn by the renderer.
-    #[default]
-    Procedural,
-    /// Images combined layer by layer.
-    AssetComposition,
+pub struct SpriteResolution {
+    /// Canvas width in pixels, `1..=`[`MAX_SPRITE_RESOLUTION`].
+    pub width: u32,
+    /// Canvas height in pixels, `1..=`[`MAX_SPRITE_RESOLUTION`].
+    pub height: u32,
 }
 
-/// A drawing primitive.
-///
-/// Closed on purpose: a shape is something the renderer implements, so a new
-/// one is a code change, not a content field — the same rule the title screen's
-/// actions follow.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum ShapeKind {
-    /// An axis-aligned rectangle filling the variant's box.
-    #[default]
-    Rect,
-    /// An ellipse inscribed in the variant's box.
-    Ellipse,
-    /// A triangle standing on the bottom edge of the variant's box.
-    Triangle,
+impl SpriteResolution {
+    /// A canvas of this size.
+    #[must_use]
+    pub const fn new(width: u32, height: u32) -> Self {
+        Self { width, height }
+    }
+
+    /// Whether both sides are within `1..=`[`MAX_SPRITE_RESOLUTION`].
+    #[must_use]
+    pub const fn is_valid(self) -> bool {
+        self.width >= 1
+            && self.height >= 1
+            && self.width <= MAX_SPRITE_RESOLUTION
+            && self.height <= MAX_SPRITE_RESOLUTION
+    }
 }
 
-/// Where a shape's colour comes from.
+impl Default for SpriteResolution {
+    /// A portrait-shaped canvas: the common case for a standing character.
+    fn default() -> Self {
+        Self::new(64, 128)
+    }
+}
+
+/// A sprite's box on the character's canvas: `[x, y, width, height]`, in pixels.
 ///
-/// The second case is what makes "hair colour" a *choice* rather than a
-/// duplicate variant per colour: one brown-haired layer becomes one layer whose
-/// colour is read off a parameter.
+/// `x` and `y` may be negative — a cape overhangs the canvas on purpose — but
+/// they are always **whole pixels**, which is the point: the renderer blits
+/// this at an integer zoom, so a sprite lands on the pixel grid it was drawn
+/// on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PixelRect(pub [i32; 4]);
+
+impl PixelRect {
+    /// A box from its corner and size.
+    #[must_use]
+    pub const fn new(x: i32, y: i32, width: i32, height: i32) -> Self {
+        Self([x, y, width, height])
+    }
+
+    /// Distance from the left edge of the canvas.
+    #[must_use]
+    pub const fn x(self) -> i32 {
+        self.0[0]
+    }
+
+    /// Distance from the top edge of the canvas.
+    #[must_use]
+    pub const fn y(self) -> i32 {
+        self.0[1]
+    }
+
+    /// Width in pixels.
+    #[must_use]
+    pub const fn width(self) -> i32 {
+        self.0[2]
+    }
+
+    /// Height in pixels.
+    #[must_use]
+    pub const fn height(self) -> i32 {
+        self.0[3]
+    }
+
+    /// `true` when the box lies entirely inside a canvas of this size.
+    #[must_use]
+    pub const fn fits(self, resolution: SpriteResolution) -> bool {
+        self.x() >= 0
+            && self.y() >= 0
+            && self.x() + self.width() <= resolution.width as i32
+            && self.y() + self.height() <= resolution.height as i32
+    }
+}
+
+impl Default for PixelRect {
+    /// A box of no size at the canvas origin — what a variant starts as.
+    fn default() -> Self {
+        Self([0, 0, 0, 0])
+    }
+}
+
+/// Where a tint's colour comes from.
+///
+/// The second case is what makes "hair colour" a *choice* rather than one
+/// image per colour: a single greyscale sprite is recoloured by the value the
+/// customisation holds.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ColorSource {
@@ -137,103 +223,15 @@ impl ColorSource {
     }
 }
 
-/// What one layer puts on screen.
+/// The image a layer draws, and how it is recoloured.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-pub enum LayerVisual {
-    /// An image, by path under the content root.
-    Sprite {
-        /// Path under the content root, e.g. `assets/characters/hair_long.png`.
-        asset: String,
-    },
-    /// A shape drawn by the renderer.
-    Shape {
-        /// Which primitive.
-        shape: ShapeKind,
-        /// What colour to fill it with.
-        color: ColorSource,
-    },
-}
-
-impl LayerVisual {
-    /// The rendering mode this visual belongs to.
-    #[must_use]
-    pub const fn mode(&self) -> RenderingMode {
-        match self {
-            Self::Sprite { .. } => RenderingMode::AssetComposition,
-            Self::Shape { .. } => RenderingMode::Procedural,
-        }
-    }
-}
-
-/// A box in the character's unit square: `[x, y, width, height]`.
-///
-/// `0..=1` on both axes, origin top-left, **y down** — the canvas convention,
-/// so the renderer scales by its own size and draws. Keeping placement in unit
-/// space is what lets one definition be drawn at any size, from a 32-pixel map
-/// token to a full-height portrait, without a second set of numbers.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct UnitRect(pub [f32; 4]);
-
-impl UnitRect {
-    /// A box from its corner and size.
-    #[must_use]
-    pub const fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
-        Self([x, y, width, height])
-    }
-
-    /// Distance from the left edge.
-    #[must_use]
-    pub const fn x(self) -> f32 {
-        self.0[0]
-    }
-
-    /// Distance from the top edge.
-    #[must_use]
-    pub const fn y(self) -> f32 {
-        self.0[1]
-    }
-
-    /// Width.
-    #[must_use]
-    pub const fn width(self) -> f32 {
-        self.0[2]
-    }
-
-    /// Height.
-    #[must_use]
-    pub const fn height(self) -> f32 {
-        self.0[3]
-    }
-
-    /// This box scaled about the bottom centre of the unit square.
-    ///
-    /// The anchor is the *ground line* — the bottom edge, where a character
-    /// stands — and that is what makes scaling mean height: everything grows
-    /// upward rather than away from the middle of the image, so a tall
-    /// character and a short one still have their feet in the same place.
-    #[must_use]
-    pub fn scaled(self, factor: f32) -> Self {
-        // An identity scale returns the box untouched rather than through the
-        // arithmetic: `1.0 - (1.0 - y) * 1.0` is not exactly `y` in f32, and a
-        // definition with no scale binding must resolve to what it authored.
-        if factor == 1.0 {
-            return self;
-        }
-        Self([
-            0.5 + (self.x() - 0.5) * factor,
-            1.0 - (1.0 - self.y()) * factor,
-            self.width() * factor,
-            self.height() * factor,
-        ])
-    }
-}
-
-impl Default for UnitRect {
-    /// The whole unit square.
-    fn default() -> Self {
-        Self([0.0, 0.0, 1.0, 1.0])
-    }
+#[serde(rename_all = "camelCase")]
+pub struct Sprite {
+    /// Path under the content root, e.g. `assets/characters/hair_long.png`.
+    pub asset: String,
+    /// Recolouring, fixed or read off a parameter. Absent draws it as authored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tint: Option<ColorSource>,
 }
 
 /// One appearance a layer can take, and the choices it answers to.
@@ -249,11 +247,11 @@ pub struct LayerVariant {
     /// "wearing a helmet" without enumerating every other piece of equipment.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub when: BTreeMap<String, Value>,
-    /// Where it is drawn, in the character's unit square.
+    /// Where it is drawn on the character's canvas.
     #[serde(default)]
-    pub rect: UnitRect,
+    pub rect: PixelRect,
     /// What it draws.
-    pub visual: LayerVisual,
+    pub sprite: Sprite,
 }
 
 impl LayerVariant {
@@ -320,9 +318,9 @@ pub struct CharacterDefinition {
     /// What the definition is used for. Never read by the resolver.
     #[serde(default)]
     pub category: CharacterCategory,
-    /// How its layers are drawn.
+    /// The canvas its sprites are authored on.
     #[serde(default)]
-    pub rendering: RenderingMode,
+    pub resolution: SpriteResolution,
     /// The choices this definition offers, in author order.
     ///
     /// A definition may offer none — a skeleton that always looks the same is
@@ -332,13 +330,6 @@ pub struct CharacterDefinition {
     /// The pieces it is drawn from, back to front.
     #[serde(default)]
     pub layers: Vec<CharacterLayer>,
-    /// Id of a numeric parameter whose value scales the whole character.
-    ///
-    /// Empty means no scaling. It is the one binding that acts on geometry
-    /// rather than on one layer, because "taller" is not a swap: without it a
-    /// height parameter would multiply every variant of every layer.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub scale_parameter: String,
 }
 
 impl CharacterDefinition {
@@ -387,13 +378,12 @@ impl CharacterDefinition {
     /// Turns this definition plus a customisation into something drawable.
     ///
     /// This is the whole of "character rendering" outside the renderer: pick a
-    /// variant per layer, place it, resolve its colour. It is deterministic and
+    /// variant per layer, place it, resolve its tint. It is deterministic and
     /// total — an empty customisation resolves to the definition's defaults,
     /// and a definition with no layers resolves to nothing to draw.
     #[must_use]
     pub fn resolve(&self, values: &Value) -> ResolvedCharacter {
         let resolved = self.resolve_values(values);
-        let scale = self.scale_factor(&resolved);
 
         let layers = self
             .layers
@@ -403,16 +393,14 @@ impl CharacterDefinition {
                 Some(ResolvedLayer {
                     layer: layer.id.clone(),
                     variant: variant.id.clone(),
-                    rect: variant.rect.scaled(scale),
-                    visual: match &variant.visual {
-                        LayerVisual::Sprite { asset } => ResolvedVisual::Sprite {
-                            asset: asset.clone(),
-                        },
-                        LayerVisual::Shape { shape, color } => ResolvedVisual::Shape {
-                            shape: *shape,
-                            color: color.resolve(&resolved),
-                        },
-                    },
+                    rect: variant.rect,
+                    asset: variant.sprite.asset.clone(),
+                    tint: variant
+                        .sprite
+                        .tint
+                        .as_ref()
+                        .map(|tint| tint.resolve(&resolved))
+                        .unwrap_or_default(),
                 })
             })
             .collect();
@@ -420,26 +408,10 @@ impl CharacterDefinition {
         ResolvedCharacter {
             character: self.id.clone(),
             category: self.category,
+            resolution: self.resolution,
             values: resolved,
             layers,
         }
-    }
-
-    /// The scale the customisation asks for; `1.0` when none is bound.
-    ///
-    /// A non-positive or absent factor is ignored rather than obeyed: a
-    /// character scaled to zero is invisible, and that is never what a slider
-    /// at its minimum was meant to say.
-    fn scale_factor(&self, values: &BTreeMap<String, Value>) -> f32 {
-        if self.scale_parameter.is_empty() {
-            return 1.0;
-        }
-        values
-            .get(&self.scale_parameter)
-            .and_then(Value::as_f64)
-            .map(|factor| factor as f32)
-            .filter(|factor| *factor > 0.0)
-            .unwrap_or(1.0)
     }
 }
 
@@ -451,31 +423,15 @@ pub struct ResolvedLayer {
     pub layer: String,
     /// Id of the variant that applied.
     pub variant: String,
-    /// Where to draw it, scaled, in the unit square.
-    pub rect: UnitRect,
-    /// What to draw.
-    pub visual: ResolvedVisual,
+    /// Where to draw it on the character's canvas.
+    pub rect: PixelRect,
+    /// Path of the image to blit, under the content root.
+    pub asset: String,
+    /// CSS colour to recolour it with. **Empty means draw it as authored.**
+    pub tint: String,
 }
 
-/// A visual with nothing left to look up.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-pub enum ResolvedVisual {
-    /// An image to blit, by path under the content root.
-    Sprite {
-        /// Path under the content root.
-        asset: String,
-    },
-    /// A shape to fill.
-    Shape {
-        /// Which primitive.
-        shape: ShapeKind,
-        /// The CSS colour to fill it with, already resolved.
-        color: String,
-    },
-}
-
-/// A character, resolved: an ordered list of things to draw.
+/// A character, resolved: an ordered list of sprites to draw.
 ///
 /// The renderer needs nothing else — no definition, no customisation, no
 /// lookup. That is what lets the same struct feed the editor's preview, a map
@@ -487,6 +443,8 @@ pub struct ResolvedCharacter {
     pub character: String,
     /// Its category, carried for the host's convenience; the renderer ignores it.
     pub category: CharacterCategory,
+    /// The canvas the layer boxes are positions on.
+    pub resolution: SpriteResolution,
     /// The customisation actually applied, defaults filled in.
     pub values: BTreeMap<String, Value>,
     /// What to draw, back to front.
@@ -497,46 +455,42 @@ pub struct ResolvedCharacter {
 mod tests {
     use super::*;
 
-    /// Scenario 1 of `docs/implementing-character-editor.md`: a customisable
-    /// player, drawn procedurally.
+    /// A customisable player, drawn by combining sprites: the first scenario of
+    /// `docs/implementing-character-editor.md`, as it is actually authored.
     const PLAYER: &str = r##"{
         "id": "human_player",
         "schemaVersion": 1,
         "name": "Human Player",
         "category": "player",
-        "rendering": "procedural",
-        "scaleParameter": "height",
+        "resolution": { "width": 64, "height": 128 },
         "parameters": [
-            { "id": "gender", "labelKey": "game.character.gender",
-              "control": "select", "default": "female",
+            { "id": "hairStyle", "labelKey": "game.character.hairStyle",
+              "control": "select", "default": "long",
               "options": [
-                { "value": "female", "labelKey": "game.character.female" },
-                { "value": "male", "labelKey": "game.character.male" }
+                { "value": "long", "labelKey": "game.character.hairLong" },
+                { "value": "short", "labelKey": "game.character.hairShort" }
               ] },
             { "id": "hairColor", "labelKey": "game.character.hairColor",
-              "control": "color", "default": "#4b3621" },
-            { "id": "height", "labelKey": "game.character.height",
-              "control": "slider", "default": 1.0, "min": 0.85, "max": 1.15, "step": 0.05 }
+              "control": "color", "default": "#8b5a2b" },
+            { "id": "cape", "labelKey": "game.character.cape",
+              "control": "toggle", "default": true }
         ],
         "layers": [
-            { "id": "body", "variants": [
-                { "id": "female", "when": { "gender": "female" },
-                  "rect": [0.35, 0.35, 0.3, 0.5],
-                  "visual": { "kind": "shape", "shape": "triangle",
-                              "color": { "fixed": "#7a5c3e" } } },
-                { "id": "default", "rect": [0.35, 0.35, 0.3, 0.5],
-                  "visual": { "kind": "shape", "shape": "rect",
-                              "color": { "fixed": "#7a5c3e" } } }
+            { "id": "cape", "variants": [
+                { "id": "worn", "when": { "cape": true }, "rect": [8, 28, 48, 92],
+                  "sprite": { "asset": "assets/characters/cape.png" } }
             ] },
-            { "id": "head", "variants": [
-                { "id": "default", "rect": [0.4, 0.12, 0.2, 0.22],
-                  "visual": { "kind": "shape", "shape": "ellipse",
-                              "color": { "fixed": "#e8c39e" } } }
+            { "id": "body", "variants": [
+                { "id": "default", "rect": [20, 12, 24, 108],
+                  "sprite": { "asset": "assets/characters/body.png" } }
             ] },
             { "id": "hair", "variants": [
-                { "id": "default", "rect": [0.38, 0.08, 0.24, 0.14],
-                  "visual": { "kind": "shape", "shape": "ellipse",
-                              "color": { "parameter": "hairColor" } } }
+                { "id": "long", "when": { "hairStyle": "long" }, "rect": [20, 8, 24, 30],
+                  "sprite": { "asset": "assets/characters/hair_long.png",
+                              "tint": { "parameter": "hairColor" } } },
+                { "id": "short", "rect": [21, 8, 22, 18],
+                  "sprite": { "asset": "assets/characters/hair_short.png",
+                              "tint": { "parameter": "hairColor" } } }
             ] }
         ]
     }"##;
@@ -549,7 +503,7 @@ mod tests {
     fn a_definition_parses_and_round_trips() {
         let character = player();
         assert_eq!(character.category, CharacterCategory::Player);
-        assert_eq!(character.rendering, RenderingMode::Procedural);
+        assert_eq!(character.resolution, SpriteResolution::new(64, 128));
         assert_eq!(character.parameters.len(), 3);
         assert!(character.parameter("hairColor").is_some());
         assert!(character.parameter("wings").is_none());
@@ -566,29 +520,52 @@ mod tests {
         let resolved = player().resolve(&serde_json::json!({}));
 
         assert_eq!(resolved.character, "human_player");
-        assert_eq!(resolved.values["gender"], serde_json::json!("female"));
+        assert_eq!(resolved.resolution, SpriteResolution::new(64, 128));
+        assert_eq!(resolved.values["hairStyle"], serde_json::json!("long"));
         // Three layers, in author order, back to front.
         let drawn: Vec<&str> = resolved
             .layers
             .iter()
             .map(|layer| layer.layer.as_str())
             .collect();
-        assert_eq!(drawn, ["body", "head", "hair"]);
+        assert_eq!(drawn, ["cape", "body", "hair"]);
     }
 
     #[test]
     fn a_condition_picks_the_variant_and_author_order_breaks_ties() {
-        let female = player().resolve(&serde_json::json!({ "gender": "female" }));
-        assert_eq!(female.layers[0].variant, "female");
+        let long = player().resolve(&serde_json::json!({ "hairStyle": "long" }));
+        let hair = long
+            .layers
+            .iter()
+            .find(|l| l.layer == "hair")
+            .expect("hair");
+        assert_eq!(hair.variant, "long");
+        assert_eq!(hair.asset, "assets/characters/hair_long.png");
 
-        // The male body has no variant of its own, so the unconditional one —
-        // which is declared *after* it — applies.
-        let male = player().resolve(&serde_json::json!({ "gender": "male" }));
-        assert_eq!(male.layers[0].variant, "default");
+        // The short style has no condition of its own, so the unconditional
+        // variant — declared *after* the long one — applies.
+        let short = player().resolve(&serde_json::json!({ "hairStyle": "short" }));
+        let hair = short
+            .layers
+            .iter()
+            .find(|l| l.layer == "hair")
+            .expect("hair");
+        assert_eq!(hair.variant, "short");
+    }
+
+    /// A toggled-off layer is a layer with no matching variant: it simply is
+    /// not in the resolved list, which is how an optional piece is authored.
+    #[test]
+    fn a_layer_whose_variants_all_fail_draws_nothing() {
+        let without = player().resolve(&serde_json::json!({ "cape": false }));
+        assert!(!without.layers.iter().any(|layer| layer.layer == "cape"));
+
+        let with = player().resolve(&serde_json::json!({ "cape": true }));
+        assert_eq!(with.layers[0].layer, "cape");
     }
 
     #[test]
-    fn a_colour_parameter_reaches_the_resolved_layer() {
+    fn a_tint_parameter_reaches_the_resolved_layer() {
         let resolved = player().resolve(&serde_json::json!({ "hairColor": "#f2c14e" }));
         let hair = resolved
             .layers
@@ -596,17 +573,25 @@ mod tests {
             .find(|layer| layer.layer == "hair")
             .expect("hair layer");
 
-        assert_eq!(
-            hair.visual,
-            ResolvedVisual::Shape {
-                shape: ShapeKind::Ellipse,
-                color: "#f2c14e".to_owned(),
-            }
-        );
+        assert_eq!(hair.tint, "#f2c14e");
+        // The box is carried through as authored: whole pixels, no scaling.
+        assert_eq!(hair.rect, PixelRect::new(20, 8, 24, 30));
     }
 
     #[test]
-    fn a_colour_binding_that_holds_no_colour_falls_back_rather_than_panicking() {
+    fn a_sprite_with_no_tint_resolves_to_no_tint() {
+        let resolved = player().resolve(&serde_json::json!({}));
+        let body = resolved
+            .layers
+            .iter()
+            .find(|layer| layer.layer == "body")
+            .expect("body layer");
+
+        assert_eq!(body.tint, "");
+    }
+
+    #[test]
+    fn a_tint_binding_that_holds_no_colour_falls_back_rather_than_panicking() {
         let mut character = player();
         // A number where a colour was expected: resolvable, not a colour.
         character.parameters[1].control = crate::settings::ControlKind::Number;
@@ -618,127 +603,53 @@ mod tests {
             .iter()
             .find(|layer| layer.layer == "hair")
             .expect("hair layer");
-        assert_eq!(
-            hair.visual,
-            ResolvedVisual::Shape {
-                shape: ShapeKind::Ellipse,
-                color: UNRESOLVED_COLOR.to_owned(),
-            }
-        );
+        assert_eq!(hair.tint, UNRESOLVED_COLOR);
     }
 
-    /// Height is the one parameter that moves geometry: everything grows
-    /// upwards from the ground line, so the feet stay where they were.
+    /// A monster: no player concept anywhere, same structures, a smaller canvas
+    /// — which is how a goblin is smaller than a knight.
     #[test]
-    fn the_scale_parameter_grows_the_character_from_the_ground_line() {
-        let tall = player().resolve(&serde_json::json!({ "height": 1.1 }));
-        let plain = player().resolve(&serde_json::json!({ "height": 1.0 }));
-
-        let tall_body = tall.layers[0].rect;
-        let plain_body = plain.layers[0].rect;
-        assert!(tall_body.height() > plain_body.height());
-
-        // Everything is measured from the ground line at the bottom of the unit
-        // square, so the gap beneath a layer grows by exactly the same factor —
-        // which is what keeps a layer that *touches* the ground touching it.
-        let plain_gap = 1.0 - (plain_body.y() + plain_body.height());
-        let tall_gap = 1.0 - (tall_body.y() + tall_body.height());
-        assert!(
-            (tall_gap - plain_gap * 1.1).abs() < 1e-5,
-            "{tall_gap} {plain_gap}"
-        );
-    }
-
-    #[test]
-    fn an_unbound_scale_leaves_the_geometry_alone() {
-        let mut character = player();
-        character.scale_parameter = String::new();
-
-        let resolved = character.resolve(&serde_json::json!({ "height": 1.1 }));
-        assert_eq!(resolved.layers[0].rect, UnitRect::new(0.35, 0.35, 0.3, 0.5));
-    }
-
-    /// Scenario 3: a monster, no player concept anywhere, same structures.
-    #[test]
-    fn a_monster_uses_the_same_structures_and_the_same_resolver() {
+    fn a_monster_uses_the_same_structures_and_its_own_canvas() {
         let goblin: CharacterDefinition = serde_json::from_str(
             r##"{
                 "id": "goblin", "schemaVersion": 1, "name": "Goblin",
-                "category": "monster", "rendering": "procedural",
+                "category": "monster",
+                "resolution": { "width": 32, "height": 48 },
                 "parameters": [
-                    { "id": "skinColor", "labelKey": "game.character.skinColor",
-                      "control": "color", "default": "#6b8f47" },
-                    { "id": "equipment", "labelKey": "game.character.equipment",
-                      "control": "multiSelect", "default": ["sword"],
+                    { "id": "skinColor", "labelKey": "k", "control": "color",
+                      "default": "#6b8f47" },
+                    { "id": "equipment", "labelKey": "k", "control": "multiSelect",
+                      "default": ["sword"],
                       "options": [
-                        { "value": "sword", "labelKey": "game.character.sword" },
-                        { "value": "helmet", "labelKey": "game.character.helmet" }
+                        { "value": "sword", "labelKey": "k" },
+                        { "value": "helmet", "labelKey": "k" }
                       ] }
                 ],
                 "layers": [
                     { "id": "body", "variants": [
-                        { "id": "default", "rect": [0.3, 0.4, 0.4, 0.45],
-                          "visual": { "kind": "shape", "shape": "ellipse",
-                                      "color": { "parameter": "skinColor" } } }
+                        { "id": "default", "rect": [4, 8, 24, 40],
+                          "sprite": { "asset": "assets/characters/goblin.png",
+                                      "tint": { "parameter": "skinColor" } } }
                     ] },
                     { "id": "helmet", "variants": [
                         { "id": "worn", "when": { "equipment": "helmet" },
-                          "rect": [0.35, 0.2, 0.3, 0.12],
-                          "visual": { "kind": "shape", "shape": "rect",
-                                      "color": { "fixed": "#8d99ae" } } }
+                          "rect": [8, 4, 16, 10],
+                          "sprite": { "asset": "assets/characters/helmet.png" } }
                     ] }
                 ]
             }"##,
         )
         .expect("parse");
 
-        // A list parameter matches a scalar it contains, and a layer whose
-        // variants all fail simply draws nothing.
+        assert_eq!(goblin.resolution, SpriteResolution::new(32, 48));
+
+        // A list parameter matches a scalar it contains.
         let bare = goblin.resolve(&serde_json::json!({ "equipment": ["sword"] }));
         assert_eq!(bare.layers.len(), 1);
 
         let armed = goblin.resolve(&serde_json::json!({ "equipment": ["sword", "helmet"] }));
         assert_eq!(armed.layers.len(), 2);
         assert_eq!(armed.layers[1].variant, "worn");
-    }
-
-    /// Scenario 2: a merchant drawn by combining assets — a different rendering
-    /// mode, resolved by the very same code path.
-    #[test]
-    fn an_asset_composed_character_resolves_through_the_same_pipeline() {
-        let merchant: CharacterDefinition = serde_json::from_str(
-            r##"{
-                "id": "merchant", "schemaVersion": 1, "name": "Merchant NPC",
-                "category": "npc", "rendering": "assetComposition",
-                "parameters": [
-                    { "id": "clothes", "labelKey": "game.character.clothes",
-                      "control": "select", "default": "plain",
-                      "options": [
-                        { "value": "plain", "labelKey": "game.character.plain" },
-                        { "value": "rich", "labelKey": "game.character.rich" }
-                      ] }
-                ],
-                "layers": [
-                    { "id": "clothes", "variants": [
-                        { "id": "rich", "when": { "clothes": "rich" },
-                          "visual": { "kind": "sprite", "asset": "assets/characters/rich.png" } },
-                        { "id": "plain",
-                          "visual": { "kind": "sprite", "asset": "assets/characters/plain.png" } }
-                    ] }
-                ]
-            }"##,
-        )
-        .expect("parse");
-
-        let resolved = merchant.resolve(&serde_json::json!({ "clothes": "rich" }));
-        assert_eq!(
-            resolved.layers[0].visual,
-            ResolvedVisual::Sprite {
-                asset: "assets/characters/rich.png".to_owned()
-            }
-        );
-        // A variant that authors no rect fills the whole unit square.
-        assert_eq!(resolved.layers[0].rect, UnitRect::default());
     }
 
     #[test]
@@ -748,9 +659,8 @@ mod tests {
                 "id": "skeleton", "schemaVersion": 1, "category": "monster",
                 "layers": [
                     { "id": "bones", "variants": [
-                        { "id": "default",
-                          "visual": { "kind": "shape", "shape": "rect",
-                                      "color": { "fixed": "#e8e8e8" } } }
+                        { "id": "default", "rect": [0, 0, 64, 128],
+                          "sprite": { "asset": "assets/characters/skeleton.png" } }
                     ] }
                 ]
             }"##,
@@ -760,6 +670,18 @@ mod tests {
         let resolved = skeleton.resolve(&serde_json::json!({}));
         assert!(resolved.values.is_empty());
         assert_eq!(resolved.layers.len(), 1);
+        // A file that names no canvas gets the default one.
+        assert_eq!(resolved.resolution, SpriteResolution::default());
+    }
+
+    #[test]
+    fn a_box_knows_whether_it_fits_the_canvas() {
+        let canvas = SpriteResolution::new(64, 128);
+        assert!(PixelRect::new(0, 0, 64, 128).fits(canvas));
+        assert!(PixelRect::new(20, 8, 24, 30).fits(canvas));
+        // A cape hanging off the left edge, and one running past the bottom.
+        assert!(!PixelRect::new(-4, 8, 24, 30).fits(canvas));
+        assert!(!PixelRect::new(0, 100, 64, 40).fits(canvas));
     }
 
     #[test]
@@ -771,8 +693,8 @@ mod tests {
             .map(|(_, key)| key)
             .collect();
 
-        assert!(keys.contains(&"game.character.gender"));
-        assert!(keys.contains(&"game.character.female"));
-        assert!(keys.contains(&"game.character.height"));
+        assert!(keys.contains(&"game.character.hairStyle"));
+        assert!(keys.contains(&"game.character.hairLong"));
+        assert!(keys.contains(&"game.character.cape"));
     }
 }

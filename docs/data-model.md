@@ -99,12 +99,13 @@ content, one file per definition, listed by the project (ADR-0028).
 
 ```text
 CharacterDefinition
-  id, name, category, rendering, scaleParameter
+  id, name, category
+  resolution     the pixel canvas its sprites are authored on
   parameters[]   ControlDefinition — the same vocabulary as settings
   layers[]
     id
     variants[]
-      id, when{ parameterId: value }, rect[x,y,w,h], visual
+      id, when{ parameterId: value }, rect[x,y,w,h], sprite{ asset, tint? }
 ```
 
 A definition describes a *family*; a set of chosen values — a **customisation**
@@ -116,15 +117,41 @@ character creation without a type of its own.
 CharacterDefinition + values ──> resolve() ──> ResolvedCharacter ──> renderer
 ```
 
-`ResolvedCharacter` is the only thing a renderer sees: an ordered list of boxes
-in unit space, each with a sprite path or a shape and a literal colour. It holds
-no definition, no lookup and no category — the same pipeline draws the player,
-a merchant and a dragon.
+`ResolvedCharacter` is the only thing a renderer sees: a canvas size and an
+ordered list of whole-pixel boxes, each with an image to blit and a literal
+tint. It holds no definition, no lookup and no category — the same pipeline
+draws the player, a merchant and a dragon.
+
+A character's **size** is its canvas, not a scale factor: a rat is authored at
+32×32 and a dragon at 256×256, and a host zooms each by a whole number
+(ADR-0029).
 
 **No type here is specific to the player.** The player's character is one
 `CharacterDefinition` among the project's, and the reason to keep it that way is
 that the alternative — a `PlayerAppearance` beside an `NpcAppearance` — is a
 renderer multiplied by a bestiary.
+
+## SpriteDocument
+
+*The pixels of one image, while an author is editing them.* Editor-only, and the
+only model here that is not content: it is what a PNG looks like between being
+read and being written (`apps/web/src/content/sprite-document.ts`, ADR-0030).
+
+```text
+SpriteDocument
+  width, height        the image's own pixel size
+  pixels               RGBA, row-major, one byte a channel
+  history              up to 32 strokes, in memory, never persisted
+```
+
+A **stroke** is one thing the author did — `begin()`, any number of plots, then
+`end()` — and it is the unit undo works in. Painting writes opaque, erasing
+writes fully clear, and a drag is joined into a line, so the buffer never holds
+the partial alpha that a later tint could not recolour.
+
+Nothing about it crosses the engine boundary. Rust decides what a character is
+drawn from; the bytes it is drawn *with* reach the engine as files, exactly as
+they would from any other tool.
 
 ---
 

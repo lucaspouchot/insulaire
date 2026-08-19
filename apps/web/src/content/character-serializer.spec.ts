@@ -18,7 +18,7 @@ describe('serializeCharacter', () => {
       id: 'goblin',
       schemaVersion: 1,
       category: 'monster',
-      rendering: 'procedural',
+      resolution: { width: 32, height: 48 },
       parameters: [],
       layers: [
         {
@@ -26,8 +26,8 @@ describe('serializeCharacter', () => {
           variants: [
             {
               id: 'default',
-              rect: [0.3, 0.4, 0.4, 0.45],
-              visual: { kind: 'shape', shape: 'ellipse', color: { fixed: '#6b8f47' } },
+              rect: [4, 8, 24, 40],
+              sprite: { asset: 'assets/characters/goblin.png' },
             },
           ],
         },
@@ -35,8 +35,8 @@ describe('serializeCharacter', () => {
     });
 
     expect(json).toContain(
-      '    { "id": "default", "rect": [0.3, 0.4, 0.4, 0.45], ' +
-        '"visual": { "kind": "shape", "shape": "ellipse", "color": { "fixed": "#6b8f47" } } }\n',
+      '    { "id": "default", "rect": [4, 8, 24, 40], ' +
+        '"sprite": { "asset": "assets/characters/goblin.png" } }\n',
     );
     expect(json.endsWith('\n')).toBe(true);
   });
@@ -47,8 +47,7 @@ describe('serializeCharacter', () => {
       schemaVersion: 1,
       name: 'Merchant "quoted" \\ backslash',
       category: 'npc',
-      rendering: 'assetComposition',
-      scaleParameter: 'size',
+      resolution: { width: 48, height: 96 },
       parameters: [
         {
           id: 'size',
@@ -80,10 +79,13 @@ describe('serializeCharacter', () => {
             {
               id: 'rich',
               when: { clothes: 'rich' },
-              rect: [0.1, 0.2, 0.8, 0.8],
-              visual: { kind: 'sprite', asset: 'assets/characters/rich.png' },
+              rect: [4, 12, 40, 80],
+              sprite: {
+                asset: 'assets/characters/rich.png',
+                tint: { parameter: 'clothes' },
+              },
             },
-            { id: 'plain', visual: { kind: 'sprite', asset: 'assets/characters/plain.png' } },
+            { id: 'plain', sprite: { asset: 'assets/characters/plain.png' } },
           ],
         },
       ],
@@ -91,8 +93,8 @@ describe('serializeCharacter', () => {
 
     const parsed = JSON.parse(serializeCharacter(character)) as CharacterDefinition;
     // The one difference is deliberate: a variant that authored no box gets the
-    // whole unit square written out, which is what it already meant.
-    expect(parsed.layers?.[0]?.variants?.[1]?.rect).toEqual([0, 0, 1, 1]);
+    // empty one written out, which is what it already meant.
+    expect(parsed.layers?.[0]?.variants?.[1]?.rect).toEqual([0, 0, 0, 0]);
     expect({
       ...parsed,
       layers: [
@@ -100,7 +102,7 @@ describe('serializeCharacter', () => {
           ...parsed.layers?.[0],
           variants: [
             parsed.layers?.[0]?.variants?.[0],
-            { id: 'plain', visual: { kind: 'sprite', asset: 'assets/characters/plain.png' } },
+            { id: 'plain', sprite: { asset: 'assets/characters/plain.png' } },
           ],
         },
       ],
@@ -116,10 +118,10 @@ describe('serializeCharacter', () => {
     });
 
     expect(json).not.toContain('"name"');
-    expect(json).not.toContain('"scaleParameter"');
+    expect(json).not.toContain('"tint"');
     // But never the two fields the file is about.
     expect(json).toContain('"category": "other"');
-    expect(json).toContain('"rendering": "procedural"');
+    expect(json).toContain('"resolution": { "width": 64, "height": 128 }');
   });
 
   /**

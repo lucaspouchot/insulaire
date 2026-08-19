@@ -46,7 +46,8 @@
   color: var(--error);
 }
 
-.readonly {
+.readonly,
+.pending {
   font-size: 11px;
   color: var(--warn);
 }
@@ -128,6 +129,23 @@
   color: var(--text-dim);
 }
 
+/* The canvas size: two numbers with a × between them. */
+.pair {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pair input {
+  width: 72px;
+}
+
+.pair .times,
+.pair .unit {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
 /* A parameter, a layer or a variant: a bordered block of lines. */
 .node {
   margin-bottom: 6px;
@@ -163,9 +181,31 @@
   font-family: var(--mono);
 }
 
-.line input.asset {
+.line select.asset {
   flex: 2;
+  min-width: 0;
   font-family: var(--mono);
+}
+
+/* The file input itself is hidden; the label is the button. */
+.upload {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.upload:hover {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+}
+
+.upload input {
+  display: none;
 }
 
 .line input[type='color'] {
@@ -240,6 +280,10 @@ button.small {
   color: var(--ok);
 }
 
+.hint.warn {
+  color: var(--warn);
+}
+
 .resolved {
   font-size: 11px;
   color: var(--text-dim);
@@ -258,14 +302,93 @@ button.small {
   font-style: italic;
 }
 
-/* The character itself, on a ground line so scaling reads as height. */
+/* The stage scrolls, because a zoomed canvas is bigger than the panel. */
+.stage-frame {
+  max-height: 520px;
+  overflow: auto;
+  border-radius: var(--radius);
+  border-bottom: 2px solid var(--border);
+}
+
+/* A drawing surface, not a document: a drag is a stroke, never a selection. */
+.stage-frame.painting {
+  user-select: none;
+  touch-action: none;
+}
+
+/* The character itself, sized by the draw so the two agree on every pixel.
+
+   The transparency checker is *not* here: a CSS background is a fixed number of
+   screen pixels, which contradicts the pixel grid the moment the stage zooms.
+   The draw paints it, in authored pixels (ADR-0030). */
 .stage-canvas {
   display: block;
-  width: 100%;
-  height: 320px;
   border-radius: var(--radius);
-  background: linear-gradient(var(--bg), var(--bg-raised));
-  border-bottom: 2px solid var(--border);
+  background-color: var(--bg);
+  image-rendering: pixelated;
+}
+
+.stage-canvas.paint {
+  cursor: crosshair;
+}
+
+.stage-canvas.pick {
+  cursor: copy;
+}
+
+/* The pixel tools. */
+.paint .spacer {
+  flex: 1;
+}
+
+.paint .label,
+.paint .readout {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.paint .readout {
+  min-width: 30px;
+  text-align: center;
+}
+
+.paint button.small,
+.paint button.tool,
+.paint button.toggle {
+  margin-top: 0;
+  flex: 0 0 auto;
+}
+
+.paint button.tool {
+  width: 28px;
+  padding: 2px 0;
+  font-size: 13px;
+}
+
+.paint .tool.on,
+.paint .toggle.on {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+}
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.swatch {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.swatch.on {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .issue {

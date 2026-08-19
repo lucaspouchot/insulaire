@@ -493,54 +493,75 @@ describe.skipIf(!built)('engine boundary', () => {
 
     const definition = JSON.parse(instance.character('human_player')) as CharacterDefinition;
     expect(definition.category).toBe('player');
+    expect(definition.resolution).toEqual({ width: 64, height: 128 });
     expect(definition.parameters?.map((parameter) => parameter.id)).toEqual([
-      'gender',
+      'hairStyle',
       'hairColor',
-      'height',
+      'armor',
+      'cape',
     ]);
 
     const resolved = JSON.parse(
       instance.resolveCharacter('human_player', JSON.stringify({ hairColor: '#f2c14e' })),
     ) as ResolvedCharacter;
-    expect(resolved.layers.map((layer) => layer.layer)).toEqual(['legs', 'body', 'head', 'hair']);
-    // Every colour is resolved on the Rust side: the renderer only fills.
-    expect(resolved.layers[3]?.visual).toEqual({
-      kind: 'shape',
-      shape: 'ellipse',
-      color: '#f2c14e',
-    });
-    // A choice swaps a variant, and the geometry stays in the unit square.
-    const male = JSON.parse(
-      instance.resolveCharacter('human_player', JSON.stringify({ gender: 'male' })),
+    expect(resolved.layers.map((layer) => layer.layer)).toEqual([
+      'cape',
+      'hairBack',
+      'body',
+      'boots',
+      'top',
+      'skirt',
+      'hairFront',
+    ]);
+    // Every tint is resolved on the Rust side: the renderer only blits.
+    const hair = resolved.layers.find((layer) => layer.layer === 'hairFront');
+    expect(hair?.asset).toBe('assets/characters/hair_front.png');
+    expect(hair?.tint).toBe('#f2c14e');
+    // A sprite with no tint says so as an empty string, not as a colour.
+    expect(resolved.layers.find((layer) => layer.layer === 'body')?.tint).toBe('');
+
+    // A choice swaps a variant, and every box is whole pixels inside the canvas.
+    const plated = JSON.parse(
+      instance.resolveCharacter('human_player', JSON.stringify({ armor: 'plate' })),
     ) as ResolvedCharacter;
-    expect(male.layers[1]?.variant).toBe('default');
-    for (const layer of male.layers) {
+    expect(plated.layers.find((layer) => layer.layer === 'top')?.variant).toBe('plate');
+    for (const layer of plated.layers) {
       const [x, y, width, height] = layer.rect;
+      expect(Number.isInteger(x) && Number.isInteger(y)).toBe(true);
       expect(x).toBeGreaterThanOrEqual(0);
       expect(y).toBeGreaterThanOrEqual(0);
-      expect(x + width).toBeLessThanOrEqual(1);
-      expect(y + height).toBeLessThanOrEqual(1);
+      expect(x + width).toBeLessThanOrEqual(plated.resolution.width);
+      expect(y + height).toBeLessThanOrEqual(plated.resolution.height);
     }
+
+    // Turning the cape off removes the layer rather than drawing nothing.
+    const bare = JSON.parse(
+      instance.resolveCharacter('human_player', JSON.stringify({ cape: false })),
+    ) as ResolvedCharacter;
+    expect(bare.layers.some((layer) => layer.layer === 'cape')).toBe(false);
   });
 
   /** What the editor previews with: a definition in hand, not registered. */
   it('previews an unregistered definition and refuses to draw it wrong', () => {
     const instance = engine();
     const definition = readJson<CharacterDefinition>('content/characters/human_player.json');
-    definition.rendering = 'assetComposition';
+    const layer = definition.layers?.[0]?.variants?.[0];
+    if (layer !== undefined) {
+      layer.sprite.asset = '';
+    }
 
     // Previewing is total, so a definition that cannot load still draws.
     const resolved = JSON.parse(
       instance.previewCharacter(JSON.stringify(definition), '{}'),
     ) as ResolvedCharacter;
-    expect(resolved.layers).toHaveLength(4);
+    expect(resolved.layers).toHaveLength(7);
 
-    // Loading it is what refuses: shapes in a file that declares images.
+    // Loading it is what refuses: a sprite layer that names no image.
     const report = JSON.parse(
       instance.validateCharacter(JSON.stringify(definition)),
     ) as ValidationReport;
     expect(report.valid).toBe(false);
-    expect(report.issues.map((issue) => issue.code)).toContain('character.renderingMismatch');
+    expect(report.issues.map((issue) => issue.code)).toContain('character.missingAsset');
   });
 
   it('refuses a project naming a character it never loaded', () => {

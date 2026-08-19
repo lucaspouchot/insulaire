@@ -457,32 +457,29 @@ what may be chosen about one** (ADR-0028). The player's character is one of
 them; an NPC, a monster or a boss is another, and nothing in the format is
 specific to any of those.
 
+A character is **composed of sprites** on a pixel canvas it declares
+(ADR-0029). There is no procedural drawing vocabulary: a layer names an image.
+
 ```json
 {
   "id": "human_player",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "name": "Human Player",
   "category": "player",
-  "rendering": "procedural",
-  "scaleParameter": "height",
+  "resolution": { "width": 64, "height": 128 },
   "parameters": [
     {
-      "id": "gender",
-      "labelKey": "game.character.gender",
-      "control": "select",
-      "default": "female",
-      "options": [
-        { "value": "female", "labelKey": "game.character.genderFemale" },
-        { "value": "male", "labelKey": "game.character.genderMale" }
-      ]
+      "id": "hairColor",
+      "labelKey": "game.character.hairColor",
+      "control": "color",
+      "default": "#8b5a2b"
     }
   ],
   "layers": [
     {
-      "id": "body",
+      "id": "hairFront",
       "variants": [
-        { "id": "female", "when": { "gender": "female" }, "rect": [0.28, 0.4, 0.44, 0.36], "visual": { "kind": "shape", "shape": "triangle", "color": { "fixed": "#7a5c3e" } } },
-        { "id": "default", "rect": [0.34, 0.4, 0.32, 0.34], "visual": { "kind": "shape", "shape": "rect", "color": { "fixed": "#7a5c3e" } } }
+        { "id": "default", "rect": [23, 10, 18, 20], "sprite": { "asset": "assets/characters/hair_front.png", "tint": { "parameter": "hairColor" } } }
       ]
     }
   ]
@@ -490,7 +487,7 @@ specific to any of those.
 ```
 
 A definition plus a set of chosen values is resolved into a flat, ordered list
-of things to draw:
+of sprites to blit:
 
 ```text
 CharacterDefinition + values ──> resolve() ──> ResolvedCharacter ──> renderer
@@ -499,13 +496,19 @@ CharacterDefinition + values ──> resolve() ──> ResolvedCharacter ──>
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `id` | string | yes | Stable id; must match the manifest's entry. |
-| `schemaVersion` | integer | yes | `1`. |
+| `schemaVersion` | integer | yes | `2` — the sprite format (ADR-0029). `1` was ADR-0028's primitives on a unit square and is gone. |
 | `name` | string | no | Shown in the editor. Not player-facing, so not a key. |
 | `category` | `player` \| `npc` \| `enemy` \| `monster` \| `other` | no | Filing only. **Never read by the resolver or the renderer.** Default `other`. |
-| `rendering` | `procedural` \| `assetComposition` | no | How its layers are drawn. Every variant must match it. Default `procedural`. |
+| `resolution` | `{ width, height }` | no | The pixel canvas the sprites are authored on, `1..=256` a side. Default `64 × 128`. |
 | `parameters[]` | `ControlDefinition[]` | no | The choices it offers. A definition may offer none. |
 | `layers[]` | see below | no | The pieces it is drawn from, **back to front**. |
-| `scaleParameter` | string | no | Id of a numeric parameter that scales the whole character about the ground line. Empty means no scaling. |
+
+### The canvas
+
+`resolution` is what a character's size *is*. A rat is authored at 32×32 and a
+dragon at 256×256; a host draws each at its native size times a **whole-number**
+zoom, so authored pixels stay square. There is no scale factor in the format —
+scaling pixel art by 1.15 is how pixel art stops being pixel art.
 
 ### Parameters
 
@@ -526,51 +529,60 @@ reads it here.
 | `layers[].variants[]` | see below | no | The appearances it can take, **most specific first**. |
 | `variants[].id` | string | yes | Stable id, unique within its layer. |
 | `variants[].when` | `{ parameterId: value }` | no | Values this variant requires. Absent means "always". |
-| `variants[].rect` | `[x, y, width, height]` | no | Where it is drawn, in the unit square. Defaults to the whole square. |
-| `variants[].visual` | see below | yes | What it draws. |
+| `variants[].rect` | `[x, y, width, height]` | no | Where the sprite goes on the canvas, in **whole pixels**. `x`/`y` may be negative. |
+| `variants[].sprite` | `{ asset, tint? }` | yes | The image it draws. |
 
 **The first variant whose conditions hold is the one drawn**, so author order is
 priority. A layer with no matching variant draws nothing, which is how an
-optional piece is authored.
+optional piece — a cape, a helmet — is authored.
 
 Every entry of `when` must match. A parameter holding a **list** matches a
 scalar it *contains*, so `{ "equipment": "helmet" }` asks whether a helmet was
 chosen among several.
 
-`rect` is `0..1` on both axes, origin top-left, **y down** — so the same
-definition draws as a map token or a full-height portrait. Drawing outside the
-square is allowed (a warning) because a wing may overhang.
+`rect` is the sprite's box on the canvas. It should be the image's own pixel
+size — any other size stretches it — and the editor fills it in from the image
+when one is picked. A box reaching outside the canvas is legal (a cape
+overhangs) and reported as a warning.
 
-### Visuals
+### Sprites and tints
 
 ```json
-{ "kind": "shape", "shape": "ellipse", "color": { "parameter": "hairColor" } }
-{ "kind": "sprite", "asset": "assets/characters/hair_long.png" }
+"sprite": { "asset": "assets/characters/hair_front.png" }
+"sprite": { "asset": "assets/characters/hair_front.png", "tint": { "parameter": "hairColor" } }
+"sprite": { "asset": "assets/characters/cape.png", "tint": { "fixed": "#4e8f74" } }
 ```
 
 | Field | Type | Meaning |
 |---|---|---|
-| `kind` | `shape` \| `sprite` | Which of the two below. Must match the definition's `rendering`. |
-| `shape` | `rect` \| `ellipse` \| `triangle` | For `shape`. A triangle stands on the bottom edge of its box. |
-| `color` | `{ "fixed": css }` or `{ "parameter": id }` | For `shape`. A parameter binding reads the value the customisation holds; a value that is not a string draws as `#ff00ff`. |
-| `asset` | string | For `sprite`. Path under the content root. |
+| `asset` | string | Path under the content root. No URLs, no `..`, no absolute paths. |
+| `tint` | `{ "fixed": css }` or `{ "parameter": id }` | Recolours the sprite. Absent draws it as authored. |
+
+A tint **multiplies** the sprite and keeps its alpha, so a near-white sprite
+becomes the tint with its own shading intact. That is what lets one greyscale
+hair sprite serve every hair colour instead of one image per colour. A
+`parameter` tint whose value is not a string draws as `#ff00ff`.
 
 ### ResolvedCharacter
 
 What `resolveCharacter` and `previewCharacter` return, and the only thing a
-renderer needs. Colours are already resolved and boxes already scaled:
+renderer needs — no lookup, no definition, no customisation:
 
 ```json
 {
   "character": "human_player",
   "category": "player",
-  "values": { "gender": "female", "hairColor": "#4b3621", "height": 1 },
+  "resolution": { "width": 64, "height": 128 },
+  "values": { "hairColor": "#8b5a2b", "cape": true },
   "layers": [
-    { "layer": "body", "variant": "female", "rect": [0.28, 0.4, 0.44, 0.36],
-      "visual": { "kind": "shape", "shape": "triangle", "color": "#7a5c3e" } }
+    { "layer": "hairFront", "variant": "default", "rect": [23, 10, 18, 20],
+      "asset": "assets/characters/hair_front.png", "tint": "#8b5a2b" }
   ]
 }
 ```
+
+`tint` is **an empty string** when the sprite is drawn as authored — not `null`,
+not a colour.
 
 ---
 
@@ -669,14 +681,15 @@ exposed across the boundary as `validateLinks()` and `loadProject()`.
 | `character.missingParameterId` / `character.duplicateParameter` | A parameter has no id, or two share one. |
 | `character.missingLabelKey` / `character.noOptions` / `character.duplicateOption` / `character.emptyRange` / `character.invalidStep` / `character.invalidDefault` / `character.defaultOutOfRange` | A parameter breaks a control rule. Same checks as the `settings.*` codes above, under this file's namespace. |
 | `character.unknownCondition` | A parameter's `showIf` points at a parameter nobody declares. |
+| `character.invalidResolution` | A canvas side is `0` or above `256`. |
 | `character.missingLayerId` / `character.duplicateLayer` | A layer has no id, or two share one. |
 | `character.missingVariantId` / `character.duplicateVariant` | A variant has no id, or a layer declares one twice. |
 | `character.unknownConditionParameter` | A variant's `when` names a parameter that is not declared. |
-| `character.emptyRect` | A variant's box has zero width or height. |
-| `character.renderingMismatch` | A variant's visual is not the kind the definition's `rendering` declares. |
-| `character.missingAsset` / `character.missingColor` | A sprite variant has no image, or a shape variant no colour. |
-| `character.unknownColorParameter` | A colour binding names a parameter that is not declared. |
-| `character.unknownScaleParameter` / `character.nonNumericScale` | `scaleParameter` names nothing, or names a control that is not numeric. |
+| `character.emptyRect` | A variant's box has zero width or height, so its sprite would not be drawn. |
+| `character.missingAsset` | A variant names no image. |
+| `character.invalidAssetPath` | An asset path is absolute, a URL, or steps outside the content root. |
+| `character.unknownTintParameter` | A tint names a parameter that is not declared. |
+| `character.missingTint` | A `fixed` tint carries no colour. |
 | `tileSet.empty` / `tileSet.paletteTooLarge` / `tile.duplicateId` / `tile.missingVisualId` | Tile set problems. |
 
 **Warnings** (content loads):
@@ -693,7 +706,7 @@ exposed across the boundary as `validateLinks()` and `loadProject()`.
 | `character.unusedOptions` | As above, for a character parameter. |
 | `character.noLayers` / `character.emptyLayer` | A character draws nothing, or a layer has no variant. |
 | `character.impossibleCondition` | A variant waits for a value its parameter's control can never hold, so it is never drawn. |
-| `character.rectOutOfBox` | A variant draws outside the unit square. Legal — a wing may overhang — and far more often a typo. |
+| `character.rectOutOfCanvas` | A variant reaches outside the declared canvas. Legal — a cape overhangs — and far more often a box left over from a smaller sprite. |
 
 ---
 
@@ -736,3 +749,10 @@ Adding an **optional** field is a backwards-compatible change and does not need
 a version bump: every optional field has a `serde` default. Renaming or removing
 a field, or changing the meaning of an existing one, requires bumping
 `WORLD_SCHEMA_VERSION` and adding an explicit migration.
+
+`CHARACTER_SCHEMA_VERSION` is at **2**. Version 1 was ADR-0028's format, where a
+layer could be a coloured rectangle, ellipse or triangle placed on a unit square
+of floats; ADR-0029 replaced it with one sprite per layer on a declared pixel
+canvas. Nothing reads version 1 — before 1.0 a breaking change is the answer
+rather than a migration (`CLAUDE.md`, "Versioning") — so a file written against
+it must be rewritten, not converted.

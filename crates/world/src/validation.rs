@@ -12,8 +12,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::character::{
-    CharacterDefinition, CharacterLayer, ColorSource, LayerVariant, LayerVisual,
-    CHARACTER_SCHEMA_VERSION,
+    CharacterDefinition, CharacterLayer, ColorSource, LayerVariant, CHARACTER_SCHEMA_VERSION,
+    MAX_SPRITE_RESOLUTION,
 };
 use crate::definition::{
     HexOrientation, LinkTrigger, WorldDefinition, MAX_ELEVATION, MIN_ELEVATION,
@@ -1356,8 +1356,19 @@ pub fn validate_character(character: &CharacterDefinition) -> ValidationReport {
         ));
     }
 
+    if !character.resolution.is_valid() {
+        issues.push(ValidationIssue::error(
+            "character.invalidResolution",
+            "resolution",
+            format!(
+                "character `{}` is authored on a {}x{} canvas; each side must be between 1 and \
+                 {MAX_SPRITE_RESOLUTION}",
+                character.id, character.resolution.width, character.resolution.height
+            ),
+        ));
+    }
+
     issues.extend(parameter_issues(character));
-    issues.extend(scale_issues(character));
     issues.extend(layer_issues(character));
 
     ValidationReport::from_issues(issues)
@@ -1403,32 +1414,6 @@ fn parameter_issues(character: &CharacterDefinition) -> Vec<ValidationIssue> {
     }
 
     issues
-}
-
-/// The one binding that acts on geometry has to name a number.
-fn scale_issues(character: &CharacterDefinition) -> Vec<ValidationIssue> {
-    if character.scale_parameter.is_empty() {
-        return Vec::new();
-    }
-    match character.parameter(&character.scale_parameter) {
-        None => vec![ValidationIssue::error(
-            "character.unknownScaleParameter",
-            "scaleParameter",
-            format!(
-                "`{}` scales the character but is not a declared parameter",
-                character.scale_parameter
-            ),
-        )],
-        Some(parameter) if !parameter.control.is_numeric() => vec![ValidationIssue::error(
-            "character.nonNumericScale",
-            "scaleParameter",
-            format!(
-                "`{}` scales the character, so it must be a numeric control, not a `{:?}`",
-                character.scale_parameter, parameter.control
-            ),
-        )],
-        Some(_) => Vec::new(),
-    }
 }
 
 /// The pieces a definition is drawn from, and what each variant claims.
@@ -1493,7 +1478,7 @@ fn layer_issues(character: &CharacterDefinition) -> Vec<ValidationIssue> {
     issues
 }
 
-/// One variant: its conditions, its box and what it draws.
+/// One variant: its conditions, its box and the sprite it draws.
 fn variant_issues(
     character: &CharacterDefinition,
     path: &str,
@@ -1529,82 +1514,68 @@ fn variant_issues(
         }
     }
 
-    if variant.rect.width() <= 0.0 || variant.rect.height() <= 0.0 {
+    if variant.rect.width() <= 0 || variant.rect.height() <= 0 {
         issues.push(ValidationIssue::error(
             "character.emptyRect",
             format!("{path}.rect"),
             format!(
-                "variant `{}` of layer `{}` has a box of zero size",
+                "variant `{}` of layer `{}` has a box of zero size, so its sprite would not be \
+                 drawn",
                 variant.id, layer.id
             ),
         ));
-    } else if variant.rect.x() < 0.0
-        || variant.rect.y() < 0.0
-        || variant.rect.x() + variant.rect.width() > 1.0
-        || variant.rect.y() + variant.rect.height() > 1.0
-    {
-        // Drawing outside the unit square is legal — it is how a wing overhangs
-        // — but it is far more often a typo, so it is said out loud.
+    } else if !variant.rect.fits(character.resolution) {
+        // Drawing off the canvas is legal — a cape overhangs on purpose — but
+        // it is far more often a box left over from a smaller sprite.
         issues.push(ValidationIssue::warning(
-            "character.rectOutOfBox",
+            "character.rectOutOfCanvas",
             format!("{path}.rect"),
             format!(
-                "variant `{}` of layer `{}` draws outside the character's box",
+                "variant `{}` of layer `{}` reaches outside the {}x{} canvas",
+                variant.id, layer.id, character.resolution.width, character.resolution.height
+            ),
+        ));
+    }
+
+    if variant.sprite.asset.trim().is_empty() {
+        issues.push(ValidationIssue::error(
+            "character.missingAsset",
+            format!("{path}.sprite.asset"),
+            format!(
+                "variant `{}` of layer `{}` names no image",
                 variant.id, layer.id
             ),
         ));
-    }
-
-    if variant.visual.mode() != character.rendering {
+    } else if let Some(reason) = unusable_asset_path(&variant.sprite.asset) {
+        // The same rule the title screen's assets follow, from the same helper:
+        // a path that escapes the content root cannot be shipped in a delivery.
         issues.push(ValidationIssue::error(
-            "character.renderingMismatch",
-            format!("{path}.visual"),
+            "character.invalidAssetPath",
+            format!("{path}.sprite.asset"),
             format!(
-                "character `{}` is drawn as `{:?}`, so variant `{}` of layer `{}` may not be a \
-                 `{:?}` visual",
-                character.id,
-                character.rendering,
-                variant.id,
-                layer.id,
-                variant.visual.mode()
+                "variant `{}` of layer `{}` names `{}`, which {reason}",
+                variant.id, layer.id, variant.sprite.asset
             ),
         ));
     }
 
-    match &variant.visual {
-        LayerVisual::Sprite { asset } if asset.trim().is_empty() => {
+    match &variant.sprite.tint {
+        Some(ColorSource::Parameter(id)) if character.parameter(id).is_none() => {
             issues.push(ValidationIssue::error(
-                "character.missingAsset",
-                format!("{path}.visual.asset"),
+                "character.unknownTintParameter",
+                format!("{path}.sprite.tint"),
                 format!(
-                    "variant `{}` of layer `{}` is a sprite with no image",
+                    "variant `{}` of layer `{}` is tinted from `{id}`, which is not declared",
                     variant.id, layer.id
                 ),
             ));
         }
-        LayerVisual::Shape {
-            color: ColorSource::Parameter(id),
-            ..
-        } if character.parameter(id).is_none() => {
+        Some(ColorSource::Fixed(color)) if color.trim().is_empty() => {
             issues.push(ValidationIssue::error(
-                "character.unknownColorParameter",
-                format!("{path}.visual.color"),
+                "character.missingTint",
+                format!("{path}.sprite.tint"),
                 format!(
-                    "variant `{}` of layer `{}` takes its colour from `{id}`, which is not \
-                     declared",
-                    variant.id, layer.id
-                ),
-            ));
-        }
-        LayerVisual::Shape {
-            color: ColorSource::Fixed(color),
-            ..
-        } if color.trim().is_empty() => {
-            issues.push(ValidationIssue::error(
-                "character.missingColor",
-                format!("{path}.visual.color"),
-                format!(
-                    "variant `{}` of layer `{}` has no colour",
+                    "variant `{}` of layer `{}` declares a tint with no colour",
                     variant.id, layer.id
                 ),
             ));
@@ -1690,7 +1661,7 @@ fn tile_at_is_passable(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::character::{RenderingMode, ShapeKind, UnitRect};
+    use crate::character::{ColorSource, PixelRect, SpriteResolution};
     use crate::hex::OffsetCoord;
     use crate::settings::ControlKind;
     use crate::testing;
@@ -2392,21 +2363,22 @@ mod tests {
         serde_json::from_str(json).expect("parse")
     }
 
-    /// A minimal definition that validates: one parameter, one layer.
+    /// A minimal definition that validates: one parameter, one layer, one sprite.
     fn valid_character() -> CharacterDefinition {
         character(
             r##"{
                 "id": "human_player", "schemaVersion": 1, "name": "Human Player",
-                "category": "player", "rendering": "procedural",
+                "category": "player",
+                "resolution": { "width": 64, "height": 128 },
                 "parameters": [
                     { "id": "hairColor", "labelKey": "game.character.hairColor",
                       "control": "color", "default": "#4b3621" }
                 ],
                 "layers": [
                     { "id": "hair", "variants": [
-                        { "id": "default", "rect": [0.38, 0.08, 0.24, 0.14],
-                          "visual": { "kind": "shape", "shape": "ellipse",
-                                      "color": { "parameter": "hairColor" } } }
+                        { "id": "default", "rect": [20, 8, 24, 30],
+                          "sprite": { "asset": "assets/characters/hair.png",
+                                      "tint": { "parameter": "hairColor" } } }
                     ] }
                 ]
             }"##,
@@ -2451,7 +2423,7 @@ mod tests {
     fn a_condition_the_control_cannot_produce_is_a_warning() {
         let mut character = character(
             r##"{
-                "id": "goblin", "schemaVersion": 1, "rendering": "procedural",
+                "id": "goblin", "schemaVersion": 1,
                 "parameters": [
                     { "id": "armor", "labelKey": "k", "control": "select", "default": "leather",
                       "options": [{ "value": "leather", "labelKey": "k" }] }
@@ -2459,8 +2431,8 @@ mod tests {
                 "layers": [
                     { "id": "armor", "variants": [
                         { "id": "plate", "when": { "armor": "plate" },
-                          "visual": { "kind": "shape", "shape": "rect",
-                                      "color": { "fixed": "#888888" } } }
+                          "rect": [0, 0, 64, 128],
+                          "sprite": { "asset": "assets/characters/plate.png" } }
                     ] }
                 ]
             }"##,
@@ -2481,55 +2453,65 @@ mod tests {
     }
 
     #[test]
-    fn a_character_is_held_to_the_rendering_mode_it_declares() {
+    fn a_variant_must_name_an_image_inside_the_content_directory() {
         let mut character = valid_character();
-        character.layers[0].variants[0].visual = LayerVisual::Sprite {
-            asset: "assets/characters/hair.png".to_owned(),
-        };
-
+        character.layers[0].variants[0].sprite.asset = String::new();
         let report = validate_character(&character);
         assert!(!report.valid);
-        assert!(codes(&report).contains(&"character.renderingMismatch"));
+        assert!(codes(&report).contains(&"character.missingAsset"));
 
-        // Declaring the other mode is all it takes; nothing else moves.
-        character.rendering = RenderingMode::AssetComposition;
+        // The same rule the title screen's assets follow: no URLs, no escaping.
+        character.layers[0].variants[0].sprite.asset = "../../etc/passwd".to_owned();
+        assert!(codes(&validate_character(&character)).contains(&"character.invalidAssetPath"));
+
+        character.layers[0].variants[0].sprite.asset = "https://example.com/hair.png".to_owned();
+        assert!(codes(&validate_character(&character)).contains(&"character.invalidAssetPath"));
+    }
+
+    #[test]
+    fn a_tint_must_name_a_declared_parameter_or_carry_a_colour() {
+        let mut character = valid_character();
+        character.layers[0].variants[0].sprite.tint =
+            Some(ColorSource::Parameter("eyeColor".to_owned()));
+        assert!(codes(&validate_character(&character)).contains(&"character.unknownTintParameter"));
+
+        character.layers[0].variants[0].sprite.tint = Some(ColorSource::Fixed(String::new()));
+        assert!(codes(&validate_character(&character)).contains(&"character.missingTint"));
+
+        // No tint at all is the common case: the sprite is drawn as authored.
+        character.layers[0].variants[0].sprite.tint = None;
+        assert!(validate_character(&character).valid);
+    }
+
+    /// The canvas is what a character's size *is*, so a nonsensical one is
+    /// refused rather than clamped.
+    #[test]
+    fn a_canvas_must_be_between_one_pixel_and_the_maximum() {
+        let mut character = valid_character();
+        character.resolution = SpriteResolution::new(0, 128);
+        assert!(codes(&validate_character(&character)).contains(&"character.invalidResolution"));
+
+        character.resolution = SpriteResolution::new(64, 512);
+        assert!(codes(&validate_character(&character)).contains(&"character.invalidResolution"));
+
+        character.resolution = SpriteResolution::new(256, 256);
         assert!(validate_character(&character).valid);
     }
 
     #[test]
-    fn a_colour_binding_must_name_a_declared_parameter() {
+    fn a_box_of_no_size_is_an_error_and_one_off_the_canvas_is_a_warning() {
         let mut character = valid_character();
-        character.layers[0].variants[0].visual = LayerVisual::Shape {
-            shape: ShapeKind::Ellipse,
-            color: ColorSource::Parameter("eyeColor".to_owned()),
-        };
-
-        assert!(codes(&validate_character(&character)).contains(&"character.unknownColorParameter"));
-    }
-
-    #[test]
-    fn what_scales_a_character_must_be_a_number_it_declares() {
-        let mut character = valid_character();
-        character.scale_parameter = "height".to_owned();
-        assert!(codes(&validate_character(&character)).contains(&"character.unknownScaleParameter"));
-
-        // Declared, but a colour: still not something to multiply a box by.
-        character.scale_parameter = "hairColor".to_owned();
-        assert!(codes(&validate_character(&character)).contains(&"character.nonNumericScale"));
-    }
-
-    #[test]
-    fn a_box_of_no_size_is_an_error_and_one_that_overhangs_is_a_warning() {
-        let mut character = valid_character();
-        character.layers[0].variants[0].rect = UnitRect::new(0.1, 0.1, 0.0, 0.4);
+        character.layers[0].variants[0].rect = PixelRect::new(4, 4, 0, 30);
         let report = validate_character(&character);
         assert!(!report.valid);
         assert!(codes(&report).contains(&"character.emptyRect"));
 
-        character.layers[0].variants[0].rect = UnitRect::new(0.8, 0.1, 0.4, 0.4);
+        // A cape hanging past the edge is legal and reported, because it is far
+        // more often a box left over from a smaller sprite.
+        character.layers[0].variants[0].rect = PixelRect::new(48, 8, 32, 30);
         let report = validate_character(&character);
         assert!(report.valid, "an overhang still loads: {:?}", report.issues);
-        assert!(codes(&report).contains(&"character.rectOutOfBox"));
+        assert!(codes(&report).contains(&"character.rectOutOfCanvas"));
     }
 
     #[test]

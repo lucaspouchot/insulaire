@@ -354,7 +354,11 @@ export interface SettingsDefinition {
 /** Values by field id, as stored and as `createGame` receives them. */
 export type SettingsValues = Record<string, SettingValue>;
 
-export const CHARACTER_SCHEMA_VERSION = 1;
+/** Mirrors `CHARACTER_SCHEMA_VERSION`; `2` is the sprite format (ADR-0029). */
+export const CHARACTER_SCHEMA_VERSION = 2;
+
+/** Largest sprite canvas a character may declare, on either side. */
+export const MAX_SPRITE_RESOLUTION = 256;
 
 /**
  * What a character definition is used for.
@@ -366,33 +370,43 @@ export const CHARACTER_SCHEMA_VERSION = 1;
  */
 export type CharacterCategory = 'player' | 'npc' | 'enemy' | 'monster' | 'other';
 
-/** How a character's layers are drawn. A definition declares one and is held to it. */
-export type RenderingMode = 'procedural' | 'assetComposition';
-
-/** A drawing primitive. Closed: a shape is something the renderer implements. */
-export type ShapeKind = 'rect' | 'ellipse' | 'triangle';
+/**
+ * The canvas a character's sprites are authored on, in pixels.
+ *
+ * Every {@link PixelRect} is a position on *this* grid, so a host knows how big
+ * the character is without loading a single image
+ * (`docs/adr/ADR-0029-characters-are-composed-sprites.md`).
+ */
+export interface SpriteResolution {
+  width: number;
+  height: number;
+}
 
 /**
- * Where a shape's colour comes from.
+ * Where a tint's colour comes from.
  *
- * `parameter` is what makes "hair colour" a choice instead of one variant per
- * colour: the layer reads the value the customisation holds.
+ * `parameter` is what makes "hair colour" a choice instead of one image per
+ * colour: a single greyscale sprite is recoloured by the value the
+ * customisation holds.
  */
 export type ColorSource = { fixed: string } | { parameter: string };
 
-/** What one layer puts on screen. */
-export type LayerVisual =
-  | { kind: 'sprite'; asset: string }
-  | { kind: 'shape'; shape: ShapeKind; color: ColorSource };
+/** The image a layer draws, and how it is recoloured. */
+export interface Sprite {
+  /** Path under the content root. */
+  asset: string;
+  /** Recolouring, fixed or read off a parameter. Absent draws it as authored. */
+  tint?: ColorSource | null;
+}
 
 /**
- * A box in the character's unit square: `[x, y, width, height]`.
+ * A sprite's box on the character's canvas: `[x, y, width, height]`, in pixels.
  *
- * `0..1` on both axes, origin top-left, y down — the canvas convention. Unit
- * space is what lets one definition be drawn as a map token or a full portrait
- * without a second set of numbers.
+ * Whole pixels, always: the renderer blits at an integer zoom, so a sprite
+ * lands on the grid it was drawn on. `x` and `y` may be negative — a cape
+ * overhangs on purpose.
  */
-export type UnitRect = [number, number, number, number];
+export type PixelRect = [number, number, number, number];
 
 /** One appearance a layer can take, and the choices it answers to. */
 export interface LayerVariant {
@@ -404,9 +418,9 @@ export interface LayerVariant {
    * *contains*, so one variant can answer "is a helmet worn".
    */
   when?: Record<string, SettingValue>;
-  /** Where it is drawn. Absent fills the whole unit square. */
-  rect?: UnitRect;
-  visual: LayerVisual;
+  /** Where it is drawn on the character's canvas. */
+  rect?: PixelRect;
+  sprite: Sprite;
 }
 
 /** One piece a character is drawn from. Layers draw back to front. */
@@ -421,8 +435,8 @@ export interface CharacterLayer {
  *
  * Mirrors `crates/world/src/character.rs`. A parameter is a
  * {@link ControlDefinition} — the settings vocabulary — so the component that
- * renders a volume slider renders "height" too. `scope` is not part of this
- * format and is ignored on a character's parameters.
+ * renders a volume slider renders "hair colour" too. `scope` is not part of
+ * this format and is ignored on a character's parameters.
  */
 export interface CharacterDefinition {
   id: string;
@@ -430,33 +444,30 @@ export interface CharacterDefinition {
   /** Shown in the editor. Not player-facing, so not a key. */
   name?: string;
   category?: CharacterCategory;
-  rendering?: RenderingMode;
+  /** The canvas its sprites are authored on. */
+  resolution?: SpriteResolution;
   /** The choices it offers, in author order. A definition may offer none. */
   parameters?: ControlDefinition[];
   /** The pieces it is drawn from, back to front. */
   layers?: CharacterLayer[];
-  /** Id of a numeric parameter whose value scales the whole character. */
-  scaleParameter?: string;
 }
 
 /** Chosen values by parameter id — a character's customisation. */
 export type CharacterValues = Record<string, SettingValue>;
 
-/** A visual with nothing left to look up. */
-export type ResolvedVisual =
-  | { kind: 'sprite'; asset: string }
-  | { kind: 'shape'; shape: ShapeKind; color: string };
-
 /** One layer of a resolved character, ready to draw. */
 export interface ResolvedLayer {
   layer: string;
   variant: string;
-  rect: UnitRect;
-  visual: ResolvedVisual;
+  rect: PixelRect;
+  /** Path of the image to blit, under the content root. */
+  asset: string;
+  /** CSS colour to recolour it with. **Empty means draw it as authored.** */
+  tint: string;
 }
 
 /**
- * A character, resolved: an ordered list of things to draw.
+ * A character, resolved: an ordered list of sprites to draw.
  *
  * Produced by the Rust resolver, never assembled here — the editor preview and
  * the game draw the same payload, which is what makes the preview honest.
@@ -464,6 +475,8 @@ export interface ResolvedLayer {
 export interface ResolvedCharacter {
   character: string;
   category: CharacterCategory;
+  /** The canvas the layer boxes are positions on. */
+  resolution: SpriteResolution;
   /** The customisation actually applied, defaults filled in. */
   values: CharacterValues;
   /** What to draw, back to front. */

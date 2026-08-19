@@ -258,9 +258,10 @@ Ids of every registered definition, sorted.
 ### `resolveCharacter(id: string, valuesJson: string): ResolvedCharacter`
 
 Resolves a **registered** definition against a customisation, producing the flat
-ordered list of things to draw described in `docs/content-format.md`. Values go
-through the same rule as `resolveSettings`, and every colour is resolved here —
-a host draws what this returned and decides nothing about appearance.
+ordered list of sprites described in `docs/content-format.md`: a canvas
+resolution and, per layer, a whole-pixel box, an asset path and a resolved tint.
+Values go through the same rule as `resolveSettings`, and every tint is resolved
+here — a host blits what this returned and decides nothing about appearance.
 
 Errors: `parse`, `unknownContent`.
 

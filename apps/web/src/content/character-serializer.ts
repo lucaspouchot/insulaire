@@ -8,21 +8,22 @@
  * people, so this writes what an author would have written.
  *
  * The layout that matters is the **variant**: one per line, conditions and
- * geometry and visual all visible at once, which is what makes a diff of "the
- * hair moved up two pixels" readable.
+ * geometry and sprite all visible at once, which is what makes a diff of "the
+ * hair moved up two pixels" readable — and with pixel geometry, that diff now
+ * says exactly that.
  *
  * ```json
  * "variants": [
- *   { "id": "default", "rect": [0.4, 0.72, 0.2, 0.26], "visual": { … } }
+ *   { "id": "default", "rect": [23, 10, 18, 20], "sprite": { "asset": "…png" } }
  * ]
  * ```
  *
  * What is dropped is what parses back to the value dropped: an empty `name`,
- * `scaleParameter`, `helpKey`, `unit`, `options`, `min`, `max`, `step`, `showIf`
- * or `when`. `category` and `rendering` are always written — they are what the
+ * `helpKey`, `unit`, `options`, `min`, `max`, `step`, `showIf`, `when` or
+ * `tint`. `category` and `resolution` are always written — they are what the
  * file is *about*, and a reader should not have to know the defaults. `scope` is
  * never written: it belongs to the settings vocabulary and means nothing to a
- * character (`docs/adr/ADR-0028-character-definitions.md`).
+ * character (`docs/adr/ADR-0029-characters-are-composed-sprites.md`).
  */
 
 import {
@@ -30,8 +31,11 @@ import {
   CharacterLayer,
   ControlDefinition,
   LayerVariant,
-  UnitRect,
+  PixelRect,
 } from './content-types';
+
+/** The canvas a definition that names none is authored on. */
+const DEFAULT_RESOLUTION = { width: 64, height: 128 };
 
 /** The character file, in the canonical layout. */
 export function serializeCharacter(character: CharacterDefinition): string {
@@ -41,10 +45,11 @@ export function serializeCharacter(character: CharacterDefinition): string {
     lines.push(`  "name": ${JSON.stringify(character.name)},`);
   }
   lines.push(`  "category": ${JSON.stringify(character.category ?? 'other')},`);
-  lines.push(`  "rendering": ${JSON.stringify(character.rendering ?? 'procedural')},`);
-  if (character.scaleParameter) {
-    lines.push(`  "scaleParameter": ${JSON.stringify(character.scaleParameter)},`);
-  }
+  const resolution = character.resolution ?? DEFAULT_RESOLUTION;
+  lines.push(
+    `  "resolution": { "width": ${JSON.stringify(resolution.width)}, ` +
+      `"height": ${JSON.stringify(resolution.height)} },`,
+  );
 
   lines.push('  "parameters": [');
   lines.push(...blocks(character.parameters ?? [], (parameter) => parameterLines(parameter, 4)));
@@ -133,26 +138,29 @@ function variantLine(variant: LayerVariant): string {
       .join(', ');
     entries.push(`"when": { ${conditions} }`);
   }
-  entries.push(`"rect": ${rect(variant.rect ?? [0, 0, 1, 1])}`);
-  entries.push(`"visual": ${visual(variant)}`);
+  entries.push(`"rect": ${rect(variant.rect ?? [0, 0, 0, 0])}`);
+  entries.push(`"sprite": ${sprite(variant)}`);
   return `{ ${entries.join(', ')} }`;
 }
 
 /** `[x, y, width, height]`, spaced like every other coordinate in the format. */
-function rect(box: UnitRect): string {
+function rect(box: PixelRect): string {
   return `[${box.map((value) => JSON.stringify(value)).join(', ')}]`;
 }
 
-function visual(variant: LayerVariant): string {
-  const drawn = variant.visual;
-  if (drawn.kind === 'sprite') {
-    return `{ "kind": "sprite", "asset": ${JSON.stringify(drawn.asset)} }`;
+function sprite(variant: LayerVariant): string {
+  const entries = [`"asset": ${JSON.stringify(variant.sprite.asset)}`];
+  const tint = variant.sprite.tint;
+  if (tint) {
+    entries.push(
+      `"tint": ${
+        'fixed' in tint
+          ? `{ "fixed": ${JSON.stringify(tint.fixed)} }`
+          : `{ "parameter": ${JSON.stringify(tint.parameter)} }`
+      }`,
+    );
   }
-  const color =
-    'fixed' in drawn.color
-      ? `{ "fixed": ${JSON.stringify(drawn.color.fixed)} }`
-      : `{ "parameter": ${JSON.stringify(drawn.color.parameter)} }`;
-  return `{ "kind": "shape", "shape": ${JSON.stringify(drawn.shape)}, "color": ${color} }`;
+  return `{ ${entries.join(', ')} }`;
 }
 
 /** Drops the trailing comma of whichever entry ended up last, and closes. */

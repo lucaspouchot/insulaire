@@ -419,8 +419,8 @@ fn replaying_the_demo_world_is_deterministic() {
 /// The shipped character resolves into something a renderer can draw.
 ///
 /// It is the first definition of its kind, and the one every other is copied
-/// from, so "it parses" is not enough: it has to produce layers, honour the
-/// choices it offers, and keep its feet on the ground when it grows.
+/// from, so "it parses" is not enough: it has to produce layers in order, name
+/// images that exist on disk, and honour the choices it offers.
 #[test]
 fn the_shipped_character_resolves_for_every_choice_it_offers() {
     let engine = engine_with_shipped_content();
@@ -428,47 +428,64 @@ fn the_shipped_character_resolves_for_every_choice_it_offers() {
     let resolved = engine
         .resolve_character("human_player", "{}")
         .expect("the shipped character resolves");
-    assert_eq!(resolved.layers.len(), 4, "{:?}", resolved.layers);
+    let drawn: Vec<&str> = resolved
+        .layers
+        .iter()
+        .map(|layer| layer.layer.as_str())
+        .collect();
+    assert_eq!(
+        drawn,
+        [
+            "cape",
+            "hairBack",
+            "body",
+            "boots",
+            "top",
+            "skirt",
+            "hairFront"
+        ]
+    );
 
-    // The gender choice swaps a layer's variant rather than the character.
-    let male = engine
-        .resolve_character("human_player", r#"{ "gender": "male" }"#)
-        .expect("resolves");
-    let female = engine
-        .resolve_character("human_player", r#"{ "gender": "female" }"#)
-        .expect("resolves");
-    let body_of = |character: &insulaire_world::ResolvedCharacter| {
-        character
-            .layers
-            .iter()
-            .find(|layer| layer.layer == "body")
-            .expect("a body")
-            .variant
-            .clone()
-    };
-    assert_eq!(body_of(&male), "default");
-    assert_eq!(body_of(&female), "female");
+    // Every sprite it names is a file this repository actually ships, which is
+    // the half of "the content is loadable" that no validator can check.
+    for layer in &resolved.layers {
+        let path = repo_root().join("content").join(&layer.asset);
+        assert!(path.is_file(), "missing sprite: {}", path.display());
+    }
 
-    // The hair colour reaches the layer that draws it.
+    // Hair is one greyscale sprite recoloured by the chosen value, not one
+    // image per colour: the tint reaches the layer that draws it.
     let dyed = engine
         .resolve_character("human_player", r##"{ "hairColor": "#f2c14e" }"##)
         .expect("resolves");
-    assert_eq!(
-        dyed.layers[3].visual,
-        insulaire_world::ResolvedVisual::Shape {
-            shape: insulaire_world::ShapeKind::Ellipse,
-            color: "#f2c14e".to_owned(),
-        }
-    );
+    for layer in dyed.layers.iter().filter(|l| l.layer.starts_with("hair")) {
+        assert_eq!(layer.tint, "#f2c14e");
+    }
 
-    // Height scales every layer, and the lowest one still stands on the ground.
-    let tall = engine
-        .resolve_character("human_player", r#"{ "height": 1.15 }"#)
+    // A choice swaps a variant; another removes a layer entirely.
+    let plated = engine
+        .resolve_character("human_player", r#"{ "armor": "plate" }"#)
         .expect("resolves");
-    assert!(tall.layers[0].rect.height() > resolved.layers[0].rect.height());
-    let ground = tall.layers[0].rect.y() + tall.layers[0].rect.height();
-    assert!(
-        (0.9..=1.0).contains(&ground),
-        "the feet left the ground: {ground}"
-    );
+    let top = plated
+        .layers
+        .iter()
+        .find(|layer| layer.layer == "top")
+        .expect("a top");
+    assert_eq!(top.variant, "plate");
+
+    let bare = engine
+        .resolve_character("human_player", r#"{ "cape": false, "hairStyle": "short" }"#)
+        .expect("resolves");
+    assert!(!bare.layers.iter().any(|layer| layer.layer == "cape"));
+    assert!(!bare.layers.iter().any(|layer| layer.layer == "hairBack"));
+
+    // Every box is whole pixels inside the declared canvas.
+    for layer in &resolved.layers {
+        assert!(
+            layer.rect.fits(resolved.resolution),
+            "{} is outside the canvas: {:?}",
+            layer.layer,
+            layer.rect
+        );
+    }
 }

@@ -1,7 +1,13 @@
 # ADR-0028 — Characters Are Definitions Plus Customisations, Resolved in Rust
 
 ## Status
-Accepted
+Accepted. Its *rendering* decisions — the shape primitives, the two rendering
+modes, the unit-square geometry and `scaleParameter` — were replaced by
+`docs/adr/ADR-0029-characters-are-composed-sprites.md`, which is what the code
+does today. Everything else here still holds: what a definition is, parameters
+as `ControlDefinition`, first-match variants, one resolver, one editor, no
+player branch. The paragraphs below are kept as written, because the reasoning
+that led to the structure is still the reasoning behind it.
 
 ## Context
 

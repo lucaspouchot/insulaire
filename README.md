@@ -191,25 +191,46 @@ size, seed — are *not* editable there, because they are not content: the
 application implements each one (`app/settings/engine-settings.schema.ts`).
 
 **Characters** edits `characters/*.json`: how a *kind* of character is drawn,
-and what may be chosen about one (ADR-0028). A definition is two lists —
-**parameters**, the choices it offers, written in the same control vocabulary as
-the settings; and **layers**, the pieces it is drawn from, back to front. Each
-layer holds variants, and a variant says which parameter values it answers to
-(`when`), where it is drawn (`rect`, in a `0..1` box), and what it draws: a
-shape with a colour, or an image. The first variant whose conditions hold is the
-one drawn, so specific ones go first; a layer with no match draws nothing.
+and what may be chosen about one (ADR-0028, ADR-0029). A character is composed
+of **sprites** on a pixel canvas it declares — up to 256 a side, chosen by
+whoever authors it.
+
+A definition is two lists. **Parameters** are the choices it offers, written in
+the same control vocabulary as the settings. **Layers** are the pieces it is
+drawn from, back to front; each holds variants, and a variant says which
+parameter values it answers to (`when`), which image it draws, and where that
+image goes on the canvas (`rect`, in whole pixels). The first variant whose
+conditions hold is the one drawn, so specific ones go first; a layer with no
+match draws nothing, which is how a cape is made optional.
+
+Pick an image from the content directory or upload one with the ⤒ button — the
+box is fitted to the image's own pixel size, because any other size stretches
+pixel art. A **tint** recolours a sprite, either with a fixed colour or from a
+parameter: one greyscale hair sprite serves every hair colour instead of one
+image per colour.
+
+The preview is also where the sprites are **painted** (ADR-0030). *Paint* turns
+the stage into a drawing surface for the image behind the open layer: pencil,
+eraser, eyedropper (or hold Alt), undo with Ctrl+Z, and a whole-number zoom —
+Ctrl with the wheel, or the ± buttons. The palette offers the colours the
+character already uses, most-used first, so two layers stay on the same browns.
+A layer with no image can create a transparent one at its box's size.
+
+While painting, the edited layer is drawn **without its tint**: what the pencil
+writes is the file itself, so two greys are compared as greys. Pixels live in
+the tab until *Save images* writes them, and saving the character writes them
+too.
 
 The preview on the right is the shipping pipeline, not a mock-up: the controls
 are the player's own `control-field`, the resolution is the Rust resolver, and
-the drawing is the renderer the game will use — flip *Gender* to `male` and the
-body swaps variant in front of you.
+the drawing is the renderer the game will use — flip *Armour* to `plate` and the
+chest swaps sprite in front of you. It draws the canvas bounds and a box around
+the layer you are editing, and zooms by whole numbers so pixels stay square.
 
 Nothing here is player-specific. `human_player` is the definition this project
 ships; the same screen creates a merchant, a goblin or a dragon, and `category`
-is filing only — the renderer never reads it. **One binding acts on geometry**:
-*Scaled by* names a numeric parameter that scales the whole character about the
-ground line, which is how a "height" choice is authored without a variant per
-size.
+is filing only — the renderer never reads it. Size is the **canvas**: a 32×32
+goblin next to a 128×128 knight needs no scale factor.
 
 Saving writes the file, declares it in `project.json` if it is new, and creates
 every label key it names in every language.
@@ -581,10 +602,20 @@ types the application uses — including the whole change-map loop.
 - **The asset and scenario editors are placeholders** — registered tabs
   describing what they will own, with no implementation (ADR-0019).
 - **Characters are authored but not yet worn.** Definitions are edited,
-  validated and resolved into drawable layers, but no entity on the map is drawn
-  from one and no screen offers a player its choices: map entities still use the
-  `EntityTemplate` visuals (ADR-0028).
-- **No undo/redo**, no layers, no copy/paste in the editor.
+  validated and resolved into drawable sprites, but no entity on the map is
+  drawn from one and no screen offers a player its choices: map entities still
+  use the `EntityTemplate` visuals (ADR-0028).
+- **A character is one still frame.** No animation, no directions, no sprite
+  sheets: a variant names one image (ADR-0029).
+- **The shipped character's sprites are placeholders** — eight small PNGs under
+  `content/assets/characters/`, there to exercise the pipeline, not to be
+  looked at.
+- **No undo/redo outside the pixel tools**, no copy/paste in the editor. The
+  character editor's paint mode undoes the last 32 strokes, in memory only
+  (ADR-0030); nothing else in the editor undoes anything.
+- **The pixel tools are for retouching**, not for drawing a sprite from
+  scratch: no selection, no fill, no brush size, no sprite sheets. Art made
+  elsewhere still arrives through the ⤒ upload button (ADR-0030).
 - **Only `pointy` orientation** is implemented; `flat` is in the schema and
   rejected by validation.
 - **Isometric relief is drawn, not simulated.** `elevation` lifts a cell and

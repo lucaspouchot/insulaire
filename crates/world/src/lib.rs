@@ -54,9 +54,9 @@ pub mod testing;
 mod testing;
 
 pub use character::{
-    CharacterCategory, CharacterDefinition, CharacterLayer, ColorSource, LayerVariant, LayerVisual,
-    RenderingMode, ResolvedCharacter, ResolvedLayer, ResolvedVisual, ShapeKind, UnitRect,
-    CHARACTER_SCHEMA_VERSION, UNRESOLVED_COLOR,
+    CharacterCategory, CharacterDefinition, CharacterLayer, ColorSource, LayerVariant, PixelRect,
+    ResolvedCharacter, ResolvedLayer, Sprite, SpriteResolution, CHARACTER_SCHEMA_VERSION,
+    MAX_SPRITE_RESOLUTION, UNRESOLVED_COLOR,
 };
 pub use definition::{
     EntityDefinition, HexOrientation, LinkTrigger, LocationDefinition, MapLinkDefinition,

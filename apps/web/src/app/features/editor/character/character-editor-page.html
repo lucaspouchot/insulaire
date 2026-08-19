@@ -10,6 +10,11 @@
     @if (errorCount(); as count) {
       <span class="issues-count">{{ 'ui.editor.character.issueCount' | t: { count: count } }}</span>
     }
+    @if (unsavedSprites().length; as pending) {
+      <span class="pending">
+        {{ 'ui.editor.character.spritesUnsaved' | t: { count: pending } }}
+      </span>
+    }
     @if (!writable()) {
       <span class="readonly">{{ 'ui.editor.workspace.readOnly' | t }}</span>
     }
@@ -32,6 +37,11 @@
   }
   @if (doc !== null && unlisted()) {
     <div class="banner warn">{{ 'ui.editor.character.unlisted' | t }}</div>
+  }
+  @if (unreadable().length) {
+    <div class="banner warn">
+      {{ 'ui.editor.character.unreadable' | t: { files: unreadable().join(', ') } }}
+    </div>
   }
 
   @if (loading()) {
@@ -94,32 +104,31 @@
               </select>
             </label>
             <label class="row">
-              <span>{{ 'ui.editor.character.renderingMode' | t }}</span>
-              <select (change)="setRendering($any($event.target).value)">
-                @for (entry of renderingModes; track entry.id) {
-                  <option
-                    [value]="entry.id"
-                    [selected]="entry.id === (doc.rendering ?? 'procedural')"
-                  >
-                    {{ entry.labelKey | t }}
-                  </option>
-                }
-              </select>
+              <span>{{ 'ui.editor.character.resolution' | t }}</span>
+              <span class="pair">
+                <input
+                  type="number"
+                  min="1"
+                  [max]="maxResolution"
+                  [value]="resolution().width"
+                  [attr.aria-label]="'ui.editor.character.canvasWidth' | t"
+                  (change)="setResolution('width', $any($event.target).value)"
+                />
+                <span class="times">×</span>
+                <input
+                  type="number"
+                  min="1"
+                  [max]="maxResolution"
+                  [value]="resolution().height"
+                  [attr.aria-label]="'ui.editor.character.canvasHeight' | t"
+                  (change)="setResolution('height', $any($event.target).value)"
+                />
+                <span class="unit">px</span>
+              </span>
             </label>
-            <label class="row">
-              <span>{{ 'ui.editor.character.scaleParameter' | t }}</span>
-              <select (change)="setScaleParameter($any($event.target).value)">
-                <option value="" [selected]="!doc.scaleParameter">
-                  {{ 'ui.common.none' | t }}
-                </option>
-                @for (parameter of numericParameters(); track parameter.id) {
-                  <option [value]="parameter.id" [selected]="parameter.id === doc.scaleParameter">
-                    {{ parameter.id }}
-                  </option>
-                }
-              </select>
-            </label>
-            <p class="hint">{{ 'ui.editor.character.scaleHint' | t }}</p>
+            <p class="hint">
+              {{ 'ui.editor.character.resolutionHint' | t: { max: maxResolution } }}
+            </p>
           </section>
 
           <!-- The choices this definition offers, in the settings vocabulary. -->
@@ -282,54 +291,79 @@
                       [attr.aria-label]="'ui.editor.character.id' | t"
                       (change)="patchVariant(variantIndex, { id: $any($event.target).value })"
                     />
-                    @if (variant.visual.kind === 'shape') {
-                      <select
-                        [attr.aria-label]="'ui.editor.character.shape' | t"
-                        (change)="setShape(variantIndex, $any($event.target).value)"
-                      >
-                        @for (shape of shapeKinds; track shape.id) {
-                          <option [value]="shape.id" [selected]="shape.id === variant.visual.shape">
-                            {{ shape.labelKey | t }}
-                          </option>
-                        }
-                      </select>
-                      <select
-                        [attr.aria-label]="'ui.editor.character.colorSource' | t"
-                        (change)="setColorSource(variantIndex, $any($event.target).value)"
-                      >
-                        <option value="" [selected]="colorParameter(variant) === ''">
-                          {{ 'ui.editor.character.fixedColor' | t }}
+                    <select
+                      class="asset"
+                      [attr.aria-label]="'ui.editor.character.asset' | t"
+                      (change)="setAsset(variantIndex, $any($event.target).value)"
+                    >
+                      <option value="" [selected]="variant.sprite.asset === ''">
+                        {{ 'ui.editor.character.noAsset' | t }}
+                      </option>
+                      @for (file of images(); track file.path) {
+                        <option [value]="file.path" [selected]="file.path === variant.sprite.asset">
+                          {{ file.path }}
                         </option>
-                        @for (parameter of parameters(); track parameter.id) {
-                          <option
-                            [value]="parameter.id"
-                            [selected]="parameter.id === colorParameter(variant)"
-                          >
-                            {{ parameter.id }}
-                          </option>
-                        }
-                      </select>
-                      @if (colorParameter(variant) === '') {
-                        <input
-                          type="color"
-                          [value]="fixedColor(variant)"
-                          [attr.aria-label]="'ui.editor.character.fixedColor' | t"
-                          (change)="setFixedColor(variantIndex, $any($event.target).value)"
-                        />
                       }
-                    } @else {
+                      @if (assetMissing(variant)) {
+                        <option [value]="variant.sprite.asset" selected>
+                          {{ variant.sprite.asset }}
+                        </option>
+                      }
+                    </select>
+                    <label class="upload" [title]="'ui.editor.character.upload' | t">
+                      ⤒
                       <input
-                        type="text"
-                        class="asset"
-                        [value]="variant.visual.asset"
-                        [placeholder]="'ui.editor.character.assetPlaceholder' | t"
-                        [attr.aria-label]="'ui.editor.character.asset' | t"
-                        (change)="setAsset(variantIndex, $any($event.target).value)"
+                        type="file"
+                        accept="image/png,image/gif,image/webp"
+                        [disabled]="!writable()"
+                        (change)="uploadAsset($event, variantIndex)"
                       />
-                    }
+                    </label>
                     <button type="button" (click)="moveVariant(variantIndex, -1)" title="↑">↑</button>
                     <button type="button" (click)="moveVariant(variantIndex, 1)" title="↓">↓</button>
-                    <button type="button" class="remove" (click)="removeVariant(variantIndex)">×</button>
+                    <button type="button" class="remove" (click)="removeVariant(variantIndex)">
+                      ×
+                    </button>
+                  </div>
+
+                  @if (assetMissing(variant)) {
+                    <p class="hint warn">
+                      {{ 'ui.editor.character.assetMissing' | t: { file: variant.sprite.asset } }}
+                    </p>
+                  }
+
+                  <div class="line">
+                    <span class="label">{{ 'ui.editor.character.tint' | t }}</span>
+                    <select
+                      [attr.aria-label]="'ui.editor.character.tint' | t"
+                      (change)="setTintSource(variantIndex, $any($event.target).value)"
+                    >
+                      <option value="" [selected]="tintSource(variant) === ''">
+                        {{ 'ui.editor.character.noTint' | t }}
+                      </option>
+                      <option value="#fixed" [selected]="tintSource(variant) === '#fixed'">
+                        {{ 'ui.editor.character.fixedTint' | t }}
+                      </option>
+                      @for (parameter of parameters(); track parameter.id) {
+                        <option
+                          [value]="parameter.id"
+                          [selected]="parameter.id === tintSource(variant)"
+                        >
+                          {{ parameter.id }}
+                        </option>
+                      }
+                    </select>
+                    @if (tintSource(variant) === '#fixed') {
+                      <input
+                        type="color"
+                        [value]="fixedTint(variant)"
+                        [attr.aria-label]="'ui.editor.character.fixedTint' | t"
+                        (change)="setFixedTint(variantIndex, $any($event.target).value)"
+                      />
+                    }
+                    <button type="button" class="small" (click)="fitToImage(variantIndex)">
+                      {{ 'ui.editor.character.fitToImage' | t }}
+                    </button>
                   </div>
 
                   <div class="line bounds">
@@ -379,17 +413,188 @@
       </div>
 
       <!-- The player's own view: the real controls, the real resolver, the
-           real renderer. -->
+           real renderer — and, in paint mode, the drawing surface itself. -->
       <div class="preview">
         <section class="panel stage">
           <h2>{{ 'ui.editor.character.preview' | t }}</h2>
-          <canvas #stage class="stage-canvas"></canvas>
+          <div #frame class="stage-frame" [class.painting]="painting()">
+            <canvas
+              #stage
+              class="stage-canvas"
+              [class.paint]="painting() && paintable()"
+              [class.pick]="painting() && tool() === 'picker'"
+              (pointerdown)="onPointerDown($event)"
+              (pointermove)="onPointerMove($event)"
+              (pointerup)="onPointerUp()"
+              (pointercancel)="onPointerUp()"
+              (wheel)="onWheel($event)"
+            ></canvas>
+          </div>
           @if (resolved(); as drawn) {
             <p class="hint">
-              {{ 'ui.editor.character.drawnLayers' | t: { count: drawn.layers.length } }}
+              {{
+                'ui.editor.character.drawnLayers'
+                  | t
+                    : {
+                        count: drawn.layers.length,
+                        width: drawn.resolution.width,
+                        height: drawn.resolution.height,
+                        zoom: zoom()
+                      }
+              }}
             </p>
           }
         </section>
+
+        <!-- The pixels themselves: the stage is the canvas an author paints on
+             (docs/adr/ADR-0030-the-editor-paints-its-sprites.md). -->
+        @if (doc !== null) {
+          <section class="panel paint">
+            <h2>{{ 'ui.editor.character.pixels' | t }}</h2>
+            @let open = layer();
+            @let drawn = target();
+
+            <div class="line">
+              <button type="button" class="toggle" [class.on]="painting()" (click)="togglePaint()">
+                {{ 'ui.editor.character.paintMode' | t }}
+              </button>
+              <span class="spacer"></span>
+              <span class="label">{{ 'ui.editor.character.zoom' | t }}</span>
+              <button type="button" class="small" (click)="zoomBy(-1)" aria-label="−">−</button>
+              <span class="readout">{{ effectiveZoom() }}×</span>
+              <button type="button" class="small" (click)="zoomBy(1)" aria-label="+">+</button>
+              <button type="button" class="small" (click)="fitZoom()">
+                {{ 'ui.editor.character.fitZoom' | t }}
+              </button>
+            </div>
+
+            @if (painting()) {
+              <div class="line tools">
+                <button
+                  type="button"
+                  class="tool"
+                  [class.on]="tool() === 'pencil'"
+                  [title]="'ui.editor.character.pencil' | t"
+                  [attr.aria-label]="'ui.editor.character.pencil' | t"
+                  (click)="setTool('pencil')"
+                >
+                  ✎
+                </button>
+                <button
+                  type="button"
+                  class="tool"
+                  [class.on]="tool() === 'eraser'"
+                  [title]="'ui.editor.character.eraser' | t"
+                  [attr.aria-label]="'ui.editor.character.eraser' | t"
+                  (click)="setTool('eraser')"
+                >
+                  ⌫
+                </button>
+                <button
+                  type="button"
+                  class="tool"
+                  [class.on]="tool() === 'picker'"
+                  [title]="'ui.editor.character.picker' | t"
+                  [attr.aria-label]="'ui.editor.character.picker' | t"
+                  (click)="setTool('picker')"
+                >
+                  ◒
+                </button>
+                <input
+                  type="color"
+                  [value]="color()"
+                  [attr.aria-label]="'ui.editor.character.color' | t"
+                  (input)="setColor($any($event.target).value)"
+                />
+                <span class="spacer"></span>
+                <button
+                  type="button"
+                  class="small"
+                  [disabled]="!canUndo()"
+                  [title]="'ui.editor.character.undo' | t"
+                  [attr.aria-label]="'ui.editor.character.undo' | t"
+                  (click)="undo()"
+                >
+                  ↶
+                </button>
+                <button
+                  type="button"
+                  class="small"
+                  [disabled]="!canRedo()"
+                  [title]="'ui.editor.character.redo' | t"
+                  [attr.aria-label]="'ui.editor.character.redo' | t"
+                  (click)="redo()"
+                >
+                  ↷
+                </button>
+              </div>
+
+              @if (palette().length > 0) {
+                <div class="swatches" [attr.aria-label]="'ui.editor.character.palette' | t">
+                  @for (swatch of palette(); track swatch) {
+                    <button
+                      type="button"
+                      class="swatch"
+                      [class.on]="swatch === color()"
+                      [style.background]="swatch"
+                      [title]="swatch"
+                      (click)="setColor(swatch)"
+                    ></button>
+                  }
+                </div>
+              }
+
+              @if (open === null) {
+                <p class="hint">{{ 'ui.editor.character.paintNoLayer' | t }}</p>
+              } @else if (drawn === null) {
+                <p class="hint warn">
+                  {{ 'ui.editor.character.paintNoVariant' | t: { layer: open.id } }}
+                </p>
+              } @else if (drawn.asset.length === 0) {
+                <p class="hint">{{ 'ui.editor.character.paintNoImage' | t: { layer: open.id } }}</p>
+                <button
+                  type="button"
+                  class="small"
+                  [disabled]="!writable()"
+                  (click)="createImage()"
+                >
+                  {{
+                    'ui.editor.character.createImage'
+                      | t: { width: drawn.rect[2], height: drawn.rect[3] }
+                  }}
+                </button>
+              } @else if (sprite() === null) {
+                <p class="hint warn">
+                  {{ 'ui.editor.character.paintUnreadable' | t: { file: drawn.asset } }}
+                </p>
+              } @else if (stretched()) {
+                <p class="hint warn">{{ 'ui.editor.character.paintStretched' | t }}</p>
+              } @else {
+                <p class="hint">{{ 'ui.editor.character.paintHint' | t: { layer: open.id } }}</p>
+                @if (drawn.tint.length > 0) {
+                  <p class="hint">{{ 'ui.editor.character.paintUntinted' | t }}</p>
+                }
+              }
+            }
+
+            @if (unsavedSprites().length; as pending) {
+              <div class="line">
+                <span class="pending">
+                  {{ 'ui.editor.character.spritesUnsaved' | t: { count: pending } }}
+                </span>
+                <span class="spacer"></span>
+                <button
+                  type="button"
+                  class="primary"
+                  [disabled]="busy() || !writable()"
+                  (click)="saveSprites()"
+                >
+                  {{ 'ui.editor.character.saveSprites' | t }}
+                </button>
+              </div>
+            }
+          </section>
+        }
 
         @if (parameters().length > 0) {
           <section class="panel">

@@ -22,11 +22,14 @@
     "bannerColour": "Couleur de bannière"
   },
   "character": {
-    "gender": "Genre",
-    "genderFemale": "Féminin",
-    "genderMale": "Masculin",
+    "hairStyle": "Cheveux",
+    "hairLong": "Longs",
+    "hairShort": "Courts",
     "hairColor": "Couleur des cheveux",
-    "height": "Taille",
-    "heightHelp": "La stature du personnage."
+    "armor": "Armure",
+    "armorHelp": "Ce que le personnage porte sur le buste.",
+    "armorLeather": "Cuir",
+    "armorPlate": "Plates",
+    "cape": "Cape"
   }
 }

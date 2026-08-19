@@ -50,7 +50,8 @@ The MVP implements the marked parts. Unmarked entries are the planned shape.
 │       │   └── content/         # mirrored for a *build* by sync-content (ignored)
 │       └── src/
 │           ├── core/hex/        # coordinate transforms + pixel layout       [MVP]
-│           ├── content/         # authored document model + serialiser       [MVP]
+│           ├── content/         # authored document model + serialiser,      [MVP]
+│           │                     # incl. the editable sprite buffer (ADR-0030)
 │           ├── renderer/        # framework-free Canvas renderer + projection [MVP]
 │           ├── engine/          # boundary types + WASM loader               [MVP]
 │           └── app/             # Angular shell, services, feature pages     [MVP]
@@ -79,10 +80,10 @@ The MVP implements the marked parts. Unmarked entries are the planned shape.
 │   ├── tilesets/                # mvp_terrain.json                           [MVP]
 │   ├── locales/                 # <language>/<namespace>.json: every displayed string [MVP]
 │   ├── characters/              # how a kind of character is drawn (ADR-0028) [MVP]
+│   ├── assets/                  # images: title art, character sprites          [MVP]
 │   ├── menu/                    # title-screen.json: what a client opens on   [MVP]
 │   ├── settings.json            # the settings the game offers                [MVP]
 │   ├── scenarios/
-│   ├── assets/
 │   └── cards/
 ├── deliveries/                  # `just deliver` output: executables (ignored)
 ├── scripts/                     # dev launcher + content server, sync-content,   [MVP]
@@ -126,8 +127,14 @@ browser. `cargo test` runs the entire simulation without WASM.
 - **Editor module ↔ editor module** — each is a route registered in
   `editor-modules.ts`; they share services, never internals. See ADR-0019.
 - **Character ↔ renderer** — a definition plus a customisation resolves in Rust
-  into an ordered list of boxes with literal colours; the renderer draws it and
-  decides nothing about appearance. See ADR-0028.
+  into an ordered list of whole-pixel boxes with an image and a tint each; the
+  renderer blits them and decides nothing about appearance. See ADR-0028 and
+  ADR-0029.
+- **Composing ↔ painting** — the same stage does both: the preview draws the
+  resolved character, and in paint mode it writes into the image behind the open
+  layer. The pixels are a framework-free buffer in `content/sprite-document.ts`
+  and never cross the boundary — they reach the engine only as files. See
+  ADR-0030.
 - **Application ↔ game settings** — the shell's settings are declared in code,
   the game's are content; both use one control vocabulary and one resolver, and
   only the game's cross `createGame`. See ADR-0025.

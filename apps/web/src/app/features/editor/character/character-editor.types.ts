@@ -3,10 +3,10 @@
  * a *form for building a character* needs.
  *
  * The model itself is `crates/world/src/character.rs`, mirrored in
- * `content-types.ts`; what lives here is only which categories and modes the
- * pickers offer, and what a freshly added parameter, layer or variant should
- * look like so that it validates the moment it exists
- * (`docs/adr/ADR-0028-character-definitions.md`).
+ * `content-types.ts`; what lives here is only which categories the picker
+ * offers, and what a freshly added parameter, layer or variant should look like
+ * so that it validates the moment it exists (`docs/adr/ADR-0028-character-
+ * definitions.md`, `docs/adr/ADR-0029-characters-are-composed-sprites.md`).
  *
  * Note what is *not* here: nothing knows that a player has a gender or that a
  * goblin has armour. Those are values an author types.
@@ -16,9 +16,11 @@ import {
   CharacterCategory,
   ControlKind,
   LayerVariant,
-  RenderingMode,
-  ShapeKind,
+  MAX_SPRITE_RESOLUTION,
+  SpriteResolution,
 } from '../../../../content/content-types';
+
+export { MAX_SPRITE_RESOLUTION } from '../../../../content/content-types';
 
 export type {
   CharacterCategory,
@@ -29,12 +31,11 @@ export type {
   ControlDefinition,
   ControlKind,
   LayerVariant,
-  LayerVisual,
-  RenderingMode,
+  PixelRect,
   ResolvedCharacter,
   SettingValue,
-  ShapeKind,
-  UnitRect,
+  Sprite,
+  SpriteResolution,
 } from '../../../../content/content-types';
 
 /** Every category, in the order the picker offers them, with its label. */
@@ -46,22 +47,6 @@ export const CATEGORIES: readonly { readonly id: CharacterCategory; readonly lab
     { id: 'monster', labelKey: 'ui.editor.character.categories.monster' },
     { id: 'other', labelKey: 'ui.editor.character.categories.other' },
   ];
-
-/** Every rendering mode, in the order the picker offers them. */
-export const RENDERING_MODES: readonly {
-  readonly id: RenderingMode;
-  readonly labelKey: string;
-}[] = [
-  { id: 'procedural', labelKey: 'ui.editor.character.rendering.procedural' },
-  { id: 'assetComposition', labelKey: 'ui.editor.character.rendering.assetComposition' },
-];
-
-/** Every shape a procedural layer can take. */
-export const SHAPE_KINDS: readonly { readonly id: ShapeKind; readonly labelKey: string }[] = [
-  { id: 'rect', labelKey: 'ui.editor.character.shapes.rect' },
-  { id: 'ellipse', labelKey: 'ui.editor.character.shapes.ellipse' },
-  { id: 'triangle', labelKey: 'ui.editor.character.shapes.triangle' },
-];
 
 /**
  * The control kinds a character parameter may use.
@@ -93,21 +78,34 @@ export function isNumeric(control: ControlKind): boolean {
 /**
  * A first variant for a layer that has just been created.
  *
- * Procedural by default because a new project has no images yet; an
- * asset-composed character gets a sprite variant instead, so that a definition
- * never contradicts the rendering mode it declares.
+ * It names no image yet, which is not an oversight: the renderer draws an
+ * outline where a missing sprite would go, so a layer can be placed on the
+ * canvas before any art exists
+ * (`docs/adr/ADR-0029-characters-are-composed-sprites.md`).
  */
-export function blankVariant(id: string, rendering: RenderingMode): LayerVariant {
+export function blankVariant(id: string, resolution: SpriteResolution): LayerVariant {
+  // A box a quarter of the canvas, centred: visible straight away, which is the
+  // point of adding a layer at all.
+  const width = Math.max(1, Math.round(resolution.width / 3));
+  const height = Math.max(1, Math.round(resolution.height / 4));
   return {
     id,
-    // Roughly a torso: something visible in the preview, which is the point of
-    // adding a layer at all.
-    rect: [0.35, 0.4, 0.3, 0.35],
-    visual:
-      rendering === 'assetComposition'
-        ? { kind: 'sprite', asset: '' }
-        : { kind: 'shape', shape: 'rect', color: { fixed: '#7a5c3e' } },
+    rect: [
+      Math.round((resolution.width - width) / 2),
+      Math.round((resolution.height - height) / 2),
+      width,
+      height,
+    ],
+    sprite: { asset: '' },
   };
+}
+
+/** A canvas side clamped into what a definition may declare. */
+export function clampResolution(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 1;
+  }
+  return Math.min(MAX_SPRITE_RESOLUTION, Math.max(1, Math.round(value)));
 }
 
 /** `<stem>`, `<stem>_2`, … — the first one nobody is using. */

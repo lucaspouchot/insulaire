@@ -22,11 +22,14 @@
     "bannerColour": "Banner colour"
   },
   "character": {
-    "gender": "Gender",
-    "genderFemale": "Female",
-    "genderMale": "Male",
+    "hairStyle": "Hair",
+    "hairLong": "Long",
+    "hairShort": "Short",
     "hairColor": "Hair colour",
-    "height": "Height",
-    "heightHelp": "How tall the character stands."
+    "armor": "Armour",
+    "armorHelp": "What the character wears over the chest.",
+    "armorLeather": "Leather",
+    "armorPlate": "Plate",
+    "cape": "Cape"
   }
 }
