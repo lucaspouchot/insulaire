@@ -69,6 +69,25 @@ impl ContentRegistry {
         Ok((id, report))
     }
 
+    /// Validates a tile set without registering it.
+    ///
+    /// This is what the asset editor calls before writing a file: the same
+    /// validator the runtime loads with, so a set the editor accepts is a set
+    /// the runtime accepts (`docs/adr/ADR-0015-shared-content-validation.md`).
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Parse`] when the JSON is malformed. A set that parses but
+    /// is unusable produces an invalid report rather than an error.
+    pub fn validate_tile_set_json(&self, json: &str) -> Result<ValidationReport, EngineError> {
+        let tile_set: TileSetDefinition =
+            serde_json::from_str(json).map_err(|source| EngineError::Parse {
+                what: "tile set".to_owned(),
+                message: source.to_string(),
+            })?;
+        Ok(validate_tile_set(&tile_set))
+    }
+
     /// Parses and registers a world, validating it against its tile set.
     ///
     /// # Errors

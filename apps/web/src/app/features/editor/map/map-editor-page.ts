@@ -39,8 +39,10 @@ import { serializeWorld } from '../../../../content/world-serializer';
 import { ValidationReport } from '../../../../engine/engine.types';
 import { Camera } from '../../../../renderer/camera';
 import { CanvasView } from '../../../../renderer/canvas-view';
+import { SpriteCache } from '../../../../renderer/character-renderer';
 import { HexMapRenderer } from '../../../../renderer/hex-map-renderer';
 import { RenderModel } from '../../../../renderer/render-model';
+import { SpriteRegistry } from '../../../../renderer/sprite-registry';
 import { I18nService } from '../../../i18n/i18n.service';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
 import { SettingsService } from '../../../settings/settings.service';
@@ -48,7 +50,7 @@ import { CharacterLibraryService } from '../../../services/character-library.ser
 import { TitleScreenService } from '../../../services/title-screen.service';
 import { EngineService } from '../../../services/engine.service';
 import { ContentWorkspaceService } from '../../../services/content-workspace.service';
-import { ProjectStoreService } from '../../../services/project-store.service';
+import { ProjectStoreService, contentUrl } from '../../../services/project-store.service';
 
 /** Hex circumradius in world pixels. The camera scales from here. */
 const HEX_SIZE = 28;
@@ -98,6 +100,18 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
 
   private view: CanvasView | null = null;
   private renderer: HexMapRenderer | null = null;
+  /**
+   * The images tiles are drawn from, loaded on demand.
+   *
+   * A tile set that ships no art never asks for one, so this costs nothing
+   * until an asset editor has painted something
+   * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+   */
+  private readonly tileImages = new SpriteCache(
+    (asset) => contentUrl(asset),
+    () => this.refresh(),
+  );
+
   /** Set once the map has been framed; see {@link frameOnce}. */
   private framed = false;
 
@@ -303,7 +317,16 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       return;
     }
 
-    this.renderer = new HexMapRenderer(context, new HexLayout(HEX_SIZE), new Camera());
+    this.renderer = new HexMapRenderer(
+      context,
+      new HexLayout(HEX_SIZE),
+      new Camera(),
+      new SpriteRegistry(),
+      // A tile drawn from images needs its images; a tile set that ships none
+      // simply never asks for one
+      // (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+      this.tileImages,
+    );
     this.renderer.setModel(this.buildModel(document));
 
     this.view = new CanvasView(this.canvasRef().nativeElement, this.renderer, {
@@ -1007,6 +1030,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       width: document.width,
       height: document.height,
       projection: document.projection,
+      tileArt: document.tileArt,
       palette: document.palette,
       terrain: document.terrain,
       elevation: document.elevation,

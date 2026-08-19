@@ -64,12 +64,7 @@ export const EDITOR_MODULES: readonly EditorModule[] = [
     id: 'asset',
     titleKey: 'ui.editor.modules.asset.title',
     summaryKey: 'ui.editor.modules.asset.summary',
-    status: 'planned',
-    planKeys: [
-      'ui.editor.modules.asset.plans.images',
-      'ui.editor.modules.asset.plans.tileSets',
-      'ui.editor.modules.asset.plans.preview',
-    ],
+    status: 'available',
   },
   {
     id: 'scenario',

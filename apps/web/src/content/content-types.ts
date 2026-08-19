@@ -11,12 +11,86 @@
 export type OffsetPair = [number, number];
 
 export const WORLD_SCHEMA_VERSION = 1;
-export const TILE_SET_SCHEMA_VERSION = 1;
+
+/**
+ * `2` adds authored tile art
+ * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+ */
+export const TILE_SET_SCHEMA_VERSION = 2;
+
+/** Authored width of a tile image when a set declares no geometry. */
+export const DEFAULT_TILE_WIDTH = 32;
+/** Authored height of a surface image when a set declares no geometry. */
+export const DEFAULT_SURFACE_HEIGHT = 20;
+/** Authored pixels one level of relief lifts a tile, when none is declared. */
+export const DEFAULT_ELEVATION_STEP = 8;
+
+/**
+ * Authored height of an elevation image when a set declares no geometry.
+ *
+ * The faces' own bounding box: the `V` the hexagon's lower edges cut, a quarter
+ * of the surface height deep, plus one whole step of face below it.
+ */
+export const DEFAULT_ELEVATION_HEIGHT = DEFAULT_SURFACE_HEIGHT / 4 + DEFAULT_ELEVATION_STEP;
+/** Largest tile image this build accepts, on either side. */
+export const MAX_TILE_IMAGE_SIZE = 512;
+/** Most explicit elevation levels one tile may author. */
+export const MAX_ELEVATION_LEVELS = 32;
+/** Most variants one surface or one elevation level may offer. */
+export const MAX_TILE_VARIANTS = 16;
 
 export interface TileVisual {
   visualId: string;
   fallbackColor: string;
   hints?: Record<string, string>;
+}
+
+/**
+ * The pixel grid a tile set's images are authored on.
+ *
+ * Mirrors `crates/world/src/tile_art.rs`. A surface image holds the top face
+ * alone. An elevation image holds **only the side faces**: its first row is the
+ * hexagon's lower shoulder line, so its top {@link shoulderDepth} rows are the
+ * `V` the two lower edges cut and everything below that is face
+ * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+ */
+export interface TileArtGeometry {
+  width: number;
+  surfaceHeight: number;
+  elevationHeight: number;
+  elevationStep: number;
+}
+
+/** One image a tile may be drawn with. */
+export interface TileArtVariant {
+  id: string;
+  /** Path under the content root. */
+  asset: string;
+}
+
+/** One authored step of relief: the images that may draw it. */
+export interface ElevationLevel {
+  name?: string;
+  variants: TileArtVariant[];
+}
+
+/**
+ * What draws the levels above the last explicit one.
+ *
+ * Absent reuses the highest explicit level.
+ */
+export type ElevationRepeat = { level: number } | { pattern: number[] };
+
+/** A tile's ladder of relief. Level `0` is the surface. */
+export interface TileElevation {
+  levels: ElevationLevel[];
+  repeat?: ElevationRepeat | null;
+}
+
+/** Everything a tile is drawn from. Empty draws `visual.fallbackColor`. */
+export interface TileArt {
+  surface?: TileArtVariant[];
+  elevation?: TileElevation;
 }
 
 export interface TileDefinition {
@@ -27,13 +101,58 @@ export interface TileDefinition {
   movementCost: number;
   tags?: string[];
   visual: TileVisual;
+  art?: TileArt;
 }
 
 export interface TileSetDefinition {
   id: string;
   schemaVersion: number;
   name?: string;
+  /** The pixel grid every image in this set is authored on. */
+  art?: TileArtGeometry;
   tiles: TileDefinition[];
+}
+
+/** The geometry a set declares, or the shipped defaults. */
+export function tileArtGeometry(tileSet: Pick<TileSetDefinition, 'art'>): TileArtGeometry {
+  return {
+    width: tileSet.art?.width ?? DEFAULT_TILE_WIDTH,
+    surfaceHeight: tileSet.art?.surfaceHeight ?? DEFAULT_SURFACE_HEIGHT,
+    elevationHeight: tileSet.art?.elevationHeight ?? DEFAULT_ELEVATION_HEIGHT,
+    elevationStep: tileSet.art?.elevationStep ?? DEFAULT_ELEVATION_STEP,
+  };
+}
+
+/**
+ * How far the hexagon's lower edges fall, from its shoulders to its south
+ * vertex.
+ *
+ * A quarter of the top face's height, exactly: a pointy-top hexagon puts its
+ * `±30°` corners half a radius off centre and the projection scales both by the
+ * same tilt. This is the depth of the `V` an elevation image leaves above its
+ * faces — **not** how far down that image sits; see {@link shoulderLine}.
+ */
+export function shoulderDepth(geometry: TileArtGeometry): number {
+  return Math.floor(geometry.surfaceHeight / 4);
+}
+
+/**
+ * The row of a surface image the hexagon's **lower** shoulders sit on, which is
+ * where an elevation image is blitted.
+ *
+ * A pointy-top hexagon reaches its full width a quarter of the way down and
+ * narrows again a quarter from the bottom, so the lower shoulders are three
+ * quarters down: `surfaceHeight - shoulderDepth`. An elevation image's own row
+ * `0` is that line, and its `V` then falls exactly onto the two lower edges
+ * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+ */
+export function shoulderLine(geometry: TileArtGeometry): number {
+  return geometry.surfaceHeight - shoulderDepth(geometry);
+}
+
+/** Height of the faces themselves, below the `V`. */
+export function faceHeight(geometry: TileArtGeometry): number {
+  return Math.max(0, geometry.elevationHeight - shoulderDepth(geometry));
 }
 
 /** How the renderer projects a world; mirrors the engine's `ProjectionMode`. */

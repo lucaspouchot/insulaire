@@ -62,8 +62,9 @@ use std::collections::BTreeMap;
 
 use insulaire_simulation::{rules, tick, GameState, PendingTransition, SimEvent};
 use insulaire_world::{
-    CharacterDefinition, Hex, ProjectionMode, ResolvedCharacter, SettingsDefinition,
-    TitleScreenDefinition, WorldDefinition, WorldGrid,
+    resolve_tile_render, CharacterDefinition, Hex, ProjectionMode, ResolvedCharacter,
+    ResolvedTileRender, SettingsDefinition, TileArtGeometry, TitleScreenDefinition,
+    WorldDefinition, WorldGrid,
 };
 
 pub use dto::{
@@ -117,6 +118,53 @@ impl Engine {
     pub fn load_tile_set(&mut self, json: &str) -> Result<LoadOutcome, EngineError> {
         let (id, report) = self.content.load_tile_set(json)?;
         Ok(LoadOutcome { id, report })
+    }
+
+    /// Validates a tile set *without* registering it.
+    ///
+    /// # Errors
+    ///
+    /// See [`ContentRegistry::validate_tile_set_json`].
+    pub fn validate_tile_set(
+        &self,
+        json: &str,
+    ) -> Result<insulaire_world::ValidationReport, EngineError> {
+        self.content.validate_tile_set_json(json)
+    }
+
+    /// Resolves what to draw for one cell of a tile set **passed in** — the
+    /// asset editor's preview, for content that is not registered yet.
+    ///
+    /// `base` is the height the cell's side faces reach down to, and `roll` is
+    /// [`insulaire_world::variant_roll`] for the cell
+    /// (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Parse`] when the JSON is malformed, and
+    /// [`EngineError::UnknownContent`] when the set defines no such tile.
+    pub fn preview_tile_render(
+        &self,
+        tile_set_json: &str,
+        tile_id: &str,
+        elevation: i32,
+        base: i32,
+        roll: u32,
+    ) -> Result<ResolvedTileRender, EngineError> {
+        let tile_set: insulaire_world::TileSetDefinition = serde_json::from_str(tile_set_json)
+            .map_err(|source| EngineError::Parse {
+                what: "tile set".to_owned(),
+                message: source.to_string(),
+            })?;
+        let tile = tile_set
+            .tile(tile_id)
+            .ok_or_else(|| EngineError::UnknownContent {
+                kind: "tile".to_owned(),
+                id: tile_id.to_owned(),
+            })?;
+        Ok(resolve_tile_render(
+            &tile.id, &tile.art, elevation, base, roll,
+        ))
     }
 
     /// Parses, validates and registers a world.
@@ -397,12 +445,16 @@ impl Engine {
         })?;
 
         Ok(PreparedWorld {
-            view: Self::build_view(world, &grid),
+            view: Self::build_view(world, tile_set.art, &grid),
             grid,
         })
     }
 
-    fn build_view(world: &WorldDefinition, grid: &WorldGrid) -> WorldView {
+    fn build_view(
+        world: &WorldDefinition,
+        tile_art: TileArtGeometry,
+        grid: &WorldGrid,
+    ) -> WorldView {
         WorldView {
             world_id: world.id.clone(),
             name: world.name.clone(),
@@ -415,6 +467,7 @@ impl Engine {
             }
             .to_owned(),
             tile_set_id: world.tile_set_id.clone(),
+            tile_art,
             palette: grid
                 .palette()
                 .iter()

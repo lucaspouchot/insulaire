@@ -50,6 +50,18 @@
       ]
     },
     {
+      "name": "editor-asset",
+      "path": "/editor/asset",
+      "settleMs": 2500,
+      "press": [
+        {
+          "name": "editor-asset-elevation",
+          "selector": ".inspector .tabs button:nth-of-type(3)",
+          "settleMs": 1200
+        }
+      ]
+    },
+    {
       "name": "play",
       "path": "/play",
       "settleMs": 2000,

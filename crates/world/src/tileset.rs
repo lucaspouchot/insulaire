@@ -8,8 +8,17 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::tile_art::{TileArt, TileArtGeometry};
+
 /// Highest tile-set schema version this build understands.
-pub const TILE_SET_SCHEMA_VERSION: u32 = 1;
+///
+/// `2` adds the authored art of `docs/adr/ADR-0035-tile-art-is-authored-and-
+/// resolved-by-level.md`: a set declares the pixel grid its images are drawn
+/// on, and a tile may carry surface variants and a ladder of elevation levels.
+/// Every field it adds has a default, so a `1` file still parses and draws the
+/// flat colours it always did; the number is bumped because the *format* grew,
+/// and the shipped files say `2`.
+pub const TILE_SET_SCHEMA_VERSION: u32 = 2;
 
 /// A palette of authored tiles.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -22,6 +31,12 @@ pub struct TileSetDefinition {
     /// Human readable name shown in the editor.
     #[serde(default)]
     pub name: String,
+    /// The pixel grid every image in this set is authored on.
+    ///
+    /// One grid per set rather than per tile: tiles sit next to each other on
+    /// the same map, so two tiles drawn at two sizes cannot both be right.
+    #[serde(default)]
+    pub art: TileArtGeometry,
     /// The tiles available in this palette.
     #[serde(default)]
     pub tiles: Vec<TileDefinition>,
@@ -63,6 +78,13 @@ pub struct TileDefinition {
     pub tags: Vec<String>,
     /// How this tile should be drawn.
     pub visual: TileVisual,
+    /// The images this tile is drawn from, and how its relief resolves.
+    ///
+    /// Absent — or empty — draws [`TileVisual::fallback_color`], which is what
+    /// every tile did before there was an asset editor
+    /// (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+    #[serde(default, skip_serializing_if = "TileArt::is_empty")]
+    pub art: TileArt,
 }
 
 impl TileDefinition {
@@ -115,6 +137,7 @@ mod tests {
                 fallback_color: "#1d4e79".into(),
                 hints: BTreeMap::new(),
             },
+            art: TileArt::default(),
         };
         assert!(!tile.is_passable());
         assert!(tile.has_tag("blocks_movement"));
@@ -127,7 +150,7 @@ mod tests {
     fn tile_set_round_trips_through_json() {
         let json = r##"{
             "id": "mvp_terrain",
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "name": "MVP Terrain",
             "tiles": [
                 {

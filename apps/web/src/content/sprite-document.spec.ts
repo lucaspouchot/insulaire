@@ -190,4 +190,85 @@ describe('SpriteDocument', () => {
     expect(painted).toBeGreaterThan(before);
     expect(sprite.revision).toBe(painted);
   });
+
+  describe('fill, selection and alpha', () => {
+    it('floods only the region reachable without crossing an edge', () => {
+      const sprite = SpriteDocument.blank(5, 3);
+      // A wall down the middle: the flood must stop at it.
+      for (let y = 0; y < 3; y += 1) {
+        sprite.plot(2, y, '#000000');
+      }
+
+      expect(sprite.fill(0, 0, '#ff0000')).toBe(true);
+
+      expect(sprite.colorAt(0, 0)).toBe('#ff0000');
+      expect(sprite.colorAt(1, 2)).toBe('#ff0000');
+      expect(sprite.colorAt(2, 1)).toBe('#000000');
+      // Four-connected and blocked, so nothing leaks to the far side.
+      expect(sprite.colorAt(3, 0)).toBeNull();
+    });
+
+    it('does nothing when the fill colour is already there', () => {
+      const sprite = SpriteDocument.blank(2, 2);
+      sprite.fill(0, 0, '#123456');
+
+      expect(sprite.fill(1, 1, '#123456')).toBe(false);
+    });
+
+    it('undoes a fill as one step', () => {
+      const sprite = SpriteDocument.blank(4, 4);
+      sprite.begin();
+      sprite.fill(0, 0, '#00ff00');
+      sprite.end();
+
+      expect(sprite.undo()).toBe(true);
+      expect(sprite.colorAt(2, 2)).toBeNull();
+    });
+
+    it('moves a selection and clears what it left behind', () => {
+      const sprite = SpriteDocument.blank(4, 4);
+      sprite.plot(0, 0, '#ffffff');
+      sprite.plot(1, 0, '#aaaaaa');
+
+      expect(sprite.moveSelection({ x: 0, y: 0, width: 2, height: 1 }, 1, 1)).toBe(true);
+
+      expect(sprite.colorAt(0, 0)).toBeNull();
+      expect(sprite.colorAt(1, 1)).toBe('#ffffff');
+      expect(sprite.colorAt(2, 1)).toBe('#aaaaaa');
+    });
+
+    it('drops what a move pushes off the canvas', () => {
+      const sprite = SpriteDocument.blank(3, 3);
+      sprite.plot(2, 2, '#ffffff');
+
+      sprite.moveSelection({ x: 2, y: 2, width: 1, height: 1 }, 1, 0);
+
+      expect(sprite.colorAt(2, 2)).toBeNull();
+    });
+
+    it('crops a selection to the sprite, and refuses one wholly outside it', () => {
+      const sprite = SpriteDocument.blank(4, 4);
+
+      expect(sprite.clampSelection({ x: -2, y: -2, width: 4, height: 4 })).toEqual({
+        x: 0,
+        y: 0,
+        width: 2,
+        height: 2,
+      });
+      expect(sprite.clampSelection({ x: 9, y: 9, width: 2, height: 2 })).toBeNull();
+    });
+
+    it('paints a partly transparent pixel when one is asked for', () => {
+      const sprite = SpriteDocument.blank(2, 2);
+
+      sprite.plot(0, 0, '#204080', 128);
+
+      expect(sprite.alphaAt(0, 0)).toBe(128);
+      // Still a colour: the eyedropper and the palette read it as drawn.
+      expect(sprite.colorAt(0, 0)).toBe('#204080');
+      // And the default is unchanged, which is what the character stage relies on.
+      sprite.plot(1, 1, '#204080');
+      expect(sprite.alphaAt(1, 1)).toBe(255);
+    });
+  });
 });

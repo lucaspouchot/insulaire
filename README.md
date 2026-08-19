@@ -284,6 +284,12 @@ In Play mode:
 | `npm run test:rust` | `cargo test --workspace` (191 tests, no browser needed). |
 | `npm run test:web` | Vitest (102 tests, including real WASM integration). |
 | `npm run test:scripts` | `node --test` over `scripts/` — the content server's path rules. |
+
+`node scripts/generate-tile-art.mjs` redraws the shipped tile art in
+`content/assets/tiles/` — the grass surfaces and the dirt elevation ladder of
+`docs/sketch_grass_and_dirt_asset.png`, one directory per tile. It is a **seeder**: nothing in the build
+runs it, the images it writes are ordinary art the asset editor edits from then
+on, and re-running it overwrites whatever has been painted since.
 | `npm run lint:rust` | `cargo clippy -D warnings` and `cargo fmt --check`. |
 | `npm run check` | Lint plus every test. |
 | `just check-desktop` | The desktop shell's own clippy, rustfmt and tests. |
@@ -664,6 +670,14 @@ Read in order:
 25. **ADR-0025 — engine settings belong to the shell, game settings are content**
 26. **ADR-0026 — the session outlives the route, and the title screen ends it**
 27. **ADR-0027 — naming a key creates it; an untranslated key is a warning**
+28. **ADR-0028 — characters are definitions plus customisations, resolved in Rust**
+29. **ADR-0029 — characters are composed sprites on a declared pixel canvas**
+30. **ADR-0030 — the editor paints the sprites it composes**
+31. **ADR-0031 — characters animate by a layer hierarchy and whole-pixel offsets**
+32. **ADR-0032 — a keyframe may name a sprite, and an animation may be another one mirrored**
+33. **ADR-0033 — an animation sets pose values, and variants choose from them**
+34. **ADR-0034 — a layer's box is measured from the joint it hangs off**
+35. **ADR-0035 — tile art is authored per level and resolved, never transformed**
 
 `CLAUDE.md` contains project-level instructions for Claude Code and other coding
 agents.

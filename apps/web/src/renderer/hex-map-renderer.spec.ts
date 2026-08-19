@@ -1,11 +1,26 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
+import { TileArt, shoulderDepth } from '../content/content-types';
 import { offset } from '../core/hex/hex-coords';
 import { HexLayout } from '../core/hex/hex-layout';
 import { Camera } from './camera';
 import { HexMapRenderer } from './hex-map-renderer';
 import { Projection } from './projection';
 import { RenderModel, emptyRenderModel } from './render-model';
+import { projectionRatiosOf } from './tile-art';
+
+/**
+ * The projection the renderer will use for a default model.
+ *
+ * Derived exactly as `HexMapRenderer` derives it, from the tile set's authored
+ * pixel grid rather than from a pair of constants: a test that wrote the tilt
+ * down would pass against a picture the renderer no longer draws
+ * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+ */
+function isometricFor(hexSize: number): Projection {
+  const { tilt, elevationRatio } = projectionRatiosOf(emptyRenderModel().tileArt);
+  return Projection.from('isometric', hexSize, tilt, elevationRatio);
+}
 
 /**
  * Hit-testing only, which is the half of the renderer that has to be exactly
@@ -18,7 +33,7 @@ import { RenderModel, emptyRenderModel } from './render-model';
 describe('HexMapRenderer hit-testing', () => {
   const HEX_SIZE = 24;
   const LAYOUT = new HexLayout(HEX_SIZE);
-  const ISOMETRIC = Projection.for('isometric', HEX_SIZE);
+  const ISOMETRIC = isometricFor(HEX_SIZE);
   const RAISED = offset(4, 6);
 
   /** How far back the hill has to reach for the occlusion test to mean anything. */
@@ -200,7 +215,7 @@ describe('HexMapRenderer content bounds', () => {
   it('is the flattened plane when an isometric map has no relief', () => {
     const flat = model('isometric');
     const plane = new HexLayout(HEX_SIZE).boundsOf(flat.width, flat.height);
-    const projection = Projection.for('isometric', HEX_SIZE);
+    const projection = isometricFor(HEX_SIZE);
 
     expect(rendererFor(flat).contentBounds()).toEqual(projection.projectRect(plane));
   });
@@ -212,7 +227,7 @@ describe('HexMapRenderer content bounds', () => {
   it('lifts only the row the peak stands on', () => {
     const relief = model('isometric', true);
     const layout = new HexLayout(HEX_SIZE);
-    const projection = Projection.for('isometric', HEX_SIZE);
+    const projection = isometricFor(HEX_SIZE);
     const plane = layout.boundsOf(relief.width, relief.height);
     const bounds = rendererFor(relief).contentBounds();
 
@@ -230,7 +245,7 @@ describe('HexMapRenderer content bounds', () => {
   it('keeps the bottom edge the front skirt reaches', () => {
     const relief = model('isometric', true);
     const layout = new HexLayout(HEX_SIZE);
-    const projection = Projection.for('isometric', HEX_SIZE);
+    const projection = isometricFor(HEX_SIZE);
     const bounds = rendererFor(relief).contentBounds();
 
     const plane = layout.boundsOf(relief.width, relief.height);
@@ -243,7 +258,7 @@ describe('HexMapRenderer content bounds', () => {
     const depth = 3;
     const elevation = new Int8Array(width * height);
     elevation[(height - 1) * width + 5] = -depth;
-    const projection = Projection.for('isometric', HEX_SIZE);
+    const projection = isometricFor(HEX_SIZE);
     const layout = new HexLayout(HEX_SIZE);
 
     const bounds = rendererFor({
@@ -259,5 +274,185 @@ describe('HexMapRenderer content bounds', () => {
     expect(bounds.maxY).toBeCloseTo(
       layout.boundsOf(width, height).maxY * projection.tilt + projection.liftOf(depth),
     );
+  });
+});
+
+/**
+ * Where a cell's art actually lands on the canvas.
+ *
+ * The blit is the one thing about tile art a picture-free test can still pin
+ * exactly: an elevation image is the faces alone, so its `V` has to fall on the
+ * hexagon's own lower edges. Half a hex out and the faces hide behind the top
+ * face, leaving the drop empty — which is the bug this covers
+ * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+ */
+describe('HexMapRenderer tile art', () => {
+  const HEX_SIZE = 24;
+  const LAYOUT = new HexLayout(HEX_SIZE);
+  const RAISED = offset(1, 0);
+
+  /** What `drawImage` was asked to paint, in drawing-plane coordinates. */
+  interface Blit {
+    asset: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }
+
+  /**
+   * A canvas that records instead of painting.
+   *
+   * A proxy rather than a hand-written double: the renderer touches a couple of
+   * dozen context members and none of them but these two say anything about
+   * where the art went.
+   */
+  function recorder(): {
+    context: CanvasRenderingContext2D;
+    blits: Blit[];
+    fills: number;
+  } {
+    const blits: Blit[] = [];
+    const state = { fills: 0 };
+    const context = new Proxy(
+      {},
+      {
+        get(_target, property) {
+          if (property === 'drawImage') {
+            return (image: { asset: string }, x: number, y: number, width: number, height: number) =>
+              blits.push({ asset: image.asset, x, y, width, height });
+          }
+          if (property === 'fill') {
+            return () => {
+              state.fills += 1;
+            };
+          }
+          if (property === 'measureText') {
+            return () => ({ width: 0 });
+          }
+          return () => undefined;
+        },
+        set: () => true,
+      },
+    ) as CanvasRenderingContext2D;
+    return {
+      context,
+      blits,
+      get fills() {
+        return state.fills;
+      },
+    };
+  }
+
+  /**
+   * jsdom ships no canvas, so the class the batches accumulate into is missing.
+   * Nothing here inspects a path — only how many were filled — so a shell of one
+   * is enough.
+   */
+  beforeAll(() => {
+    globalThis.Path2D ??= class {
+      moveTo(): void {}
+      lineTo(): void {}
+      closePath(): void {}
+    } as unknown as typeof Path2D;
+  });
+
+  /** Every asset resolves, so nothing falls back for want of a download. */
+  const IMAGES = { image: (asset: string) => ({ asset }) as unknown as CanvasImageSource };
+
+  function modelWith(art: TileArt): RenderModel {
+    const width = 3;
+    const height = 3;
+    const elevation = new Int8Array(width * height);
+    elevation[RAISED.row * width + RAISED.col] = 1;
+    const base = emptyRenderModel();
+    return {
+      ...base,
+      width,
+      height,
+      projection: 'isometric',
+      showGrid: false,
+      palette: [
+        {
+          index: 0,
+          id: 'dirt',
+          name: 'Dirt',
+          terrain: 'dirt',
+          movementCost: 1,
+          passable: true,
+          visualId: 'terrain.dirt',
+          fallbackColor: '#7a5230',
+          tags: [],
+          art,
+        },
+      ],
+      terrain: new Uint8Array(width * height),
+      elevation,
+      elevationRange: { min: 0, max: 1 },
+    };
+  }
+
+  function drawnBy(art: TileArt): { blits: Blit[]; fills: number } {
+    const canvas = recorder();
+    const renderer = new HexMapRenderer(canvas.context, LAYOUT, new Camera(), undefined, IMAGES);
+    renderer.setModel(modelWith(art));
+    renderer.draw(600, 600);
+    return { blits: canvas.blits, fills: canvas.fills };
+  }
+
+  const FULL: TileArt = {
+    surface: [{ id: 'a', asset: 'top.png' }],
+    elevation: { levels: [{ variants: [{ id: 'a', asset: 'face.png' }] }] },
+  };
+
+  it('hangs an elevation image off the hexagon it belongs to', () => {
+    const geometry = emptyRenderModel().tileArt;
+    const projection = isometricFor(HEX_SIZE);
+    const { blits } = drawnBy(FULL);
+
+    const face = blits.find((blit) => blit.asset === 'face.png');
+    expect(face).toBeDefined();
+
+    const perPixel = LAYOUT.hexWidth / geometry.width;
+    const corners = LAYOUT.corners(LAYOUT.centerOf(RAISED)).map((corner) =>
+      projection.project(corner, 1),
+    );
+    const south = corners[2];
+    expect(south).toBeDefined();
+
+    // The image's own `V` is its top `shoulderDepth` rows, and it has to sit
+    // exactly on the two lower edges: its point *is* the hexagon's south vertex.
+    expect((face?.y ?? 0) + shoulderDepth(geometry) * perPixel).toBeCloseTo(south?.y ?? 0, 6);
+    // What hangs below that point is one authored step of relief.
+    expect((face?.y ?? 0) + (face?.height ?? 0)).toBeCloseTo(
+      (south?.y ?? 0) + projection.elevationStep,
+      6,
+    );
+    expect(face?.width).toBeCloseTo(LAYOUT.hexWidth, 6);
+  });
+
+  it('draws the top face over the faces, at every height', () => {
+    const { blits } = drawnBy(FULL);
+
+    // Faces first, then the tile's own surface over them: a face image never
+    // owns a top face, so the raised cell blits both, in that order.
+    const face = blits.findIndex((blit) => blit.asset === 'face.png');
+    expect(face).toBeGreaterThanOrEqual(0);
+    expect(blits[face + 1]?.asset).toBe('top.png');
+    expect(blits[face + 1]?.x).toBeCloseTo(blits[face]?.x ?? 0, 6);
+  });
+
+  it('fills the drop in colour when the tile authors a top face and no cliff', () => {
+    const bare: TileArt = { surface: [{ id: 'a', asset: 'top.png' }] };
+    const { blits, fills } = drawnBy(bare);
+
+    // The top face is still authored art…
+    expect(new Set(blits.map((blit) => blit.asset))).toEqual(new Set(['top.png']));
+    // …and the faces it does not author are the fallback colour, not a hole.
+    expect(fills).toBeGreaterThan(0);
+  });
+
+  it('leaves no colour behind a cliff that is fully authored', () => {
+    expect(drawnBy(FULL).fills).toBe(0);
   });
 });

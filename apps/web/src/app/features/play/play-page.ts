@@ -46,15 +46,17 @@ import { HexLayout } from '../../../core/hex/hex-layout';
 import { EntitySnapshot, GameSnapshot, SimEvent, WorldView } from '../../../engine/engine.types';
 import { Camera } from '../../../renderer/camera';
 import { CanvasView } from '../../../renderer/canvas-view';
+import { SpriteCache } from '../../../renderer/character-renderer';
 import { HexMapRenderer } from '../../../renderer/hex-map-renderer';
 import { toProjectionMode } from '../../../renderer/projection';
 import { RenderModel, elevationRangeOf } from '../../../renderer/render-model';
+import { SpriteRegistry } from '../../../renderer/sprite-registry';
 import { serializeWorld } from '../../../content/world-serializer';
 import { I18nService } from '../../i18n/i18n.service';
 import { SettingsService } from '../../settings/settings.service';
 import { TranslatePipe } from '../../i18n/translate.pipe';
 import { EngineService } from '../../services/engine.service';
-import { ProjectStoreService } from '../../services/project-store.service';
+import { ProjectStoreService, contentUrl } from '../../services/project-store.service';
 import { CharacterLibraryService } from '../../services/character-library.service';
 import { TitleScreenService } from '../../services/title-screen.service';
 
@@ -95,6 +97,18 @@ export class PlayPage implements AfterViewInit, OnDestroy {
 
   private view: CanvasView | null = null;
   private renderer: HexMapRenderer | null = null;
+  /**
+   * The images tiles are drawn from, loaded on demand.
+   *
+   * A tile set that ships no art never asks for one, so this costs nothing
+   * until an asset editor has painted something
+   * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+   */
+  private readonly tileImages = new SpriteCache(
+    (asset) => contentUrl(asset),
+    () => this.refresh(),
+  );
+
   private logCounter = 0;
 
   protected readonly worldView = signal<WorldView | null>(null);
@@ -374,7 +388,16 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       return;
     }
 
-    this.renderer = new HexMapRenderer(context, new HexLayout(HEX_SIZE), new Camera());
+    this.renderer = new HexMapRenderer(
+      context,
+      new HexLayout(HEX_SIZE),
+      new Camera(),
+      new SpriteRegistry(),
+      // A tile drawn from images needs its images; a tile set that ships none
+      // simply never asks for one
+      // (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+      this.tileImages,
+    );
     // The elevation range is scanned once per loaded world, never per frame.
     this.renderer.setModel(this.buildModel(view, terrain, elevation, elevationRangeOf(elevation)));
 
@@ -437,6 +460,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       height: view.height,
       // Authored by the world, transported by the engine, applied here.
       projection: toProjectionMode(view.projection),
+      tileArt: view.tileArt,
       palette: view.palette,
       terrain,
       elevation,

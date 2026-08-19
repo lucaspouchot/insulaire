@@ -162,6 +162,41 @@ impl JsonEngine {
         ok(&report)
     }
 
+    /// Validates a tile set **without** registering it; returns a
+    /// `ValidationReport`.
+    ///
+    /// # Errors
+    ///
+    /// `parse` for malformed JSON.
+    pub fn validate_tile_set(&self, json: &str) -> JsonResult {
+        let report = self
+            .inner
+            .validate_tile_set(json)
+            .map_err(|error| err(&error))?;
+        ok(&report)
+    }
+
+    /// Resolves what to draw for one cell of a tile set passed in; returns a
+    /// `ResolvedTileRender`.
+    ///
+    /// # Errors
+    ///
+    /// `parse` for malformed JSON, `unknownContent` for an unknown tile.
+    pub fn preview_tile_render(
+        &self,
+        tile_set_json: &str,
+        tile_id: &str,
+        elevation: i32,
+        base: i32,
+        roll: u32,
+    ) -> JsonResult {
+        let resolved = self
+            .inner
+            .preview_tile_render(tile_set_json, tile_id, elevation, base, roll)
+            .map_err(|error| err(&error))?;
+        ok(&resolved)
+    }
+
     /// Returns the registered `TitleScreenDefinition`.
     ///
     /// # Errors
@@ -513,6 +548,100 @@ mod tests {
         assert_eq!(result["accepted"], true);
         assert_eq!(result["state"]["tick"], 1);
         assert_eq!(result["state"]["player"]["at"], *target);
+    }
+
+    const ART_TILE_SET: &str = r##"{
+        "id": "art", "schemaVersion": 2,
+        "art": { "width": 32, "surfaceHeight": 20, "elevationHeight": 13, "elevationStep": 8 },
+        "tiles": [
+            { "id": "rock", "terrain": "rock", "movementCost": 1,
+              "visual": { "visualId": "terrain.rock", "fallbackColor": "#7a7169" },
+              "art": {
+                "surface": [{ "id": "a", "asset": "assets/tiles/rock_a.png" }],
+                "elevation": {
+                  "levels": [
+                    { "variants": [{ "id": "a", "asset": "assets/tiles/cliff_a.png" }] },
+                    { "variants": [{ "id": "b", "asset": "assets/tiles/cliff_b.png" }] }
+                  ],
+                  "repeat": { "level": 2 }
+                }
+              } }
+        ]}"##;
+
+    #[test]
+    fn a_tile_set_can_be_validated_without_being_registered() {
+        let engine = JsonEngine::new();
+
+        let report = json(&engine.validate_tile_set(ART_TILE_SET).expect("validate"));
+        assert_eq!(report["valid"], true);
+
+        let broken = ART_TILE_SET.replace(r#""level": 2"#, r#""level": 9"#);
+        let report = json(&engine.validate_tile_set(&broken).expect("validate"));
+        assert_eq!(report["valid"], false);
+        assert_eq!(report["issues"][0]["code"], "tile.unknownRepeatSource");
+
+        assert_eq!(code(&engine.validate_tile_set("{").unwrap_err()), "parse");
+    }
+
+    #[test]
+    fn a_tile_render_resolves_through_the_boundary() {
+        let engine = JsonEngine::new();
+
+        let flat = json(
+            &engine
+                .preview_tile_render(ART_TILE_SET, "rock", 0, 0, 0)
+                .expect("resolve"),
+        );
+        assert_eq!(flat["surface"], "assets/tiles/rock_a.png");
+        assert!(flat["layers"].as_array().is_none_or(Vec::is_empty));
+
+        // Four steps of relief over two authored levels: the third and fourth
+        // repeat level 2, moved down whole steps and never transformed.
+        let tall = json(
+            &engine
+                .preview_tile_render(ART_TILE_SET, "rock", 4, 0, 0)
+                .expect("resolve"),
+        );
+        let layers = tall["layers"].as_array().expect("layers");
+        assert_eq!(layers.len(), 4);
+        assert_eq!(layers[0]["asset"], "assets/tiles/cliff_a.png");
+        assert_eq!(layers[0]["drop"], 3);
+        assert_eq!(layers[3]["asset"], "assets/tiles/cliff_b.png");
+        assert_eq!(layers[3]["drop"], 0);
+        assert_eq!(layers[3]["sourceLevel"], 2);
+        // The faces never carry a top face: that is still the tile's surface.
+        assert_eq!(tall["surface"], "assets/tiles/rock_a.png");
+
+        assert_eq!(
+            code(
+                &engine
+                    .preview_tile_render(ART_TILE_SET, "absent", 0, 0, 0)
+                    .unwrap_err()
+            ),
+            "unknownContent"
+        );
+    }
+
+    #[test]
+    fn the_world_view_carries_the_tile_sets_pixel_grid() {
+        let mut engine = JsonEngine::new();
+        engine.load_tile_set(ART_TILE_SET).expect("tile set loads");
+        engine
+            .load_world(
+                &WORLD
+                    .replace(r#""tileSetId": "t""#, r#""tileSetId": "art""#)
+                    .replace(r#""defaultTile": "grass""#, r#""defaultTile": "rock""#)
+                    .replace(r#""tiles": [{ "at": [4, 4], "tile": "water" }],"#, ""),
+            )
+            .expect("world loads");
+
+        let view = json(&engine.world_view("w").expect("view"));
+        assert_eq!(view["tileArt"]["width"], 32);
+        assert_eq!(view["tileArt"]["elevationStep"], 8);
+        assert_eq!(
+            view["palette"][0]["art"]["surface"][0]["asset"],
+            "assets/tiles/rock_a.png"
+        );
     }
 
     #[test]

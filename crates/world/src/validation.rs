@@ -25,7 +25,11 @@ use crate::locale::{missing_keys, LocaleBundle};
 use crate::project::{ProjectDefinition, PROJECT_SCHEMA_VERSION};
 use crate::settings::{ControlDefinition, SettingsDefinition, SETTINGS_SCHEMA_VERSION};
 use crate::template::{EntityKind, TemplateRegistry};
-use crate::tileset::{TileSetDefinition, TILE_SET_SCHEMA_VERSION};
+use crate::tile_art::{
+    ElevationRepeat, TileArt, TileArtGeometry, TileArtVariant, MAX_ELEVATION_LEVELS,
+    MAX_TILE_IMAGE_SIZE, MAX_TILE_VARIANTS,
+};
+use crate::tileset::{TileDefinition, TileSetDefinition, TILE_SET_SCHEMA_VERSION};
 use crate::title_screen::{TitleAction, TitleScreenDefinition, TITLE_SCREEN_SCHEMA_VERSION};
 
 /// Upper bound on map size accepted by the MVP loader.
@@ -191,6 +195,8 @@ pub fn validate_tile_set(tile_set: &TileSetDefinition) -> ValidationReport {
         ));
     }
 
+    issues.extend(geometry_issues(&tile_set.art));
+
     let mut seen = BTreeSet::new();
     for (index, tile) in tile_set.tiles.iter().enumerate() {
         let path = format!("tiles[{index}]");
@@ -214,9 +220,197 @@ pub fn validate_tile_set(tile_set: &TileSetDefinition) -> ValidationReport {
                 "tile must reference a visual id",
             ));
         }
+        issues.extend(tile_art_issues(tile, &path));
     }
 
     ValidationReport::from_issues(issues)
+}
+
+/// The pixel grid a tile set's images are drawn on: usable, and self-consistent.
+///
+/// The two rules that are not simply bounds:
+///
+/// * an elevation image starts at the hexagon's lower shoulders, so it has to
+///   be deeper than the `V` those edges cut or there is no room in it for the
+///   faces it exists to hold;
+/// * a step taller than those faces stacks levels with a gap between them, and
+///   the background shows through the cliff
+///   (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+fn geometry_issues(art: &TileArtGeometry) -> Vec<ValidationIssue> {
+    let mut issues = Vec::new();
+
+    for (value, field) in [
+        (art.width, "width"),
+        (art.surface_height, "surfaceHeight"),
+        (art.elevation_height, "elevationHeight"),
+    ] {
+        if value == 0 || value > MAX_TILE_IMAGE_SIZE {
+            issues.push(ValidationIssue::error(
+                "tileArt.invalidGeometry",
+                format!("art.{field}"),
+                format!("art.{field} must be between 1 and {MAX_TILE_IMAGE_SIZE}, got {value}"),
+            ));
+        }
+    }
+
+    if art.elevation_height <= art.shoulder_depth() {
+        issues.push(ValidationIssue::error(
+            "tileArt.invalidGeometry",
+            "art.elevationHeight",
+            format!(
+                "an elevation image ({}) must be deeper than the {} pixels the hexagon's lower edges fall; everything below that is the side faces",
+                art.elevation_height,
+                art.shoulder_depth()
+            ),
+        ));
+    } else if art.elevation_step == 0 {
+        issues.push(ValidationIssue::error(
+            "tileArt.invalidGeometry",
+            "art.elevationStep",
+            "art.elevationStep must be at least 1 pixel",
+        ));
+    } else if art.elevation_step > art.face_height() {
+        issues.push(ValidationIssue::warning(
+            "tileArt.stepTallerThanFaces",
+            "art.elevationStep",
+            format!(
+                "a step of {} is taller than the {} pixels of side face, so stacked levels leave a gap",
+                art.elevation_step,
+                art.face_height()
+            ),
+        ));
+    }
+
+    issues
+}
+
+/// A tile's images: reachable paths, unique variant ids, and a repeat rule that
+/// names levels the tile actually authors.
+fn tile_art_issues(tile: &TileDefinition, path: &str) -> Vec<ValidationIssue> {
+    let art: &TileArt = &tile.art;
+    let mut issues = Vec::new();
+
+    issues.extend(variant_list_issues(
+        &art.surface,
+        &format!("{path}.art.surface"),
+    ));
+
+    let levels = art.elevation.levels.len();
+    if levels > MAX_ELEVATION_LEVELS {
+        issues.push(ValidationIssue::error(
+            "tile.tooManyElevationLevels",
+            format!("{path}.art.elevation.levels"),
+            format!(
+                "a tile may author at most {MAX_ELEVATION_LEVELS} explicit elevation levels; taller cells are what a repeat rule is for"
+            ),
+        ));
+    }
+
+    for (index, level) in art.elevation.levels.iter().enumerate() {
+        let level_path = format!("{path}.art.elevation.levels[{index}]");
+        if level.variants.is_empty() {
+            issues.push(ValidationIssue::error(
+                "tile.emptyElevationLevel",
+                format!("{level_path}.variants"),
+                format!(
+                    "elevation level {} of tile `{}` has no image, so a cell that tall draws a hole",
+                    index + 1,
+                    tile.id
+                ),
+            ));
+        }
+        issues.extend(variant_list_issues(&level.variants, &level_path));
+    }
+
+    let count = u32::try_from(levels).unwrap_or(u32::MAX);
+    match &art.elevation.repeat {
+        None => {}
+        Some(ElevationRepeat::Level(source)) => {
+            issues.extend(repeat_source_issues(*source, count, tile, path));
+        }
+        Some(ElevationRepeat::Pattern(pattern)) => {
+            if pattern.is_empty() {
+                issues.push(ValidationIssue::error(
+                    "tile.emptyRepeatPattern",
+                    format!("{path}.art.elevation.repeat"),
+                    format!("tile `{}` repeats an empty pattern of levels", tile.id),
+                ));
+            }
+            for source in pattern {
+                issues.extend(repeat_source_issues(*source, count, tile, path));
+            }
+        }
+    }
+
+    if art.elevation.repeat.is_some() && levels == 0 {
+        issues.push(ValidationIssue::error(
+            "tile.repeatWithoutLevels",
+            format!("{path}.art.elevation.repeat"),
+            format!(
+                "tile `{}` declares a repeat rule but authors no elevation level to repeat",
+                tile.id
+            ),
+        ));
+    }
+
+    issues
+}
+
+fn repeat_source_issues(
+    source: u32,
+    count: u32,
+    tile: &TileDefinition,
+    path: &str,
+) -> Option<ValidationIssue> {
+    if (1..=count).contains(&source) {
+        return None;
+    }
+    Some(ValidationIssue::error(
+        "tile.unknownRepeatSource",
+        format!("{path}.art.elevation.repeat"),
+        format!(
+            "tile `{}` repeats elevation level {source}, which it does not author",
+            tile.id
+        ),
+    ))
+}
+
+fn variant_list_issues(variants: &[TileArtVariant], path: &str) -> Vec<ValidationIssue> {
+    let mut issues = Vec::new();
+    if variants.len() > MAX_TILE_VARIANTS {
+        issues.push(ValidationIssue::error(
+            "tile.tooManyVariants",
+            format!("{path}.variants"),
+            format!("at most {MAX_TILE_VARIANTS} variants may be declared here"),
+        ));
+    }
+
+    let mut seen = BTreeSet::new();
+    for (index, variant) in variants.iter().enumerate() {
+        let path = format!("{path}[{index}]");
+        if variant.id.trim().is_empty() {
+            issues.push(ValidationIssue::error(
+                "tile.missingVariantId",
+                format!("{path}.id"),
+                "a tile art variant must have an id",
+            ));
+        } else if !seen.insert(variant.id.as_str()) {
+            issues.push(ValidationIssue::error(
+                "tile.duplicateVariantId",
+                format!("{path}.id"),
+                format!("variant `{}` is declared twice", variant.id),
+            ));
+        }
+        if let Some(reason) = unusable_asset_path(&variant.asset) {
+            issues.push(ValidationIssue::error(
+                "tile.unusableAsset",
+                format!("{path}.asset"),
+                format!("`{}` cannot be loaded: {reason}", variant.asset),
+            ));
+        }
+    }
+
+    issues
 }
 
 /// Validates a world against the tile set it references.
@@ -2281,6 +2475,68 @@ mod tests {
         let mut empty = testing::sample_tile_set();
         empty.tiles.clear();
         assert!(codes(&validate_tile_set(&empty)).contains(&"tileSet.empty"));
+    }
+
+    // --------------------------------------------------------------- tile art
+
+    #[test]
+    fn the_shipped_fixture_authors_valid_tile_art() {
+        let report = validate_tile_set(&testing::sample_tile_set());
+        assert!(report.valid, "unexpected issues: {:?}", report.issues);
+    }
+
+    #[test]
+    fn a_geometry_with_no_room_for_faces_is_an_error() {
+        let mut tile_set = testing::sample_tile_set();
+        // An elevation image that stops at the south vertex holds no face.
+        tile_set.art.elevation_height = tile_set.art.shoulder_depth();
+        assert!(codes(&validate_tile_set(&tile_set)).contains(&"tileArt.invalidGeometry"));
+
+        tile_set.art.width = 0;
+        assert!(codes(&validate_tile_set(&tile_set)).contains(&"tileArt.invalidGeometry"));
+    }
+
+    #[test]
+    fn a_step_taller_than_the_faces_it_stacks_is_a_warning() {
+        let mut tile_set = testing::sample_tile_set();
+        tile_set.art.elevation_step = tile_set.art.face_height() + 1;
+        let report = validate_tile_set(&tile_set);
+        // A gap in a cliff is ugly, not unloadable.
+        assert!(report.valid);
+        assert!(codes(&report).contains(&"tileArt.stepTallerThanFaces"));
+    }
+
+    #[test]
+    fn a_repeat_rule_may_only_name_a_level_the_tile_authors() {
+        let mut tile_set = testing::sample_tile_set();
+        tile_set.tiles[1].art.elevation.repeat = Some(ElevationRepeat::Level(4));
+        assert!(codes(&validate_tile_set(&tile_set)).contains(&"tile.unknownRepeatSource"));
+
+        tile_set.tiles[1].art.elevation.repeat = Some(ElevationRepeat::Pattern(Vec::new()));
+        assert!(codes(&validate_tile_set(&tile_set)).contains(&"tile.emptyRepeatPattern"));
+
+        tile_set.tiles[1].art.elevation.levels.clear();
+        tile_set.tiles[1].art.elevation.repeat = Some(ElevationRepeat::Level(1));
+        assert!(codes(&validate_tile_set(&tile_set)).contains(&"tile.repeatWithoutLevels"));
+    }
+
+    #[test]
+    fn a_level_with_no_image_and_a_duplicate_variant_are_errors() {
+        let mut tile_set = testing::sample_tile_set();
+        tile_set.tiles[1].art.elevation.levels[0].variants.clear();
+        assert!(codes(&validate_tile_set(&tile_set)).contains(&"tile.emptyElevationLevel"));
+
+        let mut tile_set = testing::sample_tile_set();
+        let duplicate = tile_set.tiles[1].art.surface[0].clone();
+        tile_set.tiles[1].art.surface.push(duplicate);
+        assert!(codes(&validate_tile_set(&tile_set)).contains(&"tile.duplicateVariantId"));
+    }
+
+    #[test]
+    fn an_image_outside_the_content_root_is_an_error() {
+        let mut tile_set = testing::sample_tile_set();
+        tile_set.tiles[1].art.surface[0].asset = "../../etc/passwd".to_owned();
+        assert!(codes(&validate_tile_set(&tile_set)).contains(&"tile.unusableAsset"));
     }
 
     // ------------------------------------------------------------------ links

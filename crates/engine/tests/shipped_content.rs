@@ -223,6 +223,43 @@ fn walking_through_the_shipped_door_changes_map_and_comes_back() {
     assert_eq!(waited.state.world_id, "demo_world");
 }
 
+/// Every image the shipped tile set names is actually in the content directory.
+///
+/// Validation cannot check this: the engine has no filesystem, so it can only
+/// say that a path is *shaped* like a content path (`tile.unusableAsset`).
+/// A typo'd filename is therefore invisible until a tile draws as a hole, which
+/// is exactly the kind of thing that ships
+/// (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+#[test]
+fn every_image_the_shipped_tiles_name_is_on_disk() {
+    let tile_set: insulaire_world::TileSetDefinition =
+        serde_json::from_str(&read("content/tilesets/mvp_terrain.json")).expect("parse tile set");
+
+    let mut checked = 0;
+    for tile in &tile_set.tiles {
+        let levels = tile
+            .art
+            .elevation
+            .levels
+            .iter()
+            .flat_map(|level| &level.variants);
+        for variant in tile.art.surface.iter().chain(levels) {
+            let path = repo_root().join("content").join(&variant.asset);
+            assert!(
+                path.is_file(),
+                "tile `{}` names {}, which is not in the content directory",
+                tile.id,
+                variant.asset
+            );
+            checked += 1;
+        }
+    }
+
+    // The pack `docs/sketch_grass_and_dirt_asset.png` describes: eight grass
+    // surfaces, eight bare-earth ones, and three courses at eight variants.
+    assert_eq!(checked, 8 + 8 + 3 * 8);
+}
+
 #[test]
 fn the_demo_world_matches_its_documented_shape() {
     let engine = engine_with_shipped_content();
@@ -232,8 +269,28 @@ fn the_demo_world_matches_its_documented_shape() {
     assert_eq!(view.orientation, "pointy");
     assert_eq!(view.tile_set_id, "mvp_terrain");
     assert_eq!(view.cell_count, 400);
-    assert_eq!(view.palette.len(), 6);
+    assert_eq!(view.palette.len(), 7);
     assert_eq!(view.locations.len(), 3);
+
+    // The two tiles the shipped art draws carry it through to the renderer
+    // (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+    assert_eq!(view.tile_art.width, 64);
+    assert_eq!(view.tile_art.elevation_step, view.tile_art.face_height());
+    let grass = view
+        .palette
+        .iter()
+        .find(|tile| tile.id == "grass")
+        .expect("grass");
+    assert_eq!(grass.art.surface.len(), 8);
+    let dirt = view
+        .palette
+        .iter()
+        .find(|tile| tile.id == "dirt")
+        .expect("dirt");
+    assert_eq!(dirt.art.elevation.levels.len(), 3);
+    // Level 4 and up reuse the deepest course, so a cliff of any height is
+    // three images.
+    assert_eq!(dirt.art.elevation.source_level(9), Some(3));
 
     let impassable: Vec<&str> = view
         .palette

@@ -67,6 +67,43 @@ impl InsulaireEngine {
         self.inner.load_tile_set(json).map_err(to_js)
     }
 
+    /// Validates a tile set **without** registering it. Returns a
+    /// `ValidationReport`.
+    ///
+    /// # Errors
+    ///
+    /// `parse` when the JSON is malformed.
+    #[wasm_bindgen(js_name = validateTileSet)]
+    pub fn validate_tile_set(&self, json: &str) -> Result<String, JsValue> {
+        self.inner.validate_tile_set(json).map_err(to_js)
+    }
+
+    /// Resolves what to draw for one cell of a tile set **passed in** — the
+    /// asset editor's preview, for content that is not registered yet. Returns
+    /// a `ResolvedTileRender`.
+    ///
+    /// `base` is the height the cell's side faces reach down to; `roll` is the
+    /// cell's variant roll
+    /// (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+    ///
+    /// # Errors
+    ///
+    /// `parse` when the JSON is malformed, `unknownContent` when the set
+    /// defines no tile with that id.
+    #[wasm_bindgen(js_name = previewTileRender)]
+    pub fn preview_tile_render(
+        &self,
+        tile_set_json: &str,
+        tile_id: &str,
+        elevation: i32,
+        base: i32,
+        roll: u32,
+    ) -> Result<String, JsValue> {
+        self.inner
+            .preview_tile_render(tile_set_json, tile_id, elevation, base, roll)
+            .map_err(to_js)
+    }
+
     /// Parses, validates and registers a world. Returns a `LoadOutcome`.
     ///
     /// # Errors

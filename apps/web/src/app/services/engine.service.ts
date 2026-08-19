@@ -34,6 +34,7 @@ import {
   ValidationReport,
   WorldView,
 } from '../../engine/engine.types';
+import { ResolvedTileRender } from '../../renderer/tile-art';
 import { loadEngineModule } from '../../engine/load-engine-module';
 
 export type EngineStatus = 'idle' | 'loading' | 'ready' | 'failed';
@@ -106,6 +107,33 @@ export class EngineService {
   /** Registers a tile set. */
   loadTileSet(json: string): LoadOutcome {
     return this.parse<LoadOutcome>(() => this.engine().loadTileSet(json));
+  }
+
+  /**
+   * Validates a tile set **without** registering it.
+   *
+   * What the asset editor calls before writing a file: the same validator the
+   * runtime loads with (`docs/adr/ADR-0015-shared-content-validation.md`).
+   */
+  validateTileSet(json: string): ValidationReport {
+    return this.parse<ValidationReport>(() => this.engine().validateTileSet(json));
+  }
+
+  /**
+   * Resolves what to draw for one cell of a tile set **passed in** — the asset
+   * editor's preview, for content that is not registered yet
+   * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+   */
+  previewTileRender(
+    tileSetJson: string,
+    tileId: string,
+    elevation: number,
+    base = 0,
+    roll = 0,
+  ): ResolvedTileRender {
+    return this.parse<ResolvedTileRender>(() =>
+      this.engine().previewTileRender(tileSetJson, tileId, elevation, base, roll),
+    );
   }
 
   /** Registers a world, replacing any world with the same id. */

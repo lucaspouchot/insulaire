@@ -17,11 +17,13 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import {
   CharacterDefinition,
   ResolvedCharacter,
+  TILE_SET_SCHEMA_VERSION,
   TileSetDefinition,
   WorldDefinition,
 } from '../content/content-types';
 import { WorldDocument } from '../content/world-document';
 import { serializeWorld } from '../content/world-serializer';
+import { ResolvedTileRender, resolveTileRender, variantRoll } from '../renderer/tile-art';
 import { offsetToAxial, hexDistance } from '../core/hex/hex-coords';
 import {
   CommandResult,
@@ -119,6 +121,74 @@ describe.skipIf(!built)('engine boundary', () => {
     expect(info.worldSchemaVersion).toBe(1);
   });
 
+  it('resolves tile art exactly as the TypeScript mirror does', () => {
+    // The renderer resolves this itself, once per visible cell per frame, and
+    // may not cross the boundary to do it. So the two implementations are held
+    // together here, against the real WASM build
+    // (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+    const set: TileSetDefinition = {
+      id: 'art',
+      schemaVersion: TILE_SET_SCHEMA_VERSION,
+      art: { width: 32, surfaceHeight: 20, elevationHeight: 13, elevationStep: 8 },
+      tiles: [
+        {
+          id: 'cliff',
+          terrain: 'rock',
+          movementCost: 1,
+          visual: { visualId: 'terrain.rock', fallbackColor: '#7a7169' },
+          art: {
+            surface: [
+              { id: 'a', asset: 'assets/tiles/top_a.png' },
+              { id: 'b', asset: 'assets/tiles/top_b.png' },
+            ],
+            elevation: {
+              levels: [
+                { variants: [{ id: 'a', asset: 'assets/tiles/side_a.png' }] },
+                {
+                  variants: [
+                    { id: 'a', asset: 'assets/tiles/rock_a.png' },
+                    { id: 'b', asset: 'assets/tiles/rock_b.png' },
+                  ],
+                },
+              ],
+              repeat: { pattern: [1, 2] },
+            },
+          },
+        },
+      ],
+    };
+    const json = JSON.stringify(set);
+    const instance = engine();
+
+    expect(
+      (JSON.parse(instance.validateTileSet(json)) as ValidationReport).valid,
+    ).toBe(true);
+
+    for (const elevation of [0, 1, 2, 3, 4, 10]) {
+      for (const roll of [0, 1, 7, 12345]) {
+        const rust = JSON.parse(
+          instance.previewTileRender(json, 'cliff', elevation, 0, roll),
+        ) as ResolvedTileRender;
+        const mirror = resolveTileRender('cliff', set.tiles[0]?.art, elevation, 0, roll);
+
+        expect({ ...mirror, surface: mirror.surface }).toEqual({
+          tileId: rust.tileId,
+          elevation: rust.elevation,
+          surface: rust.surface ?? null,
+          layers: rust.layers ?? [],
+        });
+      }
+    }
+
+    // And the roll itself, which decides which variant a cell gets.
+    const rolled = JSON.parse(
+      instance.previewTileRender(json, 'cliff', 0, 0, variantRoll(3, 4, 'cliff')),
+    ) as ResolvedTileRender;
+    expect(rolled.surface).toBe(
+      resolveTileRender('cliff', set.tiles[0]?.art, 0, 0, variantRoll(3, 4, 'cliff')).surface,
+    );
+  });
+
   it('loads the shipped content without issues', () => {
     const instance = engine();
 
@@ -138,9 +208,22 @@ describe.skipIf(!built)('engine boundary', () => {
 
     expect(view.width).toBe(20);
     expect(view.height).toBe(20);
-    expect(view.palette).toHaveLength(6);
+    expect(view.palette).toHaveLength(7);
     expect(terrain).toBeInstanceOf(Uint8Array);
     expect(terrain.length).toBe(view.cellCount);
+
+    // The shipped art rides on the palette, which is the renderer's one lookup
+    // per cell (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+    expect(view.tileArt).toEqual({
+      width: 64,
+      surfaceHeight: 40,
+      elevationHeight: 26,
+      elevationStep: 16,
+    });
+    expect(view.palette.find((tile) => tile.id === 'grass')?.art?.surface).toHaveLength(8);
+    expect(
+      view.palette.find((tile) => tile.id === 'dirt')?.art?.elevation?.levels,
+    ).toHaveLength(3);
 
     // Every byte indexes a real palette entry.
     for (const index of terrain) {

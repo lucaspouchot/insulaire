@@ -149,7 +149,7 @@ function metadataBlock(metadata: Record<string, unknown>): string[] {
 }
 
 /** `{ "at": [4, 1], "tile": "mountain" }` — one record, one line. */
-function inlineObject(record: object): string {
+export function inlineObject(record: object): string {
   const parts = Object.entries(record)
     .filter(([, value]) => value !== undefined)
     .map(([key, value]) => `${JSON.stringify(key)}: ${formatValue(value)}`);
@@ -160,7 +160,7 @@ function inlineObject(record: object): string {
  * Like `JSON.stringify`, but puts a space after commas inside arrays so
  * coordinates read as `[4, 10]` rather than `[4,10]`.
  */
-function formatValue(value: unknown): string {
+export function formatValue(value: unknown): string {
   if (Array.isArray(value)) {
     return `[${value.map((item) => JSON.stringify(item)).join(', ')}]`;
   }

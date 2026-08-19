@@ -42,6 +42,7 @@ pub mod locale;
 pub mod project;
 pub mod settings;
 pub mod template;
+pub mod tile_art;
 pub mod tileset;
 pub mod title_screen;
 pub mod validation;
@@ -80,6 +81,12 @@ pub use settings::{
     SettingsDefinition, SettingsGroup, SettingsSection, ShowIf, SETTINGS_SCHEMA_VERSION,
 };
 pub use template::{Behavior, EntityKind, EntityTemplate, TemplateRegistry};
+pub use tile_art::{
+    resolve_tile_render, variant_index, variant_roll, ElevationLevel, ElevationRepeat,
+    ResolvedTileLayer, ResolvedTileRender, TileArt, TileArtGeometry, TileArtVariant, TileElevation,
+    DEFAULT_ELEVATION_HEIGHT, DEFAULT_ELEVATION_STEP, DEFAULT_SURFACE_HEIGHT, DEFAULT_TILE_WIDTH,
+    MAX_ELEVATION_LEVELS, MAX_STACKED_LEVELS, MAX_TILE_IMAGE_SIZE, MAX_TILE_VARIANTS,
+};
 pub use tileset::{TileDefinition, TileSetDefinition, TileVisual, TILE_SET_SCHEMA_VERSION};
 pub use title_screen::{
     BackgroundFit, TitleAction, TitleBackground, TitleButton, TitleLayout, TitleLogo, TitleMusic,

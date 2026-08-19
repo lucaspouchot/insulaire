@@ -16,6 +16,7 @@ use thiserror::Error;
 
 use crate::definition::{WorldDefinition, MAX_ELEVATION, MIN_ELEVATION};
 use crate::hex::{Hex, OffsetCoord};
+use crate::tile_art::TileArt;
 use crate::tileset::TileSetDefinition;
 
 /// Failure modes of [`WorldGrid::build`].
@@ -75,6 +76,8 @@ pub struct ResolvedTile {
     pub fallback_color: String,
     /// Gameplay tags.
     pub tags: Vec<String>,
+    /// The images this tile is drawn from, carried through to the renderer.
+    pub art: TileArt,
 }
 
 /// A dense, index-addressable world map.
@@ -121,6 +124,7 @@ impl WorldGrid {
                 visual_id: tile.visual.visual_id.clone(),
                 fallback_color: tile.visual.fallback_color.clone(),
                 tags: tile.tags.clone(),
+                art: tile.art.clone(),
             })
             .collect();
 

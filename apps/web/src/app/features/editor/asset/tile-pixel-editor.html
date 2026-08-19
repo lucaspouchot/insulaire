@@ -1,0 +1,110 @@
+<div class="pixel-editor">
+  <div class="toolbar">
+    <div class="tools" role="group" [attr.aria-label]="'ui.editor.asset.pixels' | t">
+      @for (entry of tools; track entry) {
+        <button
+          type="button"
+          [class.active]="tool() === entry"
+          [disabled]="sprite() === null"
+          [title]="'ui.editor.asset.tool.' + entry | t"
+          (click)="setTool(entry)"
+        >
+          {{ 'ui.editor.asset.tool.' + entry | t }}
+        </button>
+      }
+    </div>
+
+    <label class="swatch">
+      <input type="color" [value]="color()" (input)="onColorInput($event)" />
+      <span>{{ 'ui.editor.asset.color' | t }}</span>
+    </label>
+
+    <label class="alpha" [title]="'ui.editor.asset.alphaHint' | t">
+      {{ 'ui.editor.asset.alpha' | t }}
+      <input
+        type="range"
+        min="0"
+        max="255"
+        step="1"
+        [value]="alpha()"
+        (input)="onAlphaInput($event)"
+      />
+      <span class="value">{{ alpha() }}</span>
+    </label>
+
+    <div class="spacer"></div>
+
+    <button type="button" [disabled]="!canUndo()" [title]="'ui.editor.asset.undo' | t" (click)="undo()">
+      ↶
+    </button>
+    <button type="button" [disabled]="!canRedo()" [title]="'ui.editor.asset.redo' | t" (click)="redo()">
+      ↷
+    </button>
+    <button type="button" [disabled]="sprite() === null" (click)="clear()">
+      {{ (selection() === null ? 'ui.editor.asset.clearAll' : 'ui.editor.asset.clearSelection') | t }}
+    </button>
+
+    <div class="zoom">
+      <button type="button" (click)="stepZoom(-1)" [title]="'ui.editor.asset.zoomOut' | t">−</button>
+      <span>{{ zoom() }}×</span>
+      <button type="button" (click)="stepZoom(1)" [title]="'ui.editor.asset.zoomIn' | t">+</button>
+    </div>
+
+    <label class="toggle">
+      <input type="checkbox" [checked]="showGrid()" (change)="toggleGrid()" />
+      {{ 'ui.editor.asset.grid' | t }}
+    </label>
+    <label class="toggle">
+      <input type="checkbox" [checked]="showGuides()" (change)="toggleGuides()" />
+      {{ 'ui.editor.asset.guides' | t }}
+    </label>
+  </div>
+
+  <div class="stage-scroll">
+    @if (sprite() === null) {
+      <p class="empty">{{ 'ui.editor.asset.noImageOpen' | t }}</p>
+    } @else {
+      <canvas
+        #stage
+        (pointerdown)="onPointerDown($event)"
+        (pointermove)="onPointerMove($event)"
+        (pointerup)="onPointerUp()"
+        (pointercancel)="onPointerUp()"
+        (wheel)="onWheel($event)"
+      ></canvas>
+    }
+  </div>
+
+  @if (palette().length > 0) {
+    <div class="palette" [attr.aria-label]="'ui.editor.asset.palette' | t">
+      @for (entry of palette(); track entry) {
+        <button
+          type="button"
+          class="chip"
+          [class.active]="entry === color()"
+          [style.background]="entry"
+          [title]="entry"
+          (click)="setColor(entry)"
+        ></button>
+      }
+    </div>
+  }
+
+  <p class="hint">
+    @if (size(); as dimensions) {
+      <span class="target">{{ label() }}</span>
+      <span>{{ 'ui.editor.asset.imageSize' | t: { width: dimensions.width, height: dimensions.height } }}</span>
+    }
+    @if (unsaved()) {
+      <span class="dirty">{{ 'ui.editor.asset.imageUnsaved' | t }}</span>
+    }
+    @if (zoom() < gridZoom) {
+      <span>{{ 'ui.editor.asset.gridZoomHint' | t: { zoom: gridZoom } }}</span>
+    }
+    @if (tool() === 'select') {
+      <span>{{ 'ui.editor.asset.selectHint' | t }}</span>
+    } @else {
+      <span>{{ 'ui.editor.asset.paintHint' | t }}</span>
+    }
+  </p>
+</div>

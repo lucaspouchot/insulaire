@@ -69,8 +69,18 @@ A tile is a palette entry living in a `TileSetDefinition`, not a map cell:
 - sprite/tile source (`visual.visualId`, with `visual.fallbackColor`)
 - tags
 - movement cost — **`0` means impassable**
+- the images it is drawn from (`art`)
 - gameplay properties
 - *(planned)* render layer
+
+`art` is a set of surface images and a ladder of elevation levels, each level
+one image holding the top face and the faces below it. What a cell of height
+`h` draws is *resolved* rather than stored — `resolve_tile_render` in
+`crates/world/src/tile_art.rs`, mirrored for the draw loop in
+`apps/web/src/renderer/tile-art.ts` — so a hundred-step cliff costs the art of a
+two-step one, and no part of an image is ever produced from another part
+(ADR-0035). The set as a whole declares the pixel grid its images are drawn on,
+and that grid is what the renderer's projection is derived from.
 
 Map cells (`PlacedTile`) carry a position, a reference to one of these ids, and
 an `elevation` — relief the renderer draws in isometric mode and the rules
@@ -264,6 +274,16 @@ world being *authored* has no tick, no RNG and no entity handles, and every
 cell is freely mutable. It holds a dense `Uint8Array` of palette indices and a
 dense `Int8Array` of elevations — the same layout the runtime and the renderer
 use — plus the authored `projection` and `zone`, and re-sparsifies on export.
+Its palette entries carry each tile's `art`, and the document carries the tile
+set's pixel grid, so the editor's renderer and the game's are handed the same
+model.
+
+The **asset editor** owns a fourth, smaller one: a `SpriteDocument` per image
+being painted (`apps/web/src/content/sprite-document.ts`), which is the buffer
+the pixel tools write into and the buffer the preview draws from — one copy of
+every image, never two (ADR-0030, ADR-0035). It is the only editor state that
+is *not* mirrored into `localStorage`: unwritten pixels live in the tab, and the
+screen says how many there are.
 
 The editor holds **one document per map**, not one document
 (`ProjectStoreService`, `apps/web/src/app/services/project-store.service.ts`),

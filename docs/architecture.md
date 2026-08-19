@@ -65,7 +65,9 @@ The MVP implements the marked parts. Unmarked entries are the planned shape.
 │                   ├── title/           # the title screen editor (ADR-0024)  [MVP]
 │                   ├── settings/        # the game settings editor (ADR-0025) [MVP]
 │                   ├── locale/          # the language table (ADR-0023)       [MVP]
-│                   └── planned/         # character, asset, scenario tabs      [MVP]
+│                   ├── character/       # definitions, sprites, animations (ADR-0028..0034) [MVP]
+│                   ├── asset/           # the asset browser, tile editor and pixel tools (ADR-0035) [MVP]
+│                   └── planned/         # the scenario tab                     [MVP]
 ├── crates/
 │   ├── world/                   # hexes, content definitions, validation     [MVP]
 │   ├── simulation/              # GameState, ticks, rules, AI, RNG           [MVP]
@@ -80,7 +82,7 @@ The MVP implements the marked parts. Unmarked entries are the planned shape.
 │   ├── tilesets/                # mvp_terrain.json                           [MVP]
 │   ├── locales/                 # <language>/<namespace>.json: every displayed string [MVP]
 │   ├── characters/              # how a character is drawn and moves (ADR-0028, ADR-0031, ADR-0034) [MVP]
-│   ├── assets/                  # images: title art, character sprites          [MVP]
+│   ├── assets/                  # images: title art, character sprites, tile art [MVP]
 │   ├── menu/                    # title-screen.json: what a client opens on   [MVP]
 │   ├── settings.json            # the settings the game offers                [MVP]
 │   ├── scenarios/

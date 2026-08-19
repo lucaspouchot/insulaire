@@ -8,6 +8,7 @@
  * renderer serves both.
  */
 
+import { TileArt, TileArtGeometry, tileArtGeometry } from '../content/content-types';
 import { Offset } from '../core/hex/hex-coords';
 import { ProjectionMode } from './projection';
 
@@ -22,6 +23,14 @@ export interface RenderPaletteEntry {
   readonly visualId: string;
   readonly fallbackColor: string;
   readonly tags: readonly string[];
+  /**
+   * The images this tile is drawn from; absent draws {@link fallbackColor}.
+   *
+   * Carried on the palette entry rather than fetched per cell: the renderer
+   * already indexes the palette once per cell, and that is the budget
+   * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+   */
+  readonly art?: TileArt;
 }
 
 /** Something standing on a hex. */
@@ -69,6 +78,14 @@ export interface RenderModel {
   readonly height: number;
   /** How the hex plane is projected; authored per world. */
   readonly projection: ProjectionMode;
+  /**
+   * The pixel grid the tile set's images are authored on.
+   *
+   * The renderer derives its tilt and its elevation step from this, so a tile
+   * drawn from sprites and one filled with colour agree about how tall a step
+   * is (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+   */
+  readonly tileArt: TileArtGeometry;
   readonly palette: readonly RenderPaletteEntry[];
   /** One palette index per cell, row-major in offset coordinates. */
   readonly terrain: Uint8Array;
@@ -103,6 +120,7 @@ export function emptyRenderModel(): RenderModel {
     width: 0,
     height: 0,
     projection: 'topDown',
+    tileArt: tileArtGeometry({}),
     palette: [],
     terrain: new Uint8Array(0),
     elevation: new Int8Array(0),

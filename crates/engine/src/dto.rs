@@ -14,6 +14,7 @@ use std::collections::BTreeMap;
 use insulaire_simulation::{EntityRuntime, Rng, SimEvent};
 use insulaire_world::{
     EntityKind, Hex, LinkTrigger, MapLinkDefinition, OffsetCoord, ProjectDefinition, ResolvedTile,
+    TileArt, TileArtGeometry,
 };
 use serde::{Deserialize, Serialize};
 
@@ -193,6 +194,12 @@ pub struct PaletteEntry {
     pub fallback_color: String,
     /// Gameplay tags.
     pub tags: Vec<String>,
+    /// The images this tile is drawn from; empty draws `fallback_color`.
+    ///
+    /// Carried on the palette rather than fetched separately because the
+    /// renderer already indexes the palette per cell, and one lookup per cell
+    /// is the budget (`CLAUDE.md`, "Performance").
+    pub art: TileArt,
 }
 
 impl PaletteEntry {
@@ -211,6 +218,7 @@ impl PaletteEntry {
             visual_id: tile.visual_id.clone(),
             fallback_color: tile.fallback_color.clone(),
             tags: tile.tags.clone(),
+            art: tile.art.clone(),
         }
     }
 }
@@ -292,6 +300,12 @@ pub struct WorldView {
     pub projection: String,
     /// Id of the tile set this world paints with.
     pub tile_set_id: String,
+    /// The pixel grid the tile set's images are authored on.
+    ///
+    /// Transported, never interpreted, exactly like `projection`: it is what
+    /// the renderer derives its tilt and its elevation step from when the set
+    /// ships art (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+    pub tile_art: TileArtGeometry,
     /// The palette that the packed terrain buffer indexes into.
     pub palette: Vec<PaletteEntry>,
     /// Authored points of interest.

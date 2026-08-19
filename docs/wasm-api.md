@@ -102,6 +102,46 @@ with the same id. Throws `parse` or `invalidContent`.
 { "id": "mvp_terrain", "report": { "valid": true, "issues": [] } }
 ```
 
+### `validateTileSet(json: string): ValidationReport`
+
+Validates a `TileSetDefinition` **without** registering it — what the asset
+editor calls before writing a file, so a set the editor accepts is a set the
+runtime accepts (ADR-0015). Throws `parse` for malformed JSON; a set that parses
+but is unusable produces an invalid report rather than an error.
+
+### `previewTileRender(tileSetJson, tileId, elevation, base, roll): ResolvedTileRender`
+
+Resolves what to draw for one cell of a tile set **passed in** — content the
+editor has not saved yet. `base` is the height the cell's side faces reach down
+to (the lower of its two front neighbours; `0` for a tile standing on the
+ground), and `roll` is the cell's variant roll.
+
+```json
+{
+  "tileId": "cliff",
+  "elevation": 3,
+  "layers": [
+    { "level": 1, "sourceLevel": 1, "asset": "assets/tiles/cliff_a.png", "drop": 2 },
+    { "level": 2, "sourceLevel": 2, "asset": "assets/tiles/cliff_b.png", "drop": 1 },
+    { "level": 3, "sourceLevel": 2, "asset": "assets/tiles/cliff_b.png", "drop": 0 }
+  ]
+}
+```
+
+Lowest face first. `surface` is the cell's top face and is present at **every**
+height — an elevation image holds the side faces alone — so a host draws the
+layers and then the surface over them. `drop` counts `art.elevationStep`
+authored pixels below the hexagon's lower shoulder line: the whole image moves
+and nothing inside it is transformed
+(`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+
+Throws `parse`, or `unknownContent` when the set declares no such tile.
+
+**The renderer does not call this per frame.** Resolution is mirrored in
+`apps/web/src/renderer/tile-art.ts` for the draw loop, exactly as the hex maths
+is mirrored (ADR-0014); this method exists for the editor's preview and to pin
+the mirror against the real build in `engine-integration.spec.ts`.
+
 ### `loadWorld(json: string): LoadOutcome`
 
 Same, for a `WorldDefinition`, validated against its already-registered tile
@@ -404,10 +444,12 @@ Everything the renderer needs about a world **except** the per-cell buffers.
   "orientation": "pointy",
   "projection": "isometric",
   "tileSetId": "mvp_terrain",
+  "tileArt": { "width": 64, "surfaceHeight": 40, "elevationHeight": 26, "elevationStep": 16 },
   "palette": [
     { "index": 0, "id": "grass", "name": "Grass", "terrain": "grass",
       "movementCost": 1, "passable": true,
-      "visualId": "terrain.grass", "fallbackColor": "#4a7c3f", "tags": ["open"] }
+      "visualId": "terrain.grass", "fallbackColor": "#4a7c3f", "tags": ["open"],
+      "art": {} }
   ],
   "locations": [ { "id": "loc_camp", "name": "Camp", "at": [3, 11], "tags": ["start"] } ],
   "links": [
@@ -423,6 +465,16 @@ Fetched **once per world**.
 `projection` is `"topDown"` or `"isometric"`, republished from the authored
 world. The engine transports it and never interprets it — it has no notion of
 pixels (ADR-0014, ADR-0016).
+
+`tileArt` is the tile set's authored pixel grid, transported the same way and
+for the same reason. The renderer derives its tilt and its per-level lift from
+it, so a tile drawn from images and a tile filled with `fallbackColor` agree
+about the shape of a hexagon (ADR-0035).
+
+Each palette entry carries its `art`: the images the tile is drawn from, empty
+for a tile that has none. It rides on the palette rather than travelling
+separately because the renderer already indexes the palette once per cell, and
+that is the whole per-cell budget.
 
 ### `terrainBuffer(worldId: string): Uint8Array`
 

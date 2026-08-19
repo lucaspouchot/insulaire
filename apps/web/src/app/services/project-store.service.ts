@@ -312,6 +312,42 @@ export class ProjectStoreService {
     return [...this.tileSets.values()];
   }
 
+  /** The file the manifest lists for a tile set, or a conventional path. */
+  tileSetPath(tileSetId: string): string {
+    const declared = this.projectSignal()?.tileSets.find((entry) => entry.id === tileSetId);
+    return declared?.path ?? `tilesets/${tileSetId}.json`;
+  }
+
+  /**
+   * Replaces a loaded tile set, and rebuilds every map that paints with it.
+   *
+   * A {@link WorldDocument} resolves its palette once, when it is built, so a
+   * tile added or renamed in the asset editor is invisible to the map editor
+   * until the documents are rebuilt. Rebuilding from `toDefinition()` keeps
+   * every painted cell — a cell holds a palette *index*, and the definition it
+   * exports holds the tile *id*, which is exactly the indirection ADR-0009
+   * exists for.
+   *
+   * A map that no longer resolves — its tile was deleted out from under it — is
+   * left as it was rather than dropped: the map editor still shows it, and
+   * validation reports `tile.unknownReference`, which is where that belongs.
+   */
+  replaceTileSet(tileSet: TileSetDefinition): void {
+    this.tileSets.set(tileSet.id, tileSet);
+    this.documentsSignal.update((documents) =>
+      documents.map((document) => {
+        if (document.tileSetId !== tileSet.id) {
+          return document;
+        }
+        try {
+          return WorldDocument.fromDefinition(document.toDefinition(), tileSet);
+        } catch {
+          return document;
+        }
+      }),
+    );
+  }
+
   /** The open map, or throws when called before {@link ensureLoaded}. */
   requireDocument(): WorldDocument {
     const document = this.document();

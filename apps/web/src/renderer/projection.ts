@@ -56,8 +56,29 @@ export class Projection {
 
   /** The projection a `mode` implies for hexagons of circumradius `hexSize`. */
   static for(mode: ProjectionMode, hexSize: number): Projection {
+    return Projection.from(mode, hexSize, ISOMETRIC_TILT, ISOMETRIC_ELEVATION_RATIO);
+  }
+
+  /**
+   * The same, with the tilt and the step a tile set's authored art implies.
+   *
+   * A set that ships pixel art is the authority on what a hex looks like: its
+   * surface image *is* the top face and its step *is* one level of relief. So
+   * the projection is derived from the art rather than the art squashed into
+   * the projection, and a sprite tile and a colour-filled tile cannot disagree
+   * on the same map (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+   *
+   * Everything downstream — hit-testing, culling, wall bases — keeps working by
+   * construction, because it all still asks this object.
+   */
+  static from(
+    mode: ProjectionMode,
+    hexSize: number,
+    tilt: number,
+    elevationRatio: number,
+  ): Projection {
     return mode === 'isometric'
-      ? new Projection(mode, ISOMETRIC_TILT, ISOMETRIC_ELEVATION_RATIO * hexSize)
+      ? new Projection(mode, tilt, elevationRatio * hexSize)
       : new Projection(mode, 1, 0);
   }
 

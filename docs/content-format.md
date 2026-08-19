@@ -45,8 +45,9 @@ The palette a world may paint with.
 ```json
 {
   "id": "mvp_terrain",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "name": "MVP Terrain",
+  "art": { "width": 64, "surfaceHeight": 40, "elevationHeight": 26, "elevationStep": 16 },
   "tiles": [
     {
       "id": "grass",
@@ -63,9 +64,55 @@ The palette a world may paint with.
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `id` | string | yes | Stable id; worlds reference it through `tileSetId`. |
-| `schemaVersion` | integer | yes | `1`. Higher versions are rejected. |
+| `schemaVersion` | integer | yes | `2`. Higher versions are rejected. |
 | `name` | string | no | Shown in the editor. |
+| `art` | TileArtGeometry | no | The pixel grid every image in the set is drawn on. Defaults below. |
 | `tiles` | TileDefinition[] | yes | At least one, at most 256. |
+
+**Version 2** added `art`, on the set and on each tile
+(`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`). Every field
+it adds has a default, so a version-1 file still parses and draws its colours;
+the shipped files say `2`.
+
+### TileArtGeometry
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `width` | integer | `32` | Width of every image in the set, in authored pixels. |
+| `surfaceHeight` | integer | `20` | Height of a surface image: the projected top face's bounding box. |
+| `elevationHeight` | integer | `13` | Height of an elevation image: the `V` the lower edges cut, then the faces. |
+| `elevationStep` | integer | `8` | Authored pixels one level of relief lifts a tile. |
+
+The shipped set draws at **64 x 40 surfaces and 64 x 26 faces, 16 px per
+level** — the defaults' ratios at twice the resolution, so the map is unchanged
+and there is four times the room to draw in.
+
+All four are `1..512`.
+
+A **surface** image is the projected top face's bounding box. An **elevation**
+image is the side faces *alone*: its first row is the hexagon's lower shoulder
+line, so its top `surfaceHeight / 4` rows are the `V` the two lower edges cut and
+everything below that is face.
+
+```text
+  surface image            elevation image
+  ┌───────────────┐        ┌───────────────┐  ← the lower shoulders
+  │      ___      │        │ \           / │     surfaceHeight / 4
+  │    /     \    │        │  \_________/  │  ←  the V the edges cut
+  │   |       |   │        │  |    |    |  │
+  │    \_____/    │        │  | SW | SE |  │     the faces
+  └───────────────┘        └───────────────┘
+```
+
+`elevationHeight` must therefore exceed `surfaceHeight / 4`, or there is no room
+for a face; and an `elevationStep` taller than the faces stacks levels with a
+gap, which is a warning rather than an error.
+
+**This is also where the isometric projection comes from.** The renderer derives
+its tilt from `surfaceHeight / width` and its per-level lift from
+`elevationStep / width`, so a tile drawn from images and a tile filled with
+`fallbackColor` cannot disagree about the shape of a hexagon on the same map.
+ADR-0016's constants are no longer the source of those two numbers.
 
 ### TileDefinition
 
@@ -79,13 +126,89 @@ The palette a world may paint with.
 | `visual.visualId` | string | yes | Stable id the renderer resolves through its sprite registry. |
 | `visual.fallbackColor` | string | yes | CSS colour drawn when no sprite is registered for `visualId`. |
 | `visual.hints` | object | no | Renderer hints, reserved. |
+| `art` | TileArt | no | The images the tile is drawn from. Absent draws `visual.fallbackColor`. |
 
 **Why one `movementCost` and no `passable` flag.** Two fields can disagree; one
 cannot. `0` is the impassable sentinel, and passability is derived from it.
 
 **Why a colour in content.** `visualId` is the real reference; `fallbackColor`
-lets the MVP ship without an asset pipeline and stays useful later as the colour
-drawn while a texture loads. Rendering *logic* never appears in content.
+is what a tile with no art is drawn with, and what any tile is drawn with while
+its images load. Rendering *logic* never appears in content.
+
+### TileArt
+
+```json
+"art": {
+  "surface": [
+    { "id": "a", "asset": "assets/tiles/dirt/surfaces/dirt_a.png" },
+    { "id": "b", "asset": "assets/tiles/dirt/surfaces/dirt_b.png" }
+  ],
+  "elevation": {
+    "levels": [
+      { "name": "topsoil", "variants": [{ "id": "a", "asset": "assets/tiles/dirt/elevation/level_1/dirt_a.png" }] },
+      { "name": "packed earth", "variants": [{ "id": "a", "asset": "assets/tiles/dirt/elevation/level_2/dirt_a.png" }] }
+    ],
+    "repeat": { "level": 2 }
+  }
+}
+```
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `surface` | TileArtVariant[] | no | Images for the flat top face. At most 16. |
+| `elevation.levels` | ElevationLevel[] | no | Explicit levels; index `i` is level `i + 1`. At most 32. |
+| `elevation.repeat` | ElevationRepeat | no | What draws levels above the last explicit one. |
+
+A `TileArtVariant` is `{ "id", "asset" }`: an id unique within its list, and a
+path under the content root. An `ElevationLevel` is `{ "name"?, "variants" }`
+and must declare at least one variant.
+
+`ElevationRepeat` is one of:
+
+| Form | Meaning |
+|---|---|
+| absent | Levels above the explicit ones reuse the highest explicit level. |
+| `{ "level": n }` | They all reuse level `n`. |
+| `{ "pattern": [a, b, …] }` | They cycle through those levels, in order. |
+
+**Level 0 is the surface.** Level `n` is **one image** holding the faces the
+projection exposes, and only those: a cell's top face always comes from its
+`surface` variants, at every height, so raising a tile never costs it the
+variety its surfaces give it. Nothing in the engine rotates, mirrors, skews or
+scales any part of an image to produce another part; a face that must differ
+from its neighbour is a face an artist draws (ADR-0035). This engine's hexagons
+are pointy-top (ADR-0014), so a raised tile exposes a **south-west** and a
+**south-east** face meeting at its south vertex.
+
+**Resolution.** A cell of height `h` standing over a base of `b` — the lower of
+its two front neighbours — draws `h − b` face layers, capped at 64, with its
+surface over them. The layer at height `L` is the image of `sourceLevel(L)`,
+placed at the hexagon's lower shoulder line and moved down
+`(h − L) × elevationStep` authored pixels. The whole image moves; nothing inside
+it is transformed. Which
+variant a layer takes is fixed by `variantRoll(col, row, tileId)` — an FNV-1a
+hash, not an RNG — combined with the level, so a cell keeps the same face from
+frame to frame and a tall cliff does not repeat one rock all the way down.
+
+A tile that authors a surface and **no** elevation art still draws its authored
+top face; the drop under it is filled with `fallbackColor`, exactly as a tile
+with no art at all is. The same holds for the part of a drop past the 64-layer
+cap. Art covers what it covers, and colour goes behind the rest — a raised cell
+never shows a hole.
+
+**The shipped art.** `content/assets/tiles/` holds eight grass surfaces, eight
+bare-earth surfaces and three courses of dirt cliff at eight variants each —
+the pack `docs/sketch_grass_and_dirt_asset.png` describes — filed one directory
+per tile:
+
+```text
+assets/tiles/dirt/surfaces/dirt_a.png
+assets/tiles/dirt/elevation/level_1/dirt_a.png
+assets/tiles/dirt/elevation/level_2/dirt_a.png
+``` It was drawn once by
+`scripts/generate-tile-art.mjs` and is ordinary art from then on: the asset
+editor opens it, paints it and writes it back. Nothing in the build runs that
+script, and re-running it overwrites whatever has been painted since.
 
 ---
 
@@ -880,6 +1003,16 @@ exposed across the boundary as `validateLinks()` and `loadProject()`.
 | `tile.duplicatePosition` | Two tiles painted on one cell. |
 | `tile.unknownReference` | A placed tile references an unknown tile id. |
 | `tile.elevationOutOfRange` | A placed tile's `elevation` is outside `-128..=127`. |
+| `tileArt.invalidGeometry` | A tile set's `art` has a side of `0` or above `512`, an `elevationHeight` no taller than its `surfaceHeight`, or a zero `elevationStep`. |
+| `tileArt.stepTallerThanFaces` | *(warning)* `elevationStep` exceeds the side faces, so stacked levels leave a gap. |
+| `tile.missingVariantId` / `tile.duplicateVariantId` | A tile art variant has no id, or a list declares one twice. |
+| `tile.tooManyVariants` | More than 16 variants in one surface or level. |
+| `tile.unusableAsset` | An image path is empty, absolute, a URL, or steps outside the content root. |
+| `tile.emptyElevationLevel` | An authored elevation level declares no image, so a cell that tall draws a hole. |
+| `tile.tooManyElevationLevels` | More than 32 explicit levels; taller cells are what a repeat rule is for. |
+| `tile.unknownRepeatSource` | A repeat rule names a level the tile does not author. |
+| `tile.emptyRepeatPattern` | A `pattern` rule names no level. |
+| `tile.repeatWithoutLevels` | A repeat rule with no explicit level to repeat. |
 | `entity.missingId` / `entity.duplicateId` | Ids must exist and be unique. |
 | `entity.outOfBounds` | Entity placed outside the map. |
 | `entity.onImpassableTile` | Entity standing on `movementCost: 0`. |
@@ -994,6 +1127,11 @@ for an animation, the **keyframe** and the **pose entry** — as
 the record: one per line, conditions, geometry and visual visible at once
 (`apps/web/src/content/character-serializer.ts`).
 
+`content/tilesets/*.json` are written by
+`apps/web/src/content/tile-set-serializer.ts` with the **image** as the record:
+one variant per line, so adding a variant is one added line rather than a
+reshuffle. Its spec asserts the shipped set round-trips byte for byte.
+
 `content/worlds/*.json` are written the same way, so an exported world diffs
 cleanly against a hand-edited one. Tests assert that both shipped worlds and
 `content/project.json` agree byte for byte with what the editor writes
@@ -1017,6 +1155,11 @@ Adding an **optional** field is a backwards-compatible change and does not need
 a version bump: every optional field has a `serde` default. Renaming or removing
 a field, or changing the meaning of an existing one, requires bumping
 `WORLD_SCHEMA_VERSION` and adding an explicit migration.
+
+`TILE_SET_SCHEMA_VERSION` is at **2**. Version 2 added `art` — the set's pixel
+grid and each tile's images (ADR-0035). Everything it added is optional with a
+default, so a version-1 file still parses and draws its `fallbackColor`; the
+shipped files are written as `2`.
 
 `CHARACTER_SCHEMA_VERSION` is at **3**. Version 3 places a child layer's box
 relative to the attachment point it hangs off (ADR-0034); version 2 was

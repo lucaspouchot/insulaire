@@ -1,19 +1,96 @@
 {
   "id": "mvp_terrain",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "name": "MVP Terrain",
+  "art": {
+    "width": 64,
+    "surfaceHeight": 40,
+    "elevationHeight": 26,
+    "elevationStep": 16
+  },
   "tiles": [
     {
       "id": "grass",
       "name": "Grass",
       "terrain": "grass",
       "movementCost": 1,
-      "tags": [
-        "open"
-      ],
-      "visual": {
-        "visualId": "terrain.grass",
-        "fallbackColor": "#4a7c3f"
+      "tags": ["open"],
+      "visual": { "visualId": "terrain.grass", "fallbackColor": "#4a7c3f" },
+      "art": {
+        "surface": [
+          { "id": "a", "asset": "assets/tiles/grass/surfaces/grass_a.png" },
+          { "id": "b", "asset": "assets/tiles/grass/surfaces/grass_b.png" },
+          { "id": "c", "asset": "assets/tiles/grass/surfaces/grass_c.png" },
+          { "id": "d", "asset": "assets/tiles/grass/surfaces/grass_d.png" },
+          { "id": "e", "asset": "assets/tiles/grass/surfaces/grass_e.png" },
+          { "id": "f", "asset": "assets/tiles/grass/surfaces/grass_f.png" },
+          { "id": "g", "asset": "assets/tiles/grass/surfaces/grass_g.png" },
+          { "id": "h", "asset": "assets/tiles/grass/surfaces/grass_h.png" }
+        ]
+      }
+    },
+    {
+      "id": "dirt",
+      "name": "Dirt",
+      "terrain": "dirt",
+      "movementCost": 1,
+      "tags": ["open"],
+      "visual": { "visualId": "terrain.dirt", "fallbackColor": "#8a6238" },
+      "art": {
+        "surface": [
+          { "id": "a", "asset": "assets/tiles/dirt/surfaces/dirt_a.png" },
+          { "id": "b", "asset": "assets/tiles/dirt/surfaces/dirt_b.png" },
+          { "id": "c", "asset": "assets/tiles/dirt/surfaces/dirt_c.png" },
+          { "id": "d", "asset": "assets/tiles/dirt/surfaces/dirt_d.png" },
+          { "id": "e", "asset": "assets/tiles/dirt/surfaces/dirt_e.png" },
+          { "id": "f", "asset": "assets/tiles/dirt/surfaces/dirt_f.png" },
+          { "id": "g", "asset": "assets/tiles/dirt/surfaces/dirt_g.png" },
+          { "id": "h", "asset": "assets/tiles/dirt/surfaces/dirt_h.png" }
+        ],
+        "elevation": {
+          "levels": [
+            {
+              "name": "topsoil",
+              "variants": [
+                { "id": "a", "asset": "assets/tiles/dirt/elevation/level_1/dirt_a.png" },
+                { "id": "b", "asset": "assets/tiles/dirt/elevation/level_1/dirt_b.png" },
+                { "id": "c", "asset": "assets/tiles/dirt/elevation/level_1/dirt_c.png" },
+                { "id": "d", "asset": "assets/tiles/dirt/elevation/level_1/dirt_d.png" },
+                { "id": "e", "asset": "assets/tiles/dirt/elevation/level_1/dirt_e.png" },
+                { "id": "f", "asset": "assets/tiles/dirt/elevation/level_1/dirt_f.png" },
+                { "id": "g", "asset": "assets/tiles/dirt/elevation/level_1/dirt_g.png" },
+                { "id": "h", "asset": "assets/tiles/dirt/elevation/level_1/dirt_h.png" }
+              ]
+            },
+            {
+              "name": "packed earth",
+              "variants": [
+                { "id": "a", "asset": "assets/tiles/dirt/elevation/level_2/dirt_a.png" },
+                { "id": "b", "asset": "assets/tiles/dirt/elevation/level_2/dirt_b.png" },
+                { "id": "c", "asset": "assets/tiles/dirt/elevation/level_2/dirt_c.png" },
+                { "id": "d", "asset": "assets/tiles/dirt/elevation/level_2/dirt_d.png" },
+                { "id": "e", "asset": "assets/tiles/dirt/elevation/level_2/dirt_e.png" },
+                { "id": "f", "asset": "assets/tiles/dirt/elevation/level_2/dirt_f.png" },
+                { "id": "g", "asset": "assets/tiles/dirt/elevation/level_2/dirt_g.png" },
+                { "id": "h", "asset": "assets/tiles/dirt/elevation/level_2/dirt_h.png" }
+              ]
+            },
+            {
+              "name": "bedrock",
+              "variants": [
+                { "id": "a", "asset": "assets/tiles/dirt/elevation/level_3/dirt_a.png" },
+                { "id": "b", "asset": "assets/tiles/dirt/elevation/level_3/dirt_b.png" },
+                { "id": "c", "asset": "assets/tiles/dirt/elevation/level_3/dirt_c.png" },
+                { "id": "d", "asset": "assets/tiles/dirt/elevation/level_3/dirt_d.png" },
+                { "id": "e", "asset": "assets/tiles/dirt/elevation/level_3/dirt_e.png" },
+                { "id": "f", "asset": "assets/tiles/dirt/elevation/level_3/dirt_f.png" },
+                { "id": "g", "asset": "assets/tiles/dirt/elevation/level_3/dirt_g.png" },
+                { "id": "h", "asset": "assets/tiles/dirt/elevation/level_3/dirt_h.png" }
+              ]
+            }
+          ],
+          "repeat": { "level": 3 }
+        }
       }
     },
     {
@@ -21,68 +98,40 @@
       "name": "Sand",
       "terrain": "sand",
       "movementCost": 1,
-      "tags": [
-        "open",
-        "shore"
-      ],
-      "visual": {
-        "visualId": "terrain.sand",
-        "fallbackColor": "#cbb178"
-      }
+      "tags": ["open", "shore"],
+      "visual": { "visualId": "terrain.sand", "fallbackColor": "#cbb178" }
     },
     {
       "id": "forest",
       "name": "Forest",
       "terrain": "forest",
       "movementCost": 2,
-      "tags": [
-        "cover",
-        "difficult"
-      ],
-      "visual": {
-        "visualId": "terrain.forest",
-        "fallbackColor": "#2d5c34"
-      }
+      "tags": ["cover", "difficult"],
+      "visual": { "visualId": "terrain.forest", "fallbackColor": "#2d5c34" }
     },
     {
       "id": "rock",
       "name": "Rocky Ground",
       "terrain": "rock",
       "movementCost": 2,
-      "tags": [
-        "difficult"
-      ],
-      "visual": {
-        "visualId": "terrain.rock",
-        "fallbackColor": "#8a8078"
-      }
+      "tags": ["difficult"],
+      "visual": { "visualId": "terrain.rock", "fallbackColor": "#8a8078" }
     },
     {
       "id": "mountain",
       "name": "Mountain",
       "terrain": "mountain",
       "movementCost": 0,
-      "tags": [
-        "blocking"
-      ],
-      "visual": {
-        "visualId": "terrain.mountain",
-        "fallbackColor": "#57514c"
-      }
+      "tags": ["blocking"],
+      "visual": { "visualId": "terrain.mountain", "fallbackColor": "#57514c" }
     },
     {
       "id": "water",
       "name": "Water",
       "terrain": "water",
       "movementCost": 0,
-      "tags": [
-        "blocking",
-        "liquid"
-      ],
-      "visual": {
-        "visualId": "terrain.water",
-        "fallbackColor": "#20567f"
-      }
+      "tags": ["blocking", "liquid"],
+      "visual": { "visualId": "terrain.water", "fallbackColor": "#20567f" }
     }
   ]
 }

@@ -1,7 +1,13 @@
 # ADR-0016 — Project the Hex Plane at Render Time, Author the Mode per World
 
 ## Status
-Accepted
+Accepted. Its two **constants** — `tilt = 0.55` and
+`elevationStep = 0.15 × size` — were replaced by
+`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`, which derives
+both from the pixel grid a tile set declares its images on. Everything else this
+ADR decided stands: the projection is an affine transform applied at render
+time, it is diagonal and exactly invertible, the mode is authored per world, and
+the engine never reads it.
 
 ## Context
 

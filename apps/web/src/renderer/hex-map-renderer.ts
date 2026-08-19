@@ -25,10 +25,18 @@
  * come last, unoccluded; see {@link HexMapRenderer.drawLayered}.
  */
 
+import { shoulderLine } from '../content/content-types';
 import { Offset, fromIndex, indexIn, sameOffset } from '../core/hex/hex-coords';
 import { HexLayout, Point, Rect } from '../core/hex/hex-layout';
 import { Camera } from './camera';
+import { SpriteSource } from './character-renderer';
 import { Projection } from './projection';
+import {
+  ResolvedTileRender,
+  projectionRatiosOf,
+  resolveTileRender,
+  variantRoll,
+} from './tile-art';
 import {
   RenderEntity,
   RenderLink,
@@ -96,14 +104,33 @@ export class HexMapRenderer {
     readonly layout: HexLayout,
     readonly camera: Camera,
     private readonly sprites: SpriteRegistry = new SpriteRegistry(),
+    /**
+     * Where a tile's images come from, or `null` to draw colours only.
+     *
+     * The same {@link SpriteSource} a character is drawn through: an editor and
+     * the game both hand one in, and neither this class nor that one knows how
+     * it loads (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+     */
+    private readonly images: SpriteSource | null = null,
   ) {
-    this.projection = Projection.for(this.model.projection, layout.size);
+    this.projection = this.projectionFor(this.model);
   }
 
   /** Replaces the model drawn by the next {@link draw}. */
   setModel(model: RenderModel): void {
     this.model = model;
-    this.projection = Projection.for(model.projection, this.layout.size);
+    this.projection = this.projectionFor(model);
+  }
+
+  /**
+   * The transform a model implies: its mode, tilted by its tile set's art.
+   *
+   * Every caller goes through here, so the picture, the hit-test and the
+   * culling margin cannot be computed from three different tilts.
+   */
+  private projectionFor(model: RenderModel): Projection {
+    const { tilt, elevationRatio } = projectionRatiosOf(model.tileArt);
+    return Projection.from(model.projection, this.layout.size, tilt, elevationRatio);
   }
 
   /** The model currently being drawn. */
@@ -137,8 +164,7 @@ export class HexMapRenderer {
    */
   cellAtScreen(point: Point, model: RenderModel = this.model): Offset | null {
     const drawing = this.camera.toWorld(point);
-    const projection =
-      model === this.model ? this.projection : Projection.for(model.projection, this.layout.size);
+    const projection = model === this.model ? this.projection : this.projectionFor(model);
 
     if (projection.isIdentity) {
       const cell = this.layout.cellAt(drawing);
@@ -184,8 +210,7 @@ export class HexMapRenderer {
    */
   contentBounds(model: RenderModel = this.model): Rect {
     const plane = this.layout.boundsOf(model.width, model.height);
-    const projection =
-      model === this.model ? this.projection : Projection.for(model.projection, this.layout.size);
+    const projection = model === this.model ? this.projection : this.projectionFor(model);
     if (projection.isIdentity || model.width === 0 || model.height === 0) {
       return projection.projectRect(plane);
     }
@@ -361,6 +386,8 @@ export class HexMapRenderer {
     const ctx = this.context;
     const tops = new Map<number, Path2D>();
     const walls = new Map<number, Path2D>();
+    /** Cells whose art is loaded; blitted after the colour batches. */
+    const painted: PaintedCell[] = [];
     let visited = 0;
 
     for (let row = minRow; row <= maxRow; row += 1) {
@@ -375,6 +402,20 @@ export class HexMapRenderer {
         const cell = { col, row };
         const elevation = this.elevationAt(model, index);
         const base = this.wallBaseOf(model, cell);
+
+        const render = this.renderOf(model, paletteIndex, cell, elevation, base);
+        if (render !== null) {
+          painted.push({ cell, elevation, render });
+          // A tile may author a top face and no cliff art at all — grass at the
+          // edge of a ditch. Its faces are still exposed, so the colour wall is
+          // filled behind the art that does exist: whatever is authored covers
+          // it, and what is not reads as a drop instead of a hole.
+          if (this.facesAreShort(render, elevation, base)) {
+            this.addWallTo(pathFor(walls, paletteIndex), cell, elevation, base);
+          }
+          continue;
+        }
+
         if (elevation > base) {
           this.addWallTo(pathFor(walls, paletteIndex), cell, elevation, base);
         }
@@ -407,7 +448,108 @@ export class HexMapRenderer {
       this.batchCount += 1;
     }
 
+    // Art last, over the colours: within a band nothing overlaps horizontally,
+    // and between bands the row order already puts the front row on top.
+    for (const cell of painted) {
+      this.drawPaintedCell(model, cell);
+    }
+
     return visited;
+  }
+
+  /**
+   * `true` when a cell exposes more faces than its art covers.
+   *
+   * Surface art without elevation art is the common case — a tile drawn as a
+   * flat top that has never been given a cliff — and a drop past
+   * `MAX_STACKED_LEVELS` falls short at its bottom. Either way the colour wall
+   * goes back behind the blits, because a cell standing above its neighbours
+   * has to *look* like it
+   * (`docs/adr/ADR-0009-assets-tilesets.md`: `fallbackColor` is what is drawn
+   * wherever a texture is not).
+   */
+  private facesAreShort(render: ResolvedTileRender, elevation: number, base: number): boolean {
+    return render.layers.length < Math.max(0, elevation - base);
+  }
+
+  /**
+   * What a cell's authored art draws, or `null` to fall back to colour.
+   *
+   * `null` covers three cases that mean the same thing to the caller: the tile
+   * declares no art, the resolver found nothing for this height, or the images
+   * have not finished loading. The last one is why `fallbackColor` is worth
+   * keeping — it is the colour drawn while a texture loads
+   * (`docs/adr/ADR-0009-assets-tilesets.md`).
+   */
+  private renderOf(
+    model: RenderModel,
+    paletteIndex: number,
+    cell: Offset,
+    elevation: number,
+    base: number,
+  ): ResolvedTileRender | null {
+    const tile = model.palette[paletteIndex];
+    if (this.images === null || tile === undefined || tile.art === undefined) {
+      return null;
+    }
+    const render = resolveTileRender(
+      tile.id,
+      tile.art,
+      elevation,
+      base,
+      variantRoll(cell.col, cell.row, tile.id),
+    );
+    if (render.surface === null && render.layers.length === 0) {
+      return null;
+    }
+    const loaded =
+      (render.surface === null || this.images.image(render.surface) !== null) &&
+      render.layers.every((layer) => this.images?.image(layer.asset) !== null);
+    return loaded ? render : null;
+  }
+
+  /**
+   * Blits one cell: its faces, lowest first, then its top face over them.
+   *
+   * The destination is the *projected* top face's bounding box, so the picture
+   * agrees with the polygon path, with hit-testing and with the grid by
+   * construction. An elevation image starts at the hexagon's lower shoulders —
+   * it is the faces alone — and a repeated level is the same image moved down
+   * whole steps, nothing inside it transformed
+   * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+   */
+  private drawPaintedCell(model: RenderModel, painted: PaintedCell): void {
+    const ctx = this.context;
+    const centre = this.projection.project(this.layout.centerOf(painted.cell), painted.elevation);
+    const width = this.layout.hexWidth;
+    const left = centre.x - width / 2;
+    const top = centre.y - (this.layout.hexHeight * this.projection.tilt) / 2;
+    const perPixel = width / Math.max(1, model.tileArt.width);
+    const shoulder = top + shoulderLine(model.tileArt) * perPixel;
+
+    ctx.imageSmoothingEnabled = false;
+    for (const layer of painted.render.layers) {
+      const image = this.images?.image(layer.asset);
+      if (image == null) {
+        continue;
+      }
+      ctx.drawImage(
+        image,
+        left,
+        shoulder + layer.drop * this.projection.elevationStep,
+        width,
+        model.tileArt.elevationHeight * perPixel,
+      );
+      this.batchCount += 1;
+    }
+    // Last, so the top face is never the thing a face image happens to cover.
+    if (painted.render.surface !== null) {
+      const image = this.images?.image(painted.render.surface);
+      if (image != null) {
+        ctx.drawImage(image, left, top, width, model.tileArt.surfaceHeight * perPixel);
+        this.batchCount += 1;
+      }
+    }
   }
 
   /** Draws hex outlines as a single stroked path. */
@@ -745,6 +887,13 @@ export class HexMapRenderer {
     const tile = model.palette[paletteIndex];
     return tile ? this.sprites.resolve(tile.visualId, tile.fallbackColor) : CHROME.outOfBounds;
   }
+}
+
+/** A cell drawn from its authored images rather than from its colour. */
+interface PaintedCell {
+  readonly cell: Offset;
+  readonly elevation: number;
+  readonly render: ResolvedTileRender;
 }
 
 interface VisibleRange {

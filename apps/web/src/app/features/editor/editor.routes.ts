@@ -63,6 +63,11 @@ export const EDITOR_ROUTES: Routes = [
           import('./character/character-editor-page').then((m) => m.CharacterEditorPage),
       },
       {
+        path: 'asset',
+        title: moduleTitle(requireModule('asset')),
+        loadComponent: () => import('./asset/asset-editor-page').then((m) => m.AssetEditorPage),
+      },
+      {
         path: 'locale',
         title: moduleTitle(requireModule('locale')),
         loadComponent: () => import('./locale/locale-editor-page').then((m) => m.LocaleEditorPage),

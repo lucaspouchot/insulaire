@@ -9,7 +9,7 @@
  * Positions cross as offset pairs `[col, row]`.
  */
 
-import { SettingsValues } from '../content/content-types';
+import { SettingsValues, TileArt, TileArtGeometry } from '../content/content-types';
 
 /** `[col, row]` in odd-r offset coordinates. */
 export type OffsetWire = [number, number];
@@ -102,6 +102,8 @@ export interface PaletteEntry {
   visualId: string;
   fallbackColor: string;
   tags: string[];
+  /** The images this tile is drawn from; empty draws `fallbackColor`. */
+  art?: TileArt;
 }
 
 export interface LocationView {
@@ -132,6 +134,8 @@ export interface WorldView {
   /** `"topDown"` or `"isometric"`; presentation carried by the content. */
   projection: string;
   tileSetId: string;
+  /** The pixel grid the tile set's images are authored on. */
+  tileArt: TileArtGeometry;
   palette: PaletteEntry[];
   locations: LocationView[];
   links: LinkView[];
@@ -275,6 +279,14 @@ export class EngineError extends Error {
 export interface RawInsulaireEngine {
   engineInfo(): string;
   loadTileSet(json: string): string;
+  validateTileSet(json: string): string;
+  previewTileRender(
+    tileSetJson: string,
+    tileId: string,
+    elevation: number,
+    base: number,
+    roll: number,
+  ): string;
   loadWorld(json: string): string;
   loadProject(json: string): string;
   loadLocale(language: string, namespace: string, json: string): string;

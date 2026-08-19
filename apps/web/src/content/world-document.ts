@@ -28,8 +28,11 @@ import {
   MapLink,
   PlacedTile,
   ProjectionMode,
+  TileArt,
+  TileArtGeometry,
   TileDefinition,
   TileSetDefinition,
+  tileArtGeometry,
   WorldDefinition,
   WorldMetadata,
   MAX_ELEVATION,
@@ -48,6 +51,8 @@ export interface DocumentTile {
   readonly visualId: string;
   readonly fallbackColor: string;
   readonly tags: readonly string[];
+  /** The images this tile is drawn from; absent draws {@link fallbackColor}. */
+  readonly art?: TileArt;
 }
 
 /** An entity placed by the author. */
@@ -106,6 +111,8 @@ export class WorldDocument {
     readonly width: number,
     readonly height: number,
     readonly tileSetId: string,
+    /** The pixel grid the tile set's images are authored on. */
+    readonly tileArt: TileArtGeometry,
     readonly palette: readonly DocumentTile[],
     private defaultTileIndex: number,
     private readonly cells: Uint8Array,
@@ -150,6 +157,7 @@ export class WorldDocument {
       init.width,
       init.height,
       init.tileSet.id,
+      tileArtGeometry(init.tileSet),
       palette,
       defaultIndex,
       cells,
@@ -559,5 +567,6 @@ function buildPalette(tileSet: TileSetDefinition): DocumentTile[] {
     visualId: tile.visual.visualId,
     fallbackColor: tile.visual.fallbackColor,
     tags: [...(tile.tags ?? [])],
+    art: tile.art,
   }));
 }

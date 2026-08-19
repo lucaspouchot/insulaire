@@ -9,6 +9,9 @@ use crate::definition::{
     PlacedTile, ProjectionMode, WorldDefinition, WorldMetadata, WORLD_SCHEMA_VERSION,
 };
 use crate::hex::OffsetCoord;
+use crate::tile_art::{
+    ElevationLevel, ElevationRepeat, TileArt, TileArtGeometry, TileArtVariant, TileElevation,
+};
 use crate::tileset::{TileDefinition, TileSetDefinition, TileVisual, TILE_SET_SCHEMA_VERSION};
 
 /// The single impassable cell in [`sample_world`].
@@ -38,6 +41,37 @@ fn tile(id: &str, terrain: &str, movement_cost: u32, color: &str) -> TileDefinit
             fallback_color: color.to_owned(),
             hints: Default::default(),
         },
+        art: TileArt::default(),
+    }
+}
+
+/// Two surface variants, one explicit elevation level and a repeat rule.
+///
+/// Enough for a downstream test to exercise the whole of
+/// `docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md` without
+/// rebuilding a tile set by hand.
+fn sample_art() -> TileArt {
+    TileArt {
+        surface: vec![
+            TileArtVariant {
+                id: "a".to_owned(),
+                asset: "assets/tiles/rock_surface_a.png".to_owned(),
+            },
+            TileArtVariant {
+                id: "b".to_owned(),
+                asset: "assets/tiles/rock_surface_b.png".to_owned(),
+            },
+        ],
+        elevation: TileElevation {
+            levels: vec![ElevationLevel {
+                name: String::new(),
+                variants: vec![TileArtVariant {
+                    id: "a".to_owned(),
+                    asset: "assets/tiles/rock_cliff_a.png".to_owned(),
+                }],
+            }],
+            repeat: Some(ElevationRepeat::Level(1)),
+        },
     }
 }
 
@@ -48,9 +82,13 @@ pub fn sample_tile_set() -> TileSetDefinition {
         id: "mvp_terrain".to_owned(),
         schema_version: TILE_SET_SCHEMA_VERSION,
         name: "MVP Terrain".to_owned(),
+        art: TileArtGeometry::default(),
         tiles: vec![
             tile("grass", "grass", 1, "#4f7a3a"),
-            tile("rock", "rock", 2, "#7a7169"),
+            TileDefinition {
+                art: sample_art(),
+                ..tile("rock", "rock", 2, "#7a7169")
+            },
             tile("water", "water", 0, "#1d4e79"),
         ],
     }
