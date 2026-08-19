@@ -426,7 +426,7 @@ fn the_shipped_character_resolves_for_every_choice_it_offers() {
     let engine = engine_with_shipped_content();
 
     let resolved = engine
-        .resolve_character("human_player", "{}")
+        .resolve_character("human_player", "{}", None, 0)
         .expect("the shipped character resolves");
     let drawn: Vec<&str> = resolved
         .layers
@@ -456,7 +456,7 @@ fn the_shipped_character_resolves_for_every_choice_it_offers() {
     // Hair is one greyscale sprite recoloured by the chosen value, not one
     // image per colour: the tint reaches the layer that draws it.
     let dyed = engine
-        .resolve_character("human_player", r##"{ "hairColor": "#f2c14e" }"##)
+        .resolve_character("human_player", r##"{ "hairColor": "#f2c14e" }"##, None, 0)
         .expect("resolves");
     for layer in dyed.layers.iter().filter(|l| l.layer.starts_with("hair")) {
         assert_eq!(layer.tint, "#f2c14e");
@@ -464,7 +464,7 @@ fn the_shipped_character_resolves_for_every_choice_it_offers() {
 
     // A choice swaps a variant; another removes a layer entirely.
     let plated = engine
-        .resolve_character("human_player", r#"{ "armor": "plate" }"#)
+        .resolve_character("human_player", r#"{ "armor": "plate" }"#, None, 0)
         .expect("resolves");
     let top = plated
         .layers
@@ -474,7 +474,12 @@ fn the_shipped_character_resolves_for_every_choice_it_offers() {
     assert_eq!(top.variant, "plate");
 
     let bare = engine
-        .resolve_character("human_player", r#"{ "cape": false, "hairStyle": "short" }"#)
+        .resolve_character(
+            "human_player",
+            r#"{ "cape": false, "hairStyle": "short" }"#,
+            None,
+            0,
+        )
         .expect("resolves");
     assert!(!bare.layers.iter().any(|layer| layer.layer == "cape"));
     assert!(!bare.layers.iter().any(|layer| layer.layer == "hairBack"));
@@ -488,4 +493,67 @@ fn the_shipped_character_resolves_for_every_choice_it_offers() {
             layer.rect
         );
     }
+}
+
+/// The shipped character breathes, and the skeleton is what makes it cheap.
+///
+/// Its idle drives one node — the body — and every layer that hangs off it
+/// moves too, while the boots stay planted on the ground because they hang off
+/// nothing (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+#[test]
+fn the_shipped_character_plays_its_idle_through_the_hierarchy() {
+    let engine = engine_with_shipped_content();
+
+    let definition = engine.character("human_player").expect("the definition");
+    let idle = definition.animation("idle").expect("an idle animation");
+    assert!(idle.looping);
+    assert_eq!(idle.frames, 4);
+    // One track for the body, one correcting the hair: the other five layers
+    // move because of the tree, not because anybody keyframed them.
+    assert_eq!(idle.tracks.len(), 2);
+
+    let offset_of = |resolved: &insulaire_world::ResolvedCharacter, layer: &str| {
+        resolved
+            .layers
+            .iter()
+            .find(|drawn| drawn.layer == layer)
+            .unwrap_or_else(|| panic!("layer `{layer}`"))
+            .offset
+    };
+
+    let rest = engine
+        .resolve_character("human_player", "{}", Some("idle"), 0)
+        .expect("frame 0");
+    assert_eq!(rest.pose.as_ref().expect("a pose").frame, 0);
+    assert!(rest.layers.iter().all(|layer| layer.offset.is_zero()));
+
+    // Frame 1, the top of the breath: everything on the body rises with it.
+    let up = engine
+        .resolve_character("human_player", "{}", Some("idle"), idle.time_of(1))
+        .expect("frame 1");
+    for layer in ["body", "cape", "hairBack", "hairFront", "top", "skirt"] {
+        assert_eq!(
+            offset_of(&up, layer).y(),
+            -1,
+            "`{layer}` did not follow the body"
+        );
+    }
+    assert!(
+        offset_of(&up, "boots").is_zero(),
+        "the boots left the ground"
+    );
+
+    // Frame 3, the bottom: the hair's own keyframe adds to what it inherited.
+    let down = engine
+        .resolve_character("human_player", "{}", Some("idle"), idle.time_of(3))
+        .expect("frame 3");
+    assert_eq!(offset_of(&down, "body").y(), 1);
+    assert_eq!(offset_of(&down, "hairFront").y(), 2);
+
+    // A whole cycle later it is the same picture, to the pixel.
+    let looped = engine
+        .resolve_character("human_player", "{}", Some("idle"), idle.duration_ms() * 5)
+        .expect("five loops later")
+        .layers;
+    assert_eq!(looped, rest.layers);
 }

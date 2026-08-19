@@ -6,7 +6,7 @@
 //!
 //! 1. *Where is a hex?* — [`hex`]
 //! 2. *What did the author write?* — [`definition`], [`tileset`], [`template`],
-//!    [`character`]
+//!    [`character`], [`animation`]
 //! 3. *Is it loadable, and what does it look like once loaded?* —
 //!    [`validation`], [`grid`]
 //!
@@ -33,6 +33,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod animation;
 pub mod character;
 pub mod definition;
 pub mod grid;
@@ -53,10 +54,14 @@ pub mod testing;
 #[cfg(all(test, not(feature = "testing")))]
 mod testing;
 
+pub use animation::{
+    Animation, AnimationTrack, Interpolation, Keyframe, PixelOffset, Transform,
+    DEFAULT_FRAME_DURATION_MS, MAX_ANIMATION_FRAMES,
+};
 pub use character::{
-    CharacterCategory, CharacterDefinition, CharacterLayer, ColorSource, LayerVariant, PixelRect,
-    ResolvedCharacter, ResolvedLayer, Sprite, SpriteResolution, CHARACTER_SCHEMA_VERSION,
-    MAX_SPRITE_RESOLUTION, UNRESOLVED_COLOR,
+    AttachmentPoint, CharacterCategory, CharacterDefinition, CharacterLayer, ColorSource,
+    LayerVariant, PixelRect, ResolvedCharacter, ResolvedLayer, ResolvedPose, Sprite,
+    SpriteResolution, CHARACTER_SCHEMA_VERSION, MAX_SPRITE_RESOLUTION, UNRESOLVED_COLOR,
 };
 pub use definition::{
     EntityDefinition, HexOrientation, LinkTrigger, LocationDefinition, MapLinkDefinition,

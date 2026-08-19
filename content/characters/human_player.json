@@ -42,18 +42,27 @@
   "layers": [
     {
       "id": "cape",
+      "parent": "body",
+      "parentAnchor": "shoulders",
       "variants": [
         { "id": "worn", "when": { "cape": true }, "rect": [12, 27, 40, 95], "sprite": { "asset": "assets/characters/cape.png" } }
       ]
     },
     {
       "id": "hairBack",
+      "parent": "body",
+      "parentAnchor": "hairline",
       "variants": [
         { "id": "long", "when": { "hairStyle": "long" }, "rect": [20, 17, 24, 48], "sprite": { "asset": "assets/characters/hair_back.png", "tint": { "parameter": "hairColor" } } }
       ]
     },
     {
       "id": "body",
+      "anchors": [
+        { "id": "hairline", "at": [32, 14] },
+        { "id": "shoulders", "at": [32, 36] },
+        { "id": "waist", "at": [32, 60] }
+      ],
       "variants": [
         { "id": "default", "rect": [21, 12, 22, 107], "sprite": { "asset": "assets/characters/body.png" } }
       ]
@@ -66,6 +75,8 @@
     },
     {
       "id": "top",
+      "parent": "body",
+      "parentAnchor": "shoulders",
       "variants": [
         { "id": "plate", "when": { "armor": "plate" }, "rect": [23, 36, 18, 14], "sprite": { "asset": "assets/characters/top_plate.png" } },
         { "id": "leather", "rect": [23, 36, 18, 14], "sprite": { "asset": "assets/characters/top_leather.png" } }
@@ -73,14 +84,45 @@
     },
     {
       "id": "skirt",
+      "parent": "body",
+      "parentAnchor": "waist",
       "variants": [
         { "id": "default", "rect": [19, 59, 26, 22], "sprite": { "asset": "assets/characters/skirt.png" } }
       ]
     },
     {
       "id": "hairFront",
+      "parent": "body",
+      "parentAnchor": "hairline",
       "variants": [
         { "id": "default", "rect": [23, 10, 18, 20], "sprite": { "asset": "assets/characters/hair_front.png", "tint": { "parameter": "hairColor" } } }
+      ]
+    }
+  ],
+  "animations": [
+    {
+      "id": "idle",
+      "name": "Idle",
+      "frames": 4,
+      "frameDurationMs": 140,
+      "looping": true,
+      "tracks": [
+        {
+          "node": "body",
+          "keyframes": [
+            { "frame": 0, "offset": [0, 0] },
+            { "frame": 1, "offset": [0, -1] },
+            { "frame": 2, "offset": [0, 0] },
+            { "frame": 3, "offset": [0, 1] }
+          ]
+        },
+        {
+          "node": "hairFront",
+          "keyframes": [
+            { "frame": 0, "offset": [0, 0] },
+            { "frame": 3, "offset": [0, 1] }
+          ]
+        }
       ]
     }
   ]

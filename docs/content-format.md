@@ -460,6 +460,10 @@ specific to any of those.
 A character is **composed of sprites** on a pixel canvas it declares
 (ADR-0029). There is no procedural drawing vocabulary: a layer names an image.
 
+Its layers also form a **tree**, and it may declare **animations** that move
+nodes of that tree by whole pixels over time (ADR-0031). Both are optional: a
+definition with neither resolves exactly as it did before they existed.
+
 ```json
 {
   "id": "human_player",
@@ -502,6 +506,7 @@ CharacterDefinition + values ──> resolve() ──> ResolvedCharacter ──>
 | `resolution` | `{ width, height }` | no | The pixel canvas the sprites are authored on, `1..=256` a side. Default `64 × 128`. |
 | `parameters[]` | `ControlDefinition[]` | no | The choices it offers. A definition may offer none. |
 | `layers[]` | see below | no | The pieces it is drawn from, **back to front**. |
+| `animations[]` | see below | no | The movements it can play. Absent means it never moves. |
 
 ### The canvas
 
@@ -526,6 +531,9 @@ reads it here.
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `layers[].id` | string | yes | Stable id, unique in the definition. |
+| `layers[].parent` | string | no | Id of the layer this one hangs off. Absent makes it a root. **Not the draw order** — see *The skeleton* below. |
+| `layers[].parentAnchor` | string | no | Which of the parent's `anchors` it hangs off. |
+| `layers[].anchors[]` | `{ id, at: [x, y] }[]` | no | Named points other layers may hang off, in canvas pixels. |
 | `layers[].variants[]` | see below | no | The appearances it can take, **most specific first**. |
 | `variants[].id` | string | yes | Stable id, unique within its layer. |
 | `variants[].when` | `{ parameterId: value }` | no | Values this variant requires. Absent means "always". |
@@ -563,6 +571,93 @@ becomes the tint with its own shading intact. That is what lets one greyscale
 hair sprite serve every hair colour instead of one image per colour. A
 `parameter` tint whose value is not a string draws as `#ff00ff`.
 
+### The skeleton
+
+`parent` makes the layers a **tree**, which is what an animation's offsets
+compose down: a body that drops two pixels takes the head, the hair and
+everything else hanging off it with it (ADR-0031).
+
+The tree is **independent of the draw order**. Layers are still drawn in author
+order, back to front; a cape is drawn *behind* the body and still *hangs off*
+it, and the format keeps those two statements apart.
+
+```json
+{ "id": "body", "anchors": [{ "id": "neck", "at": [32, 40] }], "variants": [ … ] },
+{ "id": "head", "parent": "body", "parentAnchor": "neck", "variants": [ … ] }
+```
+
+An **attachment point** is a named place on a layer, in canvas pixels. It moves
+nothing on its own: the rest pose is already exact, so an anchor that also
+displaced its child would be a second way of saying where a sprite goes. It
+exists so a link reads as "the body's neck" rather than as coordinates, so the
+editor can draw the skeleton through the joints, and because it is the pivot a
+rotation will turn about the day there is one.
+
+A `parent` naming a layer nobody declares, an `anchors` id used twice, a
+`parentAnchor` the parent does not declare, and a chain of parents that loops
+are all errors.
+
+### Animations
+
+An animation says nothing about *what* is drawn — only about **offsets from the
+rest pose**, per node, per frame.
+
+```json
+"animations": [
+  {
+    "id": "idle",
+    "name": "Idle",
+    "frames": 4,
+    "frameDurationMs": 140,
+    "looping": true,
+    "tracks": [
+      {
+        "node": "body",
+        "keyframes": [
+          { "frame": 0, "offset": [0, 0] },
+          { "frame": 1, "offset": [0, -1] },
+          { "frame": 2, "offset": [0, 0] },
+          { "frame": 3, "offset": [0, 1] }
+        ]
+      }
+    ]
+  }
+]
+```
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `id` | string | yes | Stable id, unique in the definition — `idle`, `walk`, `attack`. |
+| `name` | string | no | Shown in the editor. Not player-facing, so not a key. |
+| `frames` | integer | yes | How long it is, `1..=240`. |
+| `frameDurationMs` | integer | no | How long each frame lasts. Default `120`. |
+| `looping` | boolean | no | Whether it starts again when it ends. Default `false`. |
+| `tracks[]` | see below | no | What moves, and when. |
+| `tracks[].node` | string | yes | Id of the layer this track drives. One track per node. |
+| `tracks[].keyframes[]` | see below | no | The values it takes, at the frames it takes them. |
+| `keyframes[].frame` | integer | yes | `0`-based, and less than the animation's `frames`. |
+| `keyframes[].offset` | `[x, y]` | no | Translation from the rest pose, in **whole pixels**. Default `[0, 0]`. |
+| `keyframes[].interpolation` | `step` \| `linear` | no | How it reaches the next keyframe. Default `step`. |
+
+**A node with no track does not sit still — it follows its parent.** That is the
+whole point: the idle above drives one node, and every layer hanging off `body`
+moves with it. A character with thirty layers and ten animations stores ten
+lists of *what moved*, not three hundred positions.
+
+A node's **global** offset is the sum of the local offsets along the chain from
+it up to its root, so a node's own keyframe **adds to** what it inherits: a head
+that inherits `-2` and writes `+1` ends at `-1`.
+
+Outside its keyframes a track **holds**: before the first it is the first value,
+after the last it is the last. `linear` interpolation still rounds to whole
+pixels — it buys smoother timing, never a fractional position — and on a looping
+animation it travels from the last keyframe back to the first.
+
+Evaluation takes a **time in milliseconds**, not a frame: a looping animation
+wraps, and one that does not stops inside its last frame. There is **no
+rotation and no scale**, because either would resample the art ADR-0029 exists
+to keep sharp.
+
 ### ResolvedCharacter
 
 What `resolveCharacter` and `previewCharacter` return, and the only thing a
@@ -576,13 +671,24 @@ renderer needs — no lookup, no definition, no customisation:
   "values": { "hairColor": "#8b5a2b", "cape": true },
   "layers": [
     { "layer": "hairFront", "variant": "default", "rect": [23, 10, 18, 20],
+      "offset": [0, 0],
       "asset": "assets/characters/hair_front.png", "tint": "#8b5a2b" }
-  ]
+  ],
+  "pose": { "animation": "idle", "frame": 1, "timeMs": 140 }
 }
 ```
 
 `tint` is **an empty string** when the sprite is drawn as authored — not `null`,
 not a colour.
+
+`rect` is where to draw it, **animation included**: the offset is already in it,
+which is why the renderer needed no change. `offset` is how far the animation
+moved the layer from its rest pose, inherited transforms included — a renderer
+ignores it, and an editor uses it to say what the hierarchy did.
+
+`pose` is **absent** on a rest pose, and absent when the animation id asked for
+is one the definition does not declare — resolving is total, so an editor
+previewing a definition mid-edit gets a picture rather than an error.
 
 ---
 
@@ -690,6 +796,17 @@ exposed across the boundary as `validateLinks()` and `loadProject()`.
 | `character.invalidAssetPath` | An asset path is absolute, a URL, or steps outside the content root. |
 | `character.unknownTintParameter` | A tint names a parameter that is not declared. |
 | `character.missingTint` | A `fixed` tint carries no colour. |
+| `character.unknownParent` | A layer hangs off a layer nobody declares. |
+| `character.circularHierarchy` | A chain of parents comes back to where it started. |
+| `character.unknownAnchor` | A `parentAnchor` names an attachment point the parent does not declare. |
+| `character.missingAnchorId` / `character.duplicateAnchor` | An attachment point has no id, or a layer declares one twice. |
+| `character.missingAnimationId` / `character.duplicateAnimation` | An animation has no id, or two share one. |
+| `character.invalidFrameCount` | An animation is `0` frames long, or longer than `240`. |
+| `character.invalidFrameDuration` | An animation gives each frame no time at all. |
+| `character.unknownTrackNode` | A track drives a layer this character does not declare. |
+| `character.duplicateTrack` | One animation drives the same node twice. |
+| `character.keyframeOutOfRange` | A keyframe sits past the animation's last frame. |
+| `character.duplicateKeyframe` | A track writes the same frame twice. |
 | `tileSet.empty` / `tileSet.paletteTooLarge` / `tile.duplicateId` / `tile.missingVisualId` | Tile set problems. |
 
 **Warnings** (content loads):
@@ -706,6 +823,8 @@ exposed across the boundary as `validateLinks()` and `loadProject()`.
 | `character.unusedOptions` | As above, for a character parameter. |
 | `character.noLayers` / `character.emptyLayer` | A character draws nothing, or a layer has no variant. |
 | `character.impossibleCondition` | A variant waits for a value its parameter's control can never hold, so it is never drawn. |
+| `character.anchorWithoutParent` | A layer names an attachment point but hangs off nothing. Always a leftover. |
+| `character.emptyTrack` | An animation declares a track with no keyframe, so it does nothing. |
 | `character.rectOutOfCanvas` | A variant reaches outside the declared canvas. Legal — a cape overhangs — and far more often a box left over from a smaller sprite. |
 
 ---
@@ -722,7 +841,8 @@ The editor writes worlds through
   ],
 ```
 
-`content/characters/*.json` follow the same principle with the **variant** as
+`content/characters/*.json` follow the same principle with the **variant** — and,
+for an animation, the **keyframe** — as
 the record: one per line, conditions, geometry and visual visible at once
 (`apps/web/src/content/character-serializer.ts`).
 

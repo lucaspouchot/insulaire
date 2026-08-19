@@ -38,6 +38,21 @@ import { loadEngineModule } from '../../engine/load-engine-module';
 
 export type EngineStatus = 'idle' | 'loading' | 'ready' | 'failed';
 
+/**
+ * Which animation a character is playing, and how far into it.
+ *
+ * Time rather than a frame number: a frame is how an author *writes* an
+ * animation, milliseconds are how anything *plays* one, and the engine owns the
+ * conversion so the editor's preview and a game loop cannot disagree about it
+ * (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+ */
+export interface CharacterPose {
+  /** Id of the animation. One the definition does not declare is the rest pose. */
+  animation: string;
+  /** Milliseconds since it started; it loops or holds on its own. */
+  timeMs: number;
+}
+
 @Injectable({ providedIn: 'root' })
 export class EngineService {
   private instance: RawInsulaireEngine | null = null;
@@ -191,26 +206,50 @@ export class EngineService {
   }
 
   /**
-   * Turns a definition plus a customisation into something drawable.
+   * Turns a definition, a customisation and a moment of an animation into
+   * something drawable.
    *
    * Every host draws what *this* produced: the editor's preview and the game
-   * call the same resolver, so a preview cannot flatter the result.
+   * call the same resolver, so a preview cannot flatter the result — animation
+   * included (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+   *
+   * `pose` of `undefined` is the rest pose, and so is an animation id the
+   * definition does not declare.
    */
-  resolveCharacter(id: string, values: CharacterValues = {}): ResolvedCharacter {
+  resolveCharacter(
+    id: string,
+    values: CharacterValues = {},
+    pose?: CharacterPose,
+  ): ResolvedCharacter {
     return this.parse<ResolvedCharacter>(() =>
-      this.engine().resolveCharacter(id, JSON.stringify(values)),
+      this.engine().resolveCharacter(
+        id,
+        JSON.stringify(values),
+        pose?.animation ?? undefined,
+        Math.max(0, Math.round(pose?.timeMs ?? 0)),
+      ),
     );
   }
 
   /**
-   * Resolves a definition **in hand** against a customisation.
+   * Resolves a definition **in hand** against a customisation, at a moment of
+   * an animation.
    *
    * What the editor previews with: the definition being written is not
    * registered, and may not be valid yet, but it still has to be visible.
    */
-  previewCharacter(character: CharacterDefinition, values: CharacterValues = {}): ResolvedCharacter {
+  previewCharacter(
+    character: CharacterDefinition,
+    values: CharacterValues = {},
+    pose?: CharacterPose,
+  ): ResolvedCharacter {
     return this.parse<ResolvedCharacter>(() =>
-      this.engine().previewCharacter(JSON.stringify(character), JSON.stringify(values)),
+      this.engine().previewCharacter(
+        JSON.stringify(character),
+        JSON.stringify(values),
+        pose?.animation ?? undefined,
+        Math.max(0, Math.round(pose?.timeMs ?? 0)),
+      ),
     );
   }
 

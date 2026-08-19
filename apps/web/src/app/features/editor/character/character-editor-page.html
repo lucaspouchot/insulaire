@@ -242,29 +242,40 @@
           <section class="panel">
             <h2>{{ 'ui.editor.character.layers' | t }}</h2>
             <p class="hint">{{ 'ui.editor.character.layersHint' | t }}</p>
-            @for (entry of layers(); track $index) {
-              <div class="node" [class.on]="entry.id === layer()?.id">
+            <!--
+              Listed as the tree, ordered by the draw order: the indent says
+              what follows what, the arrows still move what covers what. The
+              two are independent on purpose.
+            -->
+            @for (row of rows(); track row.layer.id) {
+              <div
+                class="node"
+                [class.on]="row.layer.id === layer()?.id"
+                [style.margin-left.px]="row.depth * 14"
+              >
                 <button
                   type="button"
                   class="pick"
                   [title]="'ui.editor.character.openLayer' | t"
-                  (click)="selectLayer(entry.id)"
+                  (click)="selectLayer(row.layer.id)"
                 >
                   ▸
                 </button>
                 <input
                   type="text"
                   class="id"
-                  [value]="entry.id"
+                  [value]="row.layer.id"
                   [attr.aria-label]="'ui.editor.character.id' | t"
-                  (change)="patchLayer($index, { id: $any($event.target).value })"
+                  (change)="patchLayer(row.index, { id: $any($event.target).value })"
                 />
                 <span class="count">
-                  {{ 'ui.editor.character.variantCount' | t: { count: entry.variants.length } }}
+                  {{
+                    'ui.editor.character.variantCount' | t: { count: row.layer.variants.length }
+                  }}
                 </span>
-                <button type="button" (click)="moveLayer($index, -1)" title="↑">↑</button>
-                <button type="button" (click)="moveLayer($index, 1)" title="↓">↓</button>
-                <button type="button" class="remove" (click)="removeLayer($index)">×</button>
+                <button type="button" (click)="moveLayer(row.index, -1)" title="↑">↑</button>
+                <button type="button" (click)="moveLayer(row.index, 1)" title="↓">↓</button>
+                <button type="button" class="remove" (click)="removeLayer(row.index)">×</button>
               </div>
             }
             @if (layers().length === 0) {
@@ -278,6 +289,95 @@
           </section>
 
           @if (layer(); as active) {
+            <!--
+              Where this layer hangs, and what may hang off it. Parentage is
+              not draw order: a cape is drawn behind a body and still follows
+              it (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+            -->
+            <section class="panel">
+              <h2>{{ 'ui.editor.character.skeletonOf' | t: { layer: active.id } }}</h2>
+              <label class="row">
+                <span>{{ 'ui.editor.character.parent' | t }}</span>
+                <select
+                  [disabled]="!writable()"
+                  (change)="setParent($any($event.target).value)"
+                >
+                  <option value="" [selected]="!active.parent">
+                    {{ 'ui.editor.character.noParent' | t }}
+                  </option>
+                  @for (candidate of parentOptions(); track candidate.id) {
+                    @if (candidate.id !== active.id) {
+                      <option [value]="candidate.id" [selected]="candidate.id === active.parent">
+                        {{ candidate.id }}
+                      </option>
+                    }
+                  }
+                </select>
+              </label>
+              @if (active.parent) {
+                <label class="row">
+                  <span>{{ 'ui.editor.character.parentAnchor' | t }}</span>
+                  <select
+                    [disabled]="!writable()"
+                    (change)="setParentAnchor($any($event.target).value)"
+                  >
+                    <option value="" [selected]="!active.parentAnchor">
+                      {{ 'ui.editor.character.parentOrigin' | t }}
+                    </option>
+                    @for (anchor of parentAnchors(); track anchor.id) {
+                      <option
+                        [value]="anchor.id"
+                        [selected]="anchor.id === active.parentAnchor"
+                      >
+                        {{ anchor.id }}
+                      </option>
+                    }
+                  </select>
+                </label>
+                @if (parentAnchors().length === 0) {
+                  <p class="hint">{{ 'ui.editor.character.noParentAnchors' | t }}</p>
+                }
+              }
+
+              <p class="hint">{{ 'ui.editor.character.anchorsHint' | t }}</p>
+              @for (anchor of active.anchors ?? []; track $index; let anchorIndex = $index) {
+                <div class="node">
+                  <div class="line">
+                    <input
+                      type="text"
+                      class="id"
+                      [value]="anchor.id"
+                      [attr.aria-label]="'ui.editor.character.id' | t"
+                      (change)="patchAnchor(anchorIndex, { id: $any($event.target).value })"
+                    />
+                    <span class="pair">
+                      <input
+                        type="number"
+                        [value]="anchor.at[0]"
+                        [attr.aria-label]="'ui.editor.character.offsetX' | t"
+                        (change)="setAnchorAt(anchorIndex, 0, $any($event.target).value)"
+                      />
+                      <input
+                        type="number"
+                        [value]="anchor.at[1]"
+                        [attr.aria-label]="'ui.editor.character.offsetY' | t"
+                        (change)="setAnchorAt(anchorIndex, 1, $any($event.target).value)"
+                      />
+                      <span class="unit">px</span>
+                    </span>
+                    <button type="button" class="remove" (click)="removeAnchor(anchorIndex)">
+                      ×
+                    </button>
+                  </div>
+                </div>
+              }
+              <div class="add">
+                <button type="button" [disabled]="!writable()" (click)="addAnchor()">
+                  {{ 'ui.editor.character.addAnchor' | t }}
+                </button>
+              </div>
+            </section>
+
             <section class="panel">
               <h2>{{ 'ui.editor.character.variantsOf' | t: { layer: active.id } }}</h2>
               <p class="hint">{{ 'ui.editor.character.variantsHint' | t }}</p>
@@ -409,6 +509,29 @@
               </div>
             </section>
           }
+
+          <!--
+            The animation editor. It owns the timeline and the transform of one
+            node at one frame; the preview above is what plays it, resolved by
+            the engine at the moment this names.
+          -->
+          <app-character-animator
+            [document]="doc"
+            [rows]="rows()"
+            [animationId]="animation()?.id ?? null"
+            [frame]="poseFrame()"
+            [node]="layer()?.id ?? null"
+            [playing]="playing()"
+            [speed]="speed()"
+            [resolved]="resolved()"
+            [writable]="writable()"
+            (changed)="onAnimationsChanged($event)"
+            (animationPicked)="openAnimation($event)"
+            (framePicked)="scrubTo($event)"
+            (nodePicked)="selectLayer($event)"
+            (playToggled)="togglePlay()"
+            (speedPicked)="setSpeed($event)"
+          />
         }
       </div>
 
@@ -430,6 +553,29 @@
               (wheel)="onWheel($event)"
             ></canvas>
           </div>
+          <div class="line">
+            <button
+              type="button"
+              class="toggle"
+              [class.on]="skeleton()"
+              (click)="toggleSkeleton()"
+            >
+              {{ 'ui.editor.character.showSkeleton' | t }}
+            </button>
+            @if (animation(); as playingNow) {
+              <span class="pose">
+                {{
+                  'ui.editor.character.playingFrame'
+                    | t: { animation: playingNow.name || playingNow.id, frame: poseFrame() }
+                }}
+              </span>
+            }
+          </div>
+          @if (posable()) {
+            <p class="hint">
+              {{ 'ui.editor.character.dragHint' | t: { layer: layer()?.id ?? '' } }}
+            </p>
+          }
           @if (resolved(); as drawn) {
             <p class="hint">
               {{

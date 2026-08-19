@@ -124,6 +124,66 @@ describe('serializeCharacter', () => {
     expect(json).toContain('"resolution": { "width": 64, "height": 128 }');
   });
 
+  it('writes one keyframe per line and drops the default interpolation', () => {
+    const json = serializeCharacter({
+      id: 'knight',
+      schemaVersion: 2,
+      parameters: [],
+      layers: [
+        {
+          id: 'body',
+          anchors: [{ id: 'neck', at: [32, 40] }],
+          variants: [{ id: 'd', rect: [20, 40, 24, 76], sprite: { asset: 'a/body.png' } }],
+        },
+        {
+          id: 'head',
+          parent: 'body',
+          parentAnchor: 'neck',
+          variants: [{ id: 'd', rect: [24, 12, 16, 28], sprite: { asset: 'a/head.png' } }],
+        },
+      ],
+      animations: [
+        {
+          id: 'idle',
+          name: 'Idle',
+          frames: 4,
+          frameDurationMs: 120,
+          looping: true,
+          tracks: [
+            {
+              node: 'body',
+              keyframes: [
+                { frame: 0, offset: [0, 0] },
+                { frame: 1, offset: [0, -2], interpolation: 'linear' },
+                { frame: 2, offset: [0, 0], interpolation: 'step' },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(json).toContain('      "anchors": [\n        { "id": "neck", "at": [32, 40] }\n      ],');
+    expect(json).toContain('      "parent": "body",\n      "parentAnchor": "neck",');
+    expect(json).toContain('        { "frame": 0, "offset": [0, 0] },\n');
+    expect(json).toContain('{ "frame": 1, "offset": [0, -2], "interpolation": "linear" },\n');
+    // `step` is the default, so writing it would be noise in every diff.
+    expect(json).toContain('        { "frame": 2, "offset": [0, 0] }\n');
+  });
+
+  it('writes no animations list for a character that does not move', () => {
+    const json = serializeCharacter({
+      id: 'statue',
+      schemaVersion: 2,
+      parameters: [],
+      layers: [{ id: 'stone', variants: [] }],
+    });
+
+    expect(json).not.toContain('"animations"');
+    expect(json).not.toContain('"parent"');
+    expect(json.endsWith('  ]\n}\n')).toBe(true);
+  });
+
   /**
    * The same guarantee `world-serializer.spec.ts` gives for maps: what the
    * editor writes is byte for byte what is checked in, so saving a character

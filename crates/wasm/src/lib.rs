@@ -353,33 +353,47 @@ impl InsulaireEngine {
         self.inner.character_ids().map_err(to_js)
     }
 
-    /// Resolves a definition **passed in** against a customisation — the
-    /// editor's preview, for content that is not registered yet. Returns a
-    /// `ResolvedCharacter`.
+    /// Resolves a definition **passed in** against a customisation, at a moment
+    /// of an animation — the editor's preview, for content that is not
+    /// registered yet. Returns a `ResolvedCharacter`.
+    ///
+    /// `animation` of `undefined` — or an id the definition does not declare —
+    /// is the rest pose. `time_ms` counts from the start of the animation.
     ///
     /// # Errors
     ///
-    /// `parse` when either argument is not JSON.
+    /// `parse` when either JSON argument is not JSON.
     #[wasm_bindgen(js_name = previewCharacter)]
     pub fn preview_character(
         &self,
         character_json: &str,
         values_json: &str,
+        animation: Option<String>,
+        time_ms: u32,
     ) -> Result<String, JsValue> {
         self.inner
-            .preview_character(character_json, values_json)
+            .preview_character(character_json, values_json, animation.as_deref(), time_ms)
             .map_err(to_js)
     }
 
     /// Resolves a definition against a customisation such as
-    /// `{"hairColor":"#f2c14e"}`. Returns a `ResolvedCharacter`.
+    /// `{"hairColor":"#f2c14e"}`, at a moment of an animation. Returns a
+    /// `ResolvedCharacter`.
     ///
     /// # Errors
     ///
     /// `parse` or `unknownContent`.
     #[wasm_bindgen(js_name = resolveCharacter)]
-    pub fn resolve_character(&self, id: &str, values_json: &str) -> Result<String, JsValue> {
-        self.inner.resolve_character(id, values_json).map_err(to_js)
+    pub fn resolve_character(
+        &self,
+        id: &str,
+        values_json: &str,
+        animation: Option<String>,
+        time_ms: u32,
+    ) -> Result<String, JsValue> {
+        self.inner
+            .resolve_character(id, values_json, animation.as_deref(), time_ms)
+            .map_err(to_js)
     }
 
     /// Returns the current `GameSnapshot`.

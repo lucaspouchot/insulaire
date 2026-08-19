@@ -104,9 +104,26 @@ CharacterDefinition
   parameters[]   ControlDefinition — the same vocabulary as settings
   layers[]
     id
+    parent, parentAnchor    which layer it hangs off, and where
+    anchors[]               id, at[x,y] — named joints others hang off
     variants[]
       id, when{ parameterId: value }, rect[x,y,w,h], sprite{ asset, tint? }
+  animations[]
+    id, name, frames, frameDurationMs, looping
+    tracks[]
+      node                  a layer id
+      keyframes[]           frame, offset[x,y], interpolation
 ```
+
+`parent` makes the layers a **tree**, and it is *not* the draw order: layers are
+still drawn in author order, back to front, so a cape is drawn behind the body
+and still hangs off it (ADR-0031).
+
+An animation holds **offsets from the rest pose**, never poses. A node with no
+track is not still — it follows its parent, because offsets compose down the
+tree and a node's own keyframe *adds to* what it inherits. That is what keeps a
+character with thirty layers and ten animations from storing three hundred
+positions.
 
 A definition describes a *family*; a set of chosen values — a **customisation**
 — describes one member of it. Neither is runtime state: a customisation is a
@@ -114,13 +131,18 @@ plain map of values, which is what lets it be authored, saved or chosen at
 character creation without a type of its own.
 
 ```text
-CharacterDefinition + values ──> resolve() ──> ResolvedCharacter ──> renderer
+CharacterDefinition + values + (animation, timeMs) ──> resolve() ──> ResolvedCharacter ──> renderer
 ```
 
 `ResolvedCharacter` is the only thing a renderer sees: a canvas size and an
 ordered list of whole-pixel boxes, each with an image to blit and a literal
 tint. It holds no definition, no lookup and no category — the same pipeline
 draws the player, a merchant and a dragon.
+
+The animation's offset is **already in each box**, which is why adding
+animation changed no renderer. The payload carries the offset that was applied
+and the `pose` it came from for an *editor* to read; the renderer ignores both,
+and never learns that time exists.
 
 A character's **size** is its canvas, not a scale factor: a rat is authored at
 32×32 and a dragon at 256×256, and a host zooms each by a whole number

@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use serde_json::Value;
 
+use crate::animation::{Animation, MAX_ANIMATION_FRAMES};
 use crate::character::{
     CharacterDefinition, CharacterLayer, ColorSource, LayerVariant, CHARACTER_SCHEMA_VERSION,
     MAX_SPRITE_RESOLUTION,
@@ -1370,6 +1371,8 @@ pub fn validate_character(character: &CharacterDefinition) -> ValidationReport {
 
     issues.extend(parameter_issues(character));
     issues.extend(layer_issues(character));
+    issues.extend(hierarchy_issues(character));
+    issues.extend(animation_issues(character));
 
     ValidationReport::from_issues(issues)
 }
@@ -1452,6 +1455,27 @@ fn layer_issues(character: &CharacterDefinition) -> Vec<ValidationIssue> {
             ));
         }
 
+        let mut anchor_ids: BTreeSet<&str> = BTreeSet::new();
+        for (anchor_index, anchor) in layer.anchors.iter().enumerate() {
+            let path = format!("{path}.anchors[{anchor_index}]");
+            if anchor.id.trim().is_empty() {
+                issues.push(ValidationIssue::error(
+                    "character.missingAnchorId",
+                    format!("{path}.id"),
+                    "an attachment point's id must not be empty",
+                ));
+            } else if !anchor_ids.insert(anchor.id.as_str()) {
+                issues.push(ValidationIssue::error(
+                    "character.duplicateAnchor",
+                    format!("{path}.id"),
+                    format!(
+                        "layer `{}` declares attachment point `{}` twice",
+                        layer.id, anchor.id
+                    ),
+                ));
+            }
+        }
+
         let mut variant_ids: BTreeSet<&str> = BTreeSet::new();
         for (variant_index, variant) in layer.variants.iter().enumerate() {
             let path = format!("{path}.variants[{variant_index}]");
@@ -1472,6 +1496,207 @@ fn layer_issues(character: &CharacterDefinition) -> Vec<ValidationIssue> {
                 ));
             }
             issues.extend(variant_issues(character, &path, layer, variant));
+        }
+    }
+
+    issues
+}
+
+/// The tree the layers form: every parent resolvable, and no chain that loops.
+///
+/// A cycle is the check that matters. The resolver survives one — it stops at
+/// the repeat — but a character whose body hangs off its own hair is not a
+/// character anybody meant to author
+/// (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+fn hierarchy_issues(character: &CharacterDefinition) -> Vec<ValidationIssue> {
+    let mut issues = Vec::new();
+
+    for (index, layer) in character.layers.iter().enumerate() {
+        let path = format!("layers[{index}]");
+        let Some(parent_id) = layer.parent.as_deref() else {
+            if layer.parent_anchor.is_some() {
+                issues.push(ValidationIssue::warning(
+                    "character.anchorWithoutParent",
+                    format!("{path}.parentAnchor"),
+                    format!(
+                        "layer `{}` names an attachment point but hangs off nothing",
+                        layer.id
+                    ),
+                ));
+            }
+            continue;
+        };
+
+        let Some(parent) = character.layer(parent_id) else {
+            issues.push(ValidationIssue::error(
+                "character.unknownParent",
+                format!("{path}.parent"),
+                format!(
+                    "layer `{}` hangs off `{parent_id}`, which is not declared",
+                    layer.id
+                ),
+            ));
+            continue;
+        };
+
+        if let Some(anchor) = layer.parent_anchor.as_deref() {
+            if parent.anchor(anchor).is_none() {
+                issues.push(ValidationIssue::error(
+                    "character.unknownAnchor",
+                    format!("{path}.parentAnchor"),
+                    format!(
+                        "layer `{}` hangs off `{parent_id}.{anchor}`, which that layer does not \
+                         declare",
+                        layer.id
+                    ),
+                ));
+            }
+        }
+
+        if let Some(cycle) = ancestor_cycle(character, layer) {
+            issues.push(ValidationIssue::error(
+                "character.circularHierarchy",
+                format!("{path}.parent"),
+                format!("layer `{}` hangs off itself, through {cycle}", layer.id),
+            ));
+        }
+    }
+
+    issues
+}
+
+/// The chain of parents from this layer back to itself, if there is one.
+fn ancestor_cycle(character: &CharacterDefinition, layer: &CharacterLayer) -> Option<String> {
+    let mut chain: Vec<&str> = vec![layer.id.as_str()];
+    let mut node = layer.parent.as_deref().and_then(|id| character.layer(id));
+
+    while let Some(current) = node {
+        if chain.contains(&current.id.as_str()) {
+            chain.push(current.id.as_str());
+            return Some(chain.join(" -> "));
+        }
+        chain.push(current.id.as_str());
+        node = current.parent.as_deref().and_then(|id| character.layer(id));
+    }
+    None
+}
+
+/// The movements a definition declares: named, timed, and pointed at nodes that
+/// exist.
+fn animation_issues(character: &CharacterDefinition) -> Vec<ValidationIssue> {
+    let mut issues = Vec::new();
+    let mut ids: BTreeSet<&str> = BTreeSet::new();
+
+    for (index, animation) in character.animations.iter().enumerate() {
+        let path = format!("animations[{index}]");
+        if animation.id.trim().is_empty() {
+            issues.push(ValidationIssue::error(
+                "character.missingAnimationId",
+                format!("{path}.id"),
+                "an animation's id must not be empty",
+            ));
+        } else if !ids.insert(animation.id.as_str()) {
+            issues.push(ValidationIssue::error(
+                "character.duplicateAnimation",
+                format!("{path}.id"),
+                format!("animation `{}` is declared twice", animation.id),
+            ));
+        }
+
+        if animation.frames == 0 || animation.frames > MAX_ANIMATION_FRAMES {
+            issues.push(ValidationIssue::error(
+                "character.invalidFrameCount",
+                format!("{path}.frames"),
+                format!(
+                    "animation `{}` is {} frames long; it must be between 1 and \
+                     {MAX_ANIMATION_FRAMES}",
+                    animation.id, animation.frames
+                ),
+            ));
+        }
+        if animation.frame_duration_ms == 0 {
+            issues.push(ValidationIssue::error(
+                "character.invalidFrameDuration",
+                format!("{path}.frameDurationMs"),
+                format!(
+                    "animation `{}` gives each frame no time at all",
+                    animation.id
+                ),
+            ));
+        }
+
+        issues.extend(track_issues(character, &path, animation));
+    }
+
+    issues
+}
+
+/// One animation's tracks: one per node, each naming a node that exists, each
+/// keyframe inside the animation and on a frame of its own.
+fn track_issues(
+    character: &CharacterDefinition,
+    path: &str,
+    animation: &Animation,
+) -> Vec<ValidationIssue> {
+    let mut issues = Vec::new();
+    let mut nodes: BTreeSet<&str> = BTreeSet::new();
+
+    for (index, track) in animation.tracks.iter().enumerate() {
+        let path = format!("{path}.tracks[{index}]");
+        if character.layer(&track.node).is_none() {
+            issues.push(ValidationIssue::error(
+                "character.unknownTrackNode",
+                format!("{path}.node"),
+                format!(
+                    "animation `{}` drives `{}`, which is not a layer of this character",
+                    animation.id, track.node
+                ),
+            ));
+        } else if !nodes.insert(track.node.as_str()) {
+            // Two tracks for one node is two answers to one question, and the
+            // evaluator can only take one of them.
+            issues.push(ValidationIssue::error(
+                "character.duplicateTrack",
+                format!("{path}.node"),
+                format!("animation `{}` drives `{}` twice", animation.id, track.node),
+            ));
+        }
+
+        if track.keyframes.is_empty() {
+            issues.push(ValidationIssue::warning(
+                "character.emptyTrack",
+                format!("{path}.keyframes"),
+                format!(
+                    "animation `{}` declares a track for `{}` with no keyframe, so it does \
+                     nothing",
+                    animation.id, track.node
+                ),
+            ));
+        }
+
+        let mut frames: BTreeSet<u32> = BTreeSet::new();
+        for (keyframe_index, keyframe) in track.keyframes.iter().enumerate() {
+            let path = format!("{path}.keyframes[{keyframe_index}]");
+            if animation.frames > 0 && keyframe.frame >= animation.frames {
+                issues.push(ValidationIssue::error(
+                    "character.keyframeOutOfRange",
+                    format!("{path}.frame"),
+                    format!(
+                        "animation `{}` writes `{}` at frame {}, past its {} frames",
+                        animation.id, track.node, keyframe.frame, animation.frames
+                    ),
+                ));
+            }
+            if !frames.insert(keyframe.frame) {
+                issues.push(ValidationIssue::error(
+                    "character.duplicateKeyframe",
+                    format!("{path}.frame"),
+                    format!(
+                        "animation `{}` writes `{}` twice at frame {}",
+                        animation.id, track.node, keyframe.frame
+                    ),
+                ));
+            }
         }
     }
 
@@ -1661,6 +1886,7 @@ fn tile_at_is_passable(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::animation::{Interpolation, Keyframe, Transform};
     use crate::character::{ColorSource, PixelRect, SpriteResolution};
     use crate::hex::OffsetCoord;
     use crate::settings::ControlKind;
@@ -2403,6 +2629,205 @@ mod tests {
         let found = codes(&report);
         assert!(found.contains(&"character.invalidDefault"), "{found:?}");
         assert!(!found.iter().any(|code| code.starts_with("settings.")));
+    }
+
+    /// A character with a hierarchy and a working idle: the shape §28 asks for,
+    /// and the fixture every animation check bends.
+    fn animated_character() -> CharacterDefinition {
+        character(
+            r#"{
+                "id": "knight", "schemaVersion": 2,
+                "resolution": { "width": 64, "height": 128 },
+                "layers": [
+                    { "id": "body", "anchors": [ { "id": "neck", "at": [32, 40] } ],
+                      "variants": [ { "id": "d", "rect": [20, 40, 24, 76],
+                                      "sprite": { "asset": "assets/characters/body.png" } } ] },
+                    { "id": "head", "parent": "body", "parentAnchor": "neck",
+                      "variants": [ { "id": "d", "rect": [24, 12, 16, 28],
+                                      "sprite": { "asset": "assets/characters/head.png" } } ] }
+                ],
+                "animations": [
+                    { "id": "idle", "name": "Idle", "frames": 4, "frameDurationMs": 120,
+                      "looping": true, "tracks": [
+                        { "node": "body", "keyframes": [
+                            { "frame": 0, "offset": [0, 0] },
+                            { "frame": 1, "offset": [0, -2] },
+                            { "frame": 2, "offset": [0, 0] },
+                            { "frame": 3, "offset": [0, 2] } ] } ] }
+                ]
+            }"#,
+        )
+    }
+
+    #[test]
+    fn a_character_with_a_hierarchy_and_an_animation_has_nothing_to_report() {
+        let report = validate_character(&animated_character());
+        assert!(report.valid, "unexpected issues: {:?}", report.issues);
+        assert!(report.issues.is_empty(), "{:?}", report.issues);
+    }
+
+    #[test]
+    fn a_layer_may_only_hang_off_a_layer_that_exists() {
+        let mut character = animated_character();
+        character.layers[1].parent = Some("torso".to_owned());
+
+        let report = validate_character(&character);
+        assert!(!report.valid);
+        assert!(codes(&report).contains(&"character.unknownParent"));
+    }
+
+    #[test]
+    fn a_parent_chain_that_loops_is_an_error() {
+        let mut character = animated_character();
+        character.layers[0].parent = Some("head".to_owned());
+
+        let report = validate_character(&character);
+        let found = codes(&report);
+        assert!(!report.valid);
+        // Both ends of the loop are reported: either one is a place to fix it.
+        assert_eq!(
+            found
+                .iter()
+                .filter(|code| **code == "character.circularHierarchy")
+                .count(),
+            2,
+            "{found:?}"
+        );
+    }
+
+    #[test]
+    fn a_layer_that_is_its_own_parent_is_a_loop_of_one() {
+        let mut character = animated_character();
+        character.layers[0].parent = Some("body".to_owned());
+
+        let report = validate_character(&character);
+        assert!(!report.valid);
+        assert!(codes(&report).contains(&"character.circularHierarchy"));
+    }
+
+    #[test]
+    fn an_attachment_point_must_be_declared_by_the_parent_that_is_named() {
+        let mut character = animated_character();
+        character.layers[1].parent_anchor = Some("shoulder".to_owned());
+
+        let report = validate_character(&character);
+        assert!(!report.valid);
+        assert!(codes(&report).contains(&"character.unknownAnchor"));
+
+        // And an attachment point with no parent to hang off is a warning:
+        // harmless, always a leftover.
+        let mut orphan = animated_character();
+        orphan.layers[1].parent = None;
+        let report = validate_character(&orphan);
+        assert!(report.valid);
+        assert!(codes(&report).contains(&"character.anchorWithoutParent"));
+    }
+
+    #[test]
+    fn an_attachment_point_needs_an_id_of_its_own() {
+        let mut character = animated_character();
+        character.layers[0].anchors.push(crate::AttachmentPoint {
+            id: "neck".to_owned(),
+            at: crate::PixelOffset::new(0, 0),
+        });
+        character.layers[0].anchors.push(crate::AttachmentPoint {
+            id: "  ".to_owned(),
+            at: crate::PixelOffset::new(0, 0),
+        });
+
+        let report = validate_character(&character);
+        let found = codes(&report);
+        assert!(found.contains(&"character.duplicateAnchor"), "{found:?}");
+        assert!(found.contains(&"character.missingAnchorId"), "{found:?}");
+    }
+
+    #[test]
+    fn an_animation_needs_an_id_a_length_and_frames_that_last() {
+        let mut character = animated_character();
+        character.animations[0].id = String::new();
+        character.animations[0].frames = 0;
+        character.animations[0].frame_duration_ms = 0;
+
+        let report = validate_character(&character);
+        let found = codes(&report);
+        assert!(!report.valid);
+        assert!(found.contains(&"character.missingAnimationId"), "{found:?}");
+        assert!(found.contains(&"character.invalidFrameCount"), "{found:?}");
+        assert!(
+            found.contains(&"character.invalidFrameDuration"),
+            "{found:?}"
+        );
+    }
+
+    #[test]
+    fn an_animation_longer_than_the_cap_is_an_error() {
+        let mut character = animated_character();
+        character.animations[0].frames = MAX_ANIMATION_FRAMES + 1;
+        let report = validate_character(&character);
+        assert!(codes(&report).contains(&"character.invalidFrameCount"));
+    }
+
+    #[test]
+    fn two_animations_may_not_share_an_id() {
+        let mut character = animated_character();
+        let twin = character.animations[0].clone();
+        character.animations.push(twin);
+
+        let report = validate_character(&character);
+        assert!(!report.valid);
+        assert!(codes(&report).contains(&"character.duplicateAnimation"));
+    }
+
+    #[test]
+    fn a_track_must_drive_a_layer_this_character_declares() {
+        let mut character = animated_character();
+        character.animations[0].tracks[0].node = "tail".to_owned();
+
+        let report = validate_character(&character);
+        assert!(!report.valid);
+        assert!(codes(&report).contains(&"character.unknownTrackNode"));
+    }
+
+    #[test]
+    fn one_node_may_only_have_one_track() {
+        let mut character = animated_character();
+        let twin = character.animations[0].tracks[0].clone();
+        character.animations[0].tracks.push(twin);
+
+        let report = validate_character(&character);
+        assert!(!report.valid);
+        assert!(codes(&report).contains(&"character.duplicateTrack"));
+    }
+
+    #[test]
+    fn a_keyframe_must_land_inside_the_animation_and_on_a_frame_of_its_own() {
+        let mut character = animated_character();
+        character.animations[0].tracks[0].keyframes.push(Keyframe {
+            frame: 9,
+            transform: Transform::at(0, 1),
+            interpolation: Interpolation::Step,
+        });
+        character.animations[0].tracks[0].keyframes.push(Keyframe {
+            frame: 1,
+            transform: Transform::at(0, 3),
+            interpolation: Interpolation::Step,
+        });
+
+        let report = validate_character(&character);
+        let found = codes(&report);
+        assert!(!report.valid);
+        assert!(found.contains(&"character.keyframeOutOfRange"), "{found:?}");
+        assert!(found.contains(&"character.duplicateKeyframe"), "{found:?}");
+    }
+
+    #[test]
+    fn a_track_with_no_keyframe_is_a_warning() {
+        let mut character = animated_character();
+        character.animations[0].tracks[0].keyframes.clear();
+
+        let report = validate_character(&character);
+        assert!(report.valid);
+        assert!(codes(&report).contains(&"character.emptyTrack"));
     }
 
     #[test]

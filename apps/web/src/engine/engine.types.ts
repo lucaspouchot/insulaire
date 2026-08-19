@@ -287,8 +287,18 @@ export interface RawInsulaireEngine {
   validateCharacter(json: string): string;
   character(id: string): string;
   characterIds(): string;
-  resolveCharacter(id: string, valuesJson: string): string;
-  previewCharacter(characterJson: string, valuesJson: string): string;
+  resolveCharacter(
+    id: string,
+    valuesJson: string,
+    animation: string | undefined,
+    timeMs: number,
+  ): string;
+  previewCharacter(
+    characterJson: string,
+    valuesJson: string,
+    animation: string | undefined,
+    timeMs: number,
+  ): string;
   loadSettings(json: string): string;
   validateSettings(json: string): string;
   settings(): string;

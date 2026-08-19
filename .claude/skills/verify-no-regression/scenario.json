@@ -37,12 +37,7 @@
       "canvas": false
     },
     { "name": "editor-locale", "path": "/editor/locale", "settleMs": 2000, "canvas": false },
-    {
-      "name": "editor-character",
-      "path": "/editor/character",
-      "settleMs": 2500,
-      "canvas": false
-    },
+    { "name": "editor-character", "path": "/editor/character", "settleMs": 2500 },
     {
       "name": "play",
       "path": "/play",

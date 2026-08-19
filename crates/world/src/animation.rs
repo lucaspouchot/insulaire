@@ -1,0 +1,592 @@
+//! Animation: how a character's nodes move over time.
+//!
+//! A character is a tree of layers with a rest pose written into their boxes
+//! (`character.rs`). An animation says nothing about *what* is drawn — it is a
+//! list of **offsets from that rest pose**, per node, per frame:
+//!
+//! ```text
+//! CharacterDefinition (nodes, rest pose)  ──┐
+//!                                           ├──> resolve_at() ──> ResolvedCharacter
+//! Animation (offsets over time)  ───────────┘
+//! ```
+//!
+//! That is the whole idea, and it is what keeps a walk cycle from being thirty
+//! copies of a character: a definition with thirty layers and ten animations
+//! stores ten *lists of what moved*, not three hundred positions.
+//!
+//! # Tracks, not frames
+//!
+//! An animation is a set of [`AnimationTrack`]s — one per node that moves at
+//! all — and each holds [`Keyframe`]s at the frames where that node changes.
+//! A node with no track does not sit still: it follows its parent, because the
+//! offsets compose down the tree (`CharacterDefinition::resolve_at`). Making
+//! the body breathe is four keyframes on one track, and the head, the hair and
+//! the arms breathe with it.
+//!
+//! # Everything is whole pixels
+//!
+//! A [`Transform`] is a translation in canvas pixels and nothing else. Rotation
+//! and scale are absent on purpose: rotating pixel art resamples it, and
+//! resampling is what ADR-0029 exists to prevent
+//! (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`). The
+//! shape that leaves room for them is [`Transform`] itself — a node's local
+//! transform is *a struct*, so a rotation is a field appearing there rather
+//! than a change to what a keyframe is.
+//!
+//! # Time, not frames
+//!
+//! Evaluation takes a time in milliseconds, so the editor's preview and a game
+//! loop ask the same question of the same code. Frames are how an author
+//! *writes* an animation; milliseconds are how anything *plays* one.
+
+use std::collections::BTreeMap;
+
+use serde::{Deserialize, Serialize};
+
+/// Most frames an animation may declare.
+///
+/// A cap rather than a preference: four seconds at 60 frames a second is a long
+/// sprite animation, and a file asking for ten thousand frames is a mistake
+/// nobody wants to discover as a timeline the browser cannot draw.
+pub const MAX_ANIMATION_FRAMES: u32 = 240;
+
+/// How long one frame lasts when a file names no duration.
+///
+/// Roughly eight frames a second — the pace hand-drawn sprite animation is
+/// usually authored at, and slow enough that a four-frame idle reads as
+/// breathing rather than as a flicker.
+pub const DEFAULT_FRAME_DURATION_MS: u32 = 120;
+
+/// A translation in whole canvas pixels: `[x, y]`.
+///
+/// The same units and the same reasoning as `PixelRect`: a sprite moved by
+/// half a pixel is a sprite with a seam down its middle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct PixelOffset(pub [i32; 2]);
+
+impl PixelOffset {
+    /// An offset from its two components.
+    #[must_use]
+    pub const fn new(x: i32, y: i32) -> Self {
+        Self([x, y])
+    }
+
+    /// Horizontal component, positive to the right.
+    #[must_use]
+    pub const fn x(self) -> i32 {
+        self.0[0]
+    }
+
+    /// Vertical component, positive **downwards** — canvas coordinates.
+    #[must_use]
+    pub const fn y(self) -> i32 {
+        self.0[1]
+    }
+
+    /// `true` when this offset moves nothing.
+    #[must_use]
+    pub const fn is_zero(self) -> bool {
+        self.x() == 0 && self.y() == 0
+    }
+
+    /// The two offsets applied one after the other.
+    ///
+    /// This is what "a child inherits its parent's movement" *is*: composing
+    /// translations is adding them, so a body that drops two pixels drops
+    /// everything hanging off it by two pixels.
+    #[must_use]
+    pub const fn compose(self, other: Self) -> Self {
+        Self([self.x() + other.x(), self.y() + other.y()])
+    }
+}
+
+/// A node's transform for one keyframe, relative to its rest pose.
+///
+/// One field today. It is a struct rather than a bare offset because the model
+/// has to have somewhere for a rotation to go the day the renderer can honour
+/// one without resampling — the same reasoning that made a layer's image a
+/// `Sprite` rather than a path
+/// (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Transform {
+    /// Translation from the rest pose, in canvas pixels.
+    #[serde(default)]
+    pub offset: PixelOffset,
+}
+
+impl Transform {
+    /// A transform that only moves.
+    #[must_use]
+    pub const fn at(x: i32, y: i32) -> Self {
+        Self {
+            offset: PixelOffset::new(x, y),
+        }
+    }
+
+    /// A transform that changes nothing.
+    #[must_use]
+    pub const fn identity() -> Self {
+        Self {
+            offset: PixelOffset::new(0, 0),
+        }
+    }
+
+    /// `true` when applying this transform is the same as not applying it.
+    #[must_use]
+    pub const fn is_identity(self) -> bool {
+        self.offset.is_zero()
+    }
+
+    /// This transform applied on top of `parent`'s.
+    #[must_use]
+    pub const fn compose(self, parent: Self) -> Self {
+        Self {
+            offset: parent.offset.compose(self.offset),
+        }
+    }
+
+    /// A point `fraction` of the way from this transform to `other`.
+    ///
+    /// Rounded back to whole pixels, because that is the only thing the
+    /// renderer can draw: interpolation buys smoother *timing*, never a
+    /// fractional position.
+    #[must_use]
+    pub fn lerp(self, other: Self, fraction: f64) -> Self {
+        let mix = |from: i32, to: i32| {
+            (f64::from(from) + (f64::from(to) - f64::from(from)) * fraction).round() as i32
+        };
+        Self {
+            offset: PixelOffset::new(
+                mix(self.offset.x(), other.offset.x()),
+                mix(self.offset.y(), other.offset.y()),
+            ),
+        }
+    }
+}
+
+/// How a keyframe reaches the one after it.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize,
+)]
+#[serde(rename_all = "camelCase")]
+pub enum Interpolation {
+    /// Hold this value until the next keyframe, then jump. The default, and
+    /// what hand-drawn sprite animation actually does.
+    #[default]
+    Step,
+    /// Move evenly towards the next keyframe's value.
+    Linear,
+}
+
+/// One node's value at one frame.
+///
+/// The transform is flattened into the keyframe, so a file reads
+/// `{ "frame": 1, "offset": [0, -2] }` rather than nesting a `transform`
+/// object around two numbers. The *type* keeps the concept; the file keeps the
+/// diff readable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Keyframe {
+    /// Which frame of the animation this value is written at, `0`-based.
+    pub frame: u32,
+    /// The node's local transform at that frame.
+    #[serde(flatten, default)]
+    pub transform: Transform,
+    /// How it reaches the next keyframe of its track.
+    #[serde(default, skip_serializing_if = "is_step")]
+    pub interpolation: Interpolation,
+}
+
+fn is_step(interpolation: &Interpolation) -> bool {
+    matches!(interpolation, Interpolation::Step)
+}
+
+/// Everything one node does over the course of an animation.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnimationTrack {
+    /// Id of the layer this track drives.
+    pub node: String,
+    /// The values it takes, at the frames it takes them.
+    #[serde(default)]
+    pub keyframes: Vec<Keyframe>,
+}
+
+impl AnimationTrack {
+    /// The local transform this track holds at `position`, in frames.
+    ///
+    /// Outside its keyframes the track *holds*: before the first it is the
+    /// first value, after the last it is the last one. That is what lets a
+    /// track say "the arm swings between frames 2 and 5" without also having
+    /// to say what it does for the rest of the animation.
+    ///
+    /// `wrap` is the animation's length in frames for a looping animation, so
+    /// a `Linear` track can travel from its last keyframe back to its first
+    /// rather than snapping.
+    #[must_use]
+    pub fn transform_at(&self, position: f64, wrap: Option<f64>) -> Transform {
+        let Some(previous) = self.previous(position) else {
+            // Every value lies ahead: hold the first one.
+            return self
+                .keyframes
+                .iter()
+                .min_by_key(|keyframe| keyframe.frame)
+                .map(|keyframe| keyframe.transform)
+                .unwrap_or_default();
+        };
+        if previous.interpolation == Interpolation::Step {
+            return previous.transform;
+        }
+
+        let Some((next, at)) = self.next(previous.frame, wrap) else {
+            return previous.transform;
+        };
+        let span = at - f64::from(previous.frame);
+        if span <= 0.0 {
+            return previous.transform;
+        }
+        let fraction = ((position - f64::from(previous.frame)) / span).clamp(0.0, 1.0);
+        previous.transform.lerp(next.transform, fraction)
+    }
+
+    /// The last keyframe at or before `position`.
+    fn previous(&self, position: f64) -> Option<&Keyframe> {
+        self.keyframes
+            .iter()
+            .filter(|keyframe| f64::from(keyframe.frame) <= position)
+            // Ties go to whichever was written last, the same rule a duplicate
+            // anything follows here — and validation reports the duplicate.
+            .reduce(|best, keyframe| {
+                if keyframe.frame >= best.frame {
+                    keyframe
+                } else {
+                    best
+                }
+            })
+    }
+
+    /// The keyframe after `frame`, and the position it sits at.
+    ///
+    /// For a looping animation with nothing after it, that is the *first*
+    /// keyframe, one full length away.
+    fn next(&self, frame: u32, wrap: Option<f64>) -> Option<(&Keyframe, f64)> {
+        let ahead = self
+            .keyframes
+            .iter()
+            .filter(|keyframe| keyframe.frame > frame)
+            .min_by_key(|keyframe| keyframe.frame);
+        if let Some(keyframe) = ahead {
+            return Some((keyframe, f64::from(keyframe.frame)));
+        }
+        let length = wrap?;
+        let first = self
+            .keyframes
+            .iter()
+            .min_by_key(|keyframe| keyframe.frame)?;
+        Some((first, f64::from(first.frame) + length))
+    }
+}
+
+/// A named movement a character can play.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Animation {
+    /// Stable id, unique within the definition — `idle`, `walk`, `attack`.
+    pub id: String,
+    /// Name shown in the editor. Not player-facing text, so not a key.
+    #[serde(default)]
+    pub name: String,
+    /// How many frames long it is, `1..=`[`MAX_ANIMATION_FRAMES`].
+    pub frames: u32,
+    /// How long each frame lasts, in milliseconds.
+    #[serde(default = "default_frame_duration")]
+    pub frame_duration_ms: u32,
+    /// Whether it starts again when it ends.
+    #[serde(default)]
+    pub looping: bool,
+    /// What moves, and when. A node with no track follows its parent.
+    #[serde(default)]
+    pub tracks: Vec<AnimationTrack>,
+}
+
+const fn default_frame_duration() -> u32 {
+    DEFAULT_FRAME_DURATION_MS
+}
+
+impl Default for Animation {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            name: String::new(),
+            frames: 1,
+            frame_duration_ms: DEFAULT_FRAME_DURATION_MS,
+            looping: false,
+            tracks: Vec::new(),
+        }
+    }
+}
+
+impl Animation {
+    /// How long one pass through it takes, in milliseconds.
+    #[must_use]
+    pub const fn duration_ms(&self) -> u32 {
+        self.frames.saturating_mul(self.frame_duration_ms)
+    }
+
+    /// The track driving this node, if the animation has one.
+    #[must_use]
+    pub fn track(&self, node: &str) -> Option<&AnimationTrack> {
+        self.tracks.iter().find(|track| track.node == node)
+    }
+
+    /// Where in the animation this time lands, measured in frames.
+    ///
+    /// A looping animation wraps; one that does not stops **inside** its last
+    /// frame rather than one past the end, so a finished animation shows the
+    /// pose it finished on.
+    #[must_use]
+    pub fn position_at(&self, time_ms: u32) -> f64 {
+        let duration = self.duration_ms();
+        if duration == 0 || self.frame_duration_ms == 0 {
+            return 0.0;
+        }
+        let elapsed = if self.looping {
+            time_ms % duration
+        } else {
+            time_ms.min(duration - 1)
+        };
+        f64::from(elapsed) / f64::from(self.frame_duration_ms)
+    }
+
+    /// The frame this time falls in, `0`-based.
+    #[must_use]
+    pub fn frame_at(&self, time_ms: u32) -> u32 {
+        self.position_at(time_ms).floor() as u32
+    }
+
+    /// When a frame starts, in milliseconds — the inverse of [`Self::frame_at`].
+    ///
+    /// What a timeline scrubs to: clicking frame 3 has to mean a time, and the
+    /// time it means is the beginning of that frame.
+    #[must_use]
+    pub const fn time_of(&self, frame: u32) -> u32 {
+        frame.saturating_mul(self.frame_duration_ms)
+    }
+
+    /// Every node's **local** transform at this time.
+    ///
+    /// Local, not global: composing them down the tree needs the hierarchy,
+    /// which is the definition's, not the animation's
+    /// (`CharacterDefinition::resolve_at`).
+    #[must_use]
+    pub fn local_transforms(&self, time_ms: u32) -> BTreeMap<&str, Transform> {
+        let position = self.position_at(time_ms);
+        let wrap = self.looping.then(|| f64::from(self.frames));
+        self.tracks
+            .iter()
+            .filter(|track| !track.keyframes.is_empty())
+            .map(|track| (track.node.as_str(), track.transform_at(position, wrap)))
+            .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The breathing idle of `docs/implementing-character-animator.md`, §10.
+    fn idle() -> Animation {
+        serde_json::from_str(
+            r#"{
+                "id": "idle", "name": "Idle", "frames": 4,
+                "frameDurationMs": 120, "looping": true,
+                "tracks": [
+                    { "node": "body", "keyframes": [
+                        { "frame": 0, "offset": [0, 0] },
+                        { "frame": 1, "offset": [0, -2] },
+                        { "frame": 2, "offset": [0, 0] },
+                        { "frame": 3, "offset": [0, 2] }
+                    ] }
+                ]
+            }"#,
+        )
+        .expect("parse")
+    }
+
+    #[test]
+    fn an_animation_parses_and_round_trips() {
+        let animation = idle();
+        assert_eq!(animation.frames, 4);
+        assert_eq!(animation.frame_duration_ms, 120);
+        assert!(animation.looping);
+        assert_eq!(animation.duration_ms(), 480);
+
+        let reparsed: Animation =
+            serde_json::from_str(&serde_json::to_string(&animation).expect("serialise"))
+                .expect("reparse");
+        assert_eq!(animation, reparsed);
+    }
+
+    /// The transform is flattened, so a keyframe is one readable line.
+    #[test]
+    fn a_keyframe_writes_its_offset_beside_its_frame() {
+        let keyframe = Keyframe {
+            frame: 3,
+            transform: Transform::at(1, -2),
+            interpolation: Interpolation::Step,
+        };
+        let json = serde_json::to_string(&keyframe).expect("serialise");
+        assert_eq!(json, r#"{"frame":3,"offset":[1,-2]}"#);
+    }
+
+    #[test]
+    fn a_file_that_names_no_duration_gets_the_default_one() {
+        let animation: Animation =
+            serde_json::from_str(r#"{ "id": "hurt", "frames": 2 }"#).expect("parse");
+        assert_eq!(animation.frame_duration_ms, DEFAULT_FRAME_DURATION_MS);
+        assert!(!animation.looping);
+        assert!(animation.tracks.is_empty());
+    }
+
+    #[test]
+    fn time_maps_onto_the_frame_it_falls_in() {
+        let animation = idle();
+        assert_eq!(animation.frame_at(0), 0);
+        assert_eq!(animation.frame_at(119), 0);
+        assert_eq!(animation.frame_at(120), 1);
+        assert_eq!(animation.frame_at(359), 2);
+        assert_eq!(animation.time_of(3), 360);
+    }
+
+    /// §20: `time > duration` comes back to the beginning.
+    #[test]
+    fn a_looping_animation_wraps_and_a_finished_one_holds_its_last_frame() {
+        let animation = idle();
+        assert_eq!(animation.frame_at(480), 0);
+        assert_eq!(animation.frame_at(600), 1);
+        assert_eq!(animation.frame_at(4_800), 0);
+
+        let mut once = idle();
+        once.looping = false;
+        assert_eq!(once.frame_at(480), 3);
+        assert_eq!(once.frame_at(100_000), 3);
+        assert_eq!(once.local_transforms(100_000)["body"], Transform::at(0, 2));
+    }
+
+    #[test]
+    fn each_frame_of_the_idle_holds_the_value_written_at_it() {
+        let animation = idle();
+        let body_at = |time| animation.local_transforms(time)["body"].offset;
+
+        assert_eq!(body_at(0), PixelOffset::new(0, 0));
+        assert_eq!(body_at(120), PixelOffset::new(0, -2));
+        assert_eq!(body_at(240), PixelOffset::new(0, 0));
+        assert_eq!(body_at(360), PixelOffset::new(0, 2));
+        // And around again, unchanged.
+        assert_eq!(body_at(480), PixelOffset::new(0, 0));
+    }
+
+    /// Step is the default, so a frame holds its value until the next one.
+    #[test]
+    fn a_step_track_holds_its_value_across_the_whole_frame() {
+        let animation = idle();
+        assert_eq!(
+            animation.local_transforms(120).get("body"),
+            animation.local_transforms(239).get("body"),
+        );
+    }
+
+    #[test]
+    fn a_linear_track_travels_between_its_keyframes() {
+        let animation: Animation = serde_json::from_str(
+            r#"{ "id": "rise", "frames": 2, "frameDurationMs": 100, "tracks": [
+                { "node": "body", "keyframes": [
+                    { "frame": 0, "offset": [0, 0], "interpolation": "linear" },
+                    { "frame": 1, "offset": [0, -10] }
+                ] } ] }"#,
+        )
+        .expect("parse");
+
+        let body_at = |time| animation.local_transforms(time)["body"].offset.y();
+        assert_eq!(body_at(0), 0);
+        assert_eq!(body_at(50), -5);
+        assert_eq!(body_at(100), -10);
+        // Past the last keyframe it holds, and this animation does not loop.
+        assert_eq!(body_at(199), -10);
+    }
+
+    /// A looping linear track travels back to its first value rather than
+    /// snapping — otherwise every loop has a visible jolt in it.
+    #[test]
+    fn a_looping_linear_track_returns_to_its_first_keyframe() {
+        let animation: Animation = serde_json::from_str(
+            r#"{ "id": "bob", "frames": 2, "frameDurationMs": 100, "looping": true, "tracks": [
+                { "node": "body", "keyframes": [
+                    { "frame": 0, "offset": [0, 0], "interpolation": "linear" },
+                    { "frame": 1, "offset": [0, -4], "interpolation": "linear" }
+                ] } ] }"#,
+        )
+        .expect("parse");
+
+        let body_at = |time| animation.local_transforms(time)["body"].offset.y();
+        assert_eq!(body_at(100), -4);
+        assert_eq!(body_at(150), -2);
+        assert_eq!(body_at(200), 0);
+    }
+
+    /// A track that starts late holds its first value rather than snapping in
+    /// from nowhere.
+    #[test]
+    fn a_track_holds_its_first_value_before_its_first_keyframe() {
+        let animation: Animation = serde_json::from_str(
+            r#"{ "id": "late", "frames": 4, "frameDurationMs": 100, "tracks": [
+                { "node": "arm", "keyframes": [ { "frame": 2, "offset": [3, 0] } ] } ] }"#,
+        )
+        .expect("parse");
+        assert_eq!(animation.local_transforms(0)["arm"], Transform::at(3, 0));
+        assert_eq!(animation.local_transforms(300)["arm"], Transform::at(3, 0));
+    }
+
+    #[test]
+    fn an_empty_track_yields_nothing_rather_than_an_identity() {
+        let animation: Animation = serde_json::from_str(
+            r#"{ "id": "empty", "frames": 2, "tracks": [ { "node": "arm" } ] }"#,
+        )
+        .expect("parse");
+        assert!(animation.local_transforms(0).is_empty());
+    }
+
+    /// §25: same time, same data, same answer — every time.
+    #[test]
+    fn evaluation_is_deterministic() {
+        let animation = idle();
+        for time in [0_u32, 37, 120, 359, 480, 1_234, 99_999] {
+            assert_eq!(
+                animation.local_transforms(time),
+                animation.local_transforms(time),
+            );
+        }
+    }
+
+    #[test]
+    fn a_zero_length_animation_evaluates_rather_than_dividing_by_zero() {
+        let animation = Animation {
+            id: "broken".to_owned(),
+            frames: 0,
+            frame_duration_ms: 0,
+            ..Animation::default()
+        };
+        assert_eq!(animation.duration_ms(), 0);
+        assert_eq!(animation.frame_at(500), 0);
+        assert!(animation.local_transforms(500).is_empty());
+    }
+
+    #[test]
+    fn offsets_compose_by_adding() {
+        let parent = Transform::at(0, -2);
+        let child = Transform::at(1, 0);
+        assert_eq!(child.compose(parent), Transform::at(1, -2));
+        assert!(Transform::identity().is_identity());
+    }
+}

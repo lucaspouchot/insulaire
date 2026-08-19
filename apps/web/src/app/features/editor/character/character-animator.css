@@ -1,0 +1,265 @@
+/* The animation editor: a list, a few settings, a timeline and one transform.
+
+   It is styled as a panel of the character editor rather than as a screen of
+   its own, because it edits the same document — the tokens and the panel shape
+   are `character-editor-page.css`'s, deliberately. */
+:host {
+  display: block;
+}
+
+.panel {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+}
+
+.panel h2 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+
+.panel h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.hint {
+  margin: 4px 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.row.check {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.row input[type='number'],
+.row input[type='text'],
+.row select {
+  width: 100%;
+}
+
+.pair {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pair input {
+  width: 72px;
+}
+
+.pair .unit {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.pick-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 5px 8px;
+  text-align: left;
+  font-size: 12px;
+}
+
+.pick-row.on {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+}
+
+.pick-row .name {
+  flex: 1;
+}
+
+.pick-row .tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.add {
+  display: flex;
+  gap: 6px;
+  margin: 6px 0;
+}
+
+.add button {
+  font-size: 12px;
+}
+
+.remove {
+  color: var(--error);
+}
+
+.settings {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+/* Transport: step, play, step, and where we are. */
+.transport {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.transport .play {
+  min-width: 68px;
+}
+
+.transport .readout {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.transport .speed {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* The timeline itself. Wide animations scroll inside it rather than widening
+   the panel, which is what keeps the form usable at 240 frames. */
+.timeline {
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.grid {
+  display: grid;
+  min-width: min-content;
+  gap: 2px;
+}
+
+.head,
+.track {
+  display: grid;
+  grid-template-columns: 96px repeat(var(--frames), 20px);
+  align-items: center;
+  gap: 2px;
+}
+
+.head .tick {
+  padding: 0;
+  height: 16px;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.head .tick.on {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.node-name {
+  overflow: hidden;
+  padding: 2px 6px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.node-name.muted {
+  color: var(--text-dim);
+}
+
+.track.selected .node-name {
+  color: var(--accent);
+}
+
+/* A cell is a frame of a node: empty, held by an earlier keyframe, or written
+   at. The three states are what makes a step animation legible at a glance. */
+.cell {
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--bg);
+  cursor: pointer;
+}
+
+.cell.held {
+  background: var(--bg-raised);
+}
+
+.cell.key {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.cell.at {
+  outline: 1px solid var(--warn);
+  outline-offset: 1px;
+}
+
+.cell:hover {
+  border-color: var(--accent-dim);
+}
+
+/* The one place local and global sit side by side. */
+.transform {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.computed {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 6px 0;
+  font-size: 11px;
+}
+
+.computed .label {
+  color: var(--text-dim);
+}
+
+.computed .value {
+  font-family: var(--mono);
+  color: var(--text);
+}
+
+.computed .from {
+  color: var(--text-dim);
+}

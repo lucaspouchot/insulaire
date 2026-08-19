@@ -1,0 +1,246 @@
+@let open = animation();
+
+<section class="panel animator">
+  <h2>{{ 'ui.editor.character.animations' | t }}</h2>
+
+  <div class="picks">
+    @for (entry of animations(); track entry.id) {
+      <button
+        type="button"
+        class="pick-row"
+        [class.on]="entry.id === open?.id"
+        (click)="pick(entry.id)"
+      >
+        <span class="name">{{ entry.name || entry.id }}</span>
+        <span class="tag">
+          {{ 'ui.editor.character.frameCount' | t: { count: entry.frames } }}
+          @if (entry.looping) {
+            · {{ 'ui.editor.character.loops' | t }}
+          }
+        </span>
+      </button>
+    }
+    @if (animations().length === 0) {
+      <p class="hint">{{ 'ui.editor.character.noAnimations' | t }}</p>
+    }
+  </div>
+
+  <div class="add">
+    <button type="button" [disabled]="!writable()" (click)="addAnimation()">
+      {{ 'ui.editor.character.addAnimation' | t }}
+    </button>
+    @if (open !== null) {
+      <button type="button" class="remove" [disabled]="!writable()" (click)="removeAnimation()">
+        {{ 'ui.editor.character.removeAnimation' | t }}
+      </button>
+    }
+  </div>
+
+  @if (open !== null) {
+    <div class="settings">
+      <label class="row">
+        <span>{{ 'ui.editor.character.id' | t }}</span>
+        <input type="text" [value]="open.id" (change)="setAnimationId($any($event.target).value)" />
+      </label>
+      <label class="row">
+        <span>{{ 'ui.editor.character.name' | t }}</span>
+        <input
+          type="text"
+          [value]="open.name ?? ''"
+          (change)="setName($any($event.target).value)"
+        />
+      </label>
+      <label class="row">
+        <span>{{ 'ui.editor.character.frames' | t }}</span>
+        <input
+          type="number"
+          min="1"
+          [max]="maxFrames"
+          [value]="open.frames"
+          (change)="setFrames($any($event.target).value)"
+        />
+      </label>
+      <label class="row">
+        <span>{{ 'ui.editor.character.frameDuration' | t }}</span>
+        <span class="pair">
+          <input
+            type="number"
+            min="1"
+            [value]="open.frameDurationMs ?? 120"
+            (change)="setFrameDuration($any($event.target).value)"
+          />
+          <span class="unit">ms</span>
+        </span>
+      </label>
+      <label class="row check">
+        <input
+          type="checkbox"
+          [checked]="open.looping === true"
+          (change)="setLooping($any($event.target).checked)"
+        />
+        <span>{{ 'ui.editor.character.looping' | t }}</span>
+      </label>
+    </div>
+
+    <!-- Transport. The frame readout is the engine's, not a count kept here. -->
+    <div class="transport">
+      <button
+        type="button"
+        [attr.aria-label]="'ui.editor.character.previousFrame' | t"
+        [title]="'ui.editor.character.previousFrame' | t"
+        (click)="step(-1)"
+      >
+        ◀
+      </button>
+      <button type="button" class="play" (click)="playToggled.emit()">
+        {{ (playing() ? 'ui.editor.character.pause' : 'ui.editor.character.play') | t }}
+      </button>
+      <button
+        type="button"
+        [attr.aria-label]="'ui.editor.character.nextFrame' | t"
+        [title]="'ui.editor.character.nextFrame' | t"
+        (click)="step(1)"
+      >
+        ▶
+      </button>
+      <span class="readout">
+        {{ 'ui.editor.character.frameOf' | t: { frame: frame(), total: open.frames } }}
+      </span>
+      <label class="speed">
+        <span>{{ 'ui.editor.character.speed' | t }}</span>
+        <select (change)="setSpeed($any($event.target).value)">
+          @for (option of speeds; track option) {
+            <option [value]="option" [selected]="option === speed()">{{ option }}×</option>
+          }
+        </select>
+      </label>
+    </div>
+
+    <!--
+      The timeline. One row per layer — including the ones that do not move,
+      because a node with no track is exactly the one about to get one.
+    -->
+    <div class="timeline" role="grid">
+      <div class="grid" [style.--frames]="open.frames">
+        <div class="head" role="row">
+          <span class="node-name"></span>
+          @for (index of frames(); track index) {
+            <button
+              type="button"
+              class="tick"
+              [class.on]="index === frame()"
+              (click)="framePicked.emit(index)"
+            >
+              {{ index }}
+            </button>
+          }
+        </div>
+        @for (row of timeline(); track row.node) {
+          <div class="track" role="row" [class.selected]="row.node === node()">
+            <button
+              type="button"
+              class="node-name"
+              [style.padding-left.px]="6 + row.depth * 10"
+              [class.muted]="!row.tracked"
+              (click)="nodePicked.emit(row.node)"
+            >
+              {{ row.node }}
+            </button>
+            @for (cell of row.cells; track cell.frame) {
+              <button
+                type="button"
+                class="cell"
+                [class.key]="cell.key"
+                [class.held]="cell.held"
+                [class.at]="cell.frame === frame()"
+                [attr.aria-label]="
+                  'ui.editor.character.cellLabel' | t: { node: row.node, frame: cell.frame }
+                "
+                (click)="select(row.node, cell.frame)"
+              ></button>
+            }
+          </div>
+        }
+      </div>
+    </div>
+
+    <!-- The transform of one node at one frame: local, and what it became. -->
+    @if (node(); as selected) {
+      <div class="transform">
+        <h3>{{ 'ui.editor.character.transformOf' | t: { node: selected } }}</h3>
+        <p class="hint">{{ 'ui.editor.character.localHint' | t }}</p>
+        <label class="row">
+          <span>{{ 'ui.editor.character.localOffset' | t }}</span>
+          <span class="pair">
+            <input
+              type="number"
+              [value]="local()[0]"
+              [disabled]="!writable()"
+              [attr.aria-label]="'ui.editor.character.offsetX' | t"
+              (change)="setOffset(0, $any($event.target).value)"
+            />
+            <input
+              type="number"
+              [value]="local()[1]"
+              [disabled]="!writable()"
+              [attr.aria-label]="'ui.editor.character.offsetY' | t"
+              (change)="setOffset(1, $any($event.target).value)"
+            />
+            <span class="unit">px</span>
+          </span>
+        </label>
+
+        @if (global(); as computedOffset) {
+          <p class="computed">
+            <span class="label">{{ 'ui.editor.character.globalOffset' | t }}</span>
+            <span class="value">{{ computedOffset[0] }}, {{ computedOffset[1] }}</span>
+            @if (inherited(); as fromParent) {
+              <span class="from">
+                {{
+                  'ui.editor.character.inheritedFrom'
+                    | t: { x: fromParent[0], y: fromParent[1] }
+                }}
+              </span>
+            }
+          </p>
+        }
+
+        @if (keyframe(); as written) {
+          <label class="row">
+            <span>{{ 'ui.editor.character.interpolation' | t }}</span>
+            <select
+              [disabled]="!writable()"
+              (change)="setInterpolation($any($event.target).value)"
+            >
+              <option value="step" [selected]="(written.interpolation ?? 'step') === 'step'">
+                {{ 'ui.editor.character.step' | t }}
+              </option>
+              <option value="linear" [selected]="written.interpolation === 'linear'">
+                {{ 'ui.editor.character.linear' | t }}
+              </option>
+            </select>
+          </label>
+          <div class="add">
+            <button type="button" class="remove" [disabled]="!writable()" (click)="removeKeyframe()">
+              {{ 'ui.editor.character.removeKeyframe' | t }}
+            </button>
+            @if (track()) {
+              <button type="button" class="remove" [disabled]="!writable()" (click)="removeTrack()">
+                {{ 'ui.editor.character.removeTrack' | t }}
+              </button>
+            }
+          </div>
+        } @else {
+          <div class="add">
+            <button type="button" [disabled]="!writable()" (click)="addKeyframe()">
+              {{ 'ui.editor.character.addKeyframe' | t: { frame: frame() } }}
+            </button>
+          </div>
+          <p class="hint">{{ 'ui.editor.character.noKeyframeHint' | t }}</p>
+        }
+      </div>
+    } @else {
+      <p class="hint">{{ 'ui.editor.character.pickNode' | t }}</p>
+    }
+  }
+</section>

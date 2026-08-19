@@ -601,12 +601,14 @@ impl Engine {
         self.content.character_ids()
     }
 
-    /// Resolves a definition **passed in** against a customisation.
+    /// Resolves a definition **passed in** against a customisation, at a moment
+    /// of an animation.
     ///
     /// The editor's door: it holds a definition that is being written and is
     /// not registered — may not even be valid yet — and still has to show what
     /// it draws. Resolution is total, so an incomplete definition previews as
-    /// whatever it currently is rather than as an error
+    /// whatever it currently is rather than as an error, and an animation id it
+    /// no longer declares previews as the rest pose
     /// (`docs/adr/ADR-0028-character-definitions.md`).
     ///
     /// # Errors
@@ -616,6 +618,8 @@ impl Engine {
         &self,
         character_json: &str,
         values_json: &str,
+        animation: Option<&str>,
+        time_ms: u32,
     ) -> Result<ResolvedCharacter, EngineError> {
         let character: CharacterDefinition =
             serde_json::from_str(character_json).map_err(|source| EngineError::Parse {
@@ -627,14 +631,19 @@ impl Engine {
                 what: "character values".to_owned(),
                 message: source.to_string(),
             })?;
-        Ok(character.resolve(&values))
+        Ok(character.resolve_at(&values, animation, time_ms))
     }
 
-    /// Turns a definition plus a customisation into something drawable.
+    /// Turns a definition, a customisation and a moment of an animation into
+    /// something drawable.
     ///
     /// The whole of character rendering that is not the renderer: the editor's
     /// preview and the game call this, so what an author sees while editing is
-    /// what a player will see (`docs/adr/ADR-0028-character-definitions.md`).
+    /// what a player will see (`docs/adr/ADR-0028-character-definitions.md`,
+    /// `docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+    ///
+    /// `animation` of `None` is the rest pose, and `time_ms` counts from the
+    /// moment the animation started.
     ///
     /// # Errors
     ///
@@ -644,13 +653,16 @@ impl Engine {
         &self,
         id: &str,
         values_json: &str,
+        animation: Option<&str>,
+        time_ms: u32,
     ) -> Result<ResolvedCharacter, EngineError> {
         let values: serde_json::Value =
             serde_json::from_str(values_json).map_err(|source| EngineError::Parse {
                 what: "character values".to_owned(),
                 message: source.to_string(),
             })?;
-        self.content.resolve_character(id, &values)
+        self.content
+            .resolve_character(id, &values, animation, time_ms)
     }
 
     /// Discards the running game, if any.

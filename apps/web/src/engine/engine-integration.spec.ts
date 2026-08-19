@@ -502,7 +502,7 @@ describe.skipIf(!built)('engine boundary', () => {
     ]);
 
     const resolved = JSON.parse(
-      instance.resolveCharacter('human_player', JSON.stringify({ hairColor: '#f2c14e' })),
+      instance.resolveCharacter('human_player', JSON.stringify({ hairColor: '#f2c14e' }), undefined, 0),
     ) as ResolvedCharacter;
     expect(resolved.layers.map((layer) => layer.layer)).toEqual([
       'cape',
@@ -522,7 +522,7 @@ describe.skipIf(!built)('engine boundary', () => {
 
     // A choice swaps a variant, and every box is whole pixels inside the canvas.
     const plated = JSON.parse(
-      instance.resolveCharacter('human_player', JSON.stringify({ armor: 'plate' })),
+      instance.resolveCharacter('human_player', JSON.stringify({ armor: 'plate' }), undefined, 0),
     ) as ResolvedCharacter;
     expect(plated.layers.find((layer) => layer.layer === 'top')?.variant).toBe('plate');
     for (const layer of plated.layers) {
@@ -536,9 +536,65 @@ describe.skipIf(!built)('engine boundary', () => {
 
     // Turning the cape off removes the layer rather than drawing nothing.
     const bare = JSON.parse(
-      instance.resolveCharacter('human_player', JSON.stringify({ cape: false })),
+      instance.resolveCharacter('human_player', JSON.stringify({ cape: false }), undefined, 0),
     ) as ResolvedCharacter;
     expect(bare.layers.some((layer) => layer.layer === 'cape')).toBe(false);
+  });
+
+  /**
+   * The animation pipeline, end to end and through the real types: one track
+   * moves the body, the hierarchy moves what hangs off it, and the boots stay
+   * on the ground (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+   */
+  it('plays the shipped idle through the layer hierarchy', () => {
+    const instance = engine();
+    loadShippedCharacters(instance);
+
+    const definition = JSON.parse(
+      instance.character('human_player'),
+    ) as CharacterDefinition;
+    const idle = definition.animations?.find((animation) => animation.id === 'idle');
+    expect(idle?.looping).toBe(true);
+    expect(idle?.frames).toBe(4);
+    // Two tracks for seven layers: the rest move because of the tree.
+    expect(idle?.tracks).toHaveLength(2);
+
+    const at = (timeMs: number): ResolvedCharacter =>
+      JSON.parse(instance.resolveCharacter('human_player', '{}', 'idle', timeMs)) as
+        ResolvedCharacter;
+    const offsetOf = (resolved: ResolvedCharacter, layer: string): number =>
+      resolved.layers.find((drawn) => drawn.layer === layer)?.offset[1] ?? Number.NaN;
+
+    const rest = at(0);
+    expect(rest.pose).toEqual({ animation: 'idle', frame: 0, timeMs: 0 });
+    expect(rest.layers.every((layer) => layer.offset[0] === 0 && layer.offset[1] === 0)).toBe(true);
+
+    // Frame 1: the top of the breath.
+    const duration = (idle?.frameDurationMs ?? 0) as number;
+    const up = at(duration);
+    expect(up.pose?.frame).toBe(1);
+    for (const layer of ['body', 'cape', 'hairBack', 'hairFront', 'top', 'skirt']) {
+      expect(offsetOf(up, layer)).toBe(-1);
+    }
+    expect(offsetOf(up, 'boots')).toBe(0);
+
+    // Frame 3: the hair's own keyframe adds to what it inherited.
+    const down = at(duration * 3);
+    expect(offsetOf(down, 'body')).toBe(1);
+    expect(offsetOf(down, 'hairFront')).toBe(2);
+    // The offset is already in the box the renderer draws.
+    const body = down.layers.find((layer) => layer.layer === 'body');
+    const restBody = rest.layers.find((layer) => layer.layer === 'body');
+    expect(body?.rect[1]).toBe((restBody?.rect[1] ?? 0) + 1);
+
+    // It loops: a whole cycle later it is the same picture.
+    expect(at(duration * 4 * 5).layers).toEqual(rest.layers);
+
+    // An id the definition does not declare is the rest pose, not an error.
+    const unknown = JSON.parse(
+      instance.resolveCharacter('human_player', '{}', 'walk', 3_000),
+    ) as ResolvedCharacter;
+    expect(unknown.pose).toBeUndefined();
   });
 
   /** What the editor previews with: a definition in hand, not registered. */
@@ -552,7 +608,7 @@ describe.skipIf(!built)('engine boundary', () => {
 
     // Previewing is total, so a definition that cannot load still draws.
     const resolved = JSON.parse(
-      instance.previewCharacter(JSON.stringify(definition), '{}'),
+      instance.previewCharacter(JSON.stringify(definition), '{}', undefined, 0),
     ) as ResolvedCharacter;
     expect(resolved.layers).toHaveLength(7);
 

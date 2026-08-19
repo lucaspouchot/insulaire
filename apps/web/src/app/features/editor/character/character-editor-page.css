@@ -342,7 +342,57 @@ button.small {
 }
 
 .paint .label,
+/* The skeleton toggle and the pose readout sit under the stage, so what is
+   drawn over the character has its switch next to it. */
+.stage .line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.stage button.toggle {
+  flex: 0 0 auto;
+  font-size: 12px;
+}
+
+.stage .toggle.on {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+}
+
+.stage .pose {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
 .paint .readout {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* The skeleton toggle and the pose readout sit under the stage, so what is
+   drawn over the character has its switch next to it. */
+.stage .line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.stage button.toggle {
+  flex: 0 0 auto;
+  font-size: 12px;
+}
+
+.stage .toggle.on {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+}
+
+.stage .pose {
+  font-family: var(--mono);
   font-size: 11px;
   color: var(--text-dim);
 }

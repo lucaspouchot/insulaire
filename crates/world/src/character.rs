@@ -39,18 +39,32 @@
 //! an unknown option or an out-of-range number means the same thing here as it
 //! does there.
 //!
+//! # Layers are nodes
+//!
+//! A layer is also a **node of a tree**: it may name a [`CharacterLayer::parent`],
+//! and an animation's offsets compose down that tree, so a body that drops two
+//! pixels takes the head, the hair and everything attached to them with it
+//! (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+//!
+//! The tree is **not** the draw order. Layers are still drawn in author order,
+//! back to front, and `parent` is a separate reference — a head is drawn over a
+//! body *and* hangs off it, and those are two different statements.
+//!
 //! # What is deliberately absent
 //!
-//! Animation. A variant names one image, and a character is a still frame
-//! today. The shape that leaves room for the rest is [`Sprite`]: a layer
-//! resolves to *a sprite*, so frames, directions and sheet coordinates are
-//! fields appearing there rather than a change to what a definition is.
+//! Rotation and scale. A [`crate::animation::Transform`] translates in whole
+//! pixels, because rotating or non-integrally scaling pixel art resamples it,
+//! which is the thing ADR-0029 exists to prevent. The shape that leaves room
+//! for them is the transform itself: a node's local transform is a struct, so
+//! a rotation is a field appearing there rather than a change to what a
+//! keyframe is.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::animation::{Animation, PixelOffset, Transform};
 use crate::settings::{resolve_controls, ControlDefinition};
 
 /// Highest character schema version this build understands.
@@ -177,6 +191,17 @@ impl PixelRect {
         self.0[3]
     }
 
+    /// This box translated by an animation offset, keeping its size.
+    #[must_use]
+    pub const fn moved(self, offset: PixelOffset) -> Self {
+        Self([
+            self.x() + offset.x(),
+            self.y() + offset.y(),
+            self.width(),
+            self.height(),
+        ])
+    }
+
     /// `true` when the box lies entirely inside a canvas of this size.
     #[must_use]
     pub const fn fits(self, resolution: SpriteResolution) -> bool {
@@ -277,16 +302,50 @@ fn holds(held: &Value, required: &Value) -> bool {
     }
 }
 
+/// A named point on a layer, for another layer to hang off.
+///
+/// `at` is a position on the character's canvas, in the same pixels every other
+/// coordinate here is in — the *neck*, the *hair line*, the *grip of a hand*.
+///
+/// An attachment point does not move anything on its own. It exists so a
+/// parent/child link can be authored as "the head's hair anchor" instead of a
+/// pair of coordinates nobody can check, so the editor can draw the skeleton
+/// through the joints rather than through the corners of boxes, and because it
+/// is the pivot a rotation will turn about the day there is one
+/// (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachmentPoint {
+    /// Stable id, unique within its layer.
+    pub id: String,
+    /// Where it sits on the canvas, in pixels.
+    #[serde(default)]
+    pub at: PixelOffset,
+}
+
 /// One piece a character is drawn from — a body, a head, a wing, a weapon.
 ///
 /// Layers are drawn in author order, back to front. Which *variant* of a layer
 /// is drawn depends on the customisation; a layer whose variants all fail draws
 /// nothing, which is how an optional piece is authored.
+///
+/// A layer is also a **node**: [`Self::parent`] makes it hang off another one,
+/// and an animation's offsets compose down that tree. Parentage and draw order
+/// are independent — a cape is drawn behind the body and still moves with it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CharacterLayer {
     /// Stable id, unique within the definition.
     pub id: String,
+    /// Id of the layer this one hangs off. Absent makes it a root.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
+    /// Which of the parent's [`Self::anchors`] it hangs off, if it names one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_anchor: Option<String>,
+    /// Points other layers may hang off.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub anchors: Vec<AttachmentPoint>,
     /// The appearances it can take, most specific first.
     #[serde(default)]
     pub variants: Vec<LayerVariant>,
@@ -301,6 +360,12 @@ impl CharacterLayer {
     #[must_use]
     pub fn variant_for(&self, values: &BTreeMap<String, Value>) -> Option<&LayerVariant> {
         self.variants.iter().find(|variant| variant.matches(values))
+    }
+
+    /// The attachment point with this id, if this layer declares it.
+    #[must_use]
+    pub fn anchor(&self, id: &str) -> Option<&AttachmentPoint> {
+        self.anchors.iter().find(|anchor| anchor.id == id)
     }
 }
 
@@ -330,6 +395,10 @@ pub struct CharacterDefinition {
     /// The pieces it is drawn from, back to front.
     #[serde(default)]
     pub layers: Vec<CharacterLayer>,
+    /// The movements it can play. A definition may declare none, and a still
+    /// character is what one with none resolves to.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub animations: Vec<Animation>,
 }
 
 impl CharacterDefinition {
@@ -343,6 +412,12 @@ impl CharacterDefinition {
     #[must_use]
     pub fn layer(&self, id: &str) -> Option<&CharacterLayer> {
         self.layers.iter().find(|layer| layer.id == id)
+    }
+
+    /// The animation with this id, if it is declared.
+    #[must_use]
+    pub fn animation(&self, id: &str) -> Option<&Animation> {
+        self.animations.iter().find(|animation| animation.id == id)
     }
 
     /// Fills in defaults, drops what is not declared, and clamps what is.
@@ -377,23 +452,58 @@ impl CharacterDefinition {
 
     /// Turns this definition plus a customisation into something drawable.
     ///
-    /// This is the whole of "character rendering" outside the renderer: pick a
-    /// variant per layer, place it, resolve its tint. It is deterministic and
-    /// total — an empty customisation resolves to the definition's defaults,
-    /// and a definition with no layers resolves to nothing to draw.
+    /// The rest pose: what the character looks like when nothing is playing.
+    /// Equivalent to [`Self::resolve_at`] with no animation.
     #[must_use]
     pub fn resolve(&self, values: &Value) -> ResolvedCharacter {
+        self.resolve_at(values, None, 0)
+    }
+
+    /// Turns this definition, a customisation and a moment of an animation into
+    /// something drawable.
+    ///
+    /// This is the whole of "character rendering" outside the renderer, and the
+    /// order matters (§23 of `docs/implementing-character-animator.md`):
+    ///
+    /// 1. resolve the customisation — defaults, clamps, unknown keys dropped;
+    /// 2. pick a variant per layer and resolve its tint, from *those* values;
+    /// 3. evaluate the animation into a local transform per node;
+    /// 4. compose those down the hierarchy into a global transform per node;
+    /// 5. move each layer's box by its node's offset.
+    ///
+    /// An animation therefore never touches what a layer *is* — only where it
+    /// is. A hair layer tinted from `hairColor` keeps that colour through every
+    /// frame, because the tint was resolved before the animation was read.
+    ///
+    /// It is deterministic and total: an unknown animation id resolves to the
+    /// rest pose rather than an error, which is what lets the editor preview a
+    /// definition that is still being written.
+    #[must_use]
+    pub fn resolve_at(
+        &self,
+        values: &Value,
+        animation: Option<&str>,
+        time_ms: u32,
+    ) -> ResolvedCharacter {
         let resolved = self.resolve_values(values);
+        let playing = animation.and_then(|id| self.animation(id));
+        let offsets = self.offsets_at(playing, time_ms);
 
         let layers = self
             .layers
             .iter()
             .filter_map(|layer| {
                 let variant = layer.variant_for(&resolved)?;
+                let offset = offsets
+                    .get(layer.id.as_str())
+                    .copied()
+                    .unwrap_or_default()
+                    .offset;
                 Some(ResolvedLayer {
                     layer: layer.id.clone(),
                     variant: variant.id.clone(),
-                    rect: variant.rect,
+                    rect: variant.rect.moved(offset),
+                    offset,
                     asset: variant.sprite.asset.clone(),
                     tint: variant
                         .sprite
@@ -411,7 +521,68 @@ impl CharacterDefinition {
             resolution: self.resolution,
             values: resolved,
             layers,
+            pose: playing.map(|animation| ResolvedPose {
+                animation: animation.id.clone(),
+                frame: animation.frame_at(time_ms),
+                time_ms,
+            }),
         }
+    }
+
+    /// Every node's **global** transform at this moment.
+    ///
+    /// The composition of §3: a node's global transform is its parent's global
+    /// transform with its own local one applied on top, so a local correction
+    /// adds to what was inherited rather than replacing it. Composing
+    /// translations is adding them, so this is the sum of the local transforms
+    /// along the chain from the node up to its root.
+    ///
+    /// Only nodes the animation actually moved are walked, and only nodes that
+    /// end up moved are returned — the common case is two tracks and thirty
+    /// layers that follow, and thirty identities are worth neither the walk nor
+    /// the map entry.
+    ///
+    /// A parent chain that loops stops at the repeat rather than recursing:
+    /// a cycle is a content error and validation reports it
+    /// (`character.circularHierarchy`), but the resolver still owes a picture.
+    #[must_use]
+    pub fn offsets_at(
+        &self,
+        animation: Option<&Animation>,
+        time_ms: u32,
+    ) -> BTreeMap<&str, Transform> {
+        let locals = animation
+            .map(|animation| animation.local_transforms(time_ms))
+            .unwrap_or_default();
+        if locals.is_empty() {
+            return BTreeMap::new();
+        }
+
+        self.layers
+            .iter()
+            .filter_map(|layer| {
+                let global = self.compose_up(layer, &locals);
+                (!global.is_identity()).then_some((layer.id.as_str(), global))
+            })
+            .collect()
+    }
+
+    /// This node's local transform composed with every ancestor's.
+    fn compose_up(&self, layer: &CharacterLayer, locals: &BTreeMap<&str, Transform>) -> Transform {
+        let mut global = Transform::identity();
+        let mut seen: BTreeSet<&str> = BTreeSet::new();
+        let mut node = Some(layer);
+
+        while let Some(current) = node {
+            if !seen.insert(current.id.as_str()) {
+                break;
+            }
+            if let Some(local) = locals.get(current.id.as_str()) {
+                global = global.compose(*local);
+            }
+            node = current.parent.as_deref().and_then(|id| self.layer(id));
+        }
+        global
     }
 }
 
@@ -423,12 +594,33 @@ pub struct ResolvedLayer {
     pub layer: String,
     /// Id of the variant that applied.
     pub variant: String,
-    /// Where to draw it on the character's canvas.
+    /// Where to draw it on the character's canvas, **animation included**.
     pub rect: PixelRect,
+    /// How far the animation moved it from its rest pose, inherited transforms
+    /// included. Already applied to [`Self::rect`]; a renderer ignores it, and
+    /// an editor uses it to say what the hierarchy did.
+    #[serde(default)]
+    pub offset: PixelOffset,
     /// Path of the image to blit, under the content root.
     pub asset: String,
     /// CSS colour to recolour it with. **Empty means draw it as authored.**
     pub tint: String,
+}
+
+/// Which moment of which animation a resolved character is.
+///
+/// Absent on a rest pose. It is carried so a payload says what it is —
+/// a frame captured out of a preview and one captured out of a game are
+/// comparable, which is the point of both going through the same resolver.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolvedPose {
+    /// Id of the animation that was playing.
+    pub animation: String,
+    /// The frame it was showing, `0`-based.
+    pub frame: u32,
+    /// The time it was asked for, in milliseconds since the animation started.
+    pub time_ms: u32,
 }
 
 /// A character, resolved: an ordered list of sprites to draw.
@@ -449,6 +641,9 @@ pub struct ResolvedCharacter {
     pub values: BTreeMap<String, Value>,
     /// What to draw, back to front.
     pub layers: Vec<ResolvedLayer>,
+    /// The animation and moment this pose came from. Absent is the rest pose.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pose: Option<ResolvedPose>,
 }
 
 #[cfg(test)]
@@ -682,6 +877,293 @@ mod tests {
         // A cape hanging off the left edge, and one running past the bottom.
         assert!(!PixelRect::new(-4, 8, 24, 30).fits(canvas));
         assert!(!PixelRect::new(0, 100, 64, 40).fits(canvas));
+    }
+
+    // ----------------------------------------------------------- hierarchy
+
+    /// The skeleton of §28: a body with a head, hair on the head, two arms and
+    /// a piece of armour — and a four-frame breathing idle that only ever
+    /// mentions the body.
+    const SKELETON: &str = r#"{
+        "id": "knight", "schemaVersion": 2, "resolution": { "width": 64, "height": 128 },
+        "layers": [
+            { "id": "body", "anchors": [ { "id": "neck", "at": [32, 40] } ],
+              "variants": [ { "id": "d", "rect": [20, 40, 24, 76],
+                              "sprite": { "asset": "a/body.png" } } ] },
+            { "id": "head", "parent": "body", "parentAnchor": "neck",
+              "anchors": [ { "id": "hairline", "at": [32, 14] } ],
+              "variants": [ { "id": "d", "rect": [24, 12, 16, 28],
+                              "sprite": { "asset": "a/head.png" } } ] },
+            { "id": "hair", "parent": "head", "parentAnchor": "hairline",
+              "variants": [ { "id": "d", "rect": [23, 8, 18, 20],
+                              "sprite": { "asset": "a/hair.png" } } ] },
+            { "id": "leftArm", "parent": "body",
+              "variants": [ { "id": "d", "rect": [14, 44, 8, 34],
+                              "sprite": { "asset": "a/arm.png" } } ] },
+            { "id": "rightArm", "parent": "body",
+              "variants": [ { "id": "d", "rect": [42, 44, 8, 34],
+                              "sprite": { "asset": "a/arm.png" } } ] },
+            { "id": "armor", "parent": "body",
+              "variants": [ { "id": "d", "rect": [19, 44, 26, 24],
+                              "sprite": { "asset": "a/armor.png" } } ] }
+        ],
+        "animations": [
+            { "id": "idle", "name": "Idle", "frames": 4, "frameDurationMs": 120,
+              "looping": true, "tracks": [
+                { "node": "body", "keyframes": [
+                    { "frame": 0, "offset": [0, 0] },
+                    { "frame": 1, "offset": [0, -2] },
+                    { "frame": 2, "offset": [0, 0] },
+                    { "frame": 3, "offset": [0, 2] } ] } ] }
+        ]
+    }"#;
+
+    fn knight() -> CharacterDefinition {
+        serde_json::from_str(SKELETON).expect("parse")
+    }
+
+    impl CharacterDefinition {
+        /// The layer with this id, mutably — tests only, to bend a definition
+        /// into a shape an author could write but should not.
+        fn layer_mut(&mut self, id: &str) -> &mut CharacterLayer {
+            self.layers
+                .iter_mut()
+                .find(|layer| layer.id == id)
+                .unwrap_or_else(|| panic!("layer `{id}`"))
+        }
+    }
+
+    /// Where a layer's box ends up, once everything has been applied.
+    fn drawn(resolved: &ResolvedCharacter, layer: &str) -> ResolvedLayer {
+        resolved
+            .layers
+            .iter()
+            .find(|drawn| drawn.layer == layer)
+            .cloned()
+            .unwrap_or_else(|| panic!("layer `{layer}` was not drawn"))
+    }
+
+    #[test]
+    fn a_hierarchy_parses_and_round_trips() {
+        let knight = knight();
+        assert_eq!(
+            knight.layer("head").expect("head").parent.as_deref(),
+            Some("body")
+        );
+        assert_eq!(
+            knight.layer("hair").expect("hair").parent_anchor.as_deref(),
+            Some("hairline")
+        );
+        assert_eq!(
+            knight
+                .layer("body")
+                .expect("body")
+                .anchor("neck")
+                .expect("neck")
+                .at,
+            PixelOffset::new(32, 40)
+        );
+        assert!(knight.layer("body").expect("body").parent.is_none());
+        assert!(knight.animation("idle").is_some());
+        assert!(knight.animation("walk").is_none());
+
+        let reparsed: CharacterDefinition =
+            serde_json::from_str(&serde_json::to_string(&knight).expect("serialise"))
+                .expect("reparse");
+        assert_eq!(knight, reparsed);
+    }
+
+    /// §25, propagation: the animation names only the body, and the whole
+    /// character moves with it.
+    #[test]
+    fn a_parents_offset_reaches_every_descendant() {
+        let knight = knight();
+        let rest = knight.resolve(&serde_json::json!({}));
+        let up = knight.resolve_at(&serde_json::json!({}), Some("idle"), 120);
+
+        for layer in ["body", "head", "hair", "leftArm", "rightArm", "armor"] {
+            assert_eq!(
+                drawn(&up, layer).rect.y(),
+                drawn(&rest, layer).rect.y() - 2,
+                "layer `{layer}` did not follow the body"
+            );
+            assert_eq!(drawn(&up, layer).offset, PixelOffset::new(0, -2));
+            // Only the position moves; the box keeps its size.
+            assert_eq!(
+                drawn(&up, layer).rect.width(),
+                drawn(&rest, layer).rect.width()
+            );
+        }
+    }
+
+    /// §25, local correction: a child's own keyframe *adds* to what it
+    /// inherited rather than replacing it.
+    #[test]
+    fn a_local_correction_adds_to_the_inherited_transform() {
+        let mut knight = knight();
+        knight.animations[0].tracks.push(
+            serde_json::from_str(
+                r#"{ "node": "head", "keyframes": [ { "frame": 1, "offset": [1, 1] } ] }"#,
+            )
+            .expect("parse track"),
+        );
+
+        let rest = knight.resolve(&serde_json::json!({}));
+        let posed = knight.resolve_at(&serde_json::json!({}), Some("idle"), 120);
+
+        // Body: -2. Head: -2 inherited, +1 of its own, so -1.
+        assert_eq!(drawn(&posed, "body").offset, PixelOffset::new(0, -2));
+        assert_eq!(drawn(&posed, "head").offset, PixelOffset::new(1, -1));
+        assert_eq!(
+            drawn(&posed, "head").rect.y(),
+            drawn(&rest, "head").rect.y() - 1
+        );
+        // And the hair, two levels down, carries both.
+        assert_eq!(drawn(&posed, "hair").offset, PixelOffset::new(1, -1));
+    }
+
+    /// §25, partial tracks: everything that has no track is still drawn, in
+    /// its rest pose or its parent's.
+    #[test]
+    fn a_partial_animation_still_draws_the_whole_character() {
+        let knight = knight();
+        let rest = knight.resolve(&serde_json::json!({}));
+        let posed = knight.resolve_at(&serde_json::json!({}), Some("idle"), 0);
+
+        assert_eq!(posed.layers.len(), rest.layers.len());
+        assert_eq!(
+            posed
+                .layers
+                .iter()
+                .map(|l| l.layer.as_str())
+                .collect::<Vec<_>>(),
+            ["body", "head", "hair", "leftArm", "rightArm", "armor"],
+        );
+        // Frame 0 of the idle is the rest pose, so nothing moved.
+        for layer in &posed.layers {
+            assert_eq!(layer.offset, PixelOffset::default());
+        }
+    }
+
+    #[test]
+    fn the_pose_says_which_frame_it_is() {
+        let knight = knight();
+        let posed = knight.resolve_at(&serde_json::json!({}), Some("idle"), 380);
+        let pose = posed.pose.expect("a pose");
+        assert_eq!(pose.animation, "idle");
+        assert_eq!(pose.frame, 3);
+        assert_eq!(pose.time_ms, 380);
+
+        // The rest pose is not a pose.
+        assert!(knight.resolve(&serde_json::json!({})).pose.is_none());
+    }
+
+    /// An animation the definition does not declare is not an error: the editor
+    /// previews a definition mid-edit, and an id it has just deleted must not
+    /// take the preview with it.
+    #[test]
+    fn an_unknown_animation_resolves_to_the_rest_pose() {
+        let knight = knight();
+        let unknown = knight.resolve_at(&serde_json::json!({}), Some("walk"), 5_000);
+        assert_eq!(
+            unknown.layers,
+            knight.resolve(&serde_json::json!({})).layers
+        );
+        assert!(unknown.pose.is_none());
+    }
+
+    /// §25, loop: a full cycle later, the character is where it started.
+    #[test]
+    fn a_looping_animation_comes_back_to_its_first_frame() {
+        let knight = knight();
+        let first = knight.resolve_at(&serde_json::json!({}), Some("idle"), 120);
+        let later = knight.resolve_at(&serde_json::json!({}), Some("idle"), 120 + 480 * 7);
+        assert_eq!(first.layers, later.layers);
+    }
+
+    /// §25, determinism: same time, same data, same picture.
+    #[test]
+    fn resolution_is_deterministic() {
+        let knight = knight();
+        for time in [0_u32, 61, 120, 479, 480, 9_999] {
+            assert_eq!(
+                knight.resolve_at(&serde_json::json!({}), Some("idle"), time),
+                knight.resolve_at(&serde_json::json!({}), Some("idle"), time),
+            );
+        }
+    }
+
+    /// §22: the animation moves the node and leaves the procedural resolution
+    /// alone — a tinted layer keeps its colour through every frame.
+    #[test]
+    fn an_animation_does_not_disturb_the_resolved_parameters() {
+        let mut knight = knight();
+        knight.parameters.push(
+            serde_json::from_str(
+                r##"{ "id": "hairColor", "labelKey": "k", "control": "color",
+                      "default": "#8b5a2b" }"##,
+            )
+            .expect("parse parameter"),
+        );
+        knight.layers[2].variants[0].sprite.tint =
+            Some(ColorSource::Parameter("hairColor".to_owned()));
+
+        let values = serde_json::json!({ "hairColor": "#f2c14e" });
+        for time in [0_u32, 120, 240, 360] {
+            let posed = knight.resolve_at(&values, Some("idle"), time);
+            assert_eq!(drawn(&posed, "hair").tint, "#f2c14e");
+            assert_eq!(drawn(&posed, "hair").asset, "a/hair.png");
+            assert_eq!(posed.values["hairColor"], serde_json::json!("#f2c14e"));
+        }
+    }
+
+    /// A layer whose variants all fail is still absent when animated, and its
+    /// children still follow the parent that *is* drawn.
+    #[test]
+    fn an_undrawn_layer_does_not_break_the_chain() {
+        let mut knight = knight();
+        // The head draws nothing, but the hair still hangs off it.
+        knight.layers[1].variants.clear();
+
+        let posed = knight.resolve_at(&serde_json::json!({}), Some("idle"), 120);
+        assert!(!posed.layers.iter().any(|layer| layer.layer == "head"));
+        assert_eq!(drawn(&posed, "hair").offset, PixelOffset::new(0, -2));
+    }
+
+    /// A cycle is a content error, and validation says so. What the resolver
+    /// owes is a picture rather than a stack overflow.
+    #[test]
+    fn a_circular_hierarchy_resolves_rather_than_recursing_forever() {
+        let mut knight = knight();
+        knight.layer_mut("body").parent = Some("hair".to_owned());
+
+        let posed = knight.resolve_at(&serde_json::json!({}), Some("idle"), 120);
+        assert_eq!(posed.layers.len(), 6);
+        // The body still carries its own keyframe; nothing hangs.
+        assert_eq!(drawn(&posed, "body").offset.y(), -2);
+    }
+
+    #[test]
+    fn a_layer_that_parents_itself_keeps_only_its_own_transform() {
+        let mut knight = knight();
+        knight.layer_mut("body").parent = Some("body".to_owned());
+        let posed = knight.resolve_at(&serde_json::json!({}), Some("idle"), 360);
+        assert_eq!(drawn(&posed, "body").offset, PixelOffset::new(0, 2));
+    }
+
+    /// A definition with no hierarchy and no animations resolves exactly as it
+    /// did before either existed (§27).
+    #[test]
+    fn a_definition_without_animations_is_untouched() {
+        let player = player();
+        assert!(player.animations.is_empty());
+        let resolved = player.resolve(&serde_json::json!({}));
+        assert!(resolved.pose.is_none());
+        assert!(resolved.layers.iter().all(|layer| layer.offset.is_zero()));
+        assert_eq!(
+            resolved,
+            player.resolve_at(&serde_json::json!({}), None, 9_000)
+        );
     }
 
     #[test]

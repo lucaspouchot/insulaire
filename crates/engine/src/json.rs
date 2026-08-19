@@ -367,31 +367,45 @@ impl JsonEngine {
         ok(&self.inner.character_ids())
     }
 
-    /// Resolves a definition passed in against a customisation; returns a
+    /// Resolves a definition passed in against a customisation, at a moment of
+    /// an animation; returns a
     /// [`ResolvedCharacter`](insulaire_world::ResolvedCharacter).
     ///
     /// # Errors
     ///
     /// `parse` when either argument is not JSON.
-    pub fn preview_character(&self, character_json: &str, values_json: &str) -> JsonResult {
+    pub fn preview_character(
+        &self,
+        character_json: &str,
+        values_json: &str,
+        animation: Option<&str>,
+        time_ms: u32,
+    ) -> JsonResult {
         let resolved = self
             .inner
-            .preview_character(character_json, values_json)
+            .preview_character(character_json, values_json, animation, time_ms)
             .map_err(|error| err(&error))?;
         ok(&resolved)
     }
 
-    /// Resolves a definition against a customisation; returns a
+    /// Resolves a definition against a customisation, at a moment of an
+    /// animation; returns a
     /// [`ResolvedCharacter`](insulaire_world::ResolvedCharacter).
     ///
     /// # Errors
     ///
     /// `parse` when the values are not JSON, `unknownContent` when no
     /// definition has that id.
-    pub fn resolve_character(&self, id: &str, values_json: &str) -> JsonResult {
+    pub fn resolve_character(
+        &self,
+        id: &str,
+        values_json: &str,
+        animation: Option<&str>,
+        time_ms: u32,
+    ) -> JsonResult {
         let resolved = self
             .inner
-            .resolve_character(id, values_json)
+            .resolve_character(id, values_json, animation, time_ms)
             .map_err(|error| err(&error))?;
         ok(&resolved)
     }
@@ -1097,7 +1111,7 @@ mod tests {
         // host blits what Rust resolved, and resolves nothing itself.
         let resolved = json(
             &engine
-                .resolve_character("human_player", r##"{ "hairColor": "#f2c14e" }"##)
+                .resolve_character("human_player", r##"{ "hairColor": "#f2c14e" }"##, None, 0)
                 .expect("resolve"),
         );
         assert_eq!(resolved["character"], "human_player");
@@ -1122,6 +1136,8 @@ mod tests {
                 .resolve_character(
                     "human_player",
                     r#"{ "cape": "yes", "hairColor": 3, "unknown": true }"#,
+                    None,
+                    0,
                 )
                 .expect("resolve"),
         );
@@ -1140,7 +1156,7 @@ mod tests {
 
         let resolved = json(
             &engine
-                .preview_character(CHARACTER, r#"{ "cape": false }"#)
+                .preview_character(CHARACTER, r#"{ "cape": false }"#, None, 0)
                 .expect("preview"),
         );
         assert_eq!(resolved["character"], "human_player");
@@ -1162,15 +1178,150 @@ mod tests {
                           "variants": [{ "id": "v", "rect": [0, 0, 8, 8], "sprite": {
                           "asset": "a.png", "tint": { "parameter": "absent" } } }] }] }"##,
                     "{}",
+                    None,
+                    0,
                 )
                 .expect("preview"),
         );
         assert_eq!(broken["layers"][0]["tint"], "#ff00ff");
 
         assert_eq!(
-            code(&engine.preview_character("{", "{}").unwrap_err()),
+            code(&engine.preview_character("{", "{}", None, 0).unwrap_err()),
             "parse"
         );
+    }
+
+    /// A character with a skeleton and a four-frame idle: the shape of §28 of
+    /// `docs/implementing-character-animator.md`, across the string boundary.
+    const ANIMATED: &str = r#"{
+        "id": "knight", "schemaVersion": 2, "resolution": { "width": 64, "height": 128 },
+        "layers": [
+            { "id": "body", "anchors": [ { "id": "neck", "at": [32, 40] } ],
+              "variants": [ { "id": "d", "rect": [20, 40, 24, 76],
+                              "sprite": { "asset": "assets/characters/body.png" } } ] },
+            { "id": "head", "parent": "body", "parentAnchor": "neck",
+              "variants": [ { "id": "d", "rect": [24, 12, 16, 28],
+                              "sprite": { "asset": "assets/characters/head.png" } } ] },
+            { "id": "hair", "parent": "head",
+              "variants": [ { "id": "d", "rect": [23, 8, 18, 20],
+                              "sprite": { "asset": "assets/characters/hair.png" } } ] }
+        ],
+        "animations": [
+            { "id": "idle", "name": "Idle", "frames": 4, "frameDurationMs": 120,
+              "looping": true, "tracks": [
+                { "node": "body", "keyframes": [
+                    { "frame": 0, "offset": [0, 0] },
+                    { "frame": 1, "offset": [0, -2] },
+                    { "frame": 2, "offset": [0, 0] },
+                    { "frame": 3, "offset": [0, 2] } ] },
+                { "node": "hair", "keyframes": [
+                    { "frame": 0, "offset": [0, 0] },
+                    { "frame": 3, "offset": [0, -1] } ] } ] }
+        ]
+    }"#;
+
+    /// The whole animation contract at the boundary: one track moves the body,
+    /// the hierarchy moves everything hanging off it, and a local keyframe adds
+    /// to what was inherited rather than replacing it.
+    #[test]
+    fn an_animation_moves_a_node_and_everything_that_hangs_off_it() {
+        let mut engine = loaded();
+        engine.load_character(ANIMATED).expect("loads");
+
+        let rest = json(
+            &engine
+                .resolve_character("knight", "{}", None, 0)
+                .expect("rest"),
+        );
+        assert!(rest.get("pose").is_none());
+
+        let up = json(
+            &engine
+                .resolve_character("knight", "{}", Some("idle"), 120)
+                .expect("frame 1"),
+        );
+        assert_eq!(up["pose"]["animation"], "idle");
+        assert_eq!(up["pose"]["frame"], 1);
+        assert_eq!(up["pose"]["timeMs"], 120);
+
+        // Only the body has a keyframe at frame 1; the head and the hair follow.
+        for index in 0..3 {
+            assert_eq!(up["layers"][index]["offset"], serde_json::json!([0, -2]));
+            assert_eq!(
+                up["layers"][index]["rect"][1].as_i64().expect("y"),
+                rest["layers"][index]["rect"][1].as_i64().expect("y") - 2,
+            );
+        }
+
+        // Frame 3: the body drops 2 and the hair corrects itself by 1, so it
+        // ends up 1 lower — not 1 higher, and not back at the rest pose.
+        let down = json(
+            &engine
+                .resolve_character("knight", "{}", Some("idle"), 360)
+                .expect("frame 3"),
+        );
+        assert_eq!(down["layers"][0]["offset"], serde_json::json!([0, 2]));
+        assert_eq!(down["layers"][2]["offset"], serde_json::json!([0, 1]));
+
+        // It loops, so a whole cycle later it is the same picture.
+        let looped = json(
+            &engine
+                .resolve_character("knight", "{}", Some("idle"), 360 + 480 * 3)
+                .expect("later"),
+        );
+        assert_eq!(looped["layers"], down["layers"]);
+    }
+
+    /// An id nobody declares is the rest pose, not an error: the editor deletes
+    /// an animation while its preview is still asking for it.
+    #[test]
+    fn an_unknown_animation_previews_as_the_rest_pose() {
+        let engine = loaded();
+        let resolved = json(
+            &engine
+                .preview_character(ANIMATED, "{}", Some("walk"), 3_000)
+                .expect("preview"),
+        );
+        assert!(resolved.get("pose").is_none());
+        assert_eq!(resolved["layers"][0]["offset"], serde_json::json!([0, 0]));
+    }
+
+    /// A hierarchy that loops is refused at the door, like any other content
+    /// the renderer could not make sense of.
+    #[test]
+    fn a_character_whose_hierarchy_loops_is_refused() {
+        let mut engine = loaded();
+        let error = engine
+            .load_character(
+                r#"{ "id": "loop", "schemaVersion": 2, "layers": [
+                    { "id": "a", "parent": "b", "variants": [ { "id": "v", "rect": [0,0,8,8],
+                      "sprite": { "asset": "a.png" } } ] },
+                    { "id": "b", "parent": "a", "variants": [ { "id": "v", "rect": [0,0,8,8],
+                      "sprite": { "asset": "b.png" } } ] } ] }"#,
+            )
+            .unwrap_err();
+
+        assert_eq!(code(&error), "invalidContent");
+        assert!(error.contains("character.circularHierarchy"), "{error}");
+    }
+
+    /// A track pointed at a node that is not there is refused too — an
+    /// animation that drives nothing is a rename nobody finished.
+    #[test]
+    fn a_character_whose_track_names_no_layer_is_refused() {
+        let mut engine = loaded();
+        let error = engine
+            .load_character(
+                r#"{ "id": "stray", "schemaVersion": 2, "layers": [
+                    { "id": "body", "variants": [ { "id": "v", "rect": [0,0,8,8],
+                      "sprite": { "asset": "a.png" } } ] } ],
+                    "animations": [ { "id": "idle", "frames": 2, "tracks": [
+                      { "node": "tail", "keyframes": [ { "frame": 0, "offset": [0, 1] } ] } ] } ] }"#,
+            )
+            .unwrap_err();
+
+        assert_eq!(code(&error), "invalidContent");
+        assert!(error.contains("character.unknownTrackNode"), "{error}");
     }
 
     #[test]
@@ -1194,7 +1345,11 @@ mod tests {
             "unknownContent"
         );
         assert_eq!(
-            code(&engine.resolve_character("broken", "{}").unwrap_err()),
+            code(
+                &engine
+                    .resolve_character("broken", "{}", None, 0)
+                    .unwrap_err()
+            ),
             "unknownContent"
         );
     }

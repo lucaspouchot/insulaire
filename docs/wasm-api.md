@@ -237,8 +237,9 @@ Registers a `CharacterDefinition` — how a kind of character is drawn, and what
 may be chosen about one (ADR-0028). Load it before `loadProject`, which refuses
 a manifest naming a character that is not loaded.
 
-Errors: `parse`, `invalidContent` (`character.renderingMismatch`,
-`character.unknownColorParameter`, …).
+Errors: `parse`, `invalidContent` (`character.missingAsset`,
+`character.unknownTintParameter`, `character.circularHierarchy`,
+`character.unknownTrackNode`, …).
 
 ### `validateCharacter(json: string): ValidationReport`
 
@@ -255,23 +256,52 @@ Errors: `unknownContent` when no definition has that id.
 
 Ids of every registered definition, sorted.
 
-### `resolveCharacter(id: string, valuesJson: string): ResolvedCharacter`
+### `resolveCharacter(id, valuesJson, animation?, timeMs): ResolvedCharacter`
 
-Resolves a **registered** definition against a customisation, producing the flat
-ordered list of sprites described in `docs/content-format.md`: a canvas
-resolution and, per layer, a whole-pixel box, an asset path and a resolved tint.
-Values go through the same rule as `resolveSettings`, and every tint is resolved
-here — a host blits what this returned and decides nothing about appearance.
+```ts
+resolveCharacter(
+  id: string,
+  valuesJson: string,
+  animation: string | undefined,
+  timeMs: number,
+): ResolvedCharacter
+```
+
+Resolves a **registered** definition against a customisation, at a moment of an
+animation, producing the flat ordered list of sprites described in
+`docs/content-format.md`: a canvas resolution and, per layer, a whole-pixel box,
+an asset path and a resolved tint. Values go through the same rule as
+`resolveSettings`, and every tint is resolved here — a host blits what this
+returned and decides nothing about appearance.
+
+`animation` is an animation id; `timeMs` counts from the moment it started, and
+the engine wraps a looping animation and holds a finished one on its last frame
+(ADR-0031). The animation's offset is **already in each layer's `rect`**, so a
+renderer needs no animation code at all; the payload also carries the `offset`
+that was applied and a `pose` saying which frame it is.
+
+`undefined` is the rest pose, and **so is an animation id the definition does
+not declare** — that is not an error, because an editor previewing a definition
+mid-edit may still be asking for one it has just deleted.
 
 Errors: `parse`, `unknownContent`.
 
-### `previewCharacter(characterJson: string, valuesJson: string): ResolvedCharacter`
+### `previewCharacter(characterJson, valuesJson, animation?, timeMs): ResolvedCharacter`
+
+```ts
+previewCharacter(
+  characterJson: string,
+  valuesJson: string,
+  animation: string | undefined,
+  timeMs: number,
+): ResolvedCharacter
+```
 
 The same resolution for a definition **passed in** rather than registered: what
 the editor previews content it is still writing with. Resolution is total, so an
 incomplete definition previews as whatever it currently is instead of failing.
 
-Errors: `parse` when either argument is not JSON.
+Errors: `parse` when either JSON argument is not JSON.
 
 ### `resetContent(): void`
 

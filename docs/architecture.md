@@ -79,7 +79,7 @@ The MVP implements the marked parts. Unmarked entries are the planned shape.
 │   ├── worlds/                  # demo_world.json, demo_refuge.json          [MVP]
 │   ├── tilesets/                # mvp_terrain.json                           [MVP]
 │   ├── locales/                 # <language>/<namespace>.json: every displayed string [MVP]
-│   ├── characters/              # how a kind of character is drawn (ADR-0028) [MVP]
+│   ├── characters/              # how a character is drawn and moves (ADR-0028, ADR-0031) [MVP]
 │   ├── assets/                  # images: title art, character sprites          [MVP]
 │   ├── menu/                    # title-screen.json: what a client opens on   [MVP]
 │   ├── settings.json            # the settings the game offers                [MVP]
@@ -102,7 +102,7 @@ browser. `cargo test` runs the entire simulation without WASM.
 
 | Crate | Owns | Does not know about |
 |---|---|---|
-| `insulaire-world` | Hex coordinates, `WorldDefinition`, `TileSetDefinition`, `CharacterDefinition` and its resolver, entity templates, validation, the flattened `WorldGrid`. | Ticks, rules, entities in motion. |
+| `insulaire-world` | Hex coordinates, `WorldDefinition`, `TileSetDefinition`, `CharacterDefinition`, its animations and its resolver, entity templates, validation, the flattened `WorldGrid`. | Ticks, rules, entities in motion. |
 | `insulaire-simulation` | `GameState`, the tick pipeline, movement rules, monster AI, the deterministic RNG. | Serialisation for hosts, JSON, JavaScript. |
 | `insulaire-engine` | The facade, the content registry, the DTOs, the string contract. | `wasm-bindgen`. |
 | `insulaire-wasm` | `#[wasm_bindgen]` declarations. | Everything else — it holds no logic. |
@@ -130,6 +130,10 @@ browser. `cargo test` runs the entire simulation without WASM.
   into an ordered list of whole-pixel boxes with an image and a tint each; the
   renderer blits them and decides nothing about appearance. See ADR-0028 and
   ADR-0029.
+- **Character ↔ animation** — the layers form a tree, and an animation is a list
+  of whole-pixel offsets from the rest pose, per node, per frame. Offsets
+  compose down the tree, the resolver bakes them into the boxes it produces, and
+  the renderer never learns that time exists. See ADR-0031.
 - **Composing ↔ painting** — the same stage does both: the preview draws the
   resolved character, and in paint mode it writes into the image behind the open
   layer. The pixels are a framework-free buffer in `content/sprite-document.ts`

@@ -423,11 +423,16 @@ impl ContentRegistry {
         self.characters.keys().cloned().collect()
     }
 
-    /// Resolves a registered definition against a customisation.
+    /// Resolves a registered definition against a customisation, at a moment of
+    /// an animation.
     ///
     /// The resolver lives in `insulaire_world`; this only finds the definition,
     /// so every host — editor preview, runtime, test — draws what the same code
-    /// produced (`docs/adr/ADR-0028-character-definitions.md`).
+    /// produced (`docs/adr/ADR-0028-character-definitions.md`,
+    /// `docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+    ///
+    /// `animation` of `None` is the rest pose, and so is an id the definition
+    /// does not declare.
     ///
     /// # Errors
     ///
@@ -436,10 +441,12 @@ impl ContentRegistry {
         &self,
         id: &str,
         values: &serde_json::Value,
+        animation: Option<&str>,
+        time_ms: u32,
     ) -> Result<ResolvedCharacter, EngineError> {
         self.characters
             .get(id)
-            .map(|character| character.resolve(values))
+            .map(|character| character.resolve_at(values, animation, time_ms))
             .ok_or_else(|| EngineError::UnknownContent {
                 kind: "character".to_owned(),
                 id: id.to_owned(),

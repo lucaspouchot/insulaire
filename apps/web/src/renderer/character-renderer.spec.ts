@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { ResolvedCharacter } from '../content/content-types';
+import { ResolvedCharacter, ResolvedLayer } from '../content/content-types';
 import { CharacterBox, drawCharacter, pixelUnder, placement } from './character-renderer';
 
 /**
@@ -27,8 +27,21 @@ function recordingContext() {
 const BOX: CharacterBox = { x: 0, y: 0, width: 200, height: 400 };
 const CANVAS = { width: 64, height: 128 };
 
-function character(layers: ResolvedCharacter['layers']): ResolvedCharacter {
-  return { character: 'c', category: 'player', resolution: CANVAS, values: {}, layers };
+/**
+ * A resolved character the renderer can draw.
+ *
+ * `offset` is filled in here rather than at every call: it is what the
+ * animation moved a layer by, already applied to `rect`, and the renderer
+ * never reads it (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+ */
+function character(layers: Omit<ResolvedLayer, 'offset'>[]): ResolvedCharacter {
+  return {
+    character: 'c',
+    category: 'player',
+    resolution: CANVAS,
+    values: {},
+    layers: layers.map((layer) => ({ ...layer, offset: [0, 0] })),
+  };
 }
 
 describe('placement', () => {

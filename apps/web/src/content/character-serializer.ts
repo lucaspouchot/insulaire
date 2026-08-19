@@ -18,24 +18,44 @@
  * ]
  * ```
  *
+ * An **animation** follows the same rule with the *keyframe* as the unit: one
+ * per line, frame and offset side by side, so "the body drops a pixel later in
+ * the loop" is one changed line.
+ *
+ * ```json
+ * "keyframes": [
+ *   { "frame": 1, "offset": [0, -2] }
+ * ]
+ * ```
+ *
  * What is dropped is what parses back to the value dropped: an empty `name`,
  * `helpKey`, `unit`, `options`, `min`, `max`, `step`, `showIf`, `when` or
- * `tint`. `category` and `resolution` are always written — they are what the
+ * `tint`, an absent `parent`, `parentAnchor` or `anchors`, a `step`
+ * interpolation, and the whole `animations` list when a character has none.
+ * `category` and `resolution` are always written — they are what the
  * file is *about*, and a reader should not have to know the defaults. `scope` is
  * never written: it belongs to the settings vocabulary and means nothing to a
  * character (`docs/adr/ADR-0029-characters-are-composed-sprites.md`).
  */
 
 import {
+  Animation,
+  AnimationTrack,
+  AttachmentPoint,
   CharacterDefinition,
   CharacterLayer,
   ControlDefinition,
+  Keyframe,
   LayerVariant,
+  PixelOffset,
   PixelRect,
 } from './content-types';
 
 /** The canvas a definition that names none is authored on. */
 const DEFAULT_RESOLUTION = { width: 64, height: 128 };
+
+/** How long a frame lasts when an animation names no duration. */
+const DEFAULT_FRAME_DURATION_MS = 120;
 
 /** The character file, in the canonical layout. */
 export function serializeCharacter(character: CharacterDefinition): string {
@@ -57,7 +77,16 @@ export function serializeCharacter(character: CharacterDefinition): string {
 
   lines.push('  "layers": [');
   lines.push(...blocks(character.layers ?? [], (layer) => layerLines(layer, 4)));
-  lines.push('  ]');
+  const animations = character.animations ?? [];
+  lines.push(animations.length > 0 ? '  ],' : '  ]');
+
+  // Dropped entirely when there are none: a still character should not carry an
+  // empty list saying it might have moved.
+  if (animations.length > 0) {
+    lines.push('  "animations": [');
+    lines.push(...blocks(animations, (animation) => animationLines(animation, 4)));
+    lines.push('  ]');
+  }
 
   lines.push('}');
   return `${lines.join('\n')}\n`;
@@ -111,21 +140,111 @@ function parameterLines(parameter: ControlDefinition, indent: number): string[] 
   return closeBlock(lines, pad);
 }
 
-/** One layer: a heading and its variants, one per line. */
+/** One layer: a heading, where it hangs, its anchors, and its variants. */
 function layerLines(layer: CharacterLayer, indent: number): string[] {
   const pad = ' '.repeat(indent);
   const variants = layer.variants ?? [];
-  return [
-    `${pad}{`,
-    `${pad}  "id": ${JSON.stringify(layer.id)},`,
-    `${pad}  "variants": [`,
+  const lines = [`${pad}{`, `${pad}  "id": ${JSON.stringify(layer.id)},`];
+
+  // A root layer writes no `parent`, and a layer hanging off its parent's
+  // origin writes no `parentAnchor`: absent is the common case, and the common
+  // case should be invisible in the file.
+  if (layer.parent) {
+    lines.push(`${pad}  "parent": ${JSON.stringify(layer.parent)},`);
+  }
+  if (layer.parentAnchor) {
+    lines.push(`${pad}  "parentAnchor": ${JSON.stringify(layer.parentAnchor)},`);
+  }
+
+  const anchors = layer.anchors ?? [];
+  if (anchors.length > 0) {
+    lines.push(`${pad}  "anchors": [`);
+    lines.push(
+      ...anchors.map(
+        (anchor, index) =>
+          `${pad}    ${anchorLine(anchor)}` + (index === anchors.length - 1 ? '' : ','),
+      ),
+    );
+    lines.push(`${pad}  ],`);
+  }
+
+  lines.push(`${pad}  "variants": [`);
+  lines.push(
     ...variants.map(
       (variant, index) =>
         `${pad}    ${variantLine(variant)}` + (index === variants.length - 1 ? '' : ','),
     ),
+  );
+  lines.push(`${pad}  ]`, `${pad}}`);
+  return lines;
+}
+
+/** One attachment point, on one line. */
+function anchorLine(anchor: AttachmentPoint): string {
+  return `{ "id": ${JSON.stringify(anchor.id)}, "at": ${offset(anchor.at)} }`;
+}
+
+/**
+ * One animation: a heading and one block per track.
+ *
+ * The layout that matters here is the **keyframe**: one per line, frame and
+ * offset side by side, so a diff of "the body drops a pixel later in the loop"
+ * reads as exactly that.
+ */
+function animationLines(animation: Animation, indent: number): string[] {
+  const pad = ' '.repeat(indent);
+  const lines = [`${pad}{`, `${pad}  "id": ${JSON.stringify(animation.id)},`];
+  if (animation.name) {
+    lines.push(`${pad}  "name": ${JSON.stringify(animation.name)},`);
+  }
+  lines.push(`${pad}  "frames": ${JSON.stringify(animation.frames)},`);
+  lines.push(
+    `${pad}  "frameDurationMs": ${JSON.stringify(
+      animation.frameDurationMs ?? DEFAULT_FRAME_DURATION_MS,
+    )},`,
+  );
+  lines.push(`${pad}  "looping": ${JSON.stringify(animation.looping === true)},`);
+
+  const tracks = animation.tracks ?? [];
+  lines.push(`${pad}  "tracks": [`);
+  lines.push(...blocks(tracks, (track) => trackLines(track, indent + 4)));
+  lines.push(`${pad}  ]`);
+  lines.push(`${pad}}`);
+  return lines;
+}
+
+/** One track: the node it drives and its keyframes, one per line. */
+function trackLines(track: AnimationTrack, indent: number): string[] {
+  const pad = ' '.repeat(indent);
+  const keyframes = track.keyframes ?? [];
+  return [
+    `${pad}{`,
+    `${pad}  "node": ${JSON.stringify(track.node)},`,
+    `${pad}  "keyframes": [`,
+    ...keyframes.map(
+      (keyframe, index) =>
+        `${pad}    ${keyframeLine(keyframe)}` + (index === keyframes.length - 1 ? '' : ','),
+    ),
     `${pad}  ]`,
     `${pad}}`,
   ];
+}
+
+/** A whole keyframe on one line; `step` is the default and is not written. */
+function keyframeLine(keyframe: Keyframe): string {
+  const entries = [
+    `"frame": ${JSON.stringify(keyframe.frame)}`,
+    `"offset": ${offset(keyframe.offset ?? [0, 0])}`,
+  ];
+  if (keyframe.interpolation && keyframe.interpolation !== 'step') {
+    entries.push(`"interpolation": ${JSON.stringify(keyframe.interpolation)}`);
+  }
+  return `{ ${entries.join(', ')} }`;
+}
+
+/** `[x, y]`, spaced like every other coordinate in the format. */
+function offset(point: PixelOffset): string {
+  return `[${point.map((value) => JSON.stringify(value)).join(', ')}]`;
 }
 
 /** A whole variant on one line. */

@@ -28,6 +28,12 @@
  * character's own palette, and a whole-number zoom
  * (`docs/adr/ADR-0030-the-editor-paints-its-sprites.md`).
  *
+ * A character is also a **skeleton**: a layer may hang off another one, and an
+ * animation moves a node by whole pixels with everything below it following.
+ * The preview is where that is watched — resolved by the same Rust code the
+ * game will use, at the moment the timeline names
+ * (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+ *
  * Labels are keys: this screen picks and **creates** them — saving writes every
  * key the file names into every language, empty — and the language editor is
  * where their text is written (ADR-0023,
@@ -48,6 +54,8 @@ import {
 } from '@angular/core';
 
 import {
+  Animation,
+  AttachmentPoint,
   CATEGORIES,
   CONTROL_KINDS,
   CharacterCategory,
@@ -56,18 +64,24 @@ import {
   CharacterValues,
   ControlDefinition,
   ControlKind,
+  HierarchyRow,
   LayerVariant,
   MAX_SPRITE_RESOLUTION,
+  PixelOffset,
   ResolvedCharacter,
   SettingValue,
   SpriteResolution,
   blankVariant,
   clampResolution,
   freeId,
+  heldOffset,
+  hierarchy,
   isNumeric,
   move,
   usesOptions,
+  wouldLoop,
 } from './character-editor.types';
+import { CharacterAnimator } from './character-animator';
 import {
   CHARACTER_SCHEMA_VERSION,
   ContentRef,
@@ -89,7 +103,7 @@ import { I18nService } from '../../../i18n/i18n.service';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
 import { ControlField } from '../../../settings/control-field';
 import { ContentWorkspaceService, WorkspaceFile } from '../../../services/content-workspace.service';
-import { EngineService } from '../../../services/engine.service';
+import { CharacterPose, EngineService } from '../../../services/engine.service';
 import { LocaleAuthoringService } from '../../../services/locale-authoring.service';
 import { CharacterLibraryService } from '../../../services/character-library.service';
 import { CONTENT_ROOT, ProjectStoreService } from '../../../services/project-store.service';
@@ -146,9 +160,15 @@ const RECENT_COLORS = 8;
 /** What a click on the stage does. */
 type PaintTool = 'pencil' | 'eraser' | 'picker';
 
+/** Colour of the bones drawn between a node and its parent. */
+const BONE_COLOR = 'rgba(122, 192, 255, 0.75)';
+
+/** Colour of an attachment point, and of the selected node's own marker. */
+const JOINT_COLOR = '#7ac0ff';
+
 @Component({
   selector: 'app-character-editor-page',
-  imports: [TranslatePipe, ControlField],
+  imports: [TranslatePipe, ControlField, CharacterAnimator],
   templateUrl: './character-editor-page.html',
   styleUrl: './character-editor-page.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -226,8 +246,29 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
    */
   private view = { zoom: 1, originX: 0, originY: 0, box: { x: 0, y: 0, width: 1, height: 1 } };
 
-  /** Which layer the variant editor is showing. */
+  /** Which layer the variant editor is showing — and which *node* is selected. */
   private readonly layerIdSignal = signal<string | null>(null);
+
+  /** Id of the animation the preview is playing; `null` is the rest pose. */
+  private readonly animationIdSignal = signal<string | null>(null);
+  /** Where in that animation the preview is, in milliseconds. */
+  private readonly timeMs = signal(0);
+  protected readonly playing = signal(false);
+  /** Playback rate, as a multiple of real time. */
+  protected readonly speed = signal(1);
+  /** `true` while the preview draws the bones and joints over the character. */
+  protected readonly skeleton = signal(false);
+
+  /** The running playback loop, if any. */
+  private clock: number | null = null;
+  /** When the loop last advanced, so a dropped frame does not skip time. */
+  private lastTick = 0;
+  /** A node being dragged in the preview, and where the drag started. */
+  private dragging: {
+    readonly node: string;
+    readonly from: { x: number; y: number };
+    readonly base: PixelOffset;
+  } | null = null;
 
   protected readonly categories = CATEGORIES;
   protected readonly controlKinds = CONTROL_KINDS;
@@ -310,6 +351,63 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
 
   protected readonly variants = computed<readonly LayerVariant[]>(
     () => this.layer()?.variants ?? [],
+  );
+
+  /** Every layer, flattened depth-first: the tree the animation composes down. */
+  protected readonly rows = computed<readonly HierarchyRow[]>(() => hierarchy(this.layers()));
+
+  protected readonly animations = computed<readonly Animation[]>(
+    () => this.document()?.animations ?? [],
+  );
+
+  /** The animation the preview is playing, if the definition still declares it. */
+  protected readonly animation = computed<Animation | null>(() => {
+    const id = this.animationIdSignal();
+    return this.animations().find((animation) => animation.id === id) ?? null;
+  });
+
+  /**
+   * Which animation and moment the preview should be resolved at.
+   *
+   * `undefined` is the rest pose, which is what the editor shows until an
+   * animation is opened — and what it goes back to when one is deleted.
+   */
+  protected readonly pose = computed<CharacterPose | undefined>(() => {
+    const animation = this.animation();
+    return animation === null
+      ? undefined
+      : { animation: animation.id, timeMs: Math.max(0, Math.round(this.timeMs())) };
+  });
+
+  /**
+   * The frame on screen — **the engine's answer**, not a count kept here.
+   *
+   * Time to frame is arithmetic the animation owns, and asking it is what stops
+   * the timeline's highlight and the drawn pose from drifting apart.
+   */
+  protected readonly poseFrame = computed(() => this.resolved()?.pose?.frame ?? 0);
+
+  /** The layers the open layer may hang off without closing a loop. */
+  protected readonly parentOptions = computed<readonly CharacterLayer[]>(() => {
+    const layers = this.layers();
+    const open = this.layer()?.id;
+    return open === undefined
+      ? []
+      : layers.filter((candidate) => !wouldLoop(layers, open, candidate.id));
+  });
+
+  /** The attachment points the open layer's parent offers. */
+  protected readonly parentAnchors = computed<readonly AttachmentPoint[]>(() => {
+    const parent = this.layer()?.parent;
+    if (!parent) {
+      return [];
+    }
+    return this.layers().find((candidate) => candidate.id === parent)?.anchors ?? [];
+  });
+
+  /** `true` when a drag on the stage would write a keyframe. */
+  protected readonly posable = computed(
+    () => !this.painting() && this.animation() !== null && this.layer() !== null,
   );
 
   /** The layer the pixel tools edit: the open one, as the resolver drew it. */
@@ -438,6 +536,16 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
         this.requireSprite(drawn.asset);
       }
     });
+    // The playback loop lives and dies with the Play button, and with the
+    // animation still existing: deleting the one being played must stop it
+    // rather than leave a timer running against a definition nobody has.
+    effect(() => {
+      if (this.playing() && this.animation() !== null) {
+        this.startClock();
+      } else {
+        this.stopClock();
+      }
+    });
     void this.load();
   }
 
@@ -454,6 +562,98 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.resizeObserver?.disconnect();
+    this.stopClock();
+  }
+
+  // --------------------------------------------------------------- playback
+
+  /**
+   * Advances the preview in real time, one animation frame of the *browser*
+   * per pose.
+   *
+   * The clock is here rather than in the animation panel because the preview
+   * is here: the loop's only job is to move the time the resolver is asked
+   * about, and everything else follows from the resolved character changing.
+   */
+  private startClock(): void {
+    if (this.clock !== null) {
+      return;
+    }
+    this.lastTick = performance.now();
+    const tick = (now: number): void => {
+      const elapsed = now - this.lastTick;
+      this.lastTick = now;
+      this.timeMs.update((time) => time + elapsed * this.speed());
+
+      // An animation that does not loop is over when it is over; leaving the
+      // loop running would burn a frame a tick to redraw the same picture.
+      const animation = this.animation();
+      if (animation !== null && animation.looping !== true) {
+        const duration = animation.frames * (animation.frameDurationMs ?? 120);
+        if (this.timeMs() >= duration) {
+          this.timeMs.set(Math.max(0, duration - 1));
+          this.playing.set(false);
+          this.repose();
+          return;
+        }
+      }
+
+      this.repose();
+      this.clock = requestAnimationFrame(tick);
+    };
+    this.clock = requestAnimationFrame(tick);
+  }
+
+  private stopClock(): void {
+    if (this.clock !== null) {
+      cancelAnimationFrame(this.clock);
+      this.clock = null;
+    }
+  }
+
+  protected togglePlay(): void {
+    this.playing.update((on) => !on);
+  }
+
+  protected setSpeed(speed: number): void {
+    this.speed.set(speed);
+  }
+
+  protected toggleSkeleton(): void {
+    this.skeleton.update((on) => !on);
+    this.draw();
+  }
+
+  /** Opens an animation in the timeline, from its first frame. */
+  protected openAnimation(id: string | null): void {
+    this.animationIdSignal.set(id);
+    this.timeMs.set(0);
+    this.playing.set(false);
+    this.repose();
+  }
+
+  /**
+   * Scrubs to a frame, which means scrubbing to the moment it starts.
+   *
+   * Frames are what an author writes; milliseconds are what plays. The
+   * conversion is the animation's own, so the timeline and the preview cannot
+   * disagree about which frame is on screen.
+   */
+  protected scrubTo(frame: number): void {
+    const animation = this.animation();
+    if (animation === null) {
+      return;
+    }
+    this.playing.set(false);
+    this.timeMs.set(Math.max(0, frame) * (animation.frameDurationMs ?? 120));
+    this.repose();
+  }
+
+  /** Takes on the definition the animation panel produced. */
+  protected onAnimationsChanged(draft: CharacterDefinition): void {
+    this.edit((document) => {
+      document.animations = draft.animations;
+    });
   }
 
   private async load(): Promise<void> {
@@ -869,6 +1069,105 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
     this.edit((draft) => move(draft.layers ?? [], index, delta));
   }
 
+  // --------------------------------------------------------------- skeleton
+
+  /**
+   * Hangs the open layer off another one, or makes it a root again.
+   *
+   * The picker only ever offers layers that would not close a loop, so this
+   * cannot create one — but the anchor goes with the parent, because an
+   * attachment point on the old parent means nothing on the new one.
+   */
+  protected setParent(parentId: string): void {
+    this.editLayer((draft) => {
+      if (parentId.length === 0) {
+        delete draft.parent;
+      } else {
+        draft.parent = parentId;
+      }
+      delete draft.parentAnchor;
+    });
+  }
+
+  protected setParentAnchor(anchorId: string): void {
+    this.editLayer((draft) => {
+      if (anchorId.length === 0) {
+        delete draft.parentAnchor;
+      } else {
+        draft.parentAnchor = anchorId;
+      }
+    });
+  }
+
+  /**
+   * Adds an attachment point at the middle of the layer's box.
+   *
+   * Somewhere visible rather than at the canvas origin: an anchor an author
+   * cannot see on the preview is an anchor they cannot place.
+   */
+  protected addAnchor(): void {
+    const layer = this.layer();
+    if (layer === null) {
+      return;
+    }
+    const id = freeId(
+      'anchor',
+      (layer.anchors ?? []).map((anchor) => anchor.id),
+    );
+    const rect = this.target()?.rect ?? [0, 0, 0, 0];
+    this.editLayer((draft) => {
+      draft.anchors = [
+        ...(draft.anchors ?? []),
+        { id, at: [rect[0] + Math.round(rect[2] / 2), rect[1] + Math.round(rect[3] / 2)] },
+      ];
+    });
+  }
+
+  protected patchAnchor(index: number, change: Partial<AttachmentPoint>): void {
+    this.editLayer((draft) => {
+      const anchor = draft.anchors?.[index];
+      if (anchor !== undefined) {
+        Object.assign(anchor, change);
+      }
+    });
+  }
+
+  /** Sets one coordinate of an attachment point, in canvas pixels. */
+  protected setAnchorAt(index: number, axis: 0 | 1, raw: string): void {
+    const parsed = Number.parseFloat(raw);
+    if (!Number.isFinite(parsed)) {
+      return;
+    }
+    this.editLayer((draft) => {
+      const anchor = draft.anchors?.[index];
+      if (anchor !== undefined) {
+        const at: PixelOffset = [...anchor.at];
+        at[axis] = Math.round(parsed);
+        anchor.at = at;
+      }
+    });
+  }
+
+  /**
+   * Removes an attachment point, and every reference to it.
+   *
+   * A `parentAnchor` naming an anchor that no longer exists does not validate,
+   * and deleting a joint is not a way of saying "and break what hung off it".
+   */
+  protected removeAnchor(index: number): void {
+    const layerId = this.layer()?.id;
+    const removed = this.layer()?.anchors?.[index]?.id;
+    this.edit((draft) => {
+      const layer = draft.layers?.find((candidate) => candidate.id === layerId);
+      layer?.anchors?.splice(index, 1);
+      for (const other of draft.layers ?? []) {
+        if (other.parent === layerId && other.parentAnchor === removed) {
+          delete other.parentAnchor;
+        }
+      }
+    });
+  }
+
   // ---------------------------------------------------------------- variants
 
   protected addVariant(): void {
@@ -1178,8 +1477,27 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
     }
     try {
       this.report.set(this.engine.validateCharacter(serializeCharacter(document)));
-      this.resolved.set(this.engine.previewCharacter(document, this.values()));
+      this.resolved.set(this.engine.previewCharacter(document, this.values(), this.pose()));
       this.error.set(null);
+    } catch (cause) {
+      this.error.set(describe(cause));
+    }
+  }
+
+  /**
+   * Re-resolves the preview without re-validating it.
+   *
+   * What playback and scrubbing call sixty times a second: the verdict on a
+   * definition cannot change because time passed, and serialising it to
+   * re-validate on every frame would be the one expensive thing in the loop.
+   */
+  private repose(): void {
+    const document = this.document();
+    if (document === null || !this.engine.isReady) {
+      return;
+    }
+    try {
+      this.resolved.set(this.engine.previewCharacter(document, this.values(), this.pose()));
     } catch (cause) {
       this.error.set(describe(cause));
     }
@@ -1311,6 +1629,9 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
   }
 
   protected onPointerDown(event: PointerEvent): void {
+    if (this.beginPose(event)) {
+      return;
+    }
     const sprite = this.sprite();
     const at = this.pixelAt(event);
     if (!this.painting() || sprite === null || at === null || !sprite.holds(at.x, at.y)) {
@@ -1333,6 +1654,10 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
   }
 
   protected onPointerMove(event: PointerEvent): void {
+    if (this.dragging !== null) {
+      this.dragTo(event);
+      return;
+    }
     if (this.stroking === null) {
       return;
     }
@@ -1343,7 +1668,91 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
   }
 
   protected onPointerUp(): void {
+    this.dragging = null;
     this.finishStroke();
+  }
+
+  /**
+   * Starts dragging the selected node, if an animation is open.
+   *
+   * §16 of `docs/implementing-character-animator.md`: moving a node in the
+   * preview is how a pose is authored, and what it writes is the node's
+   * **local** transform at the frame on screen. Everything below it follows,
+   * because the composition is the engine's and nothing here bypasses it.
+   *
+   * @returns `true` when the pointer was taken for a drag
+   */
+  private beginPose(event: PointerEvent): boolean {
+    const animation = this.animation();
+    const node = this.layer()?.id;
+    const at = this.canvasPixel(event);
+    if (!this.posable() || animation === null || node === undefined || at === null) {
+      return false;
+    }
+    event.preventDefault();
+    (event.target as HTMLElement).setPointerCapture(event.pointerId);
+    // Playing while dragging would fight the pointer for the same value.
+    this.playing.set(false);
+    this.dragging = {
+      node,
+      from: at,
+      base: heldOffset(
+        (animation.tracks ?? []).find((track) => track.node === node),
+        this.poseFrame(),
+      ),
+    };
+    return true;
+  }
+
+  /** Writes the dragged node's keyframe at the frame on screen. */
+  private dragTo(event: PointerEvent): void {
+    const drag = this.dragging;
+    const at = this.canvasPixel(event);
+    if (drag === null || at === null) {
+      return;
+    }
+    const offset: PixelOffset = [
+      drag.base[0] + (at.x - drag.from.x),
+      drag.base[1] + (at.y - drag.from.y),
+    ];
+    const animationId = this.animation()?.id;
+    const frame = this.poseFrame();
+    this.edit((draft) => {
+      const animation = (draft.animations ?? []).find(
+        (candidate) => candidate.id === animationId,
+      );
+      if (animation === undefined) {
+        return;
+      }
+      const tracks = animation.tracks ?? [];
+      let track = tracks.find((candidate) => candidate.node === drag.node);
+      if (track === undefined) {
+        track = { node: drag.node, keyframes: [] };
+        tracks.push(track);
+        animation.tracks = tracks;
+      }
+      const existing = track.keyframes.find((keyframe) => keyframe.frame === frame);
+      if (existing === undefined) {
+        track.keyframes.push({ frame, offset });
+        track.keyframes.sort((left, right) => left.frame - right.frame);
+      } else {
+        existing.offset = offset;
+      }
+    });
+  }
+
+  /** The canvas pixel a pointer is over, in the character's own coordinates. */
+  private canvasPixel(event: PointerEvent): { x: number; y: number } | null {
+    const canvas = this.canvasRef()?.nativeElement;
+    if (canvas === undefined) {
+      return null;
+    }
+    return pixelUnder(
+      { x: event.clientX, y: event.clientY },
+      canvas.getBoundingClientRect(),
+      this.view.box,
+      this.view,
+    );
   }
 
   /** Paints from the last point to this one, so a fast drag is still a line. */
@@ -1638,8 +2047,83 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
     if (this.painting() && zoom >= GRID_ZOOM) {
       this.strokeGrid(context, resolved.resolution, zoom, originX, originY);
     }
+    if (this.skeleton()) {
+      this.strokeSkeleton(context, zoom, originX, originY);
+    }
     this.strokeOpenLayer(context, zoom, originX, originY);
     this.zoom.set(zoom);
+  }
+
+  /**
+   * The bones and joints, drawn over the character.
+   *
+   * §17: the thing that makes a positioning problem diagnosable. A line runs
+   * from where a layer hangs — its parent's attachment point when it names one,
+   * the parent's centre otherwise — to the child's own centre, and every
+   * attachment point is marked. Both ends move with the animation, because
+   * both are read off the *resolved* boxes rather than the authored ones.
+   *
+   * Editor-only: nothing in this method exists in the runtime's renderer.
+   */
+  private strokeSkeleton(
+    context: CanvasRenderingContext2D,
+    zoom: number,
+    originX: number,
+    originY: number,
+  ): void {
+    const drawn = new Map((this.resolved()?.layers ?? []).map((layer) => [layer.layer, layer]));
+    const selected = this.layer()?.id;
+    const point = (x: number, y: number): [number, number] => [
+      originX + x * zoom + zoom / 2,
+      originY + y * zoom + zoom / 2,
+    ];
+
+    context.save();
+    context.lineWidth = Math.max(1, Math.round(zoom / 3));
+
+    for (const layer of this.layers()) {
+      const child = drawn.get(layer.id);
+      const parentId = layer.parent;
+      if (child === undefined || !parentId) {
+        continue;
+      }
+      const parent = drawn.get(parentId);
+      if (parent === undefined) {
+        continue;
+      }
+      // Where it hangs: the named attachment point, moved by whatever the
+      // animation did to the layer that owns it.
+      const anchor = this.layers()
+        .find((candidate) => candidate.id === parentId)
+        ?.anchors?.find((candidate) => candidate.id === layer.parentAnchor);
+      const from = anchor
+        ? point(anchor.at[0] + parent.offset[0], anchor.at[1] + parent.offset[1])
+        : point(parent.rect[0] + parent.rect[2] / 2, parent.rect[1] + parent.rect[3] / 2);
+      const to = point(child.rect[0] + child.rect[2] / 2, child.rect[1] + child.rect[3] / 2);
+
+      context.strokeStyle = layer.id === selected || parentId === selected ? JOINT_COLOR : BONE_COLOR;
+      context.beginPath();
+      context.moveTo(from[0], from[1]);
+      context.lineTo(to[0], to[1]);
+      context.stroke();
+    }
+
+    // The joints themselves, on top of the bones so they stay readable.
+    const radius = Math.max(2, Math.round(zoom * 0.9));
+    context.fillStyle = JOINT_COLOR;
+    for (const layer of this.layers()) {
+      const placed = drawn.get(layer.id);
+      if (placed === undefined) {
+        continue;
+      }
+      for (const anchor of layer.anchors ?? []) {
+        const [x, y] = point(anchor.at[0] + placed.offset[0], anchor.at[1] + placed.offset[1]);
+        context.beginPath();
+        context.arc(x, y, radius, 0, Math.PI * 2);
+        context.fill();
+      }
+    }
+    context.restore();
   }
 
   /**

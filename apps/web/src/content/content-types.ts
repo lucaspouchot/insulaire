@@ -423,11 +423,102 @@ export interface LayerVariant {
   sprite: Sprite;
 }
 
-/** One piece a character is drawn from. Layers draw back to front. */
+/**
+ * A named point on a layer, for another layer to hang off.
+ *
+ * `at` is a position on the character's canvas — the neck, the hair line, the
+ * grip of a hand. It moves nothing on its own: it exists so a parent/child link
+ * reads as "the head's hair anchor" instead of a pair of coordinates, so the
+ * editor can draw the skeleton through the joints, and because it is the pivot
+ * a rotation will turn about the day there is one
+ * (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+ */
+export interface AttachmentPoint {
+  id: string;
+  at: PixelOffset;
+}
+
+/**
+ * One piece a character is drawn from. Layers draw back to front.
+ *
+ * A layer is also a **node**: `parent` makes it hang off another one, and an
+ * animation's offsets compose down that tree. Parentage and draw order are
+ * independent — a cape is drawn behind the body and still moves with it.
+ */
 export interface CharacterLayer {
   id: string;
+  /** Id of the layer this one hangs off. Absent makes it a root. */
+  parent?: string | null;
+  /** Which of the parent's anchors it hangs off, if it names one. */
+  parentAnchor?: string | null;
+  /** Points other layers may hang off. */
+  anchors?: AttachmentPoint[];
   /** The appearances it can take, most specific first — the first match wins. */
   variants: LayerVariant[];
+}
+
+/**
+ * A translation in whole canvas pixels: `[x, y]`.
+ *
+ * The same units and the same reasoning as {@link PixelRect}: a sprite moved by
+ * half a pixel is a sprite with a seam down its middle. `y` is positive
+ * **downwards**.
+ */
+export type PixelOffset = [number, number];
+
+/** Mirrors `MAX_ANIMATION_FRAMES`: the longest an animation may be. */
+export const MAX_ANIMATION_FRAMES = 240;
+
+/** Mirrors `DEFAULT_FRAME_DURATION_MS`. */
+export const DEFAULT_FRAME_DURATION_MS = 120;
+
+/** How a keyframe reaches the one after it. */
+export type Interpolation = 'step' | 'linear';
+
+/**
+ * One node's value at one frame.
+ *
+ * The transform is flattened into the keyframe, so a file reads
+ * `{ "frame": 1, "offset": [0, -2] }` — the *shape* keeps the concept of a
+ * local transform, the file keeps the diff readable.
+ */
+export interface Keyframe {
+  /** Which frame of the animation this value is written at, `0`-based. */
+  frame: number;
+  /** Translation from the rest pose, in canvas pixels. */
+  offset?: PixelOffset;
+  /** How it reaches the next keyframe of its track. Absent is `step`. */
+  interpolation?: Interpolation;
+}
+
+/** Everything one node does over the course of an animation. */
+export interface AnimationTrack {
+  /** Id of the layer this track drives. */
+  node: string;
+  keyframes: Keyframe[];
+}
+
+/**
+ * A named movement a character can play.
+ *
+ * An animation says nothing about what is drawn — only about **offsets from
+ * the rest pose**, per node, per frame. A node with no track does not sit
+ * still: it follows its parent, because offsets compose down the tree. That is
+ * what keeps a walk cycle from being thirty copies of a character.
+ */
+export interface Animation {
+  /** Stable id, unique within the definition — `idle`, `walk`, `attack`. */
+  id: string;
+  /** Shown in the editor. Not player-facing, so not a key. */
+  name?: string;
+  /** How many frames long it is, `1..=`{@link MAX_ANIMATION_FRAMES}. */
+  frames: number;
+  /** How long each frame lasts, in milliseconds. */
+  frameDurationMs?: number;
+  /** Whether it starts again when it ends. */
+  looping?: boolean;
+  /** What moves, and when. */
+  tracks?: AnimationTrack[];
 }
 
 /**
@@ -450,6 +541,8 @@ export interface CharacterDefinition {
   parameters?: ControlDefinition[];
   /** The pieces it is drawn from, back to front. */
   layers?: CharacterLayer[];
+  /** The movements it can play. A still character declares none. */
+  animations?: Animation[];
 }
 
 /** Chosen values by parameter id — a character's customisation. */
@@ -459,11 +552,27 @@ export type CharacterValues = Record<string, SettingValue>;
 export interface ResolvedLayer {
   layer: string;
   variant: string;
+  /** Where to draw it on the canvas, **animation included**. */
   rect: PixelRect;
+  /**
+   * How far the animation moved it from its rest pose, inherited transforms
+   * included. Already applied to {@link rect}; a renderer ignores it, and an
+   * editor uses it to say what the hierarchy did.
+   */
+  offset: PixelOffset;
   /** Path of the image to blit, under the content root. */
   asset: string;
   /** CSS colour to recolour it with. **Empty means draw it as authored.** */
   tint: string;
+}
+
+/** Which moment of which animation a resolved character is. */
+export interface ResolvedPose {
+  animation: string;
+  /** The frame it is showing, `0`-based. */
+  frame: number;
+  /** The time it was asked for, in milliseconds since the animation started. */
+  timeMs: number;
 }
 
 /**
@@ -481,4 +590,6 @@ export interface ResolvedCharacter {
   values: CharacterValues;
   /** What to draw, back to front. */
   layers: ResolvedLayer[];
+  /** The animation and moment this pose came from. Absent is the rest pose. */
+  pose?: ResolvedPose;
 }
