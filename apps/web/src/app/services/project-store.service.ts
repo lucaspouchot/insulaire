@@ -24,6 +24,7 @@
 import { Injectable, computed, signal } from '@angular/core';
 
 import {
+  ContentRef,
   DEFAULT_ZONE_ID,
   LanguageDefinition,
   PROJECT_SCHEMA_VERSION,
@@ -93,6 +94,12 @@ interface StoredProject {
   readonly project: ProjectDefinition;
   readonly worlds: readonly WorldDefinition[];
   readonly activeWorldId: string;
+}
+
+/** A manifest entry paired with the file behind it, or `null` when it is absent. */
+interface DiskFile {
+  readonly entry: ContentRef;
+  readonly definition: WorldDefinition | null;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -186,7 +193,7 @@ export class ProjectStoreService {
     );
     this.captureDiskBaseline(project, onDisk);
 
-    if (BUILD_FEATURES.editor && this.restore()) {
+    if (BUILD_FEATURES.editor && this.restore(project, onDisk)) {
       return;
     }
 
@@ -208,10 +215,7 @@ export class ProjectStoreService {
    * counts as changed, and a needless write is a far better failure than a
    * skipped one.
    */
-  private captureDiskBaseline(
-    project: ProjectDefinition,
-    onDisk: readonly { entry: { id: string; path: string }; definition: WorldDefinition | null }[],
-  ): void {
+  private captureDiskBaseline(project: ProjectDefinition, onDisk: readonly DiskFile[]): void {
     this.diskProjectJson = serializeProject(project);
     this.diskWorlds = new Map();
     for (const { entry, definition } of onDisk) {
@@ -230,15 +234,36 @@ export class ProjectStoreService {
     }
   }
 
-  /** Rebuilds documents from stored definitions. `false` when there are none. */
-  private restore(): boolean {
+  /**
+   * Rebuilds documents from stored definitions. `false` when there are none.
+   *
+   * What browser storage holds is the editor's **work in progress**, not the
+   * project: the content directory is the project (ADR-0022), and an author may
+   * write into it by hand between two sessions — a map dropped in, a character
+   * declared in `project.json`. So the files win wherever the two disagree, and
+   * storage contributes only what it alone holds: the maps and the manifest
+   * entries the editor made and has not written yet.
+   *
+   * Restoring the stored manifest wholesale, which is what this used to do, hid
+   * everything hand-added — and left the next save ready to overwrite the file
+   * with the stale list.
+   */
+  private restore(onDisk: ProjectDefinition, files: readonly DiskFile[]): boolean {
     const stored = this.readStored();
     if (stored === null) {
       return false;
     }
     try {
-      this.adopt(stored.worlds, stored.activeWorldId, 'restored');
-      this.projectSignal.set(stored.project);
+      // A map added to the directory since the tab was last open is loaded from
+      // its file: the merged manifest is about to declare it, and a declared map
+      // with no document is a project the editor cannot show.
+      const restored = new Set(stored.worlds.map((world) => world.id));
+      const added = files
+        .filter((file) => file.definition !== null && !restored.has(file.entry.id))
+        .map((file) => file.definition as WorldDefinition);
+
+      this.adopt([...stored.worlds, ...added], stored.activeWorldId, 'restored');
+      this.projectSignal.set(mergeManifest(onDisk, stored.project));
       return true;
     } catch {
       // Stored content that no longer matches the tile sets is discarded rather
@@ -846,6 +871,33 @@ async function fetchLocaleFiles(project: ProjectDefinition): Promise<LocaleFile[
   );
 
   return fetched.filter((entry) => entry !== null);
+}
+
+/**
+ * The manifest on disk, plus whatever the stored one declares that it does not.
+ *
+ * Additive on purpose, and only additive: an entry the file holds is the
+ * author's, whether they wrote it by hand or the editor wrote it for them, and
+ * nothing in browser storage may remove or redirect one. What storage may still
+ * contribute is an entry it alone has — something declared in this session and
+ * not yet written — which is exactly what would otherwise be lost on a reload.
+ *
+ * A removal made in the editor and not saved is therefore undone by a reload.
+ * That is the safe direction: content comes back, it does not disappear.
+ */
+function mergeManifest(onDisk: ProjectDefinition, stored: ProjectDefinition): ProjectDefinition {
+  return {
+    ...onDisk,
+    tileSets: union(onDisk.tileSets, stored.tileSets),
+    worlds: union(onDisk.worlds, stored.worlds),
+    characters: union(onDisk.characters ?? [], stored.characters ?? []),
+  };
+}
+
+/** `first`, then every entry of `second` under an id `first` does not hold. */
+function union(first: readonly ContentRef[], second: readonly ContentRef[]): ContentRef[] {
+  const held = new Set(first.map((entry) => entry.id));
+  return [...first, ...second.filter((entry) => !held.has(entry.id))];
 }
 
 async function fetchText(url: string): Promise<string> {

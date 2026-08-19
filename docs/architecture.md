@@ -143,6 +143,12 @@ browser. `cargo test` runs the entire simulation without WASM.
   calling `resetContent()` re-registers the languages, the title screen and the
   settings with the maps, because `loadProject` validates the whole manifest.
   See ADR-0026.
+- **Files ↔ browser storage** — the content directory is the project, and the
+  editor's `localStorage` copy is one session's work in progress. On a reload the
+  **files win**: storage restores the maps it holds and contributes manifest
+  entries the file does not have, but never removes or redirects one. Anything
+  else hides what an author wrote by hand and lets the next save overwrite it.
+  See ADR-0022 and `project-store.service.ts`.
 - **Text ↔ language** — no string is written where it is displayed: a template
   names a key, the engine flattens the project's locale files and applies the
   default-language fallback. See ADR-0023.

@@ -243,3 +243,95 @@ describe('ProjectStoreService — what a save has to write', () => {
     expect(store.changedWorldIds()).toEqual(['valley']);
   });
 });
+
+/**
+ * The content directory is the project (`docs/adr/ADR-0022-authoring-content-
+ * workspace.md`). Browser storage carries a session's work in progress, and a
+ * session that outlived a hand-edit must not hide what was written by hand — nor
+ * arrive at the next save ready to overwrite it.
+ */
+describe('ProjectStoreService — the files win over the stored session', () => {
+  /** What the editor left in `localStorage` before the directory was edited. */
+  function store(project: ProjectDefinition, worlds: readonly WorldDefinition[]): void {
+    localStorage.setItem(
+      'insulaire.editor.project.v1',
+      JSON.stringify({ project, worlds, activeWorldId: project.startWorld }),
+    );
+  }
+
+  /** `open()` without the `localStorage.clear()`, so a session survives. */
+  async function reopen(project: ProjectDefinition): Promise<ProjectStoreService> {
+    serveContent(project);
+    TestBed.configureTestingModule({});
+    const service = TestBed.inject(ProjectStoreService);
+    await service.ensureLoaded();
+    return service;
+  }
+
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('shows a character declared in the file by hand since the last session', async () => {
+    const declared: ProjectDefinition = {
+      ...PROJECT,
+      characters: [{ id: 'human_player', path: 'characters/human_player.json' }],
+    };
+    store(PROJECT, [world('valley'), world('ridge')]);
+
+    const service = await reopen(declared);
+
+    expect(service.project()?.characters).toEqual([
+      { id: 'human_player', path: 'characters/human_player.json' },
+    ]);
+    // And the file it came from is not owed a write: it already says this.
+    expect(service.manifestNeedsWriting()).toBe(false);
+  });
+
+  it('keeps what the session declared and has not written yet', async () => {
+    const session: ProjectDefinition = {
+      ...PROJECT,
+      characters: [{ id: 'goblin', path: 'characters/goblin.json' }],
+    };
+    store(session, [world('valley'), world('ridge')]);
+
+    const service = await reopen(PROJECT);
+
+    // Nothing on disk declares it, so it survives on the strength of the
+    // session alone — and the manifest is owed a write.
+    expect(service.project()?.characters).toEqual([
+      { id: 'goblin', path: 'characters/goblin.json' },
+    ]);
+    expect(service.manifestNeedsWriting()).toBe(true);
+  });
+
+  it('never lets the session redirect an entry the file declares', async () => {
+    const session: ProjectDefinition = {
+      ...PROJECT,
+      worlds: [
+        { id: 'valley', path: 'worlds/somewhere-else.json' },
+        { id: 'ridge', path: 'worlds/ridge.json' },
+      ],
+    };
+    store(session, [world('valley'), world('ridge')]);
+
+    const service = await reopen(PROJECT);
+
+    expect(service.project()?.worlds[0]).toEqual({ id: 'valley', path: 'worlds/valley.json' });
+  });
+
+  it('loads a map added to the directory while the session was away', async () => {
+    // The session knows one map; the manifest now declares two. Merging the
+    // manifest without loading the file would declare a map with no document.
+    store({ ...PROJECT, worlds: [{ id: 'valley', path: 'worlds/valley.json' }] }, [world('valley')]);
+
+    const service = await reopen(PROJECT);
+
+    expect(service.documents().map((document) => document.id)).toEqual(['valley', 'ridge']);
+  });
+});
