@@ -47,11 +47,12 @@ export const ASSET_CATEGORIES: readonly AssetCategory[] = [
 ];
 
 /** Which panel of the tile editor is open. */
-export type TileEditorTab = 'definition' | 'surface' | 'elevation' | 'geometry';
+export type TileEditorTab = 'definition' | 'flat' | 'surface' | 'elevation' | 'geometry';
 
 /** The tabs, in the order they are shown. */
 export const TILE_EDITOR_TABS: readonly TileEditorTab[] = [
   'definition',
+  'flat',
   'surface',
   'elevation',
   'geometry',
@@ -70,14 +71,27 @@ export function repeatModeOf(repeat: ElevationRepeat | null | undefined): Repeat
 
 /** What the editor opens in the pixel tools: one image of one tile. */
 export interface ImageTarget {
-  /** `-1` for a surface variant, otherwise the 1-based elevation level. */
+  /**
+   * {@link SURFACE_LEVEL}, {@link FLAT_LEVEL}, or the 1-based elevation level.
+   */
   readonly level: number;
-  /** Index of the variant within its surface or level. */
+  /** Index of the variant within its own list. */
   readonly variant: number;
 }
 
-/** The surface's pseudo-level, so one target type covers both lists. */
+/** The surface's pseudo-level, so one target type covers every list. */
 export const SURFACE_LEVEL = -1;
+
+/**
+ * The flat view's pseudo-level.
+ *
+ * A flat image belongs to no level: a top-down world draws one image per cell
+ * and no relief at all
+ * (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`). It gets a
+ * pseudo-level for the same reason the surface has one — so a target is two
+ * numbers rather than a tagged union.
+ */
+export const FLAT_LEVEL = -2;
 
 /** `true` when two targets point at the same image. */
 export function sameTarget(left: ImageTarget | null, right: ImageTarget | null): boolean {
@@ -86,6 +100,9 @@ export function sameTarget(left: ImageTarget | null, right: ImageTarget | null):
 
 /** The variants of a target's list, or an empty list when it has none. */
 export function variantsOf(tile: TileDefinition, level: number): readonly TileArtVariant[] {
+  if (level === FLAT_LEVEL) {
+    return tile.art?.flat ?? [];
+  }
   if (level === SURFACE_LEVEL) {
     return tile.art?.surface ?? [];
   }
@@ -105,6 +122,7 @@ export function artOf(tile: TileDefinition): Required<Omit<TileArt, 'elevation'>
   elevation: { levels: ElevationLevel[]; repeat?: ElevationRepeat | null };
 } {
   tile.art ??= {};
+  tile.art.flat ??= [];
   tile.art.surface ??= [];
   tile.art.elevation ??= { levels: [] };
   tile.art.elevation.levels ??= [];
@@ -120,10 +138,13 @@ export function pruneArt(tile: TileDefinition): void {
   if ((art.elevation?.levels?.length ?? 0) === 0 && (art.elevation?.repeat ?? null) === null) {
     delete art.elevation;
   }
+  if ((art.flat?.length ?? 0) === 0) {
+    delete art.flat;
+  }
   if ((art.surface?.length ?? 0) === 0) {
     delete art.surface;
   }
-  if (art.surface === undefined && art.elevation === undefined) {
+  if (art.flat === undefined && art.surface === undefined && art.elevation === undefined) {
     delete tile.art;
   }
 }
@@ -183,10 +204,12 @@ export function duplicateTile(tile: TileDefinition, id: string, name: string): T
 /**
  * Where a tile's images are written: a convention, not a rule.
  *
- * One directory per tile, its surfaces together and its elevation levels each
- * in their own folder, so a listing reads as the ladder it is:
+ * One directory per tile: its flat images together, its surfaces together, and
+ * its elevation levels each in their own folder, so a listing reads as the
+ * ladder it is:
  *
  * ```text
+ *   assets/tiles/dirt/flat/dirt_a.png
  *   assets/tiles/dirt/surfaces/dirt_a.png
  *   assets/tiles/dirt/elevation/level_1/dirt_a.png
  *   assets/tiles/dirt/elevation/level_2/dirt_a.png
@@ -197,9 +220,15 @@ export function duplicateTile(tile: TileDefinition, id: string, name: string): T
  * *proposes* when it makes a new image.
  */
 export function imagePath(tileId: string, level: number, variantId: string): string {
-  const folder =
-    level === SURFACE_LEVEL ? 'surfaces' : `elevation/level_${level}`;
+  const folder = folderFor(level);
   return `assets/tiles/${tileId}/${folder}/${tileId}_${variantId}.png`;
+}
+
+function folderFor(level: number): string {
+  if (level === FLAT_LEVEL) {
+    return 'flat';
+  }
+  return level === SURFACE_LEVEL ? 'surfaces' : `elevation/level_${level}`;
 }
 
 /** `a`, `b`, … `z`, then `aa`: the variant ids the editor proposes. */

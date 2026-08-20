@@ -85,22 +85,39 @@ impl InsulaireEngine {
     /// `base` is the height the cell's side faces reach down to; `roll` is the
     /// cell's variant roll
     /// (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+    /// `projection` is the world's own — `"isometric"` for the surface and the
+    /// cliff, anything else for the flat image
+    /// (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+    /// `choiceJson` is a `PlacedTileArt` — what the cell picked by hand —
+    /// resolved against the set passed in; `"{}"` rolls everything
+    /// (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
     ///
     /// # Errors
     ///
-    /// `parse` when the JSON is malformed, `unknownContent` when the set
+    /// `parse` when either JSON is malformed, `unknownContent` when the set
     /// defines no tile with that id.
     #[wasm_bindgen(js_name = previewTileRender)]
+    #[allow(clippy::too_many_arguments)] // a wire, not an API: every field the boundary carries is a parameter
     pub fn preview_tile_render(
         &self,
         tile_set_json: &str,
         tile_id: &str,
+        projection: &str,
         elevation: i32,
         base: i32,
         roll: u32,
+        choice_json: &str,
     ) -> Result<String, JsValue> {
         self.inner
-            .preview_tile_render(tile_set_json, tile_id, elevation, base, roll)
+            .preview_tile_render(
+                tile_set_json,
+                tile_id,
+                projection,
+                elevation,
+                base,
+                roll,
+                choice_json,
+            )
             .map_err(to_js)
     }
 

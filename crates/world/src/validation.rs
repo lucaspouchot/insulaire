@@ -241,6 +241,7 @@ fn geometry_issues(art: &TileArtGeometry) -> Vec<ValidationIssue> {
 
     for (value, field) in [
         (art.width, "width"),
+        (art.flat_height, "flatHeight"),
         (art.surface_height, "surfaceHeight"),
         (art.elevation_height, "elevationHeight"),
     ] {
@@ -290,6 +291,7 @@ fn tile_art_issues(tile: &TileDefinition, path: &str) -> Vec<ValidationIssue> {
     let art: &TileArt = &tile.art;
     let mut issues = Vec::new();
 
+    issues.extend(variant_list_issues(&art.flat, &format!("{path}.art.flat")));
     issues.extend(variant_list_issues(
         &art.surface,
         &format!("{path}.art.surface"),
@@ -544,6 +546,96 @@ fn validate_tiles(
                 ),
             ));
         }
+        validate_cell_art(placed, tile_set, &path, issues);
+    }
+}
+
+/// A cell's hand-picked art: three references that have to resolve.
+///
+/// Warnings rather than errors, all of them. A dangling art reference costs the
+/// cell its *choice*, not its picture — the grid leaves the field unset and it
+/// rolls as it always did — so a map that lost a variant to a repainted tile
+/// set still loads and still plays, and the author is told what stopped meaning
+/// something (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+fn validate_cell_art(
+    placed: &crate::definition::PlacedTile,
+    tile_set: &TileSetDefinition,
+    path: &str,
+    issues: &mut Vec<ValidationIssue>,
+) {
+    let art = &placed.art;
+    if art.is_empty() {
+        return;
+    }
+
+    let own = tile_set.tile(&placed.tile);
+    if !art.surface.is_empty()
+        && !own.is_some_and(|tile| {
+            tile.art
+                .surface
+                .iter()
+                .any(|variant| variant.id == art.surface)
+        })
+    {
+        issues.push(ValidationIssue::warning(
+            "tile.unknownSurfaceVariant",
+            format!("{path}.art.surface"),
+            format!(
+                "tile `{}` at {} declares no surface variant `{}`",
+                placed.tile, placed.at, art.surface
+            ),
+        ));
+    }
+
+    // The ladder that will actually draw: the borrowed one when there is one,
+    // which is also where the variant id has to mean something.
+    let mut ladder = own;
+    if !art.elevation_tile.is_empty() {
+        match tile_set.tile(&art.elevation_tile) {
+            None => {
+                ladder = None;
+                issues.push(ValidationIssue::warning(
+                    "tile.unknownElevationTile",
+                    format!("{path}.art.elevationTile"),
+                    format!(
+                        "tile `{}` is not defined by tile set `{}`",
+                        art.elevation_tile, tile_set.id
+                    ),
+                ));
+            }
+            Some(borrowed) => {
+                ladder = Some(borrowed);
+                if borrowed.art.elevation.is_empty() {
+                    issues.push(ValidationIssue::warning(
+                        "tile.elevationTileWithoutLadder",
+                        format!("{path}.art.elevationTile"),
+                        format!(
+                            "tile `{}` authors no elevation art, so {} draws no faces",
+                            art.elevation_tile, placed.at
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+
+    if !art.elevation.is_empty()
+        && !ladder.is_some_and(|tile| {
+            tile.art
+                .elevation
+                .levels
+                .iter()
+                .any(|level| level.variants.iter().any(|v| v.id == art.elevation))
+        })
+    {
+        issues.push(ValidationIssue::warning(
+            "tile.unknownElevationVariant",
+            format!("{path}.art.elevation"),
+            format!(
+                "no elevation level drawing {} declares a variant `{}`",
+                placed.at, art.elevation
+            ),
+        ));
     }
 }
 
@@ -2301,6 +2393,73 @@ mod tests {
     }
 
     #[test]
+    fn a_cell_art_choice_that_resolves_is_silent() {
+        let mut set = crate::testing::sample_tile_set();
+        set.tiles[0].art = set.tiles[1].art.clone();
+        let mut world = crate::testing::sample_world();
+        world.tiles[0].tile = "grass".into();
+        world.tiles[0].art = crate::definition::PlacedTileArt {
+            surface: "b".into(),
+            elevation_tile: "rock".into(),
+            elevation: "a".into(),
+        };
+
+        let report = validate_world(&world, Some(&set), &TemplateRegistry::default());
+        assert!(
+            !report
+                .issues
+                .iter()
+                .any(|issue| issue.code.starts_with("tile.unknown")),
+            "{:?}",
+            report.issues
+        );
+    }
+
+    #[test]
+    fn a_dangling_cell_art_choice_warns_without_failing_the_world() {
+        let mut world = crate::testing::sample_world();
+        world.tiles[0].tile = "rock".into();
+        world.tiles[0].art = crate::definition::PlacedTileArt {
+            surface: "zz".into(),
+            elevation_tile: "lava".into(),
+            elevation: "qq".into(),
+        };
+
+        let report = validate_world(
+            &world,
+            Some(&crate::testing::sample_tile_set()),
+            &TemplateRegistry::default(),
+        );
+        let codes: Vec<&str> = report.issues.iter().map(|i| i.code.as_str()).collect();
+        assert!(codes.contains(&"tile.unknownSurfaceVariant"), "{codes:?}");
+        assert!(codes.contains(&"tile.unknownElevationTile"), "{codes:?}");
+        assert!(codes.contains(&"tile.unknownElevationVariant"), "{codes:?}");
+        // Warnings, so the world still loads and the cell simply rolls.
+        assert!(report.valid, "{:?}", report.issues);
+    }
+
+    #[test]
+    fn borrowing_a_ladder_from_a_tile_that_has_none_is_reported() {
+        let mut world = crate::testing::sample_world();
+        world.tiles[0].tile = "rock".into();
+        world.tiles[0].art = crate::definition::PlacedTileArt {
+            elevation_tile: "water".into(),
+            ..Default::default()
+        };
+
+        let report = validate_world(
+            &world,
+            Some(&crate::testing::sample_tile_set()),
+            &TemplateRegistry::default(),
+        );
+        assert!(report
+            .issues
+            .iter()
+            .any(|issue| issue.code == "tile.elevationTileWithoutLadder"));
+        assert!(report.valid);
+    }
+
+    #[test]
     fn unknown_tile_reference_is_an_error() {
         let mut world = testing::sample_world();
         world.tiles[0].tile = "lava".into();
@@ -2321,6 +2480,7 @@ mod tests {
             tile: "grass".into(),
             elevation: 0,
             tags: Vec::new(),
+            art: Default::default(),
         });
         world.entities[0].at = OffsetCoord::new(-1, 0);
         let report = validate_world(
@@ -2393,6 +2553,7 @@ mod tests {
             tile: "water".into(),
             elevation: 0,
             tags: Vec::new(),
+            art: Default::default(),
         });
         let report = validate_world(
             &world,
@@ -2634,6 +2795,7 @@ mod tests {
             tile: "water".to_owned(),
             elevation: 0,
             tags: Vec::new(),
+            art: Default::default(),
         });
         linked.links[0].target_at = OffsetCoord::new(1, 1);
         let worlds = [linked, interior];

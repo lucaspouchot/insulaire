@@ -19,6 +19,12 @@
  * the engine's packed terrain buffer and the renderer use, so painting a hex is
  * one array write and rendering needs no conversion. Export re-sparsifies:
  * only cells differing from `defaultTile` are written out.
+ *
+ * Per-cell **art choices** are the exception to that density: a cell that picks
+ * its own surface or borrows another tile's cliff is an authored oddity, so
+ * they live in a `Map` keyed by cell index rather than in three more buffers
+ * that would be empty on every map anybody actually draws
+ * (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
  */
 
 import { Offset, indexIn } from '../core/hex/hex-coords';
@@ -27,6 +33,7 @@ import {
   LocationDefinition,
   MapLink,
   PlacedTile,
+  PlacedTileArt,
   ProjectionMode,
   TileArt,
   TileArtGeometry,
@@ -54,6 +61,29 @@ export interface DocumentTile {
   /** The images this tile is drawn from; absent draws {@link fallbackColor}. */
   readonly art?: TileArt;
 }
+
+/**
+ * What one cell chose to be drawn with, by id.
+ *
+ * Ids rather than indices, because that is what the file carries and what
+ * survives a variant being inserted above another one. `null` is "roll it",
+ * which is what every cell says until an author says otherwise.
+ */
+export interface DocumentCellArt {
+  /** Id of a surface variant of the cell's own tile. */
+  surface: string | null;
+  /** Id of the tile whose elevation ladder cuts the faces. */
+  elevationTile: string | null;
+  /** Id of the elevation variant; `null` follows {@link surface}. */
+  elevation: string | null;
+}
+
+/** Nothing chosen: the shape {@link WorldDocument.artAt} answers with. */
+export const ROLLED_ART: DocumentCellArt = {
+  surface: null,
+  elevationTile: null,
+  elevation: null,
+};
 
 /** An entity placed by the author. */
 export interface DocumentEntity {
@@ -118,6 +148,8 @@ export class WorldDocument {
     private readonly cells: Uint8Array,
     /** One elevation per cell, in the same layout as {@link cells}. */
     private readonly elevations: Int8Array,
+    /** The cells that chose their art, keyed by their index in {@link cells}. */
+    private readonly artChoices: Map<number, DocumentCellArt>,
     private entities: DocumentEntity[],
     private locations: DocumentLocation[],
     private links: DocumentLink[],
@@ -162,6 +194,7 @@ export class WorldDocument {
       defaultIndex,
       cells,
       new Int8Array(init.width * init.height),
+      new Map(),
       [],
       [],
       [],
@@ -204,6 +237,10 @@ export class WorldDocument {
       document.cells[cell] = index;
       // Through `raise` rather than the buffer, so the elevation range tracks.
       document.raise({ col: placed.at[0], row: placed.at[1] }, placed.elevation ?? 0);
+      const art = readCellArt(placed.art);
+      if (art !== null) {
+        document.artChoices.set(cell, art);
+      }
     }
 
     document.entities = (definition.entities ?? []).map((entity) => ({
@@ -310,6 +347,62 @@ export class WorldDocument {
       return false;
     }
     this.cells[index] = paletteIndex;
+    // A hand-picked surface belongs to the tile that was there: `grass_f` means
+    // nothing on sand. Painting over a cell therefore drops its choice and puts
+    // it back on the roll, which is also what the author almost always wants
+    // (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+    this.artChoices.delete(index);
+    return true;
+  }
+
+  // -------------------------------------------------------------- cell art
+
+  /** Every cell that chose its art, keyed by its index in the packed buffer. */
+  get artOverrides(): ReadonlyMap<number, DocumentCellArt> {
+    return this.artChoices;
+  }
+
+  /** What a cell chose, or {@link ROLLED_ART} when it chose nothing. */
+  artAt(cell: Offset): DocumentCellArt {
+    const index = indexIn(cell, this.width, this.height);
+    return (index < 0 ? undefined : this.artChoices.get(index)) ?? ROLLED_ART;
+  }
+
+  /**
+   * Sets what a cell is drawn with. `null` on a field puts it back on the roll.
+   *
+   * Nothing here checks that the ids exist: the tile set is the authority on
+   * that and the Rust validator is the one that says so, exactly as with a
+   * door's target (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+   *
+   * @returns `true` when the cell changed.
+   */
+  setArt(cell: Offset, patch: Partial<DocumentCellArt>): boolean {
+    const index = indexIn(cell, this.width, this.height);
+    if (index < 0) {
+      return false;
+    }
+    const before = this.artChoices.get(index) ?? ROLLED_ART;
+    const after: DocumentCellArt = {
+      surface: patch.surface === undefined ? before.surface : patch.surface,
+      elevationTile:
+        patch.elevationTile === undefined ? before.elevationTile : patch.elevationTile,
+      elevation: patch.elevation === undefined ? before.elevation : patch.elevation,
+    };
+    if (
+      after.surface === before.surface &&
+      after.elevationTile === before.elevationTile &&
+      after.elevation === before.elevation
+    ) {
+      return false;
+    }
+    // A cell that chose nothing is not an entry: an empty record would be
+    // written to the file and read as an authored decision.
+    if (after.surface === null && after.elevationTile === null && after.elevation === null) {
+      this.artChoices.delete(index);
+    } else {
+      this.artChoices.set(index, after);
+    }
     return true;
   }
 
@@ -480,7 +573,8 @@ export class WorldDocument {
     for (let index = 0; index < this.cells.length; index += 1) {
       const paletteIndex = this.cells[index] as number;
       const elevation = this.elevations[index] ?? 0;
-      if (paletteIndex === this.defaultTileIndex && elevation === 0) {
+      const art = writeCellArt(this.artChoices.get(index));
+      if (paletteIndex === this.defaultTileIndex && elevation === 0 && art === null) {
         continue;
       }
       const tile = this.palette[paletteIndex];
@@ -491,6 +585,7 @@ export class WorldDocument {
         at: [index % this.width, Math.floor(index / this.width)],
         tile: tile.id,
         ...(elevation === 0 ? {} : { elevation }),
+        ...(art === null ? {} : { art }),
       });
     }
 
@@ -549,6 +644,41 @@ export class WorldDocument {
     }
     return counts;
   }
+}
+
+/** A file's `art` block as the document holds it, or `null` when it chose nothing. */
+function readCellArt(art: PlacedTileArt | undefined): DocumentCellArt | null {
+  const surface = art?.surface ?? '';
+  const elevationTile = art?.elevationTile ?? '';
+  const elevation = art?.elevation ?? '';
+  if (surface.length === 0 && elevationTile.length === 0 && elevation.length === 0) {
+    return null;
+  }
+  return {
+    surface: surface.length === 0 ? null : surface,
+    elevationTile: elevationTile.length === 0 ? null : elevationTile,
+    elevation: elevation.length === 0 ? null : elevation,
+  };
+}
+
+/**
+ * The document's choice as the file writes it, or `null` when there is nothing
+ * to write.
+ *
+ * Fields left on the roll are **omitted**, not written as empty strings, so a
+ * cell that only picks its surface produces `{ "surface": "f" }` and a map that
+ * picks nothing gains no `art` keys at all.
+ */
+function writeCellArt(art: DocumentCellArt | undefined): PlacedTileArt | null {
+  if (art === undefined) {
+    return null;
+  }
+  const written: PlacedTileArt = {
+    ...(art.surface === null ? {} : { surface: art.surface }),
+    ...(art.elevationTile === null ? {} : { elevationTile: art.elevationTile }),
+    ...(art.elevation === null ? {} : { elevation: art.elevation }),
+  };
+  return Object.keys(written).length === 0 ? null : written;
 }
 
 /** Keeps an authored elevation inside what the packed buffer can hold. */

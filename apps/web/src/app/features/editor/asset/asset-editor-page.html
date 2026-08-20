@@ -78,7 +78,11 @@
               <span class="swatch" [style.background]="entry.visual.fallbackColor"></span>
               <span class="name">{{ entry.name || entry.id }}</span>
               <span class="id">{{ entry.id }}</span>
-              @if (entry.art?.surface?.length || entry.art?.elevation?.levels?.length) {
+              @if (
+                entry.art?.flat?.length ||
+                entry.art?.surface?.length ||
+                entry.art?.elevation?.levels?.length
+              ) {
                 <span class="painted" [title]="'ui.editor.asset.hasArt' | t">▦</span>
               }
             </button>
@@ -124,6 +128,7 @@
               | t
                 : {
                     width: geometry().width,
+                    flat: geometry().flatHeight,
                     surface: geometry().surfaceHeight,
                     elevation: geometry().elevationHeight,
                     step: geometry().elevationStep
@@ -215,6 +220,46 @@
                 />
               </label>
               <p class="hint">{{ 'ui.editor.asset.fallbackHint' | t }}</p>
+            </div>
+          }
+
+          @case ('flat') {
+            <div class="fields">
+              <p class="hint">{{ 'ui.editor.asset.flatHint' | t }}</p>
+              <ul class="variants">
+                @for (variant of flatVariants(); track variant.id; let index = $index) {
+                  <li [class.open]="isOpen(-2, index)">
+                    <button type="button" class="pick" (click)="openVariant(-2, index)">
+                      <span class="vid">{{ variant.id }}</span>
+                      <span class="asset">{{ variant.asset }}</span>
+                    </button>
+                    <label class="import" [title]="'ui.editor.asset.import' | t">
+                      <input
+                        type="file"
+                        accept="image/png,image/*"
+                        (change)="importImage(-2, index, $event)"
+                      />
+                      ⇪
+                    </label>
+                    <button type="button" class="danger" (click)="removeVariant(-2, index)">×</button>
+                  </li>
+                } @empty {
+                  <li class="empty">{{ 'ui.editor.asset.noVariants' | t }}</li>
+                }
+              </ul>
+              <button
+                type="button"
+                [disabled]="flatVariants().length >= maxVariants"
+                (click)="addVariant(-2)"
+              >
+                {{ 'ui.editor.asset.addVariant' | t }}
+              </button>
+              <p class="hint">
+                {{
+                  'ui.editor.asset.flatSize'
+                    | t: { width: geometry().width, height: geometry().flatHeight }
+                }}
+              </p>
             </div>
           }
 
@@ -400,6 +445,16 @@
                   [max]="maxImageSize"
                   [value]="geometry().width"
                   (change)="changeGeometry('width', $event)"
+                />
+              </label>
+              <label>
+                {{ 'ui.editor.asset.geometry.flatHeight' | t }}
+                <input
+                  type="number"
+                  min="1"
+                  [max]="maxImageSize"
+                  [value]="geometry().flatHeight"
+                  (change)="changeGeometry('flatHeight', $event)"
                 />
               </label>
               <label>

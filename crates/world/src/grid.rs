@@ -10,13 +10,21 @@
 //! Both buffers are handed to JavaScript whole — as a `Uint8Array` and an
 //! `Int8Array` — so rendering a 2048x2048 map costs two boundary crossings
 //! instead of eight million (see `CLAUDE.md`, "Performance").
+//!
+//! Cells that **choose** their art rather than rolling it are the fourth
+//! structure, and the only sparse one: they are authored exceptions, a handful
+//! on a map of millions, so they travel as a sorted list of
+//! [`CellArtChoice`] rather than three more buffers nobody would fill
+//! (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`). Resolving the ids
+//! an author wrote into the indices a renderer wants happens **here**, once per
+//! load, so no draw call ever searches a variant list by name.
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::definition::{WorldDefinition, MAX_ELEVATION, MIN_ELEVATION};
+use crate::definition::{PlacedTileArt, WorldDefinition, MAX_ELEVATION, MIN_ELEVATION};
 use crate::hex::{Hex, OffsetCoord};
-use crate::tile_art::TileArt;
+use crate::tile_art::{CellArt, TileArt};
 use crate::tileset::TileSetDefinition;
 
 /// Failure modes of [`WorldGrid::build`].
@@ -80,6 +88,78 @@ pub struct ResolvedTile {
     pub art: TileArt,
 }
 
+impl ResolvedTile {
+    /// The palette entry a tile flattens to.
+    ///
+    /// Public because a palette is also what [`resolve_cell_art`] resolves ids
+    /// against, and the asset editor's preview has a tile set but no world.
+    #[must_use]
+    pub fn of(tile: &crate::tileset::TileDefinition) -> Self {
+        Self {
+            id: tile.id.clone(),
+            name: tile.name.clone(),
+            terrain: tile.terrain.clone(),
+            movement_cost: tile.movement_cost,
+            passable: tile.is_passable(),
+            visual_id: tile.visual.visual_id.clone(),
+            fallback_color: tile.visual.fallback_color.clone(),
+            tags: tile.tags.clone(),
+            art: tile.art.clone(),
+        }
+    }
+}
+
+/// One cell's art choice, with every authored id already resolved.
+///
+/// The file names variants and tiles by id, because that is what an author
+/// reads; a renderer wants indices, and turning one into the other is a search
+/// no draw call should ever do. So it happens once, when the grid is built, and
+/// an id that resolves to nothing simply leaves its field unset — the cell then
+/// rolls that choice as it always would, and validation reports the dangling
+/// reference separately rather than the picture breaking
+/// (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CellArtChoice {
+    /// Row-major cell index, the same layout as [`WorldGrid::cells`].
+    pub cell: u32,
+    /// Index into the cell's own tile's surface variants — or its flat ones,
+    /// whichever the world's projection draws from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface: Option<u32>,
+    /// Palette index of the tile whose elevation ladder cuts the faces.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub elevation_tile: Option<u32>,
+    /// Index into the variants of whichever level ends up drawing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub elevation: Option<u32>,
+}
+
+impl CellArtChoice {
+    /// `true` when nothing was resolved, so the cell rolls everything.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.surface.is_none() && self.elevation_tile.is_none() && self.elevation.is_none()
+    }
+
+    /// The choice as [`crate::resolve_tile_render`] wants it.
+    ///
+    /// The one place a borrowed elevation ladder becomes a borrowed
+    /// [`TileArt`]; `palette` must be the one the indices were resolved
+    /// against.
+    #[must_use]
+    pub fn against<'a>(&self, palette: &'a [ResolvedTile]) -> CellArt<'a> {
+        CellArt {
+            surface: self.surface.map(|index| index as usize),
+            elevation: self
+                .elevation_tile
+                .and_then(|index| palette.get(index as usize))
+                .map(|tile| &tile.art),
+            elevation_variant: self.elevation.map(|index| index as usize),
+        }
+    }
+}
+
 /// A dense, index-addressable world map.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WorldGrid {
@@ -90,6 +170,8 @@ pub struct WorldGrid {
     cells: Vec<u8>,
     /// One elevation per cell, in the same layout as [`cells`](Self::cells).
     elevations: Vec<i8>,
+    /// The cells that chose their art, sorted by [`CellArtChoice::cell`].
+    art_choices: Vec<CellArtChoice>,
 }
 
 impl WorldGrid {
@@ -112,21 +194,7 @@ impl WorldGrid {
             });
         }
 
-        let palette: Vec<ResolvedTile> = tile_set
-            .tiles
-            .iter()
-            .map(|tile| ResolvedTile {
-                id: tile.id.clone(),
-                name: tile.name.clone(),
-                terrain: tile.terrain.clone(),
-                movement_cost: tile.movement_cost,
-                passable: tile.is_passable(),
-                visual_id: tile.visual.visual_id.clone(),
-                fallback_color: tile.visual.fallback_color.clone(),
-                tags: tile.tags.clone(),
-                art: tile.art.clone(),
-            })
-            .collect();
+        let palette: Vec<ResolvedTile> = tile_set.tiles.iter().map(ResolvedTile::of).collect();
 
         let index_of = |tile_id: &str| -> Result<u8, GridError> {
             palette
@@ -142,6 +210,7 @@ impl WorldGrid {
         let default_index = index_of(&world.default_tile)?;
         let mut cells = vec![default_index; world.cell_count()];
         let mut elevations = vec![0_i8; world.cell_count()];
+        let mut art_choices = Vec::new();
 
         for placed in &world.tiles {
             let cell =
@@ -153,11 +222,26 @@ impl WorldGrid {
                         width: world.width,
                         height: world.height,
                     })?;
-            cells[cell] = index_of(&placed.tile)?;
+            let tile_index = index_of(&placed.tile)?;
+            cells[cell] = tile_index;
             // Validation rejects anything outside the byte range; clamping here
             // keeps an unvalidated definition from silently wrapping around.
             elevations[cell] = placed.elevation.clamp(MIN_ELEVATION, MAX_ELEVATION) as i8;
+
+            if !placed.art.is_empty() {
+                let choice = CellArtChoice {
+                    cell: u32::try_from(cell).unwrap_or(u32::MAX),
+                    ..resolve_cell_art(&palette, &placed.tile, &placed.art)
+                };
+                if !choice.is_empty() {
+                    art_choices.push(choice);
+                }
+            }
         }
+
+        // Sorted, so a lookup is a binary search and two builds of the same
+        // world produce the same grid whatever order the file listed its cells.
+        art_choices.sort_unstable_by_key(|choice| choice.cell);
 
         Ok(Self {
             width: world.width,
@@ -165,6 +249,7 @@ impl WorldGrid {
             palette,
             cells,
             elevations,
+            art_choices,
         })
     }
 
@@ -201,6 +286,33 @@ impl WorldGrid {
         &self.elevations
     }
 
+    /// Every cell that chose its art, sorted by cell index.
+    ///
+    /// Sparse on purpose: choosing is the exception, and three more dense
+    /// buffers would be three more megabytes of zeroes per million cells.
+    #[must_use]
+    pub fn art_choices(&self) -> &[CellArtChoice] {
+        &self.art_choices
+    }
+
+    /// What `hex` chose, or `None` when it rolls everything.
+    #[must_use]
+    pub fn art_choice_at(&self, hex: Hex) -> Option<CellArtChoice> {
+        let index = u32::try_from(hex.to_offset().index_in(self.width, self.height)?).ok()?;
+        self.art_choices
+            .binary_search_by_key(&index, |choice| choice.cell)
+            .ok()
+            .and_then(|at| self.art_choices.get(at).copied())
+    }
+
+    /// What to draw `hex` with: its choice, resolved against the palette, ready
+    /// for [`crate::resolve_tile_render`].
+    #[must_use]
+    pub fn cell_art_at(&self, hex: Hex) -> CellArt<'_> {
+        self.art_choice_at(hex)
+            .map_or_else(CellArt::default, |choice| choice.against(&self.palette))
+    }
+
     /// The elevation at `hex`, or `None` when out of bounds.
     #[must_use]
     pub fn elevation_at(&self, hex: Hex) -> Option<i8> {
@@ -232,6 +344,75 @@ impl WorldGrid {
     pub fn movement_cost(&self, hex: Hex) -> Option<u32> {
         self.tile_at(hex).map(|tile| tile.movement_cost)
     }
+}
+
+/// Turns one cell's authored ids into indices against `palette`.
+///
+/// Total by construction: an id nobody defined resolves to `None`, which is the
+/// same as not having chosen. The author is told by validation
+/// (`tile.unknownSurfaceVariant` and friends), not by a hole in the map.
+///
+/// The returned [`CellArtChoice::cell`] is `0`: this resolves *what*, not
+/// *where*, so a caller with a cell index fills that in.
+#[must_use]
+pub fn resolve_cell_art(
+    palette: &[ResolvedTile],
+    tile_id: &str,
+    art: &PlacedTileArt,
+) -> CellArtChoice {
+    let own = palette.iter().find(|tile| tile.id == tile_id);
+    // One index serves both projections, so the search falls through to the
+    // flat list for a tile that only draws top-down; a set that ships both
+    // gives them the same ids and the two lookups agree
+    // (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+    let surface = if art.surface.is_empty() {
+        None
+    } else {
+        own.and_then(|tile| index_of_variant(&tile.art.surface, &art.surface))
+            .or_else(|| own.and_then(|tile| index_of_variant(&tile.art.flat, &art.surface)))
+    };
+
+    let elevation_tile = if art.elevation_tile.is_empty() {
+        None
+    } else {
+        palette
+            .iter()
+            .position(|tile| tile.id == art.elevation_tile)
+            .and_then(|index| u32::try_from(index).ok())
+    };
+
+    // The named variant is looked up in the ladder that will actually draw —
+    // the borrowed one when there is one — because that is where the id has to
+    // mean something.
+    let ladder = elevation_tile
+        .and_then(|index| palette.get(index as usize))
+        .or(own);
+    let elevation = if art.elevation.is_empty() {
+        None
+    } else {
+        ladder.and_then(|tile| {
+            tile.art
+                .elevation
+                .levels
+                .iter()
+                .find_map(|level| index_of_variant(&level.variants, &art.elevation))
+        })
+    };
+
+    CellArtChoice {
+        cell: 0,
+        surface,
+        elevation_tile,
+        elevation,
+    }
+}
+
+/// The position of `id` in a variant list.
+fn index_of_variant(variants: &[crate::tile_art::TileArtVariant], id: &str) -> Option<u32> {
+    variants
+        .iter()
+        .position(|variant| variant.id == id)
+        .and_then(|index| u32::try_from(index).ok())
 }
 
 #[cfg(test)]
@@ -329,6 +510,138 @@ mod tests {
             grid.elevation_at(Hex::from_offset(testing::RAISED_CELL)),
             Some(i8::MAX)
         );
+    }
+
+    /// A meadow that authors surfaces only, over a cliff that authors a ladder.
+    ///
+    /// The shared fixture gives its art to `rock` alone, and the whole point of
+    /// a choice is one tile's top face over another tile's cut — so this test
+    /// group builds the pair it needs rather than bending the fixture around it.
+    fn choosing_set() -> TileSetDefinition {
+        let mut set = testing::sample_tile_set();
+        let grass = set
+            .tiles
+            .iter_mut()
+            .find(|tile| tile.id == "grass")
+            .expect("grass is in the sample set");
+        grass.art = TileArt {
+            flat: Vec::new(),
+            surface: vec![
+                crate::tile_art::TileArtVariant {
+                    id: "a".to_owned(),
+                    asset: "assets/tiles/grass/surfaces/grass_a.png".to_owned(),
+                },
+                crate::tile_art::TileArtVariant {
+                    id: "b".to_owned(),
+                    asset: "assets/tiles/grass/surfaces/grass_b.png".to_owned(),
+                },
+            ],
+            elevation: crate::tile_art::TileElevation::default(),
+        };
+        set
+    }
+
+    #[test]
+    fn a_cell_that_chooses_nothing_costs_no_entry() {
+        let grid = WorldGrid::build(&testing::sample_world(), &choosing_set()).expect("build");
+        assert!(grid.art_choices().is_empty());
+        assert_eq!(
+            grid.cell_art_at(Hex::from_offset(OffsetCoord::new(0, 0))),
+            CellArt::default()
+        );
+    }
+
+    #[test]
+    fn authored_ids_are_resolved_to_indices_once() {
+        let set = choosing_set();
+        let mut world = testing::sample_world();
+        let at = world.tiles[0].at;
+        world.tiles[0].tile = "grass".into();
+        world.tiles[0].art = PlacedTileArt {
+            surface: "b".into(),
+            elevation_tile: "rock".into(),
+            elevation: "a".into(),
+        };
+        let grid = WorldGrid::build(&world, &set).expect("build");
+
+        let rock = set
+            .tiles
+            .iter()
+            .position(|tile| tile.id == "rock")
+            .expect("rock is in the sample set") as u32;
+        let choice = grid
+            .art_choice_at(Hex::from_offset(at))
+            .expect("the cell chose");
+        assert_eq!(choice.surface, Some(1));
+        assert_eq!(choice.elevation_tile, Some(rock));
+        assert_eq!(choice.elevation, Some(0));
+
+        // And the borrowed ladder comes back as the *other* tile's art, which
+        // is the whole point: grass on top, rock underneath.
+        let art = grid.cell_art_at(Hex::from_offset(at));
+        assert_eq!(art.surface, Some(1));
+        assert_eq!(art.elevation_variant, Some(0));
+        assert_eq!(
+            art.elevation,
+            Some(&set.tiles[rock as usize].art),
+            "the faces did not come from the borrowed tile"
+        );
+    }
+
+    #[test]
+    fn a_borrowed_variant_id_is_looked_up_in_the_borrowed_ladder() {
+        // `grass` authors no ladder at all, so `elevation: "a"` can only mean
+        // something in `rock`'s — which is the one that will draw.
+        let mut world = testing::sample_world();
+        let at = world.tiles[0].at;
+        world.tiles[0].tile = "grass".into();
+        world.tiles[0].art = PlacedTileArt {
+            surface: String::new(),
+            elevation_tile: "rock".into(),
+            elevation: "a".into(),
+        };
+        let grid = WorldGrid::build(&world, &choosing_set()).expect("build");
+
+        let choice = grid
+            .art_choice_at(Hex::from_offset(at))
+            .expect("the cell chose");
+        assert_eq!(choice.elevation, Some(0));
+    }
+
+    #[test]
+    fn an_id_nobody_defined_leaves_the_cell_rolling() {
+        // Validation reports the dangling reference; the map still draws.
+        let mut world = testing::sample_world();
+        let at = world.tiles[0].at;
+        world.tiles[0].art = PlacedTileArt {
+            surface: "zz".into(),
+            elevation_tile: "lava".into(),
+            elevation: String::new(),
+        };
+        let grid = WorldGrid::build(&world, &choosing_set()).expect("build");
+
+        assert!(grid.art_choices().is_empty());
+        assert_eq!(grid.cell_art_at(Hex::from_offset(at)), CellArt::default());
+    }
+
+    #[test]
+    fn choices_are_sorted_whatever_order_the_file_listed_them() {
+        let mut world = testing::sample_world();
+        for placed in &mut world.tiles {
+            placed.tile = "grass".into();
+            placed.art = PlacedTileArt {
+                surface: "b".into(),
+                ..PlacedTileArt::default()
+            };
+        }
+        world.tiles.reverse();
+        let grid = WorldGrid::build(&world, &choosing_set()).expect("build");
+
+        assert!(grid.art_choices().len() > 1);
+        assert!(grid
+            .art_choices()
+            .windows(2)
+            .all(|pair| pair[0].cell < pair[1].cell));
     }
 
     #[test]

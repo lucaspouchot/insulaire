@@ -45,13 +45,25 @@ fn tile(id: &str, terrain: &str, movement_cost: u32, color: &str) -> TileDefinit
     }
 }
 
-/// Two surface variants, one explicit elevation level and a repeat rule.
+/// Two of each view, one explicit elevation level and a repeat rule.
 ///
 /// Enough for a downstream test to exercise the whole of
 /// `docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md` without
-/// rebuilding a tile set by hand.
+/// rebuilding a tile set by hand — and both projections of
+/// `docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`, whose ids match
+/// the surfaces' so a chosen variant means the same thing either way.
 fn sample_art() -> TileArt {
     TileArt {
+        flat: vec![
+            TileArtVariant {
+                id: "a".to_owned(),
+                asset: "assets/tiles/rock_flat_a.png".to_owned(),
+            },
+            TileArtVariant {
+                id: "b".to_owned(),
+                asset: "assets/tiles/rock_flat_b.png".to_owned(),
+            },
+        ],
         surface: vec![
             TileArtVariant {
                 id: "a".to_owned(),
@@ -114,12 +126,14 @@ pub fn sample_world() -> WorldDefinition {
                 tile: "water".to_owned(),
                 elevation: 0,
                 tags: Vec::new(),
+                art: Default::default(),
             },
             PlacedTile {
                 at: RAISED_CELL,
                 tile: "rock".to_owned(),
                 elevation: RAISED_ELEVATION,
                 tags: Vec::new(),
+                art: Default::default(),
             },
         ],
         entities: vec![
@@ -222,6 +236,7 @@ pub fn walled_world() -> WorldDefinition {
             tile: "water".to_owned(),
             elevation: 0,
             tags: Vec::new(),
+            art: Default::default(),
         })
         .collect();
     world

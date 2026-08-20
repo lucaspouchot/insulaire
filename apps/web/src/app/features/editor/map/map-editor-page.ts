@@ -41,7 +41,7 @@ import { Camera } from '../../../../renderer/camera';
 import { CanvasView } from '../../../../renderer/canvas-view';
 import { SpriteCache } from '../../../../renderer/character-renderer';
 import { HexMapRenderer } from '../../../../renderer/hex-map-renderer';
-import { RenderModel } from '../../../../renderer/render-model';
+import { RenderModel, resolveCellArtChoices } from '../../../../renderer/render-model';
 import { SpriteRegistry } from '../../../../renderer/sprite-registry';
 import { I18nService } from '../../../i18n/i18n.service';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
@@ -266,6 +266,48 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     return this.palette().find((tile) => tile.id === id) ?? null;
   });
 
+  /**
+   * What the selected hex is drawn with, and what else it could be.
+   *
+   * The panel is a set of pickers, so it needs the *options* as much as the
+   * current answer: the tile's own surface variants, every tile that ships a
+   * cliff, and the variants of whichever cliff is actually drawing. `null` when
+   * nothing is selected, which is what closes the panel
+   * (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+   */
+  protected readonly cellArt = computed(() => {
+    this.revision();
+    const cell = this.selected();
+    const document = this.document();
+    const tile = cell === null || document === null ? null : document.tileAt(cell);
+    if (cell === null || document === null || tile === null) {
+      return null;
+    }
+
+    const chosen = document.artAt(cell);
+    // The cliff that will draw: the borrowed one when there is one, which is
+    // also the one whose variants the third picker may offer.
+    const ladder =
+      (chosen.elevationTile === null
+        ? tile
+        : (document.palette.find((entry) => entry.id === chosen.elevationTile) ?? null)) ?? tile;
+
+    return {
+      at: cell,
+      tile,
+      chosen,
+      surfaces: tile.art?.surface ?? [],
+      // A cliff can only be borrowed from a tile that has one to lend.
+      cliffs: document.palette.filter((entry) =>
+        (entry.art?.elevation?.levels ?? []).some((level) => level.variants.length > 0),
+      ),
+      // Variant ids are shared across a ladder's levels by construction — level
+      // `n`'s `f` is the same cut as level 1's — so the first level's list is
+      // the set of answers, not just one level's.
+      cliffVariants: ladder.art?.elevation?.levels[0]?.variants ?? [],
+    };
+  });
+
   /** Everything authored on the selected hex, for the placement inspector. */
   protected readonly selection = computed(() => {
     this.revision();
@@ -432,6 +474,47 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       this.report.set(null);
       this.message.set(null);
     }
+    this.refresh();
+  }
+
+  // --------------------------------------------------------------- cell art
+
+  /**
+   * Chooses what the selected hex is drawn with; `''` puts a field back on the
+   * roll.
+   *
+   * The ids are not checked here. The tile set is the authority on which
+   * variants exist and the Rust validator is what reports a dangling one, just
+   * as with a door's target — and a choice that stops resolving costs the cell
+   * its choice, not its picture
+   * (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+   */
+  protected setCellArt(field: 'surface' | 'elevationTile' | 'elevation', value: string): void {
+    const cell = this.selected();
+    const document = this.store.document();
+    if (cell === null || document === null) {
+      return;
+    }
+    if (!document.setArt(cell, { [field]: value.length === 0 ? null : value })) {
+      return;
+    }
+    this.store.touch();
+    this.report.set(null);
+    this.refresh();
+  }
+
+  /** Puts every choice on the selected hex back on the roll. */
+  protected rollCellArt(): void {
+    const cell = this.selected();
+    const document = this.store.document();
+    if (cell === null || document === null) {
+      return;
+    }
+    if (!document.setArt(cell, { surface: null, elevationTile: null, elevation: null })) {
+      return;
+    }
+    this.store.touch();
+    this.report.set(null);
     this.refresh();
   }
 
@@ -1035,6 +1118,11 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       terrain: document.terrain,
       elevation: document.elevation,
       elevationRange: document.elevationRange,
+      artChoices: resolveCellArtChoices(
+        document.palette,
+        document.terrain,
+        document.artOverrides,
+      ),
       entities: document.placedEntities.map((entity) => ({
         id: entity.id,
         at: entity.at,

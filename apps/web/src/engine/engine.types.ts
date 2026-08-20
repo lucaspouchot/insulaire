@@ -139,7 +139,27 @@ export interface WorldView {
   palette: PaletteEntry[];
   locations: LocationView[];
   links: LinkView[];
+  /**
+   * The cells that chose their art instead of rolling it, sorted by cell.
+   *
+   * Sparse and normally absent: choosing is an authored exception, so the ids
+   * an author wrote arrive already resolved to indices and the buffers stay two
+   * (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+   */
+  artChoices?: WorldCellArt[];
   cellCount: number;
+}
+
+/** One cell's art choice, resolved to indices; mirrors `CellArtChoice`. */
+export interface WorldCellArt {
+  /** Row-major cell index, the same layout as the packed terrain buffer. */
+  cell: number;
+  /** Index into the cell's own tile's surface variants. */
+  surface?: number | null;
+  /** Palette index of the tile whose elevation ladder cuts the faces. */
+  elevationTile?: number | null;
+  /** Index into the variants of whichever level ends up drawing. */
+  elevation?: number | null;
 }
 
 export interface TemplateView {
@@ -283,9 +303,13 @@ export interface RawInsulaireEngine {
   previewTileRender(
     tileSetJson: string,
     tileId: string,
+    /** `"isometric"` resolves the surface and the cliff; anything else the flat image. */
+    projection: string,
     elevation: number,
     base: number,
     roll: number,
+    /** A `PlacedTileArt`; `"{}"` rolls everything. */
+    choiceJson: string,
   ): string;
   loadWorld(json: string): string;
   loadProject(json: string): string;

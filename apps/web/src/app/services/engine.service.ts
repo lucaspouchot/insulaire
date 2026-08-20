@@ -16,6 +16,8 @@ import { Injectable, signal } from '@angular/core';
 import {
   CharacterDefinition,
   CharacterValues,
+  PlacedTileArt,
+  ProjectionMode,
   ResolvedCharacter,
   SettingsDefinition,
   SettingsValues,
@@ -123,16 +125,34 @@ export class EngineService {
    * Resolves what to draw for one cell of a tile set **passed in** — the asset
    * editor's preview, for content that is not registered yet
    * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+   *
+   * `projection` is the world's own: `'isometric'` resolves the surface and the
+   * cliff, anything else the flat image
+   * (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+   *
+   * `choice` is what the cell picked by hand, resolved against the set passed
+   * in; the default rolls everything, which is what a plain preview wants
+   * (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
    */
   previewTileRender(
     tileSetJson: string,
     tileId: string,
+    projection: ProjectionMode,
     elevation: number,
     base = 0,
     roll = 0,
+    choice: PlacedTileArt = {},
   ): ResolvedTileRender {
     return this.parse<ResolvedTileRender>(() =>
-      this.engine().previewTileRender(tileSetJson, tileId, elevation, base, roll),
+      this.engine().previewTileRender(
+        tileSetJson,
+        tileId,
+        projection,
+        elevation,
+        base,
+        roll,
+        JSON.stringify(choice),
+      ),
     );
   }
 

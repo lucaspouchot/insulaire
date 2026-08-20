@@ -81,10 +81,17 @@ export function fitPreview(
   const perPixel = probe.hexWidth / Math.max(1, geometry.width);
   for (const cell of cells) {
     const centre = probeProjection.project(probe.centerOf(cell.at), cell.elevation);
-    const top = centre.y - probe.hexHeight * tilt * 0.5;
+    const top = centre.y - probe.hexHeight * probeProjection.tilt * 0.5;
     minX = Math.min(minX, centre.x - probe.hexWidth / 2);
     maxX = Math.max(maxX, centre.x + probe.hexWidth / 2);
     minY = Math.min(minY, top);
+    if (mode !== 'isometric') {
+      // A flat cell is its hexagon and nothing else: no tilt to allow for, and
+      // no cliff hanging below it
+      // (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+      maxY = Math.max(maxY, top + probe.hexHeight);
+      continue;
+    }
     // The bottom of the *lowest* face, not the topmost one: a cell standing at
     // height `n` is a stack of `n` images, each a step further down, and framing
     // to the top one alone crops the cliff out of its own preview.
@@ -168,10 +175,25 @@ function drawPreviewCell(
   const render = resolveTileRender(
     cell.tileId,
     cell.art,
+    projection.mode,
     cell.elevation,
     0,
     variantRoll(cell.at.col, cell.at.row, cell.tileId),
   );
+
+  // A flat cell is one image over the whole hexagon, or the colour when the
+  // tile authors none for this projection — the map renderer's rule exactly
+  // (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+  if (projection.mode !== 'isometric') {
+    const image = render.flat === null ? null : (images?.image(render.flat) ?? null);
+    if (image === null) {
+      fillSilhouette(context, cell, view, cell.fallbackColor);
+      return;
+    }
+    const height = geometry.flatHeight * perPixel;
+    context.drawImage(image, left, centre.y - height / 2, width, height);
+    return;
+  }
 
   // Colour behind whatever art exists, on the same rule the map renderer uses:
   // a tile with a top face and no cliff art still has to read as standing above
@@ -282,8 +304,27 @@ export function surfaceHexagon(geometry: TileArtGeometry): Point[] {
   });
 }
 
-/** Which face of an elevation image a guide marks. */
-export type FaceGuide = 'surface' | 'southWest' | 'southEast';
+/**
+ * The untilted hexagon, in a flat image's own pixel space.
+ *
+ * The same shape a top-down map strokes for its grid, so an artist drawing a
+ * flat tile is drawing inside the outline the renderer will use
+ * (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`). Nothing squashes
+ * it — that is the whole difference between this image and a surface.
+ */
+export function flatHexagon(geometry: TileArtGeometry): Point[] {
+  const layout = new HexLayout(geometry.width / Math.sqrt(3));
+  const centre = { x: geometry.width / 2, y: geometry.flatHeight / 2 };
+  return layout
+    .corners({ x: 0, y: 0 })
+    .map((corner) => ({ x: centre.x + corner.x, y: centre.y + corner.y }));
+}
+
+/** Which image, or which face of one, a guide marks. */
+export type FaceGuide = 'flat' | 'surface' | 'southWest' | 'southEast';
+
+/** The kinds of tile image the editor draws guides for. */
+export type ImageKind = 'flat' | 'surface' | 'elevation';
 
 /**
  * Guide lines for an image of `kind`, in the image's own pixel space.
@@ -299,14 +340,18 @@ export type FaceGuide = 'surface' | 'southWest' | 'southEast';
  * does not exist here. Both are drawn by hand in the one image, and neither is
  * ever produced from the other.
  *
- * A **surface** image is the hexagon. An **elevation** image is the two faces
- * alone: its first row is the lower shoulder line, so the guides it gets are
- * the `V` those edges cut and the faces hanging off it, with nothing above.
+ * A **flat** image is the untilted hexagon, a **surface** image the tilted one.
+ * An **elevation** image is the two faces alone: its first row is the lower
+ * shoulder line, so the guides it gets are the `V` those edges cut and the
+ * faces hanging off it, with nothing above.
  */
 export function faceGuides(
   geometry: TileArtGeometry,
-  kind: 'surface' | 'elevation',
+  kind: ImageKind,
 ): { readonly path: readonly Point[]; readonly label: FaceGuide }[] {
+  if (kind === 'flat') {
+    return [{ path: flatHexagon(geometry), label: 'flat' }];
+  }
   const hexagon = surfaceHexagon(geometry);
   if (kind === 'surface') {
     return [{ path: hexagon, label: 'surface' }];
@@ -374,7 +419,7 @@ export function drawChecker(
 export function drawGuides(
   context: CanvasRenderingContext2D,
   geometry: TileArtGeometry,
-  kind: 'surface' | 'elevation',
+  kind: ImageKind,
   zoom: number,
   labels: Readonly<Record<FaceGuide, string>>,
 ): void {
@@ -385,14 +430,16 @@ export function drawGuides(
   context.textBaseline = 'middle';
 
   for (const guide of faceGuides(geometry, kind)) {
-    context.strokeStyle = guide.label === 'surface' ? CHROME.guide : CHROME.guideFaint;
+    const whole = guide.label === 'surface' || guide.label === 'flat';
+    context.strokeStyle = whole ? CHROME.guide : CHROME.guideFaint;
     trace(
       context,
       guide.path.map((point) => ({ x: point.x * zoom, y: point.y * zoom })),
     );
     context.stroke();
 
-    if (guide.label === 'surface') {
+    // The outline of a whole hexagon needs no caption; a face does.
+    if (whole) {
       continue;
     }
     const centre = guide.path.reduce(

@@ -262,6 +262,82 @@
             </section>
           }
         }
+
+        <!--
+          What the selected hex is drawn with. Its own panel under the paint
+          tool rather than a case of the switch, because it is the same question
+          as "which terrain" one level down: paint a hex, then say which of its
+          pictures it shows and what its cliff is cut from
+          (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+        -->
+        @if (inspector() === 'brush') {
+          <section class="panel">
+            <h2>{{ 'ui.editor.map.cellArt.heading' | t }}</h2>
+            @let art = cellArt();
+            @if (art === null) {
+              <p class="hint">{{ 'ui.editor.map.cellArt.empty' | t }}</p>
+            } @else {
+              <div class="rows">
+                <div class="row">
+                  <span>{{ 'ui.editor.map.cellArt.hex' | t }}</span>
+                  <span>[{{ art.at.col }}, {{ art.at.row }}] · {{ art.tile.name }}</span>
+                </div>
+              </div>
+
+              <label class="field">
+                <span>{{ 'ui.editor.map.cellArt.surface' | t }}</span>
+                <select
+                  [value]="art.chosen.surface ?? ''"
+                  [disabled]="art.surfaces.length === 0"
+                  (change)="setCellArt('surface', $any($event.target).value)"
+                >
+                  <option value="">{{ 'ui.editor.map.cellArt.auto' | t }}</option>
+                  @for (variant of art.surfaces; track variant.id) {
+                    <option [value]="variant.id">{{ variant.id }}</option>
+                  }
+                </select>
+              </label>
+
+              <label class="field">
+                <span>{{ 'ui.editor.map.cellArt.elevationTile' | t }}</span>
+                <select
+                  [value]="art.chosen.elevationTile ?? ''"
+                  [disabled]="art.cliffs.length === 0"
+                  (change)="setCellArt('elevationTile', $any($event.target).value)"
+                >
+                  <option value="">{{ 'ui.editor.map.cellArt.ownTile' | t }}</option>
+                  @for (tile of art.cliffs; track tile.id) {
+                    <option [value]="tile.id">{{ tile.name }}</option>
+                  }
+                </select>
+              </label>
+
+              <label class="field">
+                <span>{{ 'ui.editor.map.cellArt.elevationVariant' | t }}</span>
+                <select
+                  [value]="art.chosen.elevation ?? ''"
+                  [disabled]="art.cliffVariants.length === 0"
+                  (change)="setCellArt('elevation', $any($event.target).value)"
+                >
+                  <option value="">{{ 'ui.editor.map.cellArt.autoFollowsSurface' | t }}</option>
+                  @for (variant of art.cliffVariants; track variant.id) {
+                    <option [value]="variant.id">{{ variant.id }}</option>
+                  }
+                </select>
+              </label>
+
+              @if (art.cliffs.length === 0) {
+                <p class="hint">{{ 'ui.editor.map.cellArt.none' | t }}</p>
+              }
+              <div class="button-row">
+                <button type="button" (click)="rollCellArt()">
+                  {{ 'ui.editor.map.cellArt.reset' | t }}
+                </button>
+              </div>
+            }
+            <p class="hint">{{ 'ui.editor.map.cellArt.hint' | t }}</p>
+          </section>
+        }
       }
     </aside>
 

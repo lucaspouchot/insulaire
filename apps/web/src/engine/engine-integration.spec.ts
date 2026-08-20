@@ -18,7 +18,9 @@ import {
   CharacterDefinition,
   ResolvedCharacter,
   TILE_SET_SCHEMA_VERSION,
+  TileDefinition,
   TileSetDefinition,
+  WORLD_SCHEMA_VERSION,
   WorldDefinition,
 } from '../content/content-types';
 import { WorldDocument } from '../content/world-document';
@@ -52,6 +54,24 @@ function readText(relativePath: string): string {
 
 function readJson<T>(relativePath: string): T {
   return JSON.parse(readText(relativePath)) as T;
+}
+
+/**
+ * A `ResolvedTileRender` off the wire, filled in the way the mirror writes it.
+ *
+ * Rust skips the fields that are absent, so what the boundary sends back has
+ * holes where the mirror has explicit `null`s and empty arrays. Filling them
+ * here rather than comparing field by field keeps a *new* field a failing test
+ * instead of a silently ignored one.
+ */
+function wire(render: ResolvedTileRender): ResolvedTileRender {
+  return {
+    tileId: render.tileId,
+    elevation: render.elevation,
+    flat: render.flat ?? null,
+    surface: render.surface ?? null,
+    layers: render.layers ?? [],
+  };
 }
 
 describe.skipIf(!built)('engine boundary', () => {
@@ -118,7 +138,7 @@ describe.skipIf(!built)('engine boundary', () => {
     expect(info.name).toBe('insulaire-engine');
     expect(info.targetArch).toBe('wasm32');
     expect(info.pointerWidth).toBe(32);
-    expect(info.worldSchemaVersion).toBe(1);
+    expect(info.worldSchemaVersion).toBe(WORLD_SCHEMA_VERSION);
   });
 
   it('resolves tile art exactly as the TypeScript mirror does', () => {
@@ -129,7 +149,7 @@ describe.skipIf(!built)('engine boundary', () => {
     const set: TileSetDefinition = {
       id: 'art',
       schemaVersion: TILE_SET_SCHEMA_VERSION,
-      art: { width: 32, surfaceHeight: 20, elevationHeight: 13, elevationStep: 8 },
+      art: { width: 32, flatHeight: 37, surfaceHeight: 20, elevationHeight: 13, elevationStep: 8 },
       tiles: [
         {
           id: 'cliff',
@@ -137,6 +157,10 @@ describe.skipIf(!built)('engine boundary', () => {
           movementCost: 1,
           visual: { visualId: 'terrain.rock', fallbackColor: '#7a7169' },
           art: {
+            // Fewer flats than surfaces, so the wrap a shared index implies is
+            // held together across the boundary as well
+            // (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+            flat: [{ id: 'a', asset: 'assets/tiles/flat_a.png' }],
             surface: [
               { id: 'a', asset: 'assets/tiles/top_a.png' },
               { id: 'b', asset: 'assets/tiles/top_b.png' },
@@ -155,6 +179,19 @@ describe.skipIf(!built)('engine boundary', () => {
             },
           },
         },
+        {
+          id: 'meadow',
+          terrain: 'grass',
+          movementCost: 1,
+          visual: { visualId: 'terrain.grass', fallbackColor: '#4a7c3f' },
+          // A surface and no ladder of its own: what a cell borrows one for.
+          art: {
+            surface: [
+              { id: 'a', asset: 'assets/tiles/turf_a.png' },
+              { id: 'b', asset: 'assets/tiles/turf_b.png' },
+            ],
+          },
+        },
       ],
     };
     const json = JSON.stringify(set);
@@ -164,29 +201,75 @@ describe.skipIf(!built)('engine boundary', () => {
       (JSON.parse(instance.validateTileSet(json)) as ValidationReport).valid,
     ).toBe(true);
 
-    for (const elevation of [0, 1, 2, 3, 4, 10]) {
-      for (const roll of [0, 1, 7, 12345]) {
-        const rust = JSON.parse(
-          instance.previewTileRender(json, 'cliff', elevation, 0, roll),
-        ) as ResolvedTileRender;
-        const mirror = resolveTileRender('cliff', set.tiles[0]?.art, elevation, 0, roll);
+    // Both projections, because they resolve from different lists and a mirror
+    // that agreed on only one of them would be half a mirror
+    // (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+    for (const projection of ['isometric', 'topDown'] as const) {
+      for (const elevation of [0, 1, 2, 3, 4, 10]) {
+        for (const roll of [0, 1, 7, 12345]) {
+          const rust = JSON.parse(
+            instance.previewTileRender(json, 'cliff', projection, elevation, 0, roll, '{}'),
+          ) as ResolvedTileRender;
+          const mirror = resolveTileRender(
+            'cliff',
+            set.tiles[0]?.art,
+            projection,
+            elevation,
+            0,
+            roll,
+          );
 
-        expect({ ...mirror, surface: mirror.surface }).toEqual({
-          tileId: rust.tileId,
-          elevation: rust.elevation,
-          surface: rust.surface ?? null,
-          layers: rust.layers ?? [],
-        });
+          expect(mirror, `${projection} at ${elevation}, roll ${roll}`).toEqual(wire(rust));
+        }
       }
     }
 
     // And the roll itself, which decides which variant a cell gets.
+    const roll = variantRoll(3, 4, 'cliff');
     const rolled = JSON.parse(
-      instance.previewTileRender(json, 'cliff', 0, 0, variantRoll(3, 4, 'cliff')),
+      instance.previewTileRender(json, 'cliff', 'isometric', 0, 0, roll, '{}'),
     ) as ResolvedTileRender;
     expect(rolled.surface).toBe(
-      resolveTileRender('cliff', set.tiles[0]?.art, 0, 0, variantRoll(3, 4, 'cliff')).surface,
+      resolveTileRender('cliff', set.tiles[0]?.art, 'isometric', 0, 0, roll).surface,
     );
+
+    // The same agreement for a cell that chose by hand, including a ladder
+    // borrowed from another tile — the ids are resolved by Rust, the drawing by
+    // the mirror (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+    const meadow = set.tiles[1] as TileDefinition;
+    for (const [choice, cell] of [
+      [{ surface: 'b' }, { surface: 1 }],
+      [{ elevationTile: 'cliff' }, { elevation: set.tiles[0]?.art }],
+      [
+        { surface: 'a', elevationTile: 'cliff', elevation: 'b' },
+        { surface: 0, elevation: set.tiles[0]?.art, elevationVariant: 1 },
+      ],
+    ] as const) {
+      for (const elevation of [0, 2, 5]) {
+        const rust = JSON.parse(
+          instance.previewTileRender(
+            json,
+            'meadow',
+            'isometric',
+            elevation,
+            0,
+            3,
+            JSON.stringify(choice),
+          ),
+        ) as ResolvedTileRender;
+        const mirror = resolveTileRender('meadow', meadow.art, 'isometric', elevation, 0, 3, cell);
+
+        expect(mirror).toEqual(wire(rust));
+      }
+    }
+
+    // A tile with no flat image resolves to nothing top-down, on both sides, so
+    // the renderer falls back to its colour rather than to a surface.
+    const bare = JSON.parse(
+      instance.previewTileRender(json, 'meadow', 'topDown', 0, 0, 0, '{}'),
+    ) as ResolvedTileRender;
+    expect(bare.flat ?? null).toBeNull();
+    expect(resolveTileRender('meadow', meadow.art, 'topDown', 0, 0, 0).flat).toBeNull();
   });
 
   it('loads the shipped content without issues', () => {
@@ -216,6 +299,7 @@ describe.skipIf(!built)('engine boundary', () => {
     // per cell (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
     expect(view.tileArt).toEqual({
       width: 64,
+      flatHeight: 74,
       surfaceHeight: 40,
       elevationHeight: 26,
       elevationStep: 16,

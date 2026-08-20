@@ -32,7 +32,9 @@ import { Camera } from './camera';
 import { SpriteSource } from './character-renderer';
 import { Projection } from './projection';
 import {
+  CellArt,
   ResolvedTileRender,
+  isEmptyRender,
   projectionRatiosOf,
   resolveTileRender,
   variantRoll,
@@ -46,6 +48,9 @@ import {
   emptyRenderModel,
 } from './render-model';
 import { SpriteRegistry } from './sprite-registry';
+
+/** The choice nearly every cell makes: none, so everything is rolled. */
+const EVERYTHING_ROLLED: CellArt = {};
 
 /** Colours that belong to the tool, not to the content. */
 const CHROME = {
@@ -403,7 +408,7 @@ export class HexMapRenderer {
         const elevation = this.elevationAt(model, index);
         const base = this.wallBaseOf(model, cell);
 
-        const render = this.renderOf(model, paletteIndex, cell, elevation, base);
+        const render = this.renderOf(model, paletteIndex, index, cell, elevation, base);
         if (render !== null) {
           painted.push({ cell, elevation, render });
           // A tile may author a top face and no cliff art at all — grass at the
@@ -475,15 +480,18 @@ export class HexMapRenderer {
   /**
    * What a cell's authored art draws, or `null` to fall back to colour.
    *
-   * `null` covers three cases that mean the same thing to the caller: the tile
-   * declares no art, the resolver found nothing for this height, or the images
-   * have not finished loading. The last one is why `fallbackColor` is worth
-   * keeping — it is the colour drawn while a texture loads
-   * (`docs/adr/ADR-0009-assets-tilesets.md`).
+   * `null` covers four cases that mean the same thing to the caller: the tile
+   * declares no art, it declares none **for the projection in force** — a
+   * top-down map of tiles that only drew surfaces is entirely colour
+   * (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`) — the resolver
+   * found nothing for this height, or the images have not finished loading.
+   * The last one is why `fallbackColor` is worth keeping: it is the colour
+   * drawn while a texture loads (`docs/adr/ADR-0009-assets-tilesets.md`).
    */
   private renderOf(
     model: RenderModel,
     paletteIndex: number,
+    index: number,
     cell: Offset,
     elevation: number,
     base: number,
@@ -495,17 +503,47 @@ export class HexMapRenderer {
     const render = resolveTileRender(
       tile.id,
       tile.art,
+      this.projection.mode,
       elevation,
       base,
       variantRoll(cell.col, cell.row, tile.id),
+      this.choiceOf(model, index),
     );
-    if (render.surface === null && render.layers.length === 0) {
+    if (isEmptyRender(render)) {
       return null;
     }
     const loaded =
+      (render.flat === null || this.images.image(render.flat) !== null) &&
       (render.surface === null || this.images.image(render.surface) !== null) &&
       render.layers.every((layer) => this.images?.image(layer.asset) !== null);
     return loaded ? render : null;
+  }
+
+  /**
+   * What this cell chose by hand, as the resolver wants it.
+   *
+   * One map lookup, and only for a model that carries any choices at all —
+   * which nearly none do, because choosing is an authored exception
+   * (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+   */
+  private choiceOf(model: RenderModel, index: number): CellArt {
+    if (model.artChoices.size === 0) {
+      return EVERYTHING_ROLLED;
+    }
+    const choice = model.artChoices.get(index);
+    if (choice === undefined) {
+      return EVERYTHING_ROLLED;
+    }
+    return {
+      surface: choice.surface,
+      // A borrowed ladder is another palette entry's art; the top face is still
+      // the cell's own.
+      elevation:
+        choice.elevationTile === null
+          ? null
+          : (model.palette[choice.elevationTile]?.art ?? null),
+      elevationVariant: choice.elevation,
+    };
   }
 
   /**
@@ -517,14 +555,32 @@ export class HexMapRenderer {
    * it is the faces alone — and a repeated level is the same image moved down
    * whole steps, nothing inside it transformed
    * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+   *
+   * A top-down cell is one image over the whole hexagon and nothing else: no
+   * tilt to fit, no faces to stack
+   * (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
    */
   private drawPaintedCell(model: RenderModel, painted: PaintedCell): void {
     const ctx = this.context;
     const centre = this.projection.project(this.layout.centerOf(painted.cell), painted.elevation);
     const width = this.layout.hexWidth;
     const left = centre.x - width / 2;
-    const top = centre.y - (this.layout.hexHeight * this.projection.tilt) / 2;
     const perPixel = width / Math.max(1, model.tileArt.width);
+
+    if (painted.render.flat !== null) {
+      const image = this.images?.image(painted.render.flat);
+      if (image != null) {
+        // Scaled from the authored grid, like every other tile image, so the
+        // picture and the hexagon the grid stroke draws are the same shape.
+        const height = model.tileArt.flatHeight * perPixel;
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(image, left, centre.y - height / 2, width, height);
+        this.batchCount += 1;
+      }
+      return;
+    }
+
+    const top = centre.y - (this.layout.hexHeight * this.projection.tilt) / 2;
     const shoulder = top + shoulderLine(model.tileArt) * perPixel;
 
     ctx.imageSmoothingEnabled = false;

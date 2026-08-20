@@ -66,10 +66,10 @@ pub use character::{
 };
 pub use definition::{
     EntityDefinition, HexOrientation, LinkTrigger, LocationDefinition, MapLinkDefinition,
-    PlacedTile, ProjectionMode, WorldDefinition, WorldMetadata, MAX_ELEVATION, MIN_ELEVATION,
-    WORLD_SCHEMA_VERSION,
+    PlacedTile, PlacedTileArt, ProjectionMode, WorldDefinition, WorldMetadata, MAX_ELEVATION,
+    MIN_ELEVATION, WORLD_SCHEMA_VERSION,
 };
-pub use grid::{GridError, ResolvedTile, WorldGrid};
+pub use grid::{resolve_cell_art, CellArtChoice, GridError, ResolvedTile, WorldGrid};
 pub use hex::{Hex, HexDirection, OffsetCoord, DIRECTIONS};
 pub use locale::{missing_keys, LocaleBundle, LocaleError, LocaleNode};
 pub use project::{
@@ -82,10 +82,11 @@ pub use settings::{
 };
 pub use template::{Behavior, EntityKind, EntityTemplate, TemplateRegistry};
 pub use tile_art::{
-    resolve_tile_render, variant_index, variant_roll, ElevationLevel, ElevationRepeat,
+    resolve_tile_render, variant_index, variant_roll, CellArt, ElevationLevel, ElevationRepeat,
     ResolvedTileLayer, ResolvedTileRender, TileArt, TileArtGeometry, TileArtVariant, TileElevation,
-    DEFAULT_ELEVATION_HEIGHT, DEFAULT_ELEVATION_STEP, DEFAULT_SURFACE_HEIGHT, DEFAULT_TILE_WIDTH,
-    MAX_ELEVATION_LEVELS, MAX_STACKED_LEVELS, MAX_TILE_IMAGE_SIZE, MAX_TILE_VARIANTS,
+    DEFAULT_ELEVATION_HEIGHT, DEFAULT_ELEVATION_STEP, DEFAULT_FLAT_HEIGHT, DEFAULT_SURFACE_HEIGHT,
+    DEFAULT_TILE_WIDTH, MAX_ELEVATION_LEVELS, MAX_STACKED_LEVELS, MAX_TILE_IMAGE_SIZE,
+    MAX_TILE_VARIANTS,
 };
 pub use tileset::{TileDefinition, TileSetDefinition, TileVisual, TILE_SET_SCHEMA_VERSION};
 pub use title_screen::{

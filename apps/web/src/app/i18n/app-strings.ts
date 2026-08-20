@@ -395,6 +395,7 @@ const EN: StringTree = {
         },
         tabs: {
           definition: 'Tile',
+          flat: 'Flat',
           surface: 'Surface',
           elevation: 'Elevation',
           geometry: 'Grid',
@@ -411,8 +412,11 @@ const EN: StringTree = {
         visualId: 'Visual id',
         fallbackColor: 'Fallback colour',
         fallbackHint: 'Drawn while the images load, and wherever the tile has none.',
+        flatHint:
+          'The whole hexagon, seen straight down, for a map drawn in top-down mode. It is a different shape from a surface — nothing is tilted here — so the two are separate images and neither is stretched into the other. A tile with no flat image is drawn in its fallback colour on a top-down map.',
+        flatSize: 'A flat image is {width}×{height}.',
         surfaceHint:
-          'The top face, drawn at every height — raising a tile never costs it its surfaces. Several variants stop a field reading as the same forty pixels forty times; which one a cell gets is fixed by its position, so it never flickers.',
+          'The top face of the *tilted* hexagon, for an isometric map, drawn at every height — raising a tile never costs it its surfaces. Several variants stop a field reading as the same forty pixels forty times; which one a cell gets is fixed by its position, so it never flickers.',
         surfaceSize: 'A surface image is {width}×{height}.',
         noVariants: 'No image yet.',
         addVariant: 'Add image',
@@ -441,13 +445,15 @@ const EN: StringTree = {
           'The pixel grid every image in this set is drawn on. It is also what the renderer takes its tilt and its step from, so a tile drawn from images and one filled with colour agree about how tall a step is.',
         geometry: {
           width: 'Image width',
+          flatHeight: 'Flat height',
           surfaceHeight: 'Surface height',
           elevationHeight: 'Elevation height',
           elevationStep: 'Pixels per level',
         },
         stepHint:
           'The faces are {faces} pixels tall. A step taller than that leaves a gap between stacked levels.',
-        geometryNote: '{width}×{surface} surface · {width}×{elevation} elevation · {step} px per level',
+        geometryNote:
+          '{width}×{flat} flat · {width}×{surface} surface · {width}×{elevation} elevation · {step} px per level',
         preview: 'Preview',
         elevationAt: 'Elevation {level}',
         board: 'Several tiles',
@@ -479,6 +485,7 @@ const EN: StringTree = {
         paintHint: 'Drag to draw. Alt takes the colour under the pointer, and Ctrl with the wheel zooms.',
         selectHint: 'Drag to select, then drag inside it — or use the arrow keys — to move those pixels.',
         faces: {
+          flat: 'flat',
           surface: 'surface',
           southWest: 'SW',
           southEast: 'SE',
@@ -556,6 +563,20 @@ const EN: StringTree = {
           range: 'range',
           underCursor: 'under cursor',
           hint: 'One step per click, drag to sculpt. Relief only shows in isometric projection — switch it on the canvas toolbar.',
+        },
+        cellArt: {
+          heading: 'Tile art',
+          empty: 'Click a hex to choose what it is drawn with.',
+          hex: 'hex',
+          surface: 'Surface',
+          elevationTile: 'Cliff from',
+          elevationVariant: 'Cliff variant',
+          auto: 'Automatic',
+          autoFollowsSurface: 'Same as the surface',
+          ownTile: 'This tile',
+          none: 'No tile ships a cliff.',
+          reset: 'Roll everything again',
+          hint: 'Every choice is optional: left alone, a hex picks its own picture from its coordinates. A cliff may be borrowed from another tile — grass on top, rock underneath.',
         },
         selection: {
           heading: 'Selection',
@@ -1133,6 +1154,7 @@ const FR: StringTree = {
         },
         tabs: {
           definition: 'Tuile',
+          flat: 'À plat',
           surface: 'Surface',
           elevation: 'Élévation',
           geometry: 'Grille',
@@ -1150,8 +1172,11 @@ const FR: StringTree = {
         visualId: 'Identifiant visuel',
         fallbackColor: 'Couleur de repli',
         fallbackHint: 'Dessinée pendant le chargement des images, et partout où la tuile n’en a pas.',
+        flatHint:
+          'L’hexagone entier, vu de dessus, pour une carte en vue de dessus. Ce n’est pas la même forme qu’une surface — rien n’est incliné ici — donc ce sont deux images distinctes, et aucune n’est étirée dans la forme de l’autre. Une tuile sans image à plat est dessinée dans sa couleur de repli sur une carte en vue de dessus.',
+        flatSize: 'Une image à plat fait {width}×{height}.',
         surfaceHint:
-          'La face supérieure, dessinée à toutes les hauteurs : surélever une tuile ne lui coûte pas ses surfaces. Plusieurs variantes évitent qu’un champ soit quarante fois les mêmes quarante pixels ; celle qu’obtient une case dépend de sa position, elle ne scintille donc jamais.',
+          'La face supérieure de l’hexagone *incliné*, pour une carte isométrique, dessinée à toutes les hauteurs : surélever une tuile ne lui coûte pas ses surfaces. Plusieurs variantes évitent qu’un champ soit quarante fois les mêmes quarante pixels ; celle qu’obtient une case dépend de sa position, elle ne scintille donc jamais.',
         surfaceSize: 'Une image de surface fait {width}×{height}.',
         noVariants: 'Aucune image.',
         addVariant: 'Ajouter une image',
@@ -1180,6 +1205,7 @@ const FR: StringTree = {
           'La grille de pixels sur laquelle toutes les images de ce tileset sont dessinées. C’est aussi ce dont le rendu tire son inclinaison et son palier, pour qu’une tuile dessinée et une tuile en aplat s’accordent sur la hauteur d’un palier.',
         geometry: {
           width: 'Largeur d’image',
+          flatHeight: 'Hauteur à plat',
           surfaceHeight: 'Hauteur de surface',
           elevationHeight: 'Hauteur d’élévation',
           elevationStep: 'Pixels par niveau',
@@ -1187,7 +1213,7 @@ const FR: StringTree = {
         stepHint:
           'Les faces mesurent {faces} pixels. Un palier plus grand laisse un vide entre les niveaux empilés.',
         geometryNote:
-          '{width}×{surface} surface · {width}×{elevation} élévation · {step} px par niveau',
+          '{width}×{flat} à plat · {width}×{surface} surface · {width}×{elevation} élévation · {step} px par niveau',
         preview: 'Aperçu',
         elevationAt: 'Élévation {level}',
         board: 'Plusieurs tuiles',
@@ -1222,6 +1248,7 @@ const FR: StringTree = {
         selectHint:
           'Faites glisser pour sélectionner, puis glissez à l’intérieur — ou utilisez les flèches — pour déplacer ces pixels.',
         faces: {
+          flat: 'à plat',
           surface: 'surface',
           southWest: 'SO',
           southEast: 'SE',
@@ -1300,6 +1327,20 @@ const FR: StringTree = {
           range: 'amplitude',
           underCursor: 'sous le curseur',
           hint: 'Un cran par clic, glissez pour sculpter. Le relief n’apparaît qu’en projection isométrique — basculez-la dans la barre du canevas.',
+        },
+        cellArt: {
+          heading: 'Dessin de la case',
+          empty: 'Cliquez une case pour choisir ce qui la dessine.',
+          hex: 'case',
+          surface: 'Surface',
+          elevationTile: 'Falaise de',
+          elevationVariant: 'Variante de falaise',
+          auto: 'Automatique',
+          autoFollowsSurface: 'Comme la surface',
+          ownTile: 'Cette tuile',
+          none: 'Aucune tuile ne fournit de falaise.',
+          reset: 'Tout retirer au sort',
+          hint: 'Chaque choix est facultatif : livrée à elle-même, une case tire son dessin de ses coordonnées. La falaise peut venir d’une autre tuile — herbe dessus, roche dessous.',
         },
         selection: {
           heading: 'Sélection',

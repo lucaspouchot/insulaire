@@ -13,10 +13,28 @@
  * palette entry, already validated by Rust. Nothing here decides anything about
  * a tile that a validator could have.
  *
+ * # Two projections, two sets of images
+ *
+ * A hexagon seen straight down and the same hexagon seen isometrically are not
+ * the same shape, so each view has its own images: `flat` for a top-down world,
+ * `surface` plus `elevation` for an isometric one. Neither is ever stretched
+ * into the other's shape, and a tile that authors nothing for the projection in
+ * force draws its `fallbackColor`
+ * (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+ *
  * # An elevation image is the faces, and only the faces
  *
  * A cell's top face always comes from its **surface** variants, at every
  * height, so raising a tile never costs it the variety its surfaces give it.
+ *
+ * # A cell may choose, and mostly does not
+ *
+ * Which variant a cell draws is a hash of its coordinates, so a map costs
+ * nothing to author. An author who wants one tile to look a particular way
+ * overrides that with a {@link CellArt}: this surface, this ladder, this
+ * variant. The ids were resolved to indices by Rust when the grid was built, so
+ * nothing here searches a variant list by name
+ * (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
  *
  * # What resolution never does
  *
@@ -27,6 +45,7 @@
 
 import {
   ElevationLevel,
+  ProjectionMode,
   TileArt,
   TileArtGeometry,
   TileArtVariant,
@@ -57,27 +76,34 @@ export interface ResolvedTileLayer {
 /**
  * What to draw for one cell, back to front.
  *
- * The faces first, lowest to highest, then the top face over them — which is
- * why {@link surface} is filled in at every height rather than only when the
- * cell is flat.
+ * One of the two projections answers, never both. A top-down world fills
+ * {@link flat} alone; an isometric one fills {@link surface} — at every height,
+ * not only when the cell is flat — and stacks {@link layers} under it, faces
+ * first, lowest to highest.
  */
 export interface ResolvedTileRender {
   readonly tileId: string;
   readonly elevation: number;
-  /** The top face, at any height. `null` only when the tile authors none. */
+  /** The untilted hexagon, in a top-down world. Excludes the two below. */
+  readonly flat: string | null;
+  /** The tilted top face, at any height, in an isometric world. */
   readonly surface: string | null;
   /** The side faces, lowest first. Drawn *under* the surface. */
   readonly layers: readonly ResolvedTileLayer[];
 }
 
-/** Nothing is authored for this cell: the renderer fills its colour instead. */
+/**
+ * Nothing is authored for this cell **in this projection**, so the renderer
+ * fills its colour instead.
+ */
 export function isEmptyRender(render: ResolvedTileRender): boolean {
-  return render.surface === null && render.layers.length === 0;
+  return render.flat === null && render.surface === null && render.layers.length === 0;
 }
 
 const NOTHING: ResolvedTileRender = {
   tileId: '',
   elevation: 0,
+  flat: null,
   surface: null,
   layers: [],
 };
@@ -178,60 +204,124 @@ export function sourceLevel(elevation: TileElevation | undefined, level: number)
 }
 
 /**
+ * What one authored cell asks for, instead of what the roll would give it.
+ *
+ * Mirrors `CellArt` in `crates/world/src/tile_art.rs`. An absent field is "roll
+ * it", so `{}` — the default — is the ordinary cell
+ * (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+ */
+export interface CellArt {
+  /**
+   * Which variant draws the cell's own footprint.
+   *
+   * One index for both projections: it picks out of the tile's `surface` list
+   * in an isometric world and out of its `flat` list in a top-down one,
+   * wrapping when the two are different lengths.
+   */
+  readonly surface?: number | null;
+  /**
+   * The art whose elevation ladder cuts the faces.
+   *
+   * How a meadow stands on a rock cliff: the top face stays the tile's own
+   * grass, and only the ladder comes from somewhere else.
+   */
+  readonly elevation?: TileArt | null;
+  /**
+   * Which of a level's variants draws each layer; absent follows the surface,
+   * so a cell's cut matches the ground standing on it.
+   */
+  readonly elevationVariant?: number | null;
+}
+
+/**
  * What to draw for a cell of `art` standing at `elevation` over `base`.
+ *
+ * `projection` decides which set of images answers, and the two never mix: a
+ * top-down world is one flat image and nothing else, and a tile that authors
+ * none resolves to nothing so the renderer fills its colour
+ * (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
  *
  * `base` is the height the cell's side faces reach down to — the lower of its
  * two front neighbours, which is what the renderer already computes so a cliff
- * is extruded exactly as far as it is visible.
+ * is extruded exactly as far as it is visible. `cell` is whatever the author
+ * chose by hand; `{}` is the ordinary case, where everything is rolled.
  *
- * The stack runs from `base + 1` to `elevation`, one layer per visible step,
- * and each layer's `drop` is how many steps below the top face it sits. When
- * nothing is visible the surface image is the whole answer.
+ * In an isometric world the stack runs from `base + 1` to `elevation`, one
+ * layer per visible step, and each layer's `drop` is how many steps below the
+ * top face it sits. When nothing is visible the surface image is the whole
+ * answer.
  */
 export function resolveTileRender(
   tileId: string,
   art: TileArt | undefined,
+  projection: ProjectionMode,
   elevation: number,
   base: number,
   roll: number,
+  cell: CellArt = {},
 ): ResolvedTileRender {
   if (art === undefined) {
     return { ...NOTHING, tileId, elevation };
   }
+  // A top-down hexagon has no tilt and no side faces, so it has its own images
+  // and borrows nothing from the isometric ones.
+  if (projection !== 'isometric') {
+    const index = cell.surface ?? variantIndex(roll, art.flat?.length ?? 0);
+    return { tileId, elevation, flat: assetAt(art.flat, index), surface: null, layers: [] };
+  }
   const steps = Math.min(Math.max(0, elevation - base), MAX_STACKED_LEVELS);
   // The top face is the tile's own, at every height: an elevation image is the
   // faces and nothing else.
-  const surface = pick(art.surface, roll);
+  const surfaceIndex = cell.surface ?? variantIndex(roll, art.surface?.length ?? 0);
+  const surface = assetAt(art.surface, surfaceIndex);
 
-  if (steps === 0 || !hasElevationArt(art)) {
-    return { tileId, elevation, surface, layers: [] };
+  // The faces may come from another tile's ladder; the top face never does.
+  const faces = cell.elevation ?? art;
+
+  if (steps === 0 || !hasElevationArt(faces)) {
+    return { tileId, elevation, flat: null, surface, layers: [] };
   }
 
-  const levels = levelsOf(art.elevation);
+  // The cut follows the ground standing on it: unless the author says
+  // otherwise, every layer takes the variant the surface took, so a cell
+  // showing `grass_f` is undercut by `dirt_f` all the way down.
+  const chosen = cell.elevationVariant ?? surfaceIndex ?? roll;
+
+  const levels = levelsOf(faces.elevation);
   const layers: ResolvedTileLayer[] = [];
   for (let drop = steps - 1; drop >= 0; drop -= 1) {
     // A cell dug below the ground it fronts still needs its faces drawn, and
     // levels at or below zero have no art of their own, so they borrow level 1's.
     const level = Math.max(1, elevation - drop);
-    const source = sourceLevel(art.elevation, level);
+    const source = sourceLevel(faces.elevation, level);
     if (source === null) {
       continue;
     }
-    // Rolling with the level as well as the cell is what stops a tall cliff
-    // repeating one rock face all the way down.
-    const asset = pick(levels[source - 1]?.variants, (roll + level) >>> 0);
+    const asset = assetAt(levels[source - 1]?.variants, chosen);
     if (asset === null) {
       continue;
     }
     layers.push({ level, sourceLevel: source, asset, drop });
   }
 
-  return { tileId, elevation, surface, layers };
+  return { tileId, elevation, flat: null, surface, layers };
 }
 
-function pick(variants: readonly TileArtVariant[] | undefined, roll: number): string | null {
-  const index = variantIndex(roll, variants?.length ?? 0);
-  return index === null ? null : (variants?.[index]?.asset ?? null);
+/**
+ * The asset at `index`, wrapped into range.
+ *
+ * Total, so no caller drops a layer because a surface list and a level's list
+ * have different lengths.
+ */
+function assetAt(
+  variants: readonly TileArtVariant[] | undefined,
+  index: number | null,
+): string | null {
+  const count = variants?.length ?? 0;
+  if (index === null || count === 0) {
+    return null;
+  }
+  return variants?.[index % count]?.asset ?? null;
 }
 
 /**

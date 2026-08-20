@@ -1,7 +1,24 @@
 # ADR-0035 — Tile Art Is Authored per Level and Resolved, Never Transformed
 
 ## Status
-Accepted
+Accepted, with one amendment and one correction.
+
+**Amended by ADR-0036** (*A Cell May Choose Its Tile Art, and a Cliff May Be
+Borrowed*): a placed cell may name its surface variant, borrow another tile's
+elevation ladder, and name the variant that ladder draws — and the face a stack
+shows by default now follows the surface instead of being rolled again at every
+level. Everything else here stands: the ladder, the repeat rule, the derived
+geometry, the mirrored resolver and the Rule at the foot of this file.
+
+**Corrected below:** the paragraph describing an elevation image said that
+everything under the `V` was face. It never was. `faceGuides()` in
+`apps/web/src/renderer/tile-preview.ts` has always marked a band one step thick,
+and `addWallTo` has always drawn the colour behind it as one — but the shipped
+art was generated from the sentence rather than from the guides, so every cliff
+overhung its own silhouette by ten pixels and showed a flat sawn-off foot
+wherever no cell stood in front of it. The wording is fixed, and
+`scripts/tile-art.test.mjs` now measures the shipped PNGs so prose is no longer
+the authority on it.
 
 ## Context
 
@@ -45,10 +62,18 @@ relief at all.
 **A cell's top face always comes from its surface variants, at every height.**
 An elevation image is the **faces alone** — the two a pointy-top hexagon
 exposes, drawn by hand — and never a copy of a top face it would only be
-covered by. Its first row is the hexagon's lower shoulder line, so its top
-`shoulderDepth` rows are the `V` those edges cut and everything below is face.
-Raising a tile therefore costs it nothing: a cliff of grass still rolls the same
-eight grass surfaces its flat neighbours do.
+covered by. Raising a tile therefore costs it nothing: a cliff of grass still
+rolls the same eight grass surfaces its flat neighbours do.
+
+**The faces are a band, not the rest of the canvas.** An elevation image's first
+row is the hexagon's lower shoulder line, so its top `shoulderDepth` rows are
+the `V` those two edges cut; under that it holds a band exactly `elevationStep`
+rows thick whose **lower** edge repeats the same `V`. One layer therefore meets
+the next edge to edge, and the last of a stack ends on the hexagon's own
+outline rather than on a flat cut. The canvas is `shoulderDepth + elevationStep`
+tall only because the `V` has to fit above the band: its four corners are never
+drawing room, and a pixel put there is an overhang that no wall behind it
+covers.
 
 Nothing rotates, mirrors, skews or scales any part of an image to produce
 another part. The only thing resolution does to an image is choose it and say
@@ -91,8 +116,10 @@ WASM build over a grid of heights and rolls.
 
 **A variant is rolled, never randomised.** `variant_roll(col, row, tileId)` is
 FNV-1a — a hash, not an RNG — so a cell answers the same thing every frame and
-every session, no seed travels with the map, and a stack varies its face down
-the column by rolling with the level as well as the cell.
+every session, and no seed travels with the map. *(This ADR also rolled each
+layer of a stack with `roll + level`, so one cell's faces alternated down the
+column; ADR-0036 replaced that with faces that follow the surface, because
+alternating read as courses of masonry rather than as one cut.)*
 
 **The asset editor is the tool, and its preview is the renderer.** It browses by
 category so that objects and decorations are entries rather than new screens;
@@ -128,11 +155,14 @@ Negative:
   south-west and a south-east face — not the three a flat-top layout would — and
   the editor's guides say so. A flat-top layout would give three, and is already
   rejected by validation;
-- **an elevation image is an awkward height**: `surfaceHeight / 4 + step`,
-  because it has to hold the `V` before it can hold a face. The alternative —
-  a full-canvas image with a transparent top — is a rounder number and wastes
-  most of its pixels, and would let a face image quietly paint over a top face
-  it is not supposed to own;
+- **an elevation image is an awkward height and largely transparent**:
+  `surfaceHeight / 4 + step`, because it has to hold the `V` before it can hold
+  the band — and since the band's own lower edge is that `V` again, the canvas
+  keeps four corners that are always empty. The alternative — a full-canvas
+  image with a transparent top — is a rounder number, wastes more pixels still,
+  and would let a face image quietly paint over a top face it is not supposed to
+  own. The price of the awkward shape is that it is easy to describe wrongly,
+  which is exactly what this ADR did: see the Status;
 - **the shipped worlds look different.** Deriving the projection from the
   default grid (32 wide, 20 of surface, step 8) makes one level of relief 0.43
   hex-widths instead of ADR-0016's 0.15, so existing isometric maps gain visibly
@@ -154,6 +184,6 @@ Negative:
 ## Rule
 
 No part of a tile's art may be produced from another part, and no elevation
-image may carry a top face. Resolution chooses an image and offsets it
+image may carry a top face or paint outside its one-step band. Resolution chooses an image and offsets it
 vertically; a rotation, a mirror, a skew or a non-integer scale of tile art is a
 bug, and a face that needs to differ is a face an artist draws.

@@ -13,8 +13,8 @@ use std::collections::BTreeMap;
 
 use insulaire_simulation::{EntityRuntime, Rng, SimEvent};
 use insulaire_world::{
-    EntityKind, Hex, LinkTrigger, MapLinkDefinition, OffsetCoord, ProjectDefinition, ResolvedTile,
-    TileArt, TileArtGeometry,
+    CellArtChoice, EntityKind, Hex, LinkTrigger, MapLinkDefinition, OffsetCoord, ProjectDefinition,
+    ResolvedTile, TileArt, TileArtGeometry,
 };
 use serde::{Deserialize, Serialize};
 
@@ -312,6 +312,13 @@ pub struct WorldView {
     pub locations: Vec<LocationView>,
     /// Authored map links leaving this world.
     pub links: Vec<LinkView>,
+    /// The cells that chose their art instead of rolling it, sorted by cell.
+    ///
+    /// Sparse, and normally empty: choosing is an authored exception, so this
+    /// travels as a list of resolved indices rather than as three more packed
+    /// buffers of zeroes (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub art_choices: Vec<CellArtChoice>,
     /// Length of the packed terrain and elevation buffers, i.e. `width * height`.
     pub cell_count: u32,
 }

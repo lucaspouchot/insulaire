@@ -153,16 +153,20 @@ export function inlineObject(record: object): string {
   const parts = Object.entries(record)
     .filter(([, value]) => value !== undefined)
     .map(([key, value]) => `${JSON.stringify(key)}: ${formatValue(value)}`);
-  return `{ ${parts.join(', ')} }`;
+  return parts.length === 0 ? '{}' : `{ ${parts.join(', ')} }`;
 }
 
 /**
- * Like `JSON.stringify`, but puts a space after commas inside arrays so
- * coordinates read as `[4, 10]` rather than `[4,10]`.
+ * Like `JSON.stringify`, but spaced the way the rest of these files are:
+ * coordinates read as `[4, 10]` rather than `[4,10]`, and a nested record as
+ * `{ "surface": "f" }` rather than `{"surface":"f"}`.
  */
 export function formatValue(value: unknown): string {
   if (Array.isArray(value)) {
-    return `[${value.map((item) => JSON.stringify(item)).join(', ')}]`;
+    return `[${value.map((item) => formatValue(item)).join(', ')}]`;
+  }
+  if (typeof value === 'object' && value !== null) {
+    return inlineObject(value);
   }
   return JSON.stringify(value);
 }

@@ -295,6 +295,17 @@
   min-width: 0;
 }
 
+/* The tile-art pickers stack, so their labels line up rather than each select
+   starting wherever its own label happened to end. */
+.field + .field {
+  margin-top: 6px;
+}
+
+.field > span:first-child {
+  flex: none;
+  width: 88px;
+}
+
 .zone-picker {
   margin-bottom: 8px;
 }

@@ -12,13 +12,18 @@ use crate::tile_art::{TileArt, TileArtGeometry};
 
 /// Highest tile-set schema version this build understands.
 ///
-/// `2` adds the authored art of `docs/adr/ADR-0035-tile-art-is-authored-and-
+/// `2` added the authored art of `docs/adr/ADR-0035-tile-art-is-authored-and-
 /// resolved-by-level.md`: a set declares the pixel grid its images are drawn
 /// on, and a tile may carry surface variants and a ladder of elevation levels.
-/// Every field it adds has a default, so a `1` file still parses and draws the
-/// flat colours it always did; the number is bumped because the *format* grew,
-/// and the shipped files say `2`.
-pub const TILE_SET_SCHEMA_VERSION: u32 = 2;
+///
+/// `3` adds the **flat** view of `docs/adr/ADR-0037-a-flat-map-is-drawn-from-
+/// flat-art.md`: a tile may carry images for a top-down world, and the grid
+/// declares the height they are drawn at. `art.flatHeight` is **required**
+/// wherever a set declares `art` at all — a set that says how tall its surfaces
+/// are and stays silent about its flat images would be guessing on the caller's
+/// behalf — so a `2` file that declared a grid no longer parses. Nothing else
+/// changed, and the shipped files say `3`.
+pub const TILE_SET_SCHEMA_VERSION: u32 = 3;
 
 /// A palette of authored tiles.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

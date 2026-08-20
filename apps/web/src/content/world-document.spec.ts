@@ -259,6 +259,79 @@ describe('WorldDocument', () => {
     expect(histogram.get('grass')).toBe(11);
   });
 
+  describe('cell art', () => {
+    it('reads, edits and re-exports what a cell chose', () => {
+      const document = WorldDocument.fromDefinition(
+        {
+          ...world,
+          tiles: [
+            { at: [1, 1], tile: 'water', art: { surface: 'c', elevationTile: 'grass' } },
+          ],
+        },
+        tileSet,
+      );
+
+      expect(document.artAt(offset(1, 1))).toEqual({
+        surface: 'c',
+        elevationTile: 'grass',
+        elevation: null,
+      });
+      // A cell that chose nothing answers with the rolled shape rather than null.
+      expect(document.artAt(offset(0, 0))).toEqual({
+        surface: null,
+        elevationTile: null,
+        elevation: null,
+      });
+
+      expect(document.setArt(offset(1, 1), { elevation: 'b' })).toBe(true);
+      // Setting what is already there changes nothing, so the editor can call
+      // it from a change handler without dirtying the project.
+      expect(document.setArt(offset(1, 1), { elevation: 'b' })).toBe(false);
+
+      const written = document.toDefinition().tiles?.[0];
+      expect(written?.art).toEqual({ surface: 'c', elevationTile: 'grass', elevation: 'b' });
+    });
+
+    it('costs nothing on a map where nobody chose', () => {
+      const exported = documentFor().toDefinition();
+      expect(exported.tiles?.every((tile) => tile.art === undefined)).toBe(true);
+      expect(JSON.stringify(exported)).not.toContain('"art"');
+    });
+
+    it('writes a default-tile cell that chose, and drops the choice when it is cleared', () => {
+      const document = documentFor();
+      // [0, 0] is the default tile at elevation zero: its choice is the only
+      // reason it has anything to be written down.
+      expect(document.setArt(offset(0, 0), { surface: 'f' })).toBe(true);
+      expect(document.toDefinition().tiles).toContainEqual({
+        at: [0, 0],
+        tile: 'grass',
+        art: { surface: 'f' },
+      });
+
+      expect(document.setArt(offset(0, 0), { surface: null })).toBe(true);
+      expect(document.artOverrides.size).toBe(0);
+      expect(
+        document.toDefinition().tiles?.some((tile) => tile.at[0] === 0 && tile.at[1] === 0),
+      ).toBe(false);
+    });
+
+    it('drops a choice when the cell is painted with another tile', () => {
+      // `grass_f` means nothing on water, and the ids are per tile.
+      const document = documentFor();
+      document.setArt(offset(0, 0), { surface: 'f', elevationTile: 'water' });
+
+      expect(document.paint(offset(0, 0), 'water')).toBe(true);
+      expect(document.artAt(offset(0, 0)).surface).toBeNull();
+    });
+
+    it('ignores cells outside the map', () => {
+      const document = documentFor();
+      expect(document.setArt(offset(-1, 0), { surface: 'a' })).toBe(false);
+      expect(document.artAt(offset(99, 99)).surface).toBeNull();
+    });
+  });
+
   describe('map links', () => {
     it('places at most one link per cell and exports it', () => {
       const document = documentFor();

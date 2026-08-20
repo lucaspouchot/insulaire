@@ -9,6 +9,9 @@
  *
  * ```json
  * "art": {
+ *   "flat": [
+ *     { "id": "a", "asset": "assets/tiles/grass_flat_a.png" }
+ *   ],
  *   "surface": [
  *     { "id": "a", "asset": "assets/tiles/grass_a.png" }
  *   ],
@@ -49,6 +52,7 @@ export function serializeTileSet(tileSet: TileSetDefinition): string {
   }
   lines.push('  "art": {');
   lines.push(`    "width": ${geometry.width},`);
+  lines.push(`    "flatHeight": ${geometry.flatHeight},`);
   lines.push(`    "surfaceHeight": ${geometry.surfaceHeight},`);
   lines.push(`    "elevationHeight": ${geometry.elevationHeight},`);
   lines.push(`    "elevationStep": ${geometry.elevationStep}`);
@@ -84,15 +88,19 @@ function tileBlock(tile: TileDefinition, last: boolean): string[] {
 
 /** The `art` member of one tile, or nothing when the tile declares none. */
 function artBlock(art: TileArt | undefined): string[] {
+  const flat = art?.flat ?? [];
   const surface = art?.surface ?? [];
   const levels = art?.elevation?.levels ?? [];
   const repeat = art?.elevation?.repeat ?? null;
-  if (surface.length === 0 && levels.length === 0 && repeat === null) {
+  if (flat.length === 0 && surface.length === 0 && levels.length === 0 && repeat === null) {
     return [];
   }
 
   const lines = ['      "art": {'];
   const members: string[][] = [];
+  if (flat.length > 0) {
+    members.push(['        "flat": [', ...variantLines(flat, '          '), '        ]']);
+  }
   if (surface.length > 0) {
     members.push(['        "surface": [', ...variantLines(surface, '          '), '        ]']);
   }

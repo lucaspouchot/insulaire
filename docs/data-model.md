@@ -73,18 +73,30 @@ A tile is a palette entry living in a `TileSetDefinition`, not a map cell:
 - gameplay properties
 - *(planned)* render layer
 
-`art` is a set of surface images and a ladder of elevation levels, each level
-one image holding the top face and the faces below it. What a cell of height
-`h` draws is *resolved* rather than stored — `resolve_tile_render` in
-`crates/world/src/tile_art.rs`, mirrored for the draw loop in
-`apps/web/src/renderer/tile-art.ts` — so a hundred-step cliff costs the art of a
-two-step one, and no part of an image is ever produced from another part
-(ADR-0035). The set as a whole declares the pixel grid its images are drawn on,
-and that grid is what the renderer's projection is derived from.
+`art` is **two views of the same tile**. A `flat` list draws a top-down world:
+the whole hexagon, untilted, one image per cell and no relief. A `surface` list
+plus a ladder of elevation levels draws an isometric one, each level one image
+holding the side faces a drop exposes. The world's projection decides which
+answers, and neither is ever scaled or squashed into the other's outline; a tile
+with no art for the projection in force draws its `fallbackColor` (ADR-0037).
+
+What a cell of height `h` draws is *resolved* rather than stored —
+`resolve_tile_render` in `crates/world/src/tile_art.rs`, mirrored for the draw
+loop in `apps/web/src/renderer/tile-art.ts` — so a hundred-step cliff costs the
+art of a two-step one, and no part of an image is ever produced from another
+part (ADR-0035). The set as a whole declares the pixel grid its images are drawn
+on, and that grid is what the renderer's projection is derived from.
 
 Map cells (`PlacedTile`) carry a position, a reference to one of these ids, and
 an `elevation` — relief the renderer draws in isometric mode and the rules
-ignore (ADR-0016).
+ignore (ADR-0016). A cell may also carry `art`: the variant it shows — which
+picks out of the tile's `surface` list or its `flat` list, whichever the world's
+projection draws from — the tile whose elevation ladder cuts its faces, and the
+variant of that ladder.
+All three are optional and all three are by id; left unset — which is what
+nearly every cell says — the picture is rolled from the cell's coordinates.
+Presentation, like `elevation`: no rule reads it, and it says which picture, not
+what a tile is (ADR-0036).
 
 ## EntityDefinition
 
@@ -255,10 +267,19 @@ The flattened runtime view of a world:
 - `cells: Vec<u8>` — one palette index per cell, row-major in offset
   coordinates
 - `elevations: Vec<i8>` — one elevation per cell, in the same layout
+- `art_choices: Vec<CellArtChoice>` — the cells that chose their picture,
+  sorted by cell index
 
 `cells` and `elevations` are exactly the buffers handed to JavaScript as a
 `Uint8Array` and an `Int8Array`, so the file coordinate, the buffer index and the
 rendered position all agree.
+
+`art_choices` is the one **sparse** structure, and normally empty: choosing is an
+authored exception, so three more dense buffers would be three megabytes of
+zeroes per million cells. Building the grid is also where the ids a map file
+carries become the indices a renderer wants — `resolve_cell_art` — so no draw
+call ever searches a variant list by name, and an id that resolves to nothing
+leaves the cell rolling (ADR-0036).
 
 ### EntityStore
 
@@ -277,6 +298,11 @@ use — plus the authored `projection` and `zone`, and re-sparsifies on export.
 Its palette entries carry each tile's `art`, and the document carries the tile
 set's pixel grid, so the editor's renderer and the game's are handed the same
 model.
+
+Per-cell **art choices** are the exception to that density, here as in the grid:
+a `Map` keyed by cell index, holding the ids the file carries. Painting a cell
+with another tile drops its choice, because `grass_f` means nothing on sand
+(ADR-0036).
 
 The **asset editor** owns a fourth, smaller one: a `SpriteDocument` per image
 being painted (`apps/web/src/content/sprite-document.ts`), which is the buffer

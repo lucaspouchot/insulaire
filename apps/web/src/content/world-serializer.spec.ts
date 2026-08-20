@@ -40,6 +40,27 @@ describe('serializeWorld', () => {
     expect(json.endsWith('\n')).toBe(true);
   });
 
+  it('writes a cell art choice inline, spaced like everything else', () => {
+    const json = serializeWorld({
+      id: 'w',
+      schemaVersion: 2,
+      name: 'W',
+      width: 2,
+      height: 2,
+      orientation: 'pointy',
+      tileSetId: 't',
+      defaultTile: 'grass',
+      tiles: [{ at: [0, 1], tile: 'grass', art: { surface: 'f', elevationTile: 'rock' } }],
+      entities: [],
+      locations: [],
+      metadata: {},
+    });
+
+    expect(json).toContain(
+      '    { "at": [0, 1], "tile": "grass", "art": { "surface": "f", "elevationTile": "rock" } }\n',
+    );
+  });
+
   it('produces JSON that parses back to the same value', () => {
     const world: WorldDefinition = {
       id: 'w',

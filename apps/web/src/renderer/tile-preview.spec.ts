@@ -15,6 +15,7 @@ import { faceGuides, fitPreview, surfaceHexagon } from './tile-preview';
 describe('tile preview geometry', () => {
   const GEOMETRY: TileArtGeometry = {
     width: 32,
+    flatHeight: 37,
     surfaceHeight: 20,
     elevationHeight: 13,
     elevationStep: 8,

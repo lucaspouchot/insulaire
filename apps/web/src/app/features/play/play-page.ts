@@ -49,7 +49,7 @@ import { CanvasView } from '../../../renderer/canvas-view';
 import { SpriteCache } from '../../../renderer/character-renderer';
 import { HexMapRenderer } from '../../../renderer/hex-map-renderer';
 import { toProjectionMode } from '../../../renderer/projection';
-import { RenderModel, elevationRangeOf } from '../../../renderer/render-model';
+import { RenderModel, cellArtChoicesOf, elevationRangeOf } from '../../../renderer/render-model';
 import { SpriteRegistry } from '../../../renderer/sprite-registry';
 import { serializeWorld } from '../../../content/world-serializer';
 import { I18nService } from '../../i18n/i18n.service';
@@ -465,6 +465,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       terrain,
       elevation,
       elevationRange,
+      artChoices: cellArtChoicesOf(view.artChoices ?? []),
       entities: (snapshot?.entities ?? []).map((entity) => ({
         id: entity.contentId,
         at: { col: entity.at[0], row: entity.at[1] },

@@ -12,7 +12,12 @@ use serde_json::Value;
 use crate::hex::OffsetCoord;
 
 /// Highest world schema version this build understands.
-pub const WORLD_SCHEMA_VERSION: u32 = 1;
+///
+/// Version 2 added [`PlacedTile::art`], the per-cell art choice
+/// (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`). Every field of it
+/// is defaulted, so a version 1 file parses unchanged and rolls its art as it
+/// always did; the shipped files say `2`.
+pub const WORLD_SCHEMA_VERSION: u32 = 2;
 
 /// Hex orientation of an authored map.
 ///
@@ -143,6 +148,54 @@ pub struct PlacedTile {
     /// Per-cell gameplay tags, in addition to the tile's own tags.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
+    /// What this cell is drawn with, when the roll is not what the author
+    /// wanted.
+    ///
+    /// Presentation only, like [`elevation`](Self::elevation): no rule reads
+    /// it. Empty — the usual case — leaves every choice to
+    /// [`crate::variant_roll`].
+    #[serde(default, skip_serializing_if = "PlacedTileArt::is_empty")]
+    pub art: PlacedTileArt,
+}
+
+/// A cell's own answer to "which picture", by id rather than by index.
+///
+/// Ids, because they are what an author reads in the tile set and what survives
+/// a variant being inserted above another one; the renderer wants indices, and
+/// [`crate::WorldGrid`] resolves them once when it flattens the map
+/// (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+///
+/// Three independent choices, all optional, because they answer three different
+/// questions: what the top face shows, what the cut underneath is made of, and
+/// which cut. An empty string is "roll it", which is what nearly every cell of
+/// nearly every map says.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlacedTileArt {
+    /// Id of the surface variant of this cell's own tile.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub surface: String,
+    /// Id of the [`crate::TileDefinition`] whose elevation ladder cuts the
+    /// faces. Empty uses the cell's own tile.
+    ///
+    /// This is how a meadow stands on a rock cliff. The top face is unaffected:
+    /// it always comes from the cell's own tile.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub elevation_tile: String,
+    /// Id of the elevation variant, in whichever ladder ends up drawing.
+    ///
+    /// Empty follows [`surface`](Self::surface), so a cut matches the ground
+    /// standing on it without anyone having to say so.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub elevation: String,
+}
+
+impl PlacedTileArt {
+    /// `true` when the cell chooses nothing, so the file may leave it out.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.surface.is_empty() && self.elevation_tile.is_empty() && self.elevation.is_empty()
+    }
 }
 
 /// An authored entity placed on the map.
@@ -263,7 +316,7 @@ mod tests {
 
     const MINIMAL: &str = r#"{
         "id": "tiny",
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "width": 3,
         "height": 2,
         "tileSetId": "mvp_terrain",
@@ -319,6 +372,32 @@ mod tests {
         assert!(serde_json::to_string(&zoned)
             .expect("serialise")
             .contains(r#""zone":"Northern Reach""#));
+    }
+
+    #[test]
+    fn a_cell_may_choose_its_art_and_most_do_not() {
+        let world: WorldDefinition = serde_json::from_str(MINIMAL).expect("parse");
+        assert!(world.tiles[0].art.is_empty());
+        // Nothing chosen, nothing written: a map that rolls everything is
+        // re-exported exactly as it was authored.
+        assert!(!serde_json::to_string(&world)
+            .expect("serialise")
+            .contains("\"art\""));
+
+        let chosen: WorldDefinition = serde_json::from_str(&MINIMAL.replace(
+            r#""tile": "water""#,
+            r#""tile": "water", "art": { "surface": "c", "elevationTile": "rock" }"#,
+        ))
+        .expect("parse");
+        assert_eq!(chosen.tiles[0].art.surface, "c");
+        assert_eq!(chosen.tiles[0].art.elevation_tile, "rock");
+        assert_eq!(chosen.tiles[0].art.elevation, "");
+
+        let serialised = serde_json::to_string(&chosen).expect("serialise");
+        assert!(
+            serialised.contains(r#""art":{"surface":"c","elevationTile":"rock"}"#),
+            "{serialised}"
+        );
     }
 
     #[test]

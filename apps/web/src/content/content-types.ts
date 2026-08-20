@@ -10,18 +10,28 @@
 /** `[col, row]` in odd-r offset coordinates. */
 export type OffsetPair = [number, number];
 
-export const WORLD_SCHEMA_VERSION = 1;
+export const WORLD_SCHEMA_VERSION = 2;
 
 /**
- * `2` adds authored tile art
- * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+ * `2` added authored tile art
+ * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`); `3` adds
+ * the flat view a top-down world is drawn from, and makes `art.flatHeight`
+ * required wherever a set declares a grid
+ * (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
  */
-export const TILE_SET_SCHEMA_VERSION = 2;
+export const TILE_SET_SCHEMA_VERSION = 3;
 
 /** Authored width of a tile image when a set declares no geometry. */
 export const DEFAULT_TILE_WIDTH = 32;
 /** Authored height of a surface image when a set declares no geometry. */
 export const DEFAULT_SURFACE_HEIGHT = 20;
+/**
+ * Authored height of a flat image when a set declares no geometry.
+ *
+ * The untilted hexagon's own bounding box: a pointy-top hexagon is
+ * `2 / sqrt(3)` times as tall as it is wide, so `32` wide is `37` tall.
+ */
+export const DEFAULT_FLAT_HEIGHT = 37;
 /** Authored pixels one level of relief lifts a tile, when none is declared. */
 export const DEFAULT_ELEVATION_STEP = 8;
 
@@ -48,14 +58,20 @@ export interface TileVisual {
 /**
  * The pixel grid a tile set's images are authored on.
  *
- * Mirrors `crates/world/src/tile_art.rs`. A surface image holds the top face
- * alone. An elevation image holds **only the side faces**: its first row is the
- * hexagon's lower shoulder line, so its top {@link shoulderDepth} rows are the
- * `V` the two lower edges cut and everything below that is face
+ * Mirrors `crates/world/src/tile_art.rs`. A **flat** image holds the whole
+ * untilted hexagon, which is what a top-down world draws
+ * (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`). A **surface**
+ * image holds the tilted top face alone. An **elevation** image holds only the
+ * side faces: its first row is the hexagon's lower shoulder line, so its top
+ * {@link shoulderDepth} rows are the `V` the two lower edges cut, and below
+ * that it carries a band one {@link TileArtGeometry.elevationStep} thick
+ * following the same `V`
  * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
  */
 export interface TileArtGeometry {
   width: number;
+  /** Height of a flat image: `width * 2 / sqrt(3)`, the untilted hexagon. */
+  flatHeight: number;
   surfaceHeight: number;
   elevationHeight: number;
   elevationStep: number;
@@ -87,9 +103,20 @@ export interface TileElevation {
   repeat?: ElevationRepeat | null;
 }
 
-/** Everything a tile is drawn from. Empty draws `visual.fallbackColor`. */
+/**
+ * Everything a tile is drawn from, in either projection.
+ *
+ * {@link flat} draws a top-down world; {@link surface} and {@link elevation}
+ * draw an isometric one. Whatever the world's projection finds nothing for is
+ * drawn in `visual.fallbackColor`
+ * (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+ */
 export interface TileArt {
+  /** Images for the untilted hexagon. Top-down worlds only. */
+  flat?: TileArtVariant[];
+  /** Images for the tilted top face. Isometric worlds only. */
   surface?: TileArtVariant[];
+  /** The ladder of relief. Isometric worlds only. */
   elevation?: TileElevation;
 }
 
@@ -117,6 +144,7 @@ export interface TileSetDefinition {
 export function tileArtGeometry(tileSet: Pick<TileSetDefinition, 'art'>): TileArtGeometry {
   return {
     width: tileSet.art?.width ?? DEFAULT_TILE_WIDTH,
+    flatHeight: tileSet.art?.flatHeight ?? DEFAULT_FLAT_HEIGHT,
     surfaceHeight: tileSet.art?.surfaceHeight ?? DEFAULT_SURFACE_HEIGHT,
     elevationHeight: tileSet.art?.elevationHeight ?? DEFAULT_ELEVATION_HEIGHT,
     elevationStep: tileSet.art?.elevationStep ?? DEFAULT_ELEVATION_STEP,
@@ -162,6 +190,28 @@ export type ProjectionMode = 'topDown' | 'isometric';
 export const MIN_ELEVATION = -128;
 export const MAX_ELEVATION = 127;
 
+/**
+ * A cell's own answer to "which picture", by id rather than by index.
+ *
+ * Mirrors `PlacedTileArt` in `crates/world/src/definition.rs`. Three
+ * independent choices, all optional, and an absent one means "roll it" — which
+ * is what nearly every cell of nearly every map says
+ * (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+ */
+export interface PlacedTileArt {
+  /** Id of a surface variant of this cell's own tile. */
+  surface?: string;
+  /**
+   * Id of the tile whose elevation ladder cuts the faces.
+   *
+   * How a meadow stands on a rock cliff. The top face is unaffected: it always
+   * comes from the cell's own tile.
+   */
+  elevationTile?: string;
+  /** Id of the elevation variant; absent follows {@link surface}. */
+  elevation?: string;
+}
+
 /** A cell whose tile differs from {@link WorldDefinition.defaultTile}. */
 export interface PlacedTile {
   at: OffsetPair;
@@ -169,6 +219,8 @@ export interface PlacedTile {
   /** Whole steps of relief, `MIN_ELEVATION`..`MAX_ELEVATION`. Omitted when `0`. */
   elevation?: number;
   tags?: string[];
+  /** What this cell is drawn with; absent rolls everything. */
+  art?: PlacedTileArt;
 }
 
 export interface EntityDefinition {

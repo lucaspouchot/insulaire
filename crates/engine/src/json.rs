@@ -179,20 +179,36 @@ impl JsonEngine {
     /// Resolves what to draw for one cell of a tile set passed in; returns a
     /// `ResolvedTileRender`.
     ///
+    /// `projection` is the world's: `"isometric"` resolves the surface and the
+    /// cliff, anything else the flat image
+    /// (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+    /// `choice_json` is the cell's `PlacedTileArt`; `"{}"` rolls everything.
+    ///
     /// # Errors
     ///
     /// `parse` for malformed JSON, `unknownContent` for an unknown tile.
+    #[allow(clippy::too_many_arguments)] // a wire, not an API: every field the boundary carries is a parameter
     pub fn preview_tile_render(
         &self,
         tile_set_json: &str,
         tile_id: &str,
+        projection: &str,
         elevation: i32,
         base: i32,
         roll: u32,
+        choice_json: &str,
     ) -> JsonResult {
         let resolved = self
             .inner
-            .preview_tile_render(tile_set_json, tile_id, elevation, base, roll)
+            .preview_tile_render(
+                tile_set_json,
+                tile_id,
+                projection,
+                elevation,
+                base,
+                roll,
+                choice_json,
+            )
             .map_err(|error| err(&error))?;
         ok(&resolved)
     }
@@ -551,12 +567,16 @@ mod tests {
     }
 
     const ART_TILE_SET: &str = r##"{
-        "id": "art", "schemaVersion": 2,
-        "art": { "width": 32, "surfaceHeight": 20, "elevationHeight": 13, "elevationStep": 8 },
+        "id": "art", "schemaVersion": 3,
+        "art": {
+          "width": 32, "flatHeight": 37, "surfaceHeight": 20,
+          "elevationHeight": 13, "elevationStep": 8
+        },
         "tiles": [
             { "id": "rock", "terrain": "rock", "movementCost": 1,
               "visual": { "visualId": "terrain.rock", "fallbackColor": "#7a7169" },
               "art": {
+                "flat": [{ "id": "a", "asset": "assets/tiles/rock_flat_a.png" }],
                 "surface": [{ "id": "a", "asset": "assets/tiles/rock_a.png" }],
                 "elevation": {
                   "levels": [
@@ -565,8 +585,103 @@ mod tests {
                   ],
                   "repeat": { "level": 2 }
                 }
+              } },
+            { "id": "turf", "terrain": "grass", "movementCost": 1,
+              "visual": { "visualId": "terrain.grass", "fallbackColor": "#4a7c3f" },
+              "art": {
+                "surface": [
+                  { "id": "a", "asset": "assets/tiles/turf_a.png" },
+                  { "id": "b", "asset": "assets/tiles/turf_b.png" }
+                ]
               } }
         ]}"##;
+
+    #[test]
+    fn a_cell_may_choose_its_art_through_the_boundary() {
+        let engine = JsonEngine::new();
+
+        // Grass on top, rock underneath: the borrowed ladder cuts the faces and
+        // the top face stays the cell's own
+        // (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+        let borrowed = json(
+            &engine
+                .preview_tile_render(
+                    ART_TILE_SET,
+                    "turf",
+                    "isometric",
+                    2,
+                    0,
+                    0,
+                    r#"{ "surface": "b", "elevationTile": "rock" }"#,
+                )
+                .expect("resolve"),
+        );
+        assert_eq!(borrowed["surface"], "assets/tiles/turf_b.png");
+        let layers = borrowed["layers"].as_array().expect("layers");
+        assert_eq!(layers.len(), 2);
+        assert_eq!(layers[0]["asset"], "assets/tiles/cliff_a.png");
+        assert_eq!(layers[1]["asset"], "assets/tiles/cliff_b.png");
+
+        // Without the borrow the same tile draws no faces at all: it authors a
+        // surface and no ladder.
+        let alone = json(
+            &engine
+                .preview_tile_render(ART_TILE_SET, "turf", "isometric", 2, 0, 0, "{}")
+                .expect("resolve"),
+        );
+        assert!(alone["layers"].as_array().is_none_or(Vec::is_empty));
+
+        // An id nobody defined costs the cell its choice, not its picture.
+        let dangling = json(
+            &engine
+                .preview_tile_render(
+                    ART_TILE_SET,
+                    "turf",
+                    "isometric",
+                    0,
+                    0,
+                    0,
+                    r#"{ "surface": "zz" }"#,
+                )
+                .expect("resolve"),
+        );
+        assert_eq!(dangling["surface"], "assets/tiles/turf_a.png");
+    }
+
+    #[test]
+    fn a_top_down_world_resolves_the_flat_image_and_nothing_else() {
+        let engine = JsonEngine::new();
+
+        // The same raised cell, drawn twice. Top-down it is one flat image and
+        // no relief at all
+        // (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+        let flat = json(
+            &engine
+                .preview_tile_render(ART_TILE_SET, "rock", "topDown", 3, 0, 0, "{}")
+                .expect("resolve"),
+        );
+        assert_eq!(flat["flat"], "assets/tiles/rock_flat_a.png");
+        assert!(flat["surface"].is_null());
+        assert!(flat["layers"].as_array().is_none_or(Vec::is_empty));
+
+        // A tile with no flat image resolves to nothing, so the renderer draws
+        // its colour rather than reaching for a surface that would not fit.
+        let bare = json(
+            &engine
+                .preview_tile_render(ART_TILE_SET, "turf", "topDown", 0, 0, 0, "{}")
+                .expect("resolve"),
+        );
+        assert!(bare["flat"].is_null());
+        assert!(bare["surface"].is_null());
+
+        // A mode nobody knows is top-down, which is what the content default is.
+        let unknown = json(
+            &engine
+                .preview_tile_render(ART_TILE_SET, "rock", "sideways", 0, 0, 0, "{}")
+                .expect("resolve"),
+        );
+        assert_eq!(unknown["flat"], "assets/tiles/rock_flat_a.png");
+    }
 
     #[test]
     fn a_tile_set_can_be_validated_without_being_registered() {
@@ -589,7 +704,7 @@ mod tests {
 
         let flat = json(
             &engine
-                .preview_tile_render(ART_TILE_SET, "rock", 0, 0, 0)
+                .preview_tile_render(ART_TILE_SET, "rock", "isometric", 0, 0, 0, "{}")
                 .expect("resolve"),
         );
         assert_eq!(flat["surface"], "assets/tiles/rock_a.png");
@@ -599,7 +714,7 @@ mod tests {
         // repeat level 2, moved down whole steps and never transformed.
         let tall = json(
             &engine
-                .preview_tile_render(ART_TILE_SET, "rock", 4, 0, 0)
+                .preview_tile_render(ART_TILE_SET, "rock", "isometric", 4, 0, 0, "{}")
                 .expect("resolve"),
         );
         let layers = tall["layers"].as_array().expect("layers");
@@ -615,10 +730,18 @@ mod tests {
         assert_eq!(
             code(
                 &engine
-                    .preview_tile_render(ART_TILE_SET, "absent", 0, 0, 0)
+                    .preview_tile_render(ART_TILE_SET, "absent", "isometric", 0, 0, 0, "{}")
                     .unwrap_err()
             ),
             "unknownContent"
+        );
+        assert_eq!(
+            code(
+                &engine
+                    .preview_tile_render(ART_TILE_SET, "rock", "isometric", 0, 0, 0, "{")
+                    .unwrap_err()
+            ),
+            "parse"
         );
     }
 
@@ -637,6 +760,7 @@ mod tests {
 
         let view = json(&engine.world_view("w").expect("view"));
         assert_eq!(view["tileArt"]["width"], 32);
+        assert_eq!(view["tileArt"]["flatHeight"], 37);
         assert_eq!(view["tileArt"]["elevationStep"], 8);
         assert_eq!(
             view["palette"][0]["art"]["surface"][0]["asset"],
@@ -897,7 +1021,7 @@ mod tests {
     fn engine_info_reports_the_build() {
         let info = json(&JsonEngine::new().engine_info().expect("info"));
         assert_eq!(info["name"], "insulaire-engine");
-        assert_eq!(info["worldSchemaVersion"], 1);
+        assert_eq!(info["worldSchemaVersion"], 2);
         assert!(info["version"].is_string());
     }
 

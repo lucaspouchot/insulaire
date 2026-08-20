@@ -62,9 +62,9 @@ use std::collections::BTreeMap;
 
 use insulaire_simulation::{rules, tick, GameState, PendingTransition, SimEvent};
 use insulaire_world::{
-    resolve_tile_render, CharacterDefinition, Hex, ProjectionMode, ResolvedCharacter,
-    ResolvedTileRender, SettingsDefinition, TileArtGeometry, TitleScreenDefinition,
-    WorldDefinition, WorldGrid,
+    resolve_cell_art, resolve_tile_render, CharacterDefinition, Hex, PlacedTileArt, ProjectionMode,
+    ResolvedCharacter, ResolvedTile, ResolvedTileRender, SettingsDefinition, TileArtGeometry,
+    TitleScreenDefinition, WorldDefinition, WorldGrid,
 };
 
 pub use dto::{
@@ -135,35 +135,64 @@ impl Engine {
     /// Resolves what to draw for one cell of a tile set **passed in** — the
     /// asset editor's preview, for content that is not registered yet.
     ///
-    /// `base` is the height the cell's side faces reach down to, and `roll` is
-    /// [`insulaire_world::variant_roll`] for the cell
+    /// `projection` is the world's own — `"isometric"` draws the surface and
+    /// the cliff, anything else draws the flat image
+    /// (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`), which is the
+    /// same fallback the renderer applies to a world that names a mode nobody
+    /// knows. `base` is the height the cell's side faces reach down to, and
+    /// `roll` is [`insulaire_world::variant_roll`] for the cell
     /// (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+    /// `choice_json` is a `PlacedTileArt` — what the cell picked by hand —
+    /// resolved against the set that was passed in; `"{}"` rolls everything,
+    /// which is what a preview of a plain tile wants
+    /// (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
     ///
     /// # Errors
     ///
-    /// [`EngineError::Parse`] when the JSON is malformed, and
+    /// [`EngineError::Parse`] when either JSON is malformed, and
     /// [`EngineError::UnknownContent`] when the set defines no such tile.
+    #[allow(clippy::too_many_arguments)] // a wire, not an API: every field the boundary carries is a parameter
     pub fn preview_tile_render(
         &self,
         tile_set_json: &str,
         tile_id: &str,
+        projection: &str,
         elevation: i32,
         base: i32,
         roll: u32,
+        choice_json: &str,
     ) -> Result<ResolvedTileRender, EngineError> {
         let tile_set: insulaire_world::TileSetDefinition = serde_json::from_str(tile_set_json)
             .map_err(|source| EngineError::Parse {
                 what: "tile set".to_owned(),
                 message: source.to_string(),
             })?;
+        let choice: PlacedTileArt = if choice_json.trim().is_empty() {
+            PlacedTileArt::default()
+        } else {
+            serde_json::from_str(choice_json).map_err(|source| EngineError::Parse {
+                what: "tile art choice".to_owned(),
+                message: source.to_string(),
+            })?
+        };
         let tile = tile_set
             .tile(tile_id)
             .ok_or_else(|| EngineError::UnknownContent {
                 kind: "tile".to_owned(),
                 id: tile_id.to_owned(),
             })?;
+        // The ids are resolved against the same palette a loaded world would
+        // build, so a preview and the map agree by construction.
+        let palette: Vec<ResolvedTile> = tile_set.tiles.iter().map(ResolvedTile::of).collect();
+        let cell = resolve_cell_art(&palette, tile_id, &choice);
         Ok(resolve_tile_render(
-            &tile.id, &tile.art, elevation, base, roll,
+            &tile.id,
+            &tile.art,
+            projection_of(projection),
+            elevation,
+            base,
+            roll,
+            cell.against(&palette),
         ))
     }
 
@@ -485,6 +514,7 @@ impl Engine {
                 })
                 .collect(),
             links: world.links.iter().map(Into::into).collect(),
+            art_choices: grid.art_choices().to_vec(),
             cell_count: grid.cells().len() as u32,
         }
     }
@@ -826,6 +856,21 @@ impl Engine {
                 .collect(),
             rng: RngSnapshot::from(state.rng()),
         }
+    }
+}
+
+/// The projection a wire string names.
+///
+/// Everything that is not `"isometric"` is top-down, which is what
+/// `toProjectionMode` in `apps/web/src/renderer/projection.ts` does with the
+/// same string and what `ProjectionMode::default` is. A preview of content the
+/// caller is still editing should draw *something* rather than refuse
+/// (`docs/adr/ADR-0016-isometric-projection.md`).
+fn projection_of(mode: &str) -> ProjectionMode {
+    if mode == "isometric" {
+        ProjectionMode::Isometric
+    } else {
+        ProjectionMode::TopDown
     }
 }
 

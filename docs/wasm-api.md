@@ -84,8 +84,8 @@ Build identity of the running binary.
   "version": "0.1.0",
   "targetArch": "wasm32",
   "pointerWidth": 32,
-  "worldSchemaVersion": 1,
-  "tileSetSchemaVersion": 1
+  "worldSchemaVersion": 2,
+  "tileSetSchemaVersion": 3
 }
 ```
 
@@ -109,12 +109,19 @@ editor calls before writing a file, so a set the editor accepts is a set the
 runtime accepts (ADR-0015). Throws `parse` for malformed JSON; a set that parses
 but is unusable produces an invalid report rather than an error.
 
-### `previewTileRender(tileSetJson, tileId, elevation, base, roll): ResolvedTileRender`
+### `previewTileRender(tileSetJson, tileId, projection, elevation, base, roll, choiceJson): ResolvedTileRender`
 
 Resolves what to draw for one cell of a tile set **passed in** — content the
-editor has not saved yet. `base` is the height the cell's side faces reach down
-to (the lower of its two front neighbours; `0` for a tile standing on the
-ground), and `roll` is the cell's variant roll.
+editor has not saved yet. `projection` is the world's own: `"isometric"`
+resolves the surface and the cliff, and anything else — including a mode nobody
+knows — resolves the flat image, which is what `ProjectionMode` defaults to
+(`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`). `base` is the height
+the cell's side faces reach down to (the lower of its two front neighbours; `0`
+for a tile standing on the ground), and `roll` is the cell's variant roll.
+
+`choiceJson` is a `PlacedTileArt` — what the cell picked by hand — resolved
+against the set that was passed in, so `elevationTile` may name any tile in it.
+`"{}"` rolls everything, which is what a plain preview wants (ADR-0036).
 
 ```json
 {
@@ -134,6 +141,23 @@ layers and then the surface over them. `drop` counts `art.elevationStep`
 authored pixels below the hexagon's lower shoulder line: the whole image moves
 and nothing inside it is transformed
 (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+
+**One projection answers, never both.** A `topDown` request comes back with
+`flat` alone — the untilted hexagon, drawn over the whole cell, with no
+`surface` and no `layers`:
+
+```json
+{ "tileId": "cliff", "elevation": 3, "flat": "assets/tiles/cliff_flat_a.png" }
+```
+
+A tile that authors nothing for the projection in force resolves to
+`{ "tileId": …, "elevation": … }` and nothing else, which is the host's signal
+to fill `fallbackColor` (ADR-0037). Absent fields are omitted rather than sent
+as `null`.
+
+Which variant each layer takes follows the surface unless `choiceJson` says
+otherwise, so a cell's cut matches the ground standing on it
+(`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
 
 Throws `parse`, or `unknownContent` when the set declares no such tile.
 
@@ -456,6 +480,7 @@ Everything the renderer needs about a world **except** the per-cell buffers.
     { "id": "link_refuge_door", "name": "Refuge", "at": [3, 10],
       "targetWorld": "demo_refuge", "targetAt": [3, 4], "trigger": "enter", "tags": ["door"] }
   ],
+  "artChoices": [ { "cell": 47, "surface": 5, "elevationTile": 4 } ],
   "cellCount": 400
 }
 ```
@@ -466,15 +491,30 @@ Fetched **once per world**.
 world. The engine transports it and never interprets it — it has no notion of
 pixels (ADR-0014, ADR-0016).
 
-`tileArt` is the tile set's authored pixel grid, transported the same way and
-for the same reason. The renderer derives its tilt and its per-level lift from
-it, so a tile drawn from images and a tile filled with `fallbackColor` agree
-about the shape of a hexagon (ADR-0035).
+`tileArt` is the tile set's authored pixel grid — `width`, `flatHeight`,
+`surfaceHeight`, `elevationHeight`, `elevationStep` — transported the same way
+and for the same reason. The renderer derives its tilt and its per-level lift
+from it, so a tile drawn from images and a tile filled with `fallbackColor`
+agree about the shape of a hexagon (ADR-0035).
 
-Each palette entry carries its `art`: the images the tile is drawn from, empty
-for a tile that has none. It rides on the palette rather than travelling
-separately because the renderer already indexes the palette once per cell, and
-that is the whole per-cell budget.
+Each palette entry carries its `art`: the images the tile is drawn from in
+either projection (`flat`, `surface`, `elevation`), empty for a tile that has
+none. It rides on the palette rather than travelling separately because the
+renderer already indexes the palette once per cell, and that is the whole
+per-cell budget.
+
+`artChoices` is the cells that chose their picture instead of rolling it, sorted
+by `cell` and **omitted entirely** when none did — which is the normal case.
+Each entry is `{ cell, surface?, elevationTile?, elevation? }`: a row-major cell
+index into the packed buffers, then the choices, already resolved from the ids
+the map file carries to indices into `palette` and into the variant lists.
+`surface` is one index for both projections — it picks out of the tile's
+`surface` list in an isometric world and out of its `flat` list in a top-down
+one, wrapping when the two are different lengths (ADR-0037). A
+choice whose id resolved to nothing is simply absent, and that cell rolls the
+field as it always would; `validateWorld` reports the dangling reference
+(ADR-0036). It travels as a sparse list rather than as three more packed buffers
+because choosing is an authored exception.
 
 ### `terrainBuffer(worldId: string): Uint8Array`
 

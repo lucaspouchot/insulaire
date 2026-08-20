@@ -243,7 +243,7 @@ fn every_image_the_shipped_tiles_name_is_on_disk() {
             .levels
             .iter()
             .flat_map(|level| &level.variants);
-        for variant in tile.art.surface.iter().chain(levels) {
+        for variant in tile.art.flat.iter().chain(&tile.art.surface).chain(levels) {
             let path = repo_root().join("content").join(&variant.asset);
             assert!(
                 path.is_file(),
@@ -255,9 +255,14 @@ fn every_image_the_shipped_tiles_name_is_on_disk() {
         }
     }
 
-    // The pack `docs/sketch_grass_and_dirt_asset.png` describes: eight grass
-    // surfaces, eight bare-earth ones, and three courses at eight variants.
-    assert_eq!(checked, 8 + 8 + 3 * 8);
+    // Seven terrains at eight flat images and eight surfaces each — the two
+    // projections are two sets of pictures
+    // (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`) — and three of
+    // them (dirt, rock, mountain) carrying a ladder of three levels at eight
+    // variants. The other four borrow a ladder when a cell asks for one, which
+    // is why there are three rather than seven
+    // (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+    assert_eq!(checked, 7 * 8 * 2 + 3 * 3 * 8);
 }
 
 #[test]
@@ -272,25 +277,34 @@ fn the_demo_world_matches_its_documented_shape() {
     assert_eq!(view.palette.len(), 7);
     assert_eq!(view.locations.len(), 3);
 
-    // The two tiles the shipped art draws carry it through to the renderer
+    // Every tile the shipped art draws carries it through to the renderer
     // (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
     assert_eq!(view.tile_art.width, 64);
     assert_eq!(view.tile_art.elevation_step, view.tile_art.face_height());
-    let grass = view
-        .palette
-        .iter()
-        .find(|tile| tile.id == "grass")
-        .expect("grass");
-    assert_eq!(grass.art.surface.len(), 8);
-    let dirt = view
-        .palette
-        .iter()
-        .find(|tile| tile.id == "dirt")
-        .expect("dirt");
-    assert_eq!(dirt.art.elevation.levels.len(), 3);
-    // Level 4 and up reuse the deepest course, so a cliff of any height is
-    // three images.
-    assert_eq!(dirt.art.elevation.source_level(9), Some(3));
+    let art_of = |id: &str| {
+        &view
+            .palette
+            .iter()
+            .find(|tile| tile.id == id)
+            .unwrap_or_else(|| panic!("{id} is in the shipped palette"))
+            .art
+    };
+    for id in [
+        "grass", "dirt", "sand", "water", "forest", "rock", "mountain",
+    ] {
+        assert_eq!(art_of(id).surface.len(), 8, "{id} lost its surfaces");
+    }
+    // Three ladders for seven terrains: the rest borrow one per cell
+    // (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+    for id in ["dirt", "rock", "mountain"] {
+        assert_eq!(art_of(id).elevation.levels.len(), 3, "{id} lost its ladder");
+        // Level 4 and up reuse the deepest course, so a cliff of any height is
+        // three images.
+        assert_eq!(art_of(id).elevation.source_level(9), Some(3));
+    }
+    for id in ["grass", "sand", "water", "forest"] {
+        assert!(art_of(id).elevation.is_empty(), "{id} grew a ladder");
+    }
 
     let impassable: Vec<&str> = view
         .palette

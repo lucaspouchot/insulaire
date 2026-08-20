@@ -64,45 +64,76 @@ The palette a world may paint with.
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `id` | string | yes | Stable id; worlds reference it through `tileSetId`. |
-| `schemaVersion` | integer | yes | `2`. Higher versions are rejected. |
+| `schemaVersion` | integer | yes | `3`. Higher versions are rejected. |
 | `name` | string | no | Shown in the editor. |
 | `art` | TileArtGeometry | no | The pixel grid every image in the set is drawn on. Defaults below. |
 | `tiles` | TileDefinition[] | yes | At least one, at most 256. |
 
 **Version 2** added `art`, on the set and on each tile
 (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`). Every field
-it adds has a default, so a version-1 file still parses and draws its colours;
-the shipped files say `2`.
+it adds has a default, so a version-1 file still parses and draws its colours.
+
+**Version 3** adds the **flat** view — `art.flat` on a tile, `art.flatHeight` on
+the set — which is what a top-down world is drawn from
+(`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`). `flatHeight` is
+**required** wherever a set declares an `art` block at all, so a version-2 file
+that declared a grid no longer parses; adding the one line fixes it. The shipped
+files say `3`.
 
 ### TileArtGeometry
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
 | `width` | integer | `32` | Width of every image in the set, in authored pixels. |
+| `flatHeight` | integer | `37` | Height of a flat image: the **untilted** hexagon's bounding box, `width * 2 / sqrt(3)`. |
 | `surfaceHeight` | integer | `20` | Height of a surface image: the projected top face's bounding box. |
 | `elevationHeight` | integer | `13` | Height of an elevation image: the `V` the lower edges cut, then the faces. |
 | `elevationStep` | integer | `8` | Authored pixels one level of relief lifts a tile. |
 
-The shipped set draws at **64 x 40 surfaces and 64 x 26 faces, 16 px per
-level** — the defaults' ratios at twice the resolution, so the map is unchanged
-and there is four times the room to draw in.
+The shipped set draws at **64 x 74 flats, 64 x 40 surfaces and 64 x 26 faces,
+16 px per level** — the defaults' ratios at twice the resolution, so the map is
+unchanged and there is four times the room to draw in.
 
-All four are `1..512`.
+All five are `1..512`. The defaults apply only when a set declares no `art`
+block at all; a set that declares one must give every field, `flatHeight`
+included.
 
-A **surface** image is the projected top face's bounding box. An **elevation**
-image is the side faces *alone*: its first row is the hexagon's lower shoulder
-line, so its top `surfaceHeight / 4` rows are the `V` the two lower edges cut and
-everything below that is face.
+A **flat** image is the whole hexagon seen straight down, and is what a
+`topDown` world draws. A **surface** image is the projected top face's bounding
+box, and an **elevation** image is the side faces *alone*: its first row is the
+hexagon's lower shoulder line, so its top `surfaceHeight / 4` rows are the `V`
+the two lower edges cut.
 
 ```text
-  surface image            elevation image
-  ┌───────────────┐        ┌───────────────┐  ← the lower shoulders
-  │      ___      │        │ \           / │     surfaceHeight / 4
-  │    /     \    │        │  \_________/  │  ←  the V the edges cut
-  │   |       |   │        │  |    |    |  │
-  │    \_____/    │        │  | SW | SE |  │     the faces
-  └───────────────┘        └───────────────┘
+  surface image            elevation image                flat image
+  ┌───────────────┐        ┌───────────────┐  ←           ┌───────────────┐
+  │      ___      │        │\             /│  surfaceH/4  │      /\       │
+  │    /     \    │        │ \___________/ │  ←           │    /    \     │
+  │   |       |   │        │  \ SW | SE /  │  one step    │   |      |    │
+  │    \_____/    │        │   \___|___/   │  ←           │    \    /     │
+  └───────────────┘        └───────────────┘              │      \/       │
+                                                          └───────────────┘
+   the tilted top face      the two side faces             the hexagon itself,
+   (isometric worlds)       (isometric worlds)             untilted (topDown)
 ```
+
+**A projection draws one of the two, never both.** A `topDown` world draws the
+flat image and no relief at all; an `isometric` world draws the surface with the
+cliff stacked under it. Neither is ever scaled, squashed or composed to fit the
+other's outline — that is what makes them two images
+(`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`). A tile with no art
+for the projection in force draws its `fallbackColor`, exactly as a tile with no
+art at all does.
+
+**What is drawn is a band, not the rest of the canvas.** The faces are
+`elevationStep` rows thick and their lower edge follows the same `V` as their
+upper one, which is the outline the asset editor's guides mark. The canvas is
+taller than the band only because the `V` has to fit above it. Painting into
+that spare room paints an **overhang**: layers still stack, but the lowest one
+ends on a flat cut instead of on the hexagon's silhouette, and it juts past the
+`fallbackColor` wall it is meant to cover. Wherever the ground continues in
+front of the cliff the next row's top face hides that; at the edge of the map,
+or beside a neighbour standing higher than the cliff's foot, it does not.
 
 `elevationHeight` must therefore exceed `surfaceHeight / 4`, or there is no room
 for a face; and an `elevationStep` taller than the faces stacks levels with a
@@ -139,6 +170,10 @@ its images load. Rendering *logic* never appears in content.
 
 ```json
 "art": {
+  "flat": [
+    { "id": "a", "asset": "assets/tiles/dirt/flat/dirt_a.png" },
+    { "id": "b", "asset": "assets/tiles/dirt/flat/dirt_b.png" }
+  ],
   "surface": [
     { "id": "a", "asset": "assets/tiles/dirt/surfaces/dirt_a.png" },
     { "id": "b", "asset": "assets/tiles/dirt/surfaces/dirt_b.png" }
@@ -155,9 +190,15 @@ its images load. Rendering *logic* never appears in content.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `surface` | TileArtVariant[] | no | Images for the flat top face. At most 16. |
+| `flat` | TileArtVariant[] | no | Images for the untilted hexagon. `topDown` worlds only. At most 16. |
+| `surface` | TileArtVariant[] | no | Images for the tilted top face. `isometric` worlds only. At most 16. |
 | `elevation.levels` | ElevationLevel[] | no | Explicit levels; index `i` is level `i + 1`. At most 32. |
 | `elevation.repeat` | ElevationRepeat | no | What draws levels above the last explicit one. |
+
+A tile may author one view, both, or neither. Whatever the world's projection
+finds nothing for is drawn in `fallbackColor` — a top-down map of tiles that
+only drew surfaces is entirely colour, on purpose
+(`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
 
 A `TileArtVariant` is `{ "id", "asset" }`: an id unique within its list, and a
 path under the content root. An `ElevationLevel` is `{ "name"?, "variants" }`
@@ -185,10 +226,18 @@ its two front neighbours — draws `h − b` face layers, capped at 64, with its
 surface over them. The layer at height `L` is the image of `sourceLevel(L)`,
 placed at the hexagon's lower shoulder line and moved down
 `(h − L) × elevationStep` authored pixels. The whole image moves; nothing inside
-it is transformed. Which
-variant a layer takes is fixed by `variantRoll(col, row, tileId)` — an FNV-1a
-hash, not an RNG — combined with the level, so a cell keeps the same face from
-frame to frame and a tall cliff does not repeat one rock all the way down.
+it is transformed.
+
+Which **surface** variant a cell takes — or which **flat** one, in a top-down
+world; the same index serves both lists and wraps when they are different
+lengths — is fixed by `variantRoll(col, row, tileId)`, an FNV-1a hash rather
+than an RNG, so a cell keeps the same face from frame to frame and from session
+to session, and no seed travels with the map. Its **faces** then
+take the same variant, at every level of the drop: a cell showing `grass_f` is
+undercut by `dirt_f` all the way down, so a cliff reads as one cut through one
+hillside rather than as courses of masonry. A level with fewer variants wraps.
+A cell may override any of this — see `PlacedTile.art` below
+(ADR-0036).
 
 A tile that authors a surface and **no** elevation art still draws its authored
 top face; the drop under it is filled with `fallbackColor`, exactly as a tile
@@ -196,19 +245,40 @@ with no art at all is. The same holds for the part of a drop past the 64-layer
 cap. Art covers what it covers, and colour goes behind the rest — a raised cell
 never shows a hole.
 
-**The shipped art.** `content/assets/tiles/` holds eight grass surfaces, eight
-bare-earth surfaces and three courses of dirt cliff at eight variants each —
-the pack `docs/sketch_grass_and_dirt_asset.png` describes — filed one directory
-per tile:
+**The shipped art.** `content/assets/tiles/` holds **eight flats and eight
+surfaces for each of the seven terrains** — grass, dirt, sand, water, forest,
+rock, mountain — and **three ladders**, for dirt, rock and mountain, at three
+levels of eight variants each. 184 images, filed one directory per tile:
 
 ```text
+assets/tiles/dirt/flat/dirt_a.png
 assets/tiles/dirt/surfaces/dirt_a.png
 assets/tiles/dirt/elevation/level_1/dirt_a.png
 assets/tiles/dirt/elevation/level_2/dirt_a.png
-``` It was drawn once by
-`scripts/generate-tile-art.mjs` and is ordinary art from then on: the asset
-editor opens it, paints it and writes it back. Nothing in the build runs that
-script, and re-running it overwrites whatever has been painted since.
+```
+
+Three ladders for seven terrains is deliberate: a cell borrows one when it needs
+one (`PlacedTile.art.elevationTile`), so a sand shelf is dirt's cut and a grass
+mesa is rock's, without a second set of images (ADR-0036).
+
+A flat and a surface of the same letter are the **same drawing on a different
+outline**: the generator swaps the hexagon it masks to and keeps the material,
+the noise and everything scattered over it, so grass is the same grass in both
+views. Only the shape and the canvas height differ.
+
+Surfaces and flats carry **no gradient and no rim**. Six hexes meet edge to edge
+on a map, so a light-to-dark ramp inside one tile becomes a diagonal seam across
+the whole field and a shaded border becomes a honeycomb; the variation is value-noise
+mottling at a few pixels' scale plus whatever grows on it. The **faces** are
+where the light models anything: they are cut ground — strata parallel to the
+edge above, erosion running down, stones the size the material carries, and a
+hard shadow where the surface overhangs — and the south-west face is lit while
+the south-east one is in shadow.
+
+It was all drawn once by `scripts/generate-tile-art.mjs` and is ordinary art from
+then on: the asset editor opens it, paints it and writes it back. Nothing in the
+build runs that script, and re-running it overwrites whatever has been painted
+since.
 
 ---
 
@@ -326,6 +396,39 @@ stored.
 | `tile` | string | yes | A `TileDefinition.id` from the referenced tile set. |
 | `elevation` | integer | no | `-128..=127` steps of relief. Drawn in `isometric`, ignored by the rules. Omitted when `0`. |
 | `tags` | string[] | no | Per-cell tags, in addition to the tile's own. |
+| `art` | PlacedTileArt | no | What this cell is drawn with. Omitted when it chooses nothing. |
+
+### PlacedTileArt
+
+```json
+{ "at": [4, 1], "tile": "grass", "elevation": 2, "art": { "surface": "f", "elevationTile": "rock" } }
+```
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `surface` | string | no | Id of a surface variant of **this cell's own tile**. Absent rolls one. |
+| `elevationTile` | string | no | Id of the `TileDefinition` whose elevation ladder cuts the faces. Absent uses the cell's own tile. |
+| `elevation` | string | no | Id of the elevation variant, in whichever ladder ends up drawing. Absent follows `surface`. |
+
+**Presentation only**, exactly like `elevation` beside it: no rule reads it and
+no rule may. It says which *picture*, never what a tile *is* — terrain, cost,
+tags and passability all still come from the `TileDefinition` (ADR-0036).
+
+`elevationTile` is how a meadow stands on a rock cliff: the faces come from the
+named tile's ladder and the top face stays the cell's own grass. A cell may
+borrow a ladder its own tile does not have, and borrowing from a tile that has
+none draws no faces at all — which is reported as `tile.elevationTileWithoutLadder`.
+
+**By id, resolved once.** The renderer works in indices; the search that turns
+an id into one happens when the world is flattened, and travels to the UI on
+`WorldView.artChoices` (`docs/wasm-api.md`). An id nobody defines resolves to
+nothing, and the cell rolls that field as it always would: the four issue codes
+below are **warnings**, so a map that lost a variant to a repainted tile set
+still loads and still plays.
+
+A cell carrying only an `art` block is written to `tiles` even when its tile *is*
+the `defaultTile`, for the same reason `elevation` is: the sparse array is the
+only place it can be stored.
 
 ### EntityDefinition
 
@@ -1003,10 +1106,14 @@ exposed across the boundary as `validateLinks()` and `loadProject()`.
 | `tile.duplicatePosition` | Two tiles painted on one cell. |
 | `tile.unknownReference` | A placed tile references an unknown tile id. |
 | `tile.elevationOutOfRange` | A placed tile's `elevation` is outside `-128..=127`. |
-| `tileArt.invalidGeometry` | A tile set's `art` has a side of `0` or above `512`, an `elevationHeight` no taller than its `surfaceHeight`, or a zero `elevationStep`. |
+| `tile.unknownSurfaceVariant` | *(warning)* A cell's `art.surface` names a variant its tile declares in neither its `surface` nor its `flat` list. |
+| `tile.unknownElevationTile` | *(warning)* A cell's `art.elevationTile` names a tile the set does not define. |
+| `tile.unknownElevationVariant` | *(warning)* A cell's `art.elevation` names a variant no drawing level declares. |
+| `tile.elevationTileWithoutLadder` | *(warning)* A cell borrows a ladder from a tile that authors none, so it draws no faces. |
+| `tileArt.invalidGeometry` | A tile set's `art` has a side of `0` or above `512` — `flatHeight` included — an `elevationHeight` no taller than a quarter of its `surfaceHeight`, or a zero `elevationStep`. |
 | `tileArt.stepTallerThanFaces` | *(warning)* `elevationStep` exceeds the side faces, so stacked levels leave a gap. |
 | `tile.missingVariantId` / `tile.duplicateVariantId` | A tile art variant has no id, or a list declares one twice. |
-| `tile.tooManyVariants` | More than 16 variants in one surface or level. |
+| `tile.tooManyVariants` | More than 16 variants in one `flat` list, one `surface` list or one level. |
 | `tile.unusableAsset` | An image path is empty, absolute, a URL, or steps outside the content root. |
 | `tile.emptyElevationLevel` | An authored elevation level declares no image, so a cell that tall draws a hole. |
 | `tile.tooManyElevationLevels` | More than 32 explicit levels; taller cells are what a repeat rule is for. |
@@ -1155,6 +1262,11 @@ Adding an **optional** field is a backwards-compatible change and does not need
 a version bump: every optional field has a `serde` default. Renaming or removing
 a field, or changing the meaning of an existing one, requires bumping
 `WORLD_SCHEMA_VERSION` and adding an explicit migration.
+
+`WORLD_SCHEMA_VERSION` is at **2**. Version 2 added `PlacedTile.art`, the
+per-cell art choice (ADR-0036). Every field of it is optional with a default, so
+a version-1 file still parses and rolls its art as it always did; the shipped
+files are written as `2`.
 
 `TILE_SET_SCHEMA_VERSION` is at **2**. Version 2 added `art` — the set's pixel
 grid and each tile's images (ADR-0035). Everything it added is optional with a

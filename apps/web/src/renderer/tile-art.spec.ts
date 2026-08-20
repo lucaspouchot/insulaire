@@ -8,6 +8,7 @@ import {
 } from '../content/content-types';
 import {
   MAX_STACKED_LEVELS,
+  isEmptyRender,
   projectionRatiosOf,
   resolveTileRender,
   sourceLevel,
@@ -38,28 +39,23 @@ describe('tile art resolution', () => {
     return { surface: [variant('grass_01')], elevation: { levels, repeat } };
   }
 
-  it('draws a flat cell from its surface and nothing else', () => {
-    const resolved = resolveTileRender('grass', art([level('cliff_01')]), 0, 0, 0);
+  it('draws a level cell from its surface and nothing else', () => {
+    const resolved = resolveTileRender('grass', art([level('cliff_01')]), 'isometric', 0, 0, 0);
 
     expect(resolved.surface).toBe('assets/tiles/grass_01.png');
     expect(resolved.layers).toEqual([]);
   });
 
   it('resolves a tile with no art to nothing', () => {
-    const resolved = resolveTileRender('grass', {}, 3, 0, 0);
+    const resolved = resolveTileRender('grass', {}, 'isometric', 3, 0, 0);
 
     expect(resolved.surface).toBeNull();
     expect(resolved.layers).toEqual([]);
   });
 
   it('stacks explicit levels bottom to top', () => {
-    const resolved = resolveTileRender(
-      'mountain',
-      art([level('a'), level('b'), level('c')]),
-      3,
-      0,
-      0,
-    );
+    const tile = art([level('a'), level('b'), level('c')]);
+    const resolved = resolveTileRender('mountain', tile, 'isometric', 3, 0, 0);
 
     expect(resolved.layers.map((layer) => [layer.level, layer.drop, layer.asset])).toEqual([
       [1, 2, 'assets/tiles/a.png'],
@@ -85,13 +81,13 @@ describe('tile art resolution', () => {
 
     expect(sourceLevel(tile.elevation, 3)).toBe(1);
     expect(sourceLevel(tile.elevation, 10)).toBe(1);
-    expect(
-      resolveTileRender('mountain', tile, 4, 0, 0).layers.map((layer) => layer.sourceLevel),
-    ).toEqual([1, 2, 1, 1]);
+    const resolved = resolveTileRender('mountain', tile, 'isometric', 4, 0, 0);
+    expect(resolved.layers.map((layer) => layer.sourceLevel)).toEqual([1, 2, 1, 1]);
   });
 
   it('moves a repeated asset down whole steps without transforming it', () => {
-    const resolved = resolveTileRender('mountain', art([level('a')], { level: 1 }), 3, 0, 0);
+    const tile = art([level('a')], { level: 1 });
+    const resolved = resolveTileRender('mountain', tile, 'isometric', 3, 0, 0);
 
     expect(resolved.layers.every((layer) => layer.asset === 'assets/tiles/a.png')).toBe(true);
     expect(resolved.layers.map((layer) => layer.drop)).toEqual([2, 1, 0]);
@@ -110,13 +106,8 @@ describe('tile art resolution', () => {
   });
 
   it('costs no extra art for a tall cell', () => {
-    const resolved = resolveTileRender(
-      'mountain',
-      art([level('a'), level('b')], { level: 2 }),
-      100,
-      0,
-      0,
-    );
+    const tile = art([level('a'), level('b')], { level: 2 });
+    const resolved = resolveTileRender('mountain', tile, 'isometric', 100, 0, 0);
 
     expect(resolved.layers).toHaveLength(MAX_STACKED_LEVELS);
     expect(
@@ -131,7 +122,7 @@ describe('tile art resolution', () => {
     const tile = art([level('a'), level('b')], { level: 2 });
 
     for (const elevation of [0, 1, 2, 3, 12]) {
-      const resolved = resolveTileRender('mountain', tile, elevation, 0, 0);
+      const resolved = resolveTileRender('mountain', tile, 'isometric', elevation, 0, 0);
       expect(resolved.surface, `elevation ${elevation}`).toBe('assets/tiles/grass_01.png');
       expect(resolved.layers.some((layer) => layer.asset === 'assets/tiles/grass_01.png')).toBe(
         false,
@@ -141,7 +132,7 @@ describe('tile art resolution', () => {
 
   it('draws only the visible drop', () => {
     // Standing at 5 next to neighbours at 4: one step of face shows.
-    const resolved = resolveTileRender('mountain', art([level('a')]), 5, 4, 0);
+    const resolved = resolveTileRender('mountain', art([level('a')]), 'isometric', 5, 4, 0);
 
     expect(resolved.layers).toHaveLength(1);
     expect(resolved.layers[0]?.level).toBe(5);
@@ -149,7 +140,7 @@ describe('tile art resolution', () => {
   });
 
   it('still draws the faces of a cell dug below its neighbours', () => {
-    const resolved = resolveTileRender('rock', art([level('a')]), -1, -3, 0);
+    const resolved = resolveTileRender('rock', art([level('a')]), 'isometric', -1, -3, 0);
 
     expect(resolved.layers).toHaveLength(2);
     expect(resolved.layers.every((layer) => layer.sourceLevel === 1)).toBe(true);
@@ -168,22 +159,136 @@ describe('tile art resolution', () => {
     expect(variantIndex(7, 0)).toBeNull();
   });
 
-  it('varies the variant down a column', () => {
+  it('keeps one face the whole way down a column', () => {
+    // A cliff is one cut through one ground, so its layers agree: the variety
+    // is between cells and between levels, not down a single column
+    // (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
     const tile: TileArt = {
+      surface: [variant('top_a'), variant('top_b')],
       elevation: { levels: [{ variants: [variant('a'), variant('b')] }] },
     };
 
-    expect(resolveTileRender('rock', tile, 4, 0, 0).layers.map((layer) => layer.asset)).toEqual([
-      'assets/tiles/b.png',
-      'assets/tiles/a.png',
-      'assets/tiles/b.png',
-      'assets/tiles/a.png',
-    ]);
+    const resolved = resolveTileRender('rock', tile, 'isometric', 4, 0, 1);
+    expect(resolved.layers.map((layer) => layer.asset)).toEqual(
+      Array<string>(4).fill('assets/tiles/b.png'),
+    );
+  });
+
+  it('draws a top-down cell from its flat image and no relief', () => {
+    // The two projections are two sets of pictures, and a top-down world never
+    // reaches for the isometric ones
+    // (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+    const tile: TileArt = {
+      flat: [variant('flat_a'), variant('flat_b')],
+      surface: [variant('top_a'), variant('top_b')],
+      elevation: { levels: [{ variants: [variant('a')] }] },
+    };
+
+    const resolved = resolveTileRender('rock', tile, 'topDown', 4, 0, 1);
+    expect(resolved.flat).toBe('assets/tiles/flat_b.png');
+    expect(resolved.surface).toBeNull();
+    expect(resolved.layers).toEqual([]);
+    expect(isEmptyRender(resolved)).toBe(false);
+
+    // The same roll, drawn isometrically: the other set of images entirely.
+    const tilted = resolveTileRender('rock', tile, 'isometric', 4, 0, 1);
+    expect(tilted.flat).toBeNull();
+    expect(tilted.surface).toBe('assets/tiles/top_b.png');
+    expect(tilted.layers).toHaveLength(4);
+  });
+
+  it('resolves a tile with no flat image to nothing, top-down', () => {
+    // Which is what tells the renderer to fill `fallbackColor`, rather than
+    // stretching a surface into a shape it was not drawn for.
+    const tile: TileArt = { surface: [variant('top_a')] };
+
+    expect(isEmptyRender(resolveTileRender('rock', tile, 'topDown', 0, 0, 0))).toBe(true);
+  });
+
+  it('picks the same letter in either projection', () => {
+    // One index serves both lists, so a cell that chose `b` shows `b` whichever
+    // way the map is drawn — and wraps rather than losing its picture when the
+    // two lists are different lengths.
+    const tile: TileArt = {
+      flat: [variant('flat_a'), variant('flat_b')],
+      surface: [variant('top_a'), variant('top_b'), variant('top_c')],
+    };
+
+    expect(resolveTileRender('rock', tile, 'topDown', 0, 0, 0, { surface: 1 }).flat).toBe(
+      'assets/tiles/flat_b.png',
+    );
+    expect(resolveTileRender('rock', tile, 'isometric', 0, 0, 0, { surface: 1 }).surface).toBe(
+      'assets/tiles/top_b.png',
+    );
+    // Index 2 exists among the surfaces and not among the flats.
+    expect(resolveTileRender('rock', tile, 'topDown', 0, 0, 0, { surface: 2 }).flat).toBe(
+      'assets/tiles/flat_a.png',
+    );
+  });
+
+  it('cuts a face out of the variant its surface took', () => {
+    const tile: TileArt = {
+      surface: [variant('top_a'), variant('top_b')],
+      elevation: { levels: [{ variants: [variant('a'), variant('b')] }] },
+    };
+
+    for (const [roll, top, face] of [
+      [0, 'top_a', 'a'],
+      [1, 'top_b', 'b'],
+    ] as const) {
+      const resolved = resolveTileRender('rock', tile, 'isometric', 3, 0, roll);
+      expect(resolved.surface).toBe(`assets/tiles/${top}.png`);
+      expect(resolved.layers.every((layer) => layer.asset === `assets/tiles/${face}.png`)).toBe(
+        true,
+      );
+    }
+  });
+
+  it('lets a cell name its own surface and face', () => {
+    const tile: TileArt = {
+      surface: [variant('top_a'), variant('top_b')],
+      elevation: { levels: [{ variants: [variant('a'), variant('b')] }] },
+    };
+
+    const resolved = resolveTileRender('rock', tile, 'isometric', 2, 0, 0, {
+      surface: 1,
+      elevationVariant: 0,
+    });
+
+    expect(resolved.surface).toBe('assets/tiles/top_b.png');
+    expect(resolved.layers.every((layer) => layer.asset === 'assets/tiles/a.png')).toBe(true);
+  });
+
+  it('cuts a cell out of another tile\'s ladder, keeping its own top face', () => {
+    // The point of the feature: grass on top, rock underneath.
+    const meadow: TileArt = { surface: [variant('turf')] };
+    const cliff: TileArt = { elevation: { levels: [{ variants: [variant('granite')] }] } };
+
+    const resolved = resolveTileRender('grass', meadow, 'isometric', 2, 0, 0, { elevation: cliff });
+
+    expect(resolved.surface).toBe('assets/tiles/turf.png');
+    expect(resolved.layers).toHaveLength(2);
+    expect(resolved.layers.every((layer) => layer.asset === 'assets/tiles/granite.png')).toBe(
+      true,
+    );
+  });
+
+  it('wraps a chosen variant rather than dropping the layer', () => {
+    const tile: TileArt = {
+      surface: [variant('a'), variant('b'), variant('c')],
+      elevation: { levels: [{ variants: [variant('face_a'), variant('face_b')] }] },
+    };
+
+    const resolved = resolveTileRender('rock', tile, 'isometric', 1, 0, 0, { surface: 2 });
+
+    expect(resolved.surface).toBe('assets/tiles/c.png');
+    expect(resolved.layers.map((layer) => layer.asset)).toEqual(['assets/tiles/face_a.png']);
   });
 
   it('derives the projection from the authored pixel grid', () => {
     const { tilt, elevationRatio } = projectionRatiosOf({
       width: 32,
+      flatHeight: 37,
       surfaceHeight: 20,
       elevationHeight: 28,
       elevationStep: 8,

@@ -1,9 +1,10 @@
 {
   "id": "mvp_terrain",
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "name": "MVP Terrain",
   "art": {
     "width": 64,
+    "flatHeight": 74,
     "surfaceHeight": 40,
     "elevationHeight": 26,
     "elevationStep": 16
@@ -17,6 +18,16 @@
       "tags": ["open"],
       "visual": { "visualId": "terrain.grass", "fallbackColor": "#4a7c3f" },
       "art": {
+        "flat": [
+          { "id": "a", "asset": "assets/tiles/grass/flat/grass_a.png" },
+          { "id": "b", "asset": "assets/tiles/grass/flat/grass_b.png" },
+          { "id": "c", "asset": "assets/tiles/grass/flat/grass_c.png" },
+          { "id": "d", "asset": "assets/tiles/grass/flat/grass_d.png" },
+          { "id": "e", "asset": "assets/tiles/grass/flat/grass_e.png" },
+          { "id": "f", "asset": "assets/tiles/grass/flat/grass_f.png" },
+          { "id": "g", "asset": "assets/tiles/grass/flat/grass_g.png" },
+          { "id": "h", "asset": "assets/tiles/grass/flat/grass_h.png" }
+        ],
         "surface": [
           { "id": "a", "asset": "assets/tiles/grass/surfaces/grass_a.png" },
           { "id": "b", "asset": "assets/tiles/grass/surfaces/grass_b.png" },
@@ -37,6 +48,16 @@
       "tags": ["open"],
       "visual": { "visualId": "terrain.dirt", "fallbackColor": "#8a6238" },
       "art": {
+        "flat": [
+          { "id": "a", "asset": "assets/tiles/dirt/flat/dirt_a.png" },
+          { "id": "b", "asset": "assets/tiles/dirt/flat/dirt_b.png" },
+          { "id": "c", "asset": "assets/tiles/dirt/flat/dirt_c.png" },
+          { "id": "d", "asset": "assets/tiles/dirt/flat/dirt_d.png" },
+          { "id": "e", "asset": "assets/tiles/dirt/flat/dirt_e.png" },
+          { "id": "f", "asset": "assets/tiles/dirt/flat/dirt_f.png" },
+          { "id": "g", "asset": "assets/tiles/dirt/flat/dirt_g.png" },
+          { "id": "h", "asset": "assets/tiles/dirt/flat/dirt_h.png" }
+        ],
         "surface": [
           { "id": "a", "asset": "assets/tiles/dirt/surfaces/dirt_a.png" },
           { "id": "b", "asset": "assets/tiles/dirt/surfaces/dirt_b.png" },
@@ -76,7 +97,7 @@
               ]
             },
             {
-              "name": "bedrock",
+              "name": "subsoil",
               "variants": [
                 { "id": "a", "asset": "assets/tiles/dirt/elevation/level_3/dirt_a.png" },
                 { "id": "b", "asset": "assets/tiles/dirt/elevation/level_3/dirt_b.png" },
@@ -99,7 +120,29 @@
       "terrain": "sand",
       "movementCost": 1,
       "tags": ["open", "shore"],
-      "visual": { "visualId": "terrain.sand", "fallbackColor": "#cbb178" }
+      "visual": { "visualId": "terrain.sand", "fallbackColor": "#cbb178" },
+      "art": {
+        "flat": [
+          { "id": "a", "asset": "assets/tiles/sand/flat/sand_a.png" },
+          { "id": "b", "asset": "assets/tiles/sand/flat/sand_b.png" },
+          { "id": "c", "asset": "assets/tiles/sand/flat/sand_c.png" },
+          { "id": "d", "asset": "assets/tiles/sand/flat/sand_d.png" },
+          { "id": "e", "asset": "assets/tiles/sand/flat/sand_e.png" },
+          { "id": "f", "asset": "assets/tiles/sand/flat/sand_f.png" },
+          { "id": "g", "asset": "assets/tiles/sand/flat/sand_g.png" },
+          { "id": "h", "asset": "assets/tiles/sand/flat/sand_h.png" }
+        ],
+        "surface": [
+          { "id": "a", "asset": "assets/tiles/sand/surfaces/sand_a.png" },
+          { "id": "b", "asset": "assets/tiles/sand/surfaces/sand_b.png" },
+          { "id": "c", "asset": "assets/tiles/sand/surfaces/sand_c.png" },
+          { "id": "d", "asset": "assets/tiles/sand/surfaces/sand_d.png" },
+          { "id": "e", "asset": "assets/tiles/sand/surfaces/sand_e.png" },
+          { "id": "f", "asset": "assets/tiles/sand/surfaces/sand_f.png" },
+          { "id": "g", "asset": "assets/tiles/sand/surfaces/sand_g.png" },
+          { "id": "h", "asset": "assets/tiles/sand/surfaces/sand_h.png" }
+        ]
+      }
     },
     {
       "id": "forest",
@@ -107,7 +150,29 @@
       "terrain": "forest",
       "movementCost": 2,
       "tags": ["cover", "difficult"],
-      "visual": { "visualId": "terrain.forest", "fallbackColor": "#2d5c34" }
+      "visual": { "visualId": "terrain.forest", "fallbackColor": "#2d5c34" },
+      "art": {
+        "flat": [
+          { "id": "a", "asset": "assets/tiles/forest/flat/forest_a.png" },
+          { "id": "b", "asset": "assets/tiles/forest/flat/forest_b.png" },
+          { "id": "c", "asset": "assets/tiles/forest/flat/forest_c.png" },
+          { "id": "d", "asset": "assets/tiles/forest/flat/forest_d.png" },
+          { "id": "e", "asset": "assets/tiles/forest/flat/forest_e.png" },
+          { "id": "f", "asset": "assets/tiles/forest/flat/forest_f.png" },
+          { "id": "g", "asset": "assets/tiles/forest/flat/forest_g.png" },
+          { "id": "h", "asset": "assets/tiles/forest/flat/forest_h.png" }
+        ],
+        "surface": [
+          { "id": "a", "asset": "assets/tiles/forest/surfaces/forest_a.png" },
+          { "id": "b", "asset": "assets/tiles/forest/surfaces/forest_b.png" },
+          { "id": "c", "asset": "assets/tiles/forest/surfaces/forest_c.png" },
+          { "id": "d", "asset": "assets/tiles/forest/surfaces/forest_d.png" },
+          { "id": "e", "asset": "assets/tiles/forest/surfaces/forest_e.png" },
+          { "id": "f", "asset": "assets/tiles/forest/surfaces/forest_f.png" },
+          { "id": "g", "asset": "assets/tiles/forest/surfaces/forest_g.png" },
+          { "id": "h", "asset": "assets/tiles/forest/surfaces/forest_h.png" }
+        ]
+      }
     },
     {
       "id": "rock",
@@ -115,7 +180,73 @@
       "terrain": "rock",
       "movementCost": 2,
       "tags": ["difficult"],
-      "visual": { "visualId": "terrain.rock", "fallbackColor": "#8a8078" }
+      "visual": { "visualId": "terrain.rock", "fallbackColor": "#8a8078" },
+      "art": {
+        "flat": [
+          { "id": "a", "asset": "assets/tiles/rock/flat/rock_a.png" },
+          { "id": "b", "asset": "assets/tiles/rock/flat/rock_b.png" },
+          { "id": "c", "asset": "assets/tiles/rock/flat/rock_c.png" },
+          { "id": "d", "asset": "assets/tiles/rock/flat/rock_d.png" },
+          { "id": "e", "asset": "assets/tiles/rock/flat/rock_e.png" },
+          { "id": "f", "asset": "assets/tiles/rock/flat/rock_f.png" },
+          { "id": "g", "asset": "assets/tiles/rock/flat/rock_g.png" },
+          { "id": "h", "asset": "assets/tiles/rock/flat/rock_h.png" }
+        ],
+        "surface": [
+          { "id": "a", "asset": "assets/tiles/rock/surfaces/rock_a.png" },
+          { "id": "b", "asset": "assets/tiles/rock/surfaces/rock_b.png" },
+          { "id": "c", "asset": "assets/tiles/rock/surfaces/rock_c.png" },
+          { "id": "d", "asset": "assets/tiles/rock/surfaces/rock_d.png" },
+          { "id": "e", "asset": "assets/tiles/rock/surfaces/rock_e.png" },
+          { "id": "f", "asset": "assets/tiles/rock/surfaces/rock_f.png" },
+          { "id": "g", "asset": "assets/tiles/rock/surfaces/rock_g.png" },
+          { "id": "h", "asset": "assets/tiles/rock/surfaces/rock_h.png" }
+        ],
+        "elevation": {
+          "levels": [
+            {
+              "name": "weathered stone",
+              "variants": [
+                { "id": "a", "asset": "assets/tiles/rock/elevation/level_1/rock_a.png" },
+                { "id": "b", "asset": "assets/tiles/rock/elevation/level_1/rock_b.png" },
+                { "id": "c", "asset": "assets/tiles/rock/elevation/level_1/rock_c.png" },
+                { "id": "d", "asset": "assets/tiles/rock/elevation/level_1/rock_d.png" },
+                { "id": "e", "asset": "assets/tiles/rock/elevation/level_1/rock_e.png" },
+                { "id": "f", "asset": "assets/tiles/rock/elevation/level_1/rock_f.png" },
+                { "id": "g", "asset": "assets/tiles/rock/elevation/level_1/rock_g.png" },
+                { "id": "h", "asset": "assets/tiles/rock/elevation/level_1/rock_h.png" }
+              ]
+            },
+            {
+              "name": "bedded rock",
+              "variants": [
+                { "id": "a", "asset": "assets/tiles/rock/elevation/level_2/rock_a.png" },
+                { "id": "b", "asset": "assets/tiles/rock/elevation/level_2/rock_b.png" },
+                { "id": "c", "asset": "assets/tiles/rock/elevation/level_2/rock_c.png" },
+                { "id": "d", "asset": "assets/tiles/rock/elevation/level_2/rock_d.png" },
+                { "id": "e", "asset": "assets/tiles/rock/elevation/level_2/rock_e.png" },
+                { "id": "f", "asset": "assets/tiles/rock/elevation/level_2/rock_f.png" },
+                { "id": "g", "asset": "assets/tiles/rock/elevation/level_2/rock_g.png" },
+                { "id": "h", "asset": "assets/tiles/rock/elevation/level_2/rock_h.png" }
+              ]
+            },
+            {
+              "name": "bedrock",
+              "variants": [
+                { "id": "a", "asset": "assets/tiles/rock/elevation/level_3/rock_a.png" },
+                { "id": "b", "asset": "assets/tiles/rock/elevation/level_3/rock_b.png" },
+                { "id": "c", "asset": "assets/tiles/rock/elevation/level_3/rock_c.png" },
+                { "id": "d", "asset": "assets/tiles/rock/elevation/level_3/rock_d.png" },
+                { "id": "e", "asset": "assets/tiles/rock/elevation/level_3/rock_e.png" },
+                { "id": "f", "asset": "assets/tiles/rock/elevation/level_3/rock_f.png" },
+                { "id": "g", "asset": "assets/tiles/rock/elevation/level_3/rock_g.png" },
+                { "id": "h", "asset": "assets/tiles/rock/elevation/level_3/rock_h.png" }
+              ]
+            }
+          ],
+          "repeat": { "level": 3 }
+        }
+      }
     },
     {
       "id": "mountain",
@@ -123,7 +254,73 @@
       "terrain": "mountain",
       "movementCost": 0,
       "tags": ["blocking"],
-      "visual": { "visualId": "terrain.mountain", "fallbackColor": "#57514c" }
+      "visual": { "visualId": "terrain.mountain", "fallbackColor": "#57514c" },
+      "art": {
+        "flat": [
+          { "id": "a", "asset": "assets/tiles/mountain/flat/mountain_a.png" },
+          { "id": "b", "asset": "assets/tiles/mountain/flat/mountain_b.png" },
+          { "id": "c", "asset": "assets/tiles/mountain/flat/mountain_c.png" },
+          { "id": "d", "asset": "assets/tiles/mountain/flat/mountain_d.png" },
+          { "id": "e", "asset": "assets/tiles/mountain/flat/mountain_e.png" },
+          { "id": "f", "asset": "assets/tiles/mountain/flat/mountain_f.png" },
+          { "id": "g", "asset": "assets/tiles/mountain/flat/mountain_g.png" },
+          { "id": "h", "asset": "assets/tiles/mountain/flat/mountain_h.png" }
+        ],
+        "surface": [
+          { "id": "a", "asset": "assets/tiles/mountain/surfaces/mountain_a.png" },
+          { "id": "b", "asset": "assets/tiles/mountain/surfaces/mountain_b.png" },
+          { "id": "c", "asset": "assets/tiles/mountain/surfaces/mountain_c.png" },
+          { "id": "d", "asset": "assets/tiles/mountain/surfaces/mountain_d.png" },
+          { "id": "e", "asset": "assets/tiles/mountain/surfaces/mountain_e.png" },
+          { "id": "f", "asset": "assets/tiles/mountain/surfaces/mountain_f.png" },
+          { "id": "g", "asset": "assets/tiles/mountain/surfaces/mountain_g.png" },
+          { "id": "h", "asset": "assets/tiles/mountain/surfaces/mountain_h.png" }
+        ],
+        "elevation": {
+          "levels": [
+            {
+              "name": "scree face",
+              "variants": [
+                { "id": "a", "asset": "assets/tiles/mountain/elevation/level_1/mountain_a.png" },
+                { "id": "b", "asset": "assets/tiles/mountain/elevation/level_1/mountain_b.png" },
+                { "id": "c", "asset": "assets/tiles/mountain/elevation/level_1/mountain_c.png" },
+                { "id": "d", "asset": "assets/tiles/mountain/elevation/level_1/mountain_d.png" },
+                { "id": "e", "asset": "assets/tiles/mountain/elevation/level_1/mountain_e.png" },
+                { "id": "f", "asset": "assets/tiles/mountain/elevation/level_1/mountain_f.png" },
+                { "id": "g", "asset": "assets/tiles/mountain/elevation/level_1/mountain_g.png" },
+                { "id": "h", "asset": "assets/tiles/mountain/elevation/level_1/mountain_h.png" }
+              ]
+            },
+            {
+              "name": "cliff",
+              "variants": [
+                { "id": "a", "asset": "assets/tiles/mountain/elevation/level_2/mountain_a.png" },
+                { "id": "b", "asset": "assets/tiles/mountain/elevation/level_2/mountain_b.png" },
+                { "id": "c", "asset": "assets/tiles/mountain/elevation/level_2/mountain_c.png" },
+                { "id": "d", "asset": "assets/tiles/mountain/elevation/level_2/mountain_d.png" },
+                { "id": "e", "asset": "assets/tiles/mountain/elevation/level_2/mountain_e.png" },
+                { "id": "f", "asset": "assets/tiles/mountain/elevation/level_2/mountain_f.png" },
+                { "id": "g", "asset": "assets/tiles/mountain/elevation/level_2/mountain_g.png" },
+                { "id": "h", "asset": "assets/tiles/mountain/elevation/level_2/mountain_h.png" }
+              ]
+            },
+            {
+              "name": "roots of the mountain",
+              "variants": [
+                { "id": "a", "asset": "assets/tiles/mountain/elevation/level_3/mountain_a.png" },
+                { "id": "b", "asset": "assets/tiles/mountain/elevation/level_3/mountain_b.png" },
+                { "id": "c", "asset": "assets/tiles/mountain/elevation/level_3/mountain_c.png" },
+                { "id": "d", "asset": "assets/tiles/mountain/elevation/level_3/mountain_d.png" },
+                { "id": "e", "asset": "assets/tiles/mountain/elevation/level_3/mountain_e.png" },
+                { "id": "f", "asset": "assets/tiles/mountain/elevation/level_3/mountain_f.png" },
+                { "id": "g", "asset": "assets/tiles/mountain/elevation/level_3/mountain_g.png" },
+                { "id": "h", "asset": "assets/tiles/mountain/elevation/level_3/mountain_h.png" }
+              ]
+            }
+          ],
+          "repeat": { "level": 3 }
+        }
+      }
     },
     {
       "id": "water",
@@ -131,7 +328,29 @@
       "terrain": "water",
       "movementCost": 0,
       "tags": ["blocking", "liquid"],
-      "visual": { "visualId": "terrain.water", "fallbackColor": "#20567f" }
+      "visual": { "visualId": "terrain.water", "fallbackColor": "#20567f" },
+      "art": {
+        "flat": [
+          { "id": "a", "asset": "assets/tiles/water/flat/water_a.png" },
+          { "id": "b", "asset": "assets/tiles/water/flat/water_b.png" },
+          { "id": "c", "asset": "assets/tiles/water/flat/water_c.png" },
+          { "id": "d", "asset": "assets/tiles/water/flat/water_d.png" },
+          { "id": "e", "asset": "assets/tiles/water/flat/water_e.png" },
+          { "id": "f", "asset": "assets/tiles/water/flat/water_f.png" },
+          { "id": "g", "asset": "assets/tiles/water/flat/water_g.png" },
+          { "id": "h", "asset": "assets/tiles/water/flat/water_h.png" }
+        ],
+        "surface": [
+          { "id": "a", "asset": "assets/tiles/water/surfaces/water_a.png" },
+          { "id": "b", "asset": "assets/tiles/water/surfaces/water_b.png" },
+          { "id": "c", "asset": "assets/tiles/water/surfaces/water_c.png" },
+          { "id": "d", "asset": "assets/tiles/water/surfaces/water_d.png" },
+          { "id": "e", "asset": "assets/tiles/water/surfaces/water_e.png" },
+          { "id": "f", "asset": "assets/tiles/water/surfaces/water_f.png" },
+          { "id": "g", "asset": "assets/tiles/water/surfaces/water_g.png" },
+          { "id": "h", "asset": "assets/tiles/water/surfaces/water_h.png" }
+        ]
+      }
     }
   ]
 }

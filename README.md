@@ -281,18 +281,23 @@ In Play mode:
 | `just icons` | Regenerate the icon set from `apps/desktop/icons/icon.svg`. |
 | `npm run build:deliver` | Just the editor-free web bundle, without the shell. |
 | `npm test` | Rust tests, then TypeScript tests, then the script tests. |
-| `npm run test:rust` | `cargo test --workspace` (191 tests, no browser needed). |
-| `npm run test:web` | Vitest (102 tests, including real WASM integration). |
-| `npm run test:scripts` | `node --test` over `scripts/` — the content server's path rules. |
-
-`node scripts/generate-tile-art.mjs` redraws the shipped tile art in
-`content/assets/tiles/` — the grass surfaces and the dirt elevation ladder of
-`docs/sketch_grass_and_dirt_asset.png`, one directory per tile. It is a **seeder**: nothing in the build
-runs it, the images it writes are ordinary art the asset editor edits from then
-on, and re-running it overwrites whatever has been painted since.
+| `npm run test:rust` | `cargo test --workspace` (368 tests, no browser needed). |
+| `npm run test:web` | Vitest (236 tests, including real WASM integration). |
+| `npm run test:scripts` | `node --test` over `scripts/` — the content server's path rules, and the shape of the shipped tile art. |
 | `npm run lint:rust` | `cargo clippy -D warnings` and `cargo fmt --check`. |
 | `npm run check` | Lint plus every test. |
 | `just check-desktop` | The desktop shell's own clippy, rustfmt and tests. |
+
+`node scripts/generate-tile-art.mjs` redraws the shipped tile art in
+`content/assets/tiles/`: for each of the seven terrains, eight **flat** images
+for a top-down map and eight **surfaces** for an isometric one
+(`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`), plus three elevation
+ladders — dirt, rock and mountain — at three levels of eight variants, one
+directory per tile. The other four terrains borrow a ladder when a cell asks for
+one (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`). It is a **seeder**:
+nothing in the build runs it, the images it writes are ordinary art the asset
+editor edits from then on, and re-running it overwrites whatever has been
+painted since.
 
 After changing Rust code, re-run `npm run wasm:build` and refresh the browser —
 Angular does not need rebuilding, because the engine is served as a static
@@ -678,6 +683,8 @@ Read in order:
 33. **ADR-0033 — an animation sets pose values, and variants choose from them**
 34. **ADR-0034 — a layer's box is measured from the joint it hangs off**
 35. **ADR-0035 — tile art is authored per level and resolved, never transformed**
+36. **ADR-0036 — a cell may choose its tile art, and a cliff may be borrowed**
+37. **ADR-0037 — a flat map is drawn from flat art, or from colour**
 
 `CLAUDE.md` contains project-level instructions for Claude Code and other coding
 agents.

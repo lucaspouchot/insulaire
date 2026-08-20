@@ -41,7 +41,7 @@ import {
 
 import { TileArtGeometry } from '../../../../content/content-types';
 import { PALETTE_SIZE, PixelSelection, SpriteDocument } from '../../../../content/sprite-document';
-import { drawChecker, drawGuides } from '../../../../renderer/tile-preview';
+import { ImageKind, drawChecker, drawGuides } from '../../../../renderer/tile-preview';
 import { I18nService } from '../../../i18n/i18n.service';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
 
@@ -78,8 +78,8 @@ export class TilePixelEditor implements AfterViewInit, OnDestroy {
   readonly sprite = input<SpriteDocument | null>(null);
   /** The pixel grid the image belongs to, for the guides. */
   readonly geometry = input.required<TileArtGeometry>();
-  /** Which guides to draw: a surface image has no faces below it. */
-  readonly kind = input<'surface' | 'elevation'>('surface');
+  /** Which guides to draw: only an elevation image has faces below it. */
+  readonly kind = input<ImageKind>('surface');
   /** A label for the image, shown in the toolbar. */
   readonly label = input('');
   /** Colours offered beside the ones this image already uses. */
@@ -510,6 +510,7 @@ export class TilePixelEditor implements AfterViewInit, OnDestroy {
 
     if (this.showGuides()) {
       drawGuides(context, this.geometry(), this.kind(), zoom, {
+        flat: this.i18n.t('ui.editor.asset.faces.flat'),
         surface: this.i18n.t('ui.editor.asset.faces.surface'),
         southWest: this.i18n.t('ui.editor.asset.faces.southWest'),
         southEast: this.i18n.t('ui.editor.asset.faces.southEast'),

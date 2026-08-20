@@ -27,9 +27,9 @@ describe('serializeTileSet', () => {
   it('writes one image per line, and omits art a tile does not declare', () => {
     const written = serializeTileSet({
       id: 'demo',
-      schemaVersion: 2,
+      schemaVersion: 3,
       name: 'Demo',
-      art: { width: 32, surfaceHeight: 20, elevationHeight: 28, elevationStep: 8 },
+      art: { width: 32, flatHeight: 37, surfaceHeight: 20, elevationHeight: 28, elevationStep: 8 },
       tiles: [
         {
           id: 'plain',
@@ -44,6 +44,7 @@ describe('serializeTileSet', () => {
           tags: ['difficult'],
           visual: { visualId: 'terrain.rock', fallbackColor: '#8a8078' },
           art: {
+            flat: [{ id: 'a', asset: 'assets/tiles/cliff_flat_a.png' }],
             surface: [
               { id: 'a', asset: 'assets/tiles/cliff_top_a.png' },
               { id: 'b', asset: 'assets/tiles/cliff_top_b.png' },
@@ -58,6 +59,10 @@ describe('serializeTileSet', () => {
     });
 
     expect(written).toContain('      "art": {');
+    expect(written).toContain('    "flatHeight": 37,');
+    // The flat view is written first, so the two projections read in the order
+    // the format documents (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+    expect(written.indexOf('"flat": [')).toBeLessThan(written.indexOf('"surface": ['));
     expect(written).toContain('          { "id": "a", "asset": "assets/tiles/cliff_top_a.png" },');
     expect(written).toContain('          "repeat": { "level": 1 }');
     // The tile with no art gains nothing; only the set's own geometry block

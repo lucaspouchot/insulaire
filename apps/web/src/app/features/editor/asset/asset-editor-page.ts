@@ -47,7 +47,9 @@ import {
   MAX_TILE_IMAGE_SIZE,
   MAX_TILE_VARIANTS,
   TILE_SET_SCHEMA_VERSION,
+  ProjectionMode,
   TileArtGeometry,
+  TileArtVariant,
   TileDefinition,
   TileSetDefinition,
   tileArtGeometry,
@@ -58,7 +60,12 @@ import { SpriteDocument } from '../../../../content/sprite-document';
 import { serializeTileSet } from '../../../../content/tile-set-serializer';
 import { ValidationReport } from '../../../../engine/engine.types';
 import { SpriteCache, SpriteSource } from '../../../../renderer/character-renderer';
-import { PreviewCell, drawPreview, fitPreview } from '../../../../renderer/tile-preview';
+import {
+  ImageKind,
+  PreviewCell,
+  drawPreview,
+  fitPreview,
+} from '../../../../renderer/tile-preview';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
 import { ContentWorkspaceService } from '../../../services/content-workspace.service';
 import { EngineService } from '../../../services/engine.service';
@@ -67,6 +74,7 @@ import {
   ASSET_CATEGORIES,
   ImageTarget,
   RepeatMode,
+  FLAT_LEVEL,
   SURFACE_LEVEL,
   TILE_EDITOR_TABS,
   TileEditorTab,
@@ -121,6 +129,18 @@ export class AssetEditorPage implements AfterViewInit, OnDestroy {
   protected readonly selectedTileId = signal<string | null>(null);
   protected readonly previewElevation = signal(2);
   protected readonly previewBoard = signal(false);
+  /**
+   * Which projection the preview draws in.
+   *
+   * The two views are different images of the same tile, so the artist needs to
+   * be able to look at either
+   * (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`). It follows the
+   * open tab rather than being a separate control: opening `flat` is asking to
+   * see the flat view.
+   */
+  protected readonly previewMode = computed<ProjectionMode>(() =>
+    this.tab() === 'flat' ? 'topDown' : 'isometric',
+  );
   protected readonly openImage = signal<ImageTarget | null>(null);
   protected readonly status = signal<string | null>(null);
   protected readonly failure = signal<string | null>(null);
@@ -164,6 +184,7 @@ export class AssetEditorPage implements AfterViewInit, OnDestroy {
       this.selectedTileId();
       this.previewElevation();
       this.previewBoard();
+      this.previewMode();
       this.tileSetId();
       this.schedulePreview();
     });
@@ -249,6 +270,11 @@ export class AssetEditorPage implements AfterViewInit, OnDestroy {
 
   // Fresh arrays, so `@for` sees a new list rather than the one it is already
   // rendering: these are the in-place arrays the editor pushes into.
+  protected readonly flatVariants = computed(() => {
+    const tile = this.tile();
+    return tile === null ? [] : [...variantsOf(tile, FLAT_LEVEL)];
+  });
+
   protected readonly surfaceVariants = computed(() => {
     const tile = this.tile();
     return tile === null ? [] : [...variantsOf(tile, SURFACE_LEVEL)];
@@ -461,7 +487,7 @@ export class AssetEditorPage implements AfterViewInit, OnDestroy {
       return;
     }
     const art = artOf(tile);
-    const list = level === SURFACE_LEVEL ? art.surface : art.elevation.levels[level - 1]?.variants;
+    const list = listFor(art, level);
     if (list === undefined || list.length >= MAX_TILE_VARIANTS) {
       return;
     }
@@ -473,10 +499,7 @@ export class AssetEditorPage implements AfterViewInit, OnDestroy {
     list.push({ id, asset });
 
     const geometry = this.geometry();
-    const sprite = SpriteDocument.blank(
-      geometry.width,
-      level === SURFACE_LEVEL ? geometry.surfaceHeight : geometry.elevationHeight,
-    );
+    const sprite = SpriteDocument.blank(geometry.width, imageHeight(geometry, level));
     sprite.markUnsaved();
     this.sessions.set(asset, sprite);
     this.openImage.set({ level, variant: list.length - 1 });
@@ -489,7 +512,7 @@ export class AssetEditorPage implements AfterViewInit, OnDestroy {
       return;
     }
     const art = artOf(tile);
-    const list = level === SURFACE_LEVEL ? art.surface : art.elevation.levels[level - 1]?.variants;
+    const list = listFor(art, level);
     if (list === undefined) {
       return;
     }
@@ -546,10 +569,14 @@ export class AssetEditorPage implements AfterViewInit, OnDestroy {
     return asset === undefined ? null : (this.sessions.get(asset) ?? null);
   });
 
-  /** Which guides the pixel editor draws: a surface image has no faces. */
-  protected readonly openKind = computed<'surface' | 'elevation'>(() =>
-    this.openImage()?.level === SURFACE_LEVEL ? 'surface' : 'elevation',
-  );
+  /** Which guides the pixel editor draws: only an elevation image has faces. */
+  protected readonly openKind = computed<ImageKind>(() => {
+    const level = this.openImage()?.level;
+    if (level === FLAT_LEVEL) {
+      return 'flat';
+    }
+    return level === SURFACE_LEVEL ? 'surface' : 'elevation';
+  });
 
   protected readonly openLabel = computed(() => {
     const tile = this.tile();
@@ -703,10 +730,7 @@ export class AssetEditorPage implements AfterViewInit, OnDestroy {
     }
 
     const geometry = this.geometry();
-    const expected = {
-      width: geometry.width,
-      height: level === SURFACE_LEVEL ? geometry.surfaceHeight : geometry.elevationHeight,
-    };
+    const expected = { width: geometry.width, height: imageHeight(geometry, level) };
     if (sprite.width !== expected.width || sprite.height !== expected.height) {
       this.failure.set(
         `${file.name}: ${sprite.width}×${sprite.height} ≠ ${expected.width}×${expected.height}`,
@@ -885,8 +909,28 @@ export class AssetEditorPage implements AfterViewInit, OnDestroy {
       return;
     }
     const geometry = this.geometry();
-    drawPreview(context, cells, geometry, fitPreview(cells, geometry, width, height), this.source);
+    const view = fitPreview(cells, geometry, width, height, this.previewMode());
+    drawPreview(context, cells, geometry, view, this.source);
   }
+}
+
+/** The list of variants a pseudo-level or an elevation level names. */
+function listFor(
+  art: ReturnType<typeof artOf>,
+  level: number,
+): TileArtVariant[] | undefined {
+  if (level === FLAT_LEVEL) {
+    return art.flat;
+  }
+  return level === SURFACE_LEVEL ? art.surface : art.elevation.levels[level - 1]?.variants;
+}
+
+/** How tall an image of this level is, on the set's own grid. */
+function imageHeight(geometry: TileArtGeometry, level: number): number {
+  if (level === FLAT_LEVEL) {
+    return geometry.flatHeight;
+  }
+  return level === SURFACE_LEVEL ? geometry.surfaceHeight : geometry.elevationHeight;
 }
 
 /** Loads an image, resolving to `null` rather than rejecting when it will not. */

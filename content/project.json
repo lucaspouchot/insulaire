@@ -21,8 +21,8 @@
   "locales": {
     "default": "en",
     "languages": [
-      { "id": "en", "name": "English", "files": [{"id":"menu","path":"locales/en/menu.json"}, {"id":"game","path":"locales/en/game.json"}] },
-      { "id": "fr", "name": "Français", "files": [{"id":"menu","path":"locales/fr/menu.json"}, {"id":"game","path":"locales/fr/game.json"}] }
+      { "id": "en", "name": "English", "files": [{ "id": "menu", "path": "locales/en/menu.json" }, { "id": "game", "path": "locales/en/game.json" }] },
+      { "id": "fr", "name": "Français", "files": [{ "id": "menu", "path": "locales/fr/menu.json" }, { "id": "game", "path": "locales/fr/game.json" }] }
     ]
   }
 }
