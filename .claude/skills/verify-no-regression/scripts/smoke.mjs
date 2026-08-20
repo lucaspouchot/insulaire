@@ -325,7 +325,11 @@ async function openPage(browser, viewport) {
       );
       if (result.exceptionDetails) {
         const { exception, text } = result.exceptionDetails;
-        throw new Error(`page threw: ${exception?.description ?? text}`);
+        // The engine rejects with a JSON *string*, which CDP reports as a value
+        // with no `description` — without it the failure reads "page threw:
+        // Uncaught (in promise)" and says nothing at all.
+        const thrown = exception?.description ?? exception?.value ?? text;
+        throw new Error(`page threw: ${typeof thrown === 'string' ? thrown : JSON.stringify(thrown)}`);
       }
       return result.result.value;
     },
