@@ -168,6 +168,12 @@ Rules for the scenario: it must stay deterministic (no wall-clock, no random),
 it must keep at least one rejected command (the rejection path is a rule too),
 and a new page or mode is not covered until it is listed in `pages`.
 
+**A `press` that changes content must undo itself.** The editor persists a
+working copy to `localStorage`, which survives the navigation to the next page —
+so a press that toggles a map's projection, or paints, leaves the *later* pages
+drawing something else, and the diff lands on a page you did not touch. Either
+press again to put it back, or do not press it.
+
 ## Troubleshooting
 
 - *no Chromium found* → `npx playwright install chromium`, or point

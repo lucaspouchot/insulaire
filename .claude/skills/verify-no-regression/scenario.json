@@ -2,41 +2,138 @@
   "name": "mvp-vertical-slice",
   "world": "demo_world",
   "seed": 2026,
-  "viewport": { "width": 1440, "height": 900 },
-
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
   "steps": [
-    { "label": "wait one tick", "cmd": { "type": "wait" } },
-    { "label": "first legal move", "legal": 0 },
-    { "label": "second legal move", "legal": 1 },
-    { "label": "third legal move", "legal": 2 },
-    { "label": "wait again", "cmd": { "type": "wait" } },
-    { "label": "illegal: distant hex", "cmd": { "type": "moveTo", "to": [0, 0] } },
-    { "label": "illegal: off the map", "cmd": { "type": "moveTo", "to": [-1, -1] } },
-    { "label": "legal move after refusals", "legal": 0 },
-    { "label": "keep walking", "legal": 0 },
-    { "label": "keep walking", "legal": 0 },
-    { "label": "keep walking", "legal": 0 },
-    { "label": "final wait", "cmd": { "type": "wait" } }
+    {
+      "label": "wait one tick",
+      "cmd": {
+        "type": "wait"
+      }
+    },
+    {
+      "label": "first legal move",
+      "legal": 0
+    },
+    {
+      "label": "second legal move",
+      "legal": 1
+    },
+    {
+      "label": "third legal move",
+      "legal": 2
+    },
+    {
+      "label": "wait again",
+      "cmd": {
+        "type": "wait"
+      }
+    },
+    {
+      "label": "illegal: distant hex",
+      "cmd": {
+        "type": "moveTo",
+        "to": [
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "label": "illegal: off the map",
+      "cmd": {
+        "type": "moveTo",
+        "to": [
+          -1,
+          -1
+        ]
+      }
+    },
+    {
+      "label": "legal move after refusals",
+      "legal": 0
+    },
+    {
+      "label": "keep walking",
+      "legal": 0
+    },
+    {
+      "label": "keep walking",
+      "legal": 0
+    },
+    {
+      "label": "keep walking",
+      "legal": 0
+    },
+    {
+      "label": "final wait",
+      "cmd": {
+        "type": "wait"
+      }
+    }
   ],
-
   "pages": [
-    { "name": "title", "path": "/title", "settleMs": 2500, "canvas": false },
-    { "name": "settings", "path": "/settings", "settleMs": 2000, "canvas": false },
+    {
+      "name": "title",
+      "path": "/title",
+      "settleMs": 2500,
+      "canvas": false
+    },
+    {
+      "name": "settings",
+      "path": "/settings",
+      "settleMs": 2000,
+      "canvas": false
+    },
     {
       "name": "settings-game",
       "path": "/settings?section=gameplay",
       "settleMs": 2000,
       "canvas": false
     },
-    { "name": "editor-map", "path": "/editor/map", "settleMs": 2000 },
-    { "name": "editor-title", "path": "/editor/title", "settleMs": 2500, "canvas": false },
+    {
+      "name": "editor-map",
+      "path": "/editor/map",
+      "settleMs": 2000,
+      "clicks": [
+        [
+          0.5,
+          0.55
+        ]
+      ],
+      "press": [
+        {
+          "name": "editor-map-top-down",
+          "selector": ".viewport-tools button:nth-of-type(6)",
+          "settleMs": 1200
+        },
+        {
+          "name": "editor-map-isometric-again",
+          "selector": ".viewport-tools button:nth-of-type(6)",
+          "settleMs": 1200
+        }
+      ]
+    },
+    {
+      "name": "editor-title",
+      "path": "/editor/title",
+      "settleMs": 2500,
+      "canvas": false
+    },
     {
       "name": "editor-settings",
       "path": "/editor/settings",
       "settleMs": 2000,
       "canvas": false
     },
-    { "name": "editor-locale", "path": "/editor/locale", "settleMs": 2000, "canvas": false },
+    {
+      "name": "editor-locale",
+      "path": "/editor/locale",
+      "settleMs": 2000,
+      "canvas": false
+    },
     {
       "name": "editor-character",
       "path": "/editor/character",
@@ -55,8 +152,13 @@
       "settleMs": 2500,
       "press": [
         {
+          "name": "editor-asset-flat",
+          "selector": ".inspector .tabs button:nth-of-type(2)",
+          "settleMs": 1200
+        },
+        {
           "name": "editor-asset-elevation",
-          "selector": ".inspector .tabs button:nth-of-type(3)",
+          "selector": ".inspector .tabs button:nth-of-type(4)",
           "settleMs": 1200
         }
       ]
@@ -66,8 +168,14 @@
       "path": "/play",
       "settleMs": 2000,
       "clicks": [
-        [0.268, 0.511],
-        [0.52, 0.52]
+        [
+          0.268,
+          0.511
+        ],
+        [
+          0.52,
+          0.52
+        ]
       ]
     }
   ]
