@@ -1,9 +1,10 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { TileArt, shoulderDepth } from '../content/content-types';
+import { TileArt, shoulderDepth, shoulderLine } from '../content/content-types';
 import { offset } from '../core/hex/hex-coords';
 import { HexLayout } from '../core/hex/hex-layout';
 import { Camera } from './camera';
+import { SpriteSource } from './character-renderer';
 import { HexMapRenderer } from './hex-map-renderer';
 import { Projection } from './projection';
 import { RenderModel, emptyRenderModel } from './render-model';
@@ -358,7 +359,10 @@ describe('HexMapRenderer tile art', () => {
   });
 
   /** Every asset resolves, so nothing falls back for want of a download. */
-  const IMAGES = { image: (asset: string) => ({ asset }) as unknown as CanvasImageSource };
+  const IMAGES: SpriteSource = {
+    image: (asset: string) => ({ asset }) as unknown as CanvasImageSource,
+    preload: () => Promise.resolve(),
+  };
 
   function modelWith(art: TileArt): RenderModel {
     const width = 3;
@@ -454,5 +458,97 @@ describe('HexMapRenderer tile art', () => {
 
   it('leaves no colour behind a cliff that is fully authored', () => {
     expect(drawnBy(FULL).fills).toBe(0);
+  });
+
+  /**
+   * The same map, on a platform that can compose.
+   *
+   * The tests above run where `OffscreenCanvas` does not exist, which is the
+   * layer-by-layer fallback; this one gives the renderer somewhere to stack a
+   * cell once and checks that the cell is then *one* blit
+   * (`docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`).
+   */
+  function withComposition<T>(body: () => T): T {
+    class Composed {
+      /** Named like a loaded image, so the recorder reports it the same way. */
+      readonly asset = 'composed';
+      constructor(
+        readonly width: number,
+        readonly height: number,
+      ) {}
+      getContext(): unknown {
+        return { imageSmoothingEnabled: false, drawImage: () => undefined };
+      }
+    }
+    const previous = globalThis.OffscreenCanvas;
+    globalThis.OffscreenCanvas = Composed as unknown as typeof OffscreenCanvas;
+    try {
+      return body();
+    } finally {
+      globalThis.OffscreenCanvas = previous;
+    }
+  }
+
+  it('draws a stacked cell as a single composed picture', () => {
+    const geometry = emptyRenderModel().tileArt;
+    const projection = isometricFor(HEX_SIZE);
+    const { blits } = withComposition(() => drawnBy(FULL));
+
+    // Nine cells, nine blits: the raised one stacked its face and its top face
+    // into one picture instead of blitting both.
+    expect(blits).toHaveLength(9);
+    const stacked = blits.filter((blit) => blit.asset === 'composed');
+    expect(stacked).toHaveLength(1);
+
+    const perPixel = LAYOUT.hexWidth / geometry.width;
+    const centre = projection.project(LAYOUT.centerOf(RAISED), 1);
+    const picture = stacked[0];
+    expect(picture?.x).toBeCloseTo(centre.x - LAYOUT.hexWidth / 2, 6);
+    // It hangs from the top face's own top edge, exactly where the surface
+    // image alone used to be blitted…
+    expect(picture?.y).toBeCloseTo(centre.y - (LAYOUT.hexHeight * projection.tilt) / 2, 6);
+    expect(picture?.width).toBeCloseTo(LAYOUT.hexWidth, 6);
+    // …and reaches one authored step of face below the shoulder line.
+    expect(picture?.height).toBeCloseTo(
+      (shoulderLine(geometry) + geometry.elevationHeight) * perPixel,
+      6,
+    );
+  });
+
+  it('counts the pictures its cells share', () => {
+    const canvas = recorder();
+    const renderer = new HexMapRenderer(canvas.context, LAYOUT, new Camera(), undefined, IMAGES);
+    renderer.setModel(modelWith(FULL));
+    renderer.draw(600, 600);
+
+    // Nine cells, two looks: flat ground, and the one cell standing above it.
+    expect(renderer.frameStats.cellsDrawn).toBe(9);
+    expect(renderer.frameStats.tilePictures).toBe(2);
+  });
+
+  it('paints nothing at all while the art it needs is still on the wire', async () => {
+    let arrive = (): void => undefined;
+    const slow: SpriteSource = {
+      image: (asset: string) => ({ asset }) as unknown as CanvasImageSource,
+      preload: () => new Promise<void>((resolve) => (arrive = resolve)),
+    };
+    const canvas = recorder();
+    const renderer = new HexMapRenderer(canvas.context, LAYOUT, new Camera(), undefined, slow);
+    renderer.setModel(modelWith(FULL));
+
+    const warmed = renderer.warmTileArt();
+    renderer.draw(600, 600);
+    // Not one tile, not one colour: a map half made of pictures and half of
+    // placeholders is what this whole change exists to stop showing
+    // (`docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`).
+    expect(canvas.blits).toHaveLength(0);
+    expect(canvas.fills).toBe(0);
+    expect(renderer.frameStats.cellsDrawn).toBe(0);
+
+    arrive();
+    await warmed;
+
+    renderer.draw(600, 600);
+    expect(canvas.blits.length).toBeGreaterThan(0);
   });
 });

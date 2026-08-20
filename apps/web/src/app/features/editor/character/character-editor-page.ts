@@ -304,6 +304,8 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
    */
   private readonly source: SpriteSource = {
     image: (asset) => this.sessions.get(asset)?.surface() ?? this.sprites.image(asset),
+    // An open sprite is already in memory; everything else is the cache's.
+    preload: (assets) => this.sprites.preload(assets),
   };
   private resizeObserver: ResizeObserver | null = null;
 

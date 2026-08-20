@@ -120,6 +120,8 @@ export class PlayPage implements AfterViewInit, OnDestroy {
   protected readonly lastRejection = signal<string | null>(null);
   protected readonly error = signal<string | null>(null);
   protected readonly busy = signal(true);
+  /** Set while the map is waiting for the pictures it is painted from. */
+  protected readonly loadingArt = signal(false);
   protected readonly showGrid = signal(true);
   protected readonly revision = signal(0);
 
@@ -320,6 +322,9 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       this.renderer.setModel(
         this.buildModel(view, terrain, elevation, elevationRangeOf(elevation)),
       );
+      // A door may lead onto a map drawn from another tile set, so the new
+      // world waits for its own pictures exactly as the first one did.
+      this.warmTileArt();
       this.view?.fit();
     }
     return view;
@@ -400,6 +405,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
     );
     // The elevation range is scanned once per loaded world, never per frame.
     this.renderer.setModel(this.buildModel(view, terrain, elevation, elevationRangeOf(elevation)));
+    this.warmTileArt();
 
     this.view = new CanvasView(this.canvasRef().nativeElement, this.renderer, {
       onHover: (cell) => {
@@ -413,6 +419,25 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       onResize: () => this.view?.fit(),
     });
     this.view.fit();
+  }
+
+  /**
+   * Loads the art of the world just attached, and redraws once it is in.
+   *
+   * Not awaited by its callers: starting a game is synchronous and stays that
+   * way. The map is simply not painted until this settles, which is the whole
+   * point — a world appears whole instead of filling in tile by tile
+   * (`docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`).
+   */
+  private warmTileArt(): void {
+    if (this.renderer === null) {
+      return;
+    }
+    this.loadingArt.set(true);
+    void this.renderer.warmTileArt().then(() => {
+      this.loadingArt.set(false);
+      this.refresh();
+    });
   }
 
   protected fitView(): void {

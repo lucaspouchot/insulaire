@@ -168,6 +168,8 @@ export class AssetEditorPage implements AfterViewInit, OnDestroy {
    */
   private readonly source: SpriteSource = {
     image: (asset: string) => this.sessions.get(asset)?.surface() ?? this.cache.image(asset),
+    // An open sprite is already in memory; everything else is the cache's.
+    preload: (assets: Iterable<string>) => this.cache.preload(assets),
   };
 
   constructor() {

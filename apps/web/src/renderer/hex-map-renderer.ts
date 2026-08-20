@@ -16,6 +16,13 @@
  * fills regardless of how many hexes are on screen, instead of one state change
  * per hex.
  *
+ * **Shared pictures.** A cell's art is not resolved, and its layers are not
+ * stacked, once per cell per frame: identical-looking cells share one composed
+ * picture out of {@link TileAppearanceCache}, and a cell costs one lookup and
+ * one blit. Nothing is drawn from that art until it has all arrived, so a map
+ * appears whole rather than filling in as its files land
+ * (`docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`).
+ *
  * **Two draw paths.** A top-down world is one band covering the whole viewport,
  * which is the single-batch case above. An isometric world is drawn a row at a
  * time from back to front, because elevated cells overlap the row behind them —
@@ -31,14 +38,8 @@ import { HexLayout, Point, Rect } from '../core/hex/hex-layout';
 import { Camera } from './camera';
 import { SpriteSource } from './character-renderer';
 import { Projection } from './projection';
-import {
-  CellArt,
-  ResolvedTileRender,
-  isEmptyRender,
-  projectionRatiosOf,
-  resolveTileRender,
-  variantRoll,
-} from './tile-art';
+import { TileAppearance, TileAppearanceCache } from './tile-appearance';
+import { ResolvedTileRender, projectionRatiosOf } from './tile-art';
 import {
   RenderEntity,
   RenderLink,
@@ -48,9 +49,6 @@ import {
   emptyRenderModel,
 } from './render-model';
 import { SpriteRegistry } from './sprite-registry';
-
-/** The choice nearly every cell makes: none, so everything is rolled. */
-const EVERYTHING_ROLLED: CellArt = {};
 
 /** Colours that belong to the tool, not to the content. */
 const CHROME = {
@@ -94,6 +92,8 @@ export interface FrameStats {
   cellsTotal: number;
   /** `fill()` calls issued for terrain. */
   terrainBatches: number;
+  /** Distinct tile pictures shared by those cells; see {@link TileAppearanceCache}. */
+  tilePictures: number;
   /** Milliseconds spent in the last `draw`. */
   lastFrameMs: number;
 }
@@ -101,8 +101,18 @@ export interface FrameStats {
 export class HexMapRenderer {
   private model: RenderModel = emptyRenderModel();
   private projection: Projection;
-  private stats: FrameStats = { cellsDrawn: 0, cellsTotal: 0, terrainBatches: 0, lastFrameMs: 0 };
+  private stats: FrameStats = {
+    cellsDrawn: 0,
+    cellsTotal: 0,
+    terrainBatches: 0,
+    tilePictures: 0,
+    lastFrameMs: 0,
+  };
   private batchCount = 0;
+  /** One shared picture per distinct look; see {@link TileAppearanceCache}. */
+  private readonly appearances: TileAppearanceCache;
+  /** Set while {@link warmTileArt} is loading the art the model is made of. */
+  private warming = false;
 
   constructor(
     private readonly context: CanvasRenderingContext2D,
@@ -119,12 +129,78 @@ export class HexMapRenderer {
     private readonly images: SpriteSource | null = null,
   ) {
     this.projection = this.projectionFor(this.model);
+    this.appearances = new TileAppearanceCache(images);
   }
 
   /** Replaces the model drawn by the next {@link draw}. */
   setModel(model: RenderModel): void {
     this.model = model;
     this.projection = this.projectionFor(model);
+    this.appearances.use(model);
+  }
+
+  /**
+   * Loads the pictures this map is painted from, and holds it back until they
+   * are in.
+   *
+   * A map used to paint itself as its files landed: colours first, then grass,
+   * then rock, over a second or so of watching content arrive. That reads as
+   * the tool loading rather than as a world, and it gets worse with every tile
+   * a project adds. So the host calls this once per opened world, and until it
+   * settles the canvas shows its background and nothing else
+   * (`docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`).
+   *
+   * What is waited on is what the map's own cells need, not everything its
+   * palette could offer: a map painted with four tiles out of forty appears
+   * when those four are in. An editor asks for the rest afterwards, through
+   * {@link warmPalette}.
+   *
+   * Only the *first* load is held for: once the art is in hand, an edit that
+   * introduces a new picture draws its tile's colour until it arrives, exactly
+   * as before — a map must never blank out under the author's cursor.
+   *
+   * @returns when every asset has loaded or failed; the caller redraws then
+   */
+  warmTileArt(): Promise<void> {
+    const images = this.images;
+    if (images === null) {
+      return Promise.resolve();
+    }
+    const assets = this.appearances.paintedAssets();
+    if (assets.length === 0) {
+      // A map drawn from colours alone must not be held back for art it will
+      // never blit.
+      return Promise.resolve();
+    }
+    this.warming = true;
+    // A source that fails outright must still let the map through: the tiles it
+    // could not fetch draw their colour, which is what a missing file has
+    // always looked like (`docs/adr/ADR-0009-assets-tilesets.md`).
+    return images
+      .preload(assets)
+      .catch(() => undefined)
+      .finally(() => {
+        this.warming = false;
+      });
+  }
+
+  /**
+   * Loads the rest of the palette — the brushes, not the map.
+   *
+   * Never held for, and deliberately second: an author who picks an unused
+   * tile should find it drawn, but nobody should watch a map wait for pictures
+   * it is not made of. Play never calls this; the map it is showing is the
+   * whole of what it draws.
+   */
+  warmPalette(): Promise<void> {
+    return (
+      this.images?.preload(this.appearances.assets()).catch(() => undefined) ?? Promise.resolve()
+    );
+  }
+
+  /** `true` while the map is being held back for its art; see {@link warmTileArt}. */
+  get isWarming(): boolean {
+    return this.warming;
   }
 
   /**
@@ -267,9 +343,18 @@ export class HexMapRenderer {
     ctx.fillStyle = CHROME.background;
     ctx.fillRect(0, 0, width, height);
 
-    if (model.width === 0 || model.height === 0) {
+    // A map with no cells, and a map whose pictures are still on the wire, are
+    // the same frame: the background, and nothing drawn on it
+    // (`docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`).
+    if (model.width === 0 || model.height === 0 || this.warming) {
       ctx.restore();
-      this.stats = { cellsDrawn: 0, cellsTotal: 0, terrainBatches: 0, lastFrameMs: 0 };
+      this.stats = {
+        cellsDrawn: 0,
+        cellsTotal: model.width * model.height,
+        terrainBatches: 0,
+        tilePictures: this.appearances.size,
+        lastFrameMs: performance.now() - startedAt,
+      };
       return;
     }
 
@@ -298,6 +383,7 @@ export class HexMapRenderer {
       cellsDrawn,
       cellsTotal: model.width * model.height,
       terrainBatches: this.batchCount,
+      tilePictures: this.appearances.size,
       lastFrameMs: performance.now() - startedAt,
     };
   }
@@ -408,14 +494,14 @@ export class HexMapRenderer {
         const elevation = this.elevationAt(model, index);
         const base = this.wallBaseOf(model, cell);
 
-        const render = this.renderOf(model, paletteIndex, index, cell, elevation, base);
-        if (render !== null) {
-          painted.push({ cell, elevation, render });
+        const appearance = this.appearances.of(paletteIndex, index, cell, elevation, base);
+        if (appearance !== null && appearance.ready) {
+          painted.push({ cell, elevation, appearance });
           // A tile may author a top face and no cliff art at all — grass at the
           // edge of a ditch. Its faces are still exposed, so the colour wall is
           // filled behind the art that does exist: whatever is authored covers
           // it, and what is not reads as a drop instead of a hole.
-          if (this.facesAreShort(render, elevation, base)) {
+          if (this.facesAreShort(appearance.render, elevation, base)) {
             this.addWallTo(pathFor(walls, paletteIndex), cell, elevation, base);
           }
           continue;
@@ -478,76 +564,8 @@ export class HexMapRenderer {
   }
 
   /**
-   * What a cell's authored art draws, or `null` to fall back to colour.
-   *
-   * `null` covers four cases that mean the same thing to the caller: the tile
-   * declares no art, it declares none **for the projection in force** — a
-   * top-down map of tiles that only drew surfaces is entirely colour
-   * (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`) — the resolver
-   * found nothing for this height, or the images have not finished loading.
-   * The last one is why `fallbackColor` is worth keeping: it is the colour
-   * drawn while a texture loads (`docs/adr/ADR-0009-assets-tilesets.md`).
-   */
-  private renderOf(
-    model: RenderModel,
-    paletteIndex: number,
-    index: number,
-    cell: Offset,
-    elevation: number,
-    base: number,
-  ): ResolvedTileRender | null {
-    const tile = model.palette[paletteIndex];
-    if (this.images === null || tile === undefined || tile.art === undefined) {
-      return null;
-    }
-    const render = resolveTileRender(
-      tile.id,
-      tile.art,
-      this.projection.mode,
-      elevation,
-      base,
-      variantRoll(cell.col, cell.row, tile.id),
-      this.choiceOf(model, index),
-    );
-    if (isEmptyRender(render)) {
-      return null;
-    }
-    const loaded =
-      (render.flat === null || this.images.image(render.flat) !== null) &&
-      (render.surface === null || this.images.image(render.surface) !== null) &&
-      render.layers.every((layer) => this.images?.image(layer.asset) !== null);
-    return loaded ? render : null;
-  }
-
-  /**
-   * What this cell chose by hand, as the resolver wants it.
-   *
-   * One map lookup, and only for a model that carries any choices at all —
-   * which nearly none do, because choosing is an authored exception
-   * (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
-   */
-  private choiceOf(model: RenderModel, index: number): CellArt {
-    if (model.artChoices.size === 0) {
-      return EVERYTHING_ROLLED;
-    }
-    const choice = model.artChoices.get(index);
-    if (choice === undefined) {
-      return EVERYTHING_ROLLED;
-    }
-    return {
-      surface: choice.surface,
-      // A borrowed ladder is another palette entry's art; the top face is still
-      // the cell's own.
-      elevation:
-        choice.elevationTile === null
-          ? null
-          : (model.palette[choice.elevationTile]?.art ?? null),
-      elevationVariant: choice.elevation,
-    };
-  }
-
-  /**
-   * Blits one cell: its faces, lowest first, then its top face over them.
+   * Blits one cell: one shared picture where there is one, its layers where
+   * there is not.
    *
    * The destination is the *projected* top face's bounding box, so the picture
    * agrees with the polygon path, with hit-testing and with the grid by
@@ -556,35 +574,51 @@ export class HexMapRenderer {
    * whole steps, nothing inside it transformed
    * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
    *
+   * A composed picture stacked those layers once, at the tile set's own
+   * resolution, and every cell that looks like this one blits it
+   * (`docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`). The layer
+   * loop below draws exactly the same thing one image at a time, for the cell
+   * whose look could not be composed.
+   *
    * A top-down cell is one image over the whole hexagon and nothing else: no
    * tilt to fit, no faces to stack
    * (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
    */
   private drawPaintedCell(model: RenderModel, painted: PaintedCell): void {
     const ctx = this.context;
+    const { render, picture, pictureHeight } = painted.appearance;
     const centre = this.projection.project(this.layout.centerOf(painted.cell), painted.elevation);
     const width = this.layout.hexWidth;
     const left = centre.x - width / 2;
     const perPixel = width / Math.max(1, model.tileArt.width);
+    // A flat hexagon is centred on its cell; everything isometric hangs from
+    // the top face's own top edge, which is where a surface image starts.
+    const top =
+      render.flat !== null
+        ? centre.y - (model.tileArt.flatHeight * perPixel) / 2
+        : centre.y - (this.layout.hexHeight * this.projection.tilt) / 2;
 
-    if (painted.render.flat !== null) {
-      const image = this.images?.image(painted.render.flat);
+    ctx.imageSmoothingEnabled = false;
+
+    if (picture !== null) {
+      // Scaled from the authored grid, like every other tile image, so the
+      // picture and the hexagon the grid stroke draws are the same shape.
+      ctx.drawImage(picture, left, top, width, pictureHeight * perPixel);
+      this.batchCount += 1;
+      return;
+    }
+
+    if (render.flat !== null) {
+      const image = this.images?.image(render.flat);
       if (image != null) {
-        // Scaled from the authored grid, like every other tile image, so the
-        // picture and the hexagon the grid stroke draws are the same shape.
-        const height = model.tileArt.flatHeight * perPixel;
-        ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(image, left, centre.y - height / 2, width, height);
+        ctx.drawImage(image, left, top, width, model.tileArt.flatHeight * perPixel);
         this.batchCount += 1;
       }
       return;
     }
 
-    const top = centre.y - (this.layout.hexHeight * this.projection.tilt) / 2;
     const shoulder = top + shoulderLine(model.tileArt) * perPixel;
-
-    ctx.imageSmoothingEnabled = false;
-    for (const layer of painted.render.layers) {
+    for (const layer of render.layers) {
       const image = this.images?.image(layer.asset);
       if (image == null) {
         continue;
@@ -599,8 +633,8 @@ export class HexMapRenderer {
       this.batchCount += 1;
     }
     // Last, so the top face is never the thing a face image happens to cover.
-    if (painted.render.surface !== null) {
-      const image = this.images?.image(painted.render.surface);
+    if (render.surface !== null) {
+      const image = this.images?.image(render.surface);
       if (image != null) {
         ctx.drawImage(image, left, top, width, model.tileArt.surfaceHeight * perPixel);
         this.batchCount += 1;
@@ -949,7 +983,7 @@ export class HexMapRenderer {
 interface PaintedCell {
   readonly cell: Offset;
   readonly elevation: number;
-  readonly render: ResolvedTileRender;
+  readonly appearance: TileAppearance;
 }
 
 interface VisibleRange {

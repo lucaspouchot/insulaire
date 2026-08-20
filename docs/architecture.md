@@ -52,7 +52,8 @@ The MVP implements the marked parts. Unmarked entries are the planned shape.
 │           ├── core/hex/        # coordinate transforms + pixel layout       [MVP]
 │           ├── content/         # authored document model + serialiser,      [MVP]
 │           │                     # incl. the editable sprite buffer (ADR-0030)
-│           ├── renderer/        # framework-free Canvas renderer + projection [MVP]
+│           ├── renderer/        # framework-free Canvas renderer, projection, [MVP]
+│           │                     # and the shared tile pictures (ADR-0038)
 │           ├── engine/          # boundary types + WASM loader               [MVP]
 │           └── app/             # Angular shell, services, feature pages     [MVP]
 │               ├── i18n/                # key lookup, the `t` pipe, app strings [MVP]
@@ -119,6 +120,10 @@ browser. `cargo test` runs the entire simulation without WASM.
 - **Engine ↔ renderer** — the engine emits data (palette, packed terrain,
   entity snapshots); the renderer decides what it looks like. See ADR-0007 and
   ADR-0009.
+- **Cell ↔ picture** — a cell contributes its coordinates and nothing else: the
+  look they roll is shared by every cell that rolls it, composed once, and
+  drawn with one blit. A map is not drawn at all until the pictures it is made
+  of have loaded. See ADR-0038.
 - **Coordinates** — offset for content, axial inside the engine, pixels only in
   TypeScript. See ADR-0014.
 - **Map ↔ map** — a door is authored content; the tick names its target and the

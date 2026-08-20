@@ -127,6 +127,8 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   protected readonly selected = signal<Offset | null>(null);
   protected readonly showGrid = signal(true);
   protected readonly showCoordinates = signal(false);
+  /** Set while the map is waiting for the pictures it is painted from. */
+  protected readonly loadingArt = signal(false);
   /** The renderer readout, floated over the canvas rather than docked. */
   protected readonly showStats = signal(false);
   protected readonly report = signal<ValidationReport | null>(null);
@@ -370,6 +372,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       this.tileImages,
     );
     this.renderer.setModel(this.buildModel(document));
+    this.warmTileArt();
 
     this.view = new CanvasView(this.canvasRef().nativeElement, this.renderer, {
       onHover: (cell) => {
@@ -667,6 +670,8 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     this.report.set(null);
     this.message.set(null);
     this.rebuild();
+    // Another map may be painted from another tile set entirely.
+    this.warmTileArt();
     this.view?.fit();
   }
 
@@ -1051,6 +1056,10 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     this.report.set(null);
     this.message.set(null);
     this.rebuild();
+    // The two views are drawn from two different sets of images, and the one
+    // just switched to may never have been asked for
+    // (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+    this.warmTileArt();
     this.view?.fit();
   }
 
@@ -1096,6 +1105,32 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       this.renderer?.setModel(this.buildModel(document));
     }
     this.refresh();
+  }
+
+  /**
+   * Loads the pictures the open map is painted from, and redraws once they are in.
+   *
+   * The map first, then the rest of the palette: until the map's own images
+   * settle the canvas shows its background rather than a map filling in tile by
+   * tile, and a brush the author has not picked yet is one they are about to
+   * (`docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`).
+   */
+  private warmTileArt(): void {
+    const renderer = this.renderer;
+    if (renderer === null) {
+      return;
+    }
+    this.loadingArt.set(true);
+    void renderer
+      .warmTileArt()
+      .then(() => {
+        this.loadingArt.set(false);
+        this.refresh();
+        // The brushes follow, unwaited: picking an unused tile should find it
+        // drawn, and nobody should watch the map wait for it.
+        return renderer.warmPalette();
+      })
+      .then(() => this.refresh());
   }
 
   /** Redraws with the current model and lets computed views recompute. */

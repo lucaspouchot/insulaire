@@ -41,6 +41,16 @@ export interface CharacterBox {
 export interface SpriteSource {
   /** The image for this path, or `null` while it is still loading or missing. */
   image(asset: string): CanvasImageSource | null;
+  /**
+   * Starts loading `assets`, resolving once every one of them has settled.
+   *
+   * "Settled" rather than "loaded": an asset that 404s resolves like any other,
+   * because a caller waiting on this is waiting to *stop waiting*, and a
+   * missing file is an answer. Asking for what will be needed before it is
+   * needed is what keeps a map from being watched as it fills in
+   * (`docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`).
+   */
+  preload(assets: Iterable<string>): Promise<void>;
 }
 
 /** The canvas element's rendered box, as `getBoundingClientRect()` gives it. */
@@ -230,18 +240,43 @@ function outlineMissing(
 }
 
 /**
- * Loads and caches the images a character needs.
+ * Loads and caches the images a character — or a map — needs.
  *
  * Loading is asynchronous and drawing is not, so a first draw shows outlines
  * and `onLoad` asks for another once an image has arrived. Nothing here knows
  * about Angular; the component decides what "another draw" means.
+ *
+ * # One image per asset, one redraw per frame
+ *
+ * Two things make this a cache rather than a loader, and both matter once a
+ * map asks it for a hundred tile images at once:
+ *
+ * * an asset is fetched **once**, however many cells, layers or characters ask
+ *   for it — the map's flyweight pictures are built out of these shared images
+ *   (`docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`);
+ * * `onLoad` fires at most **once per animation frame**, not once per image. A
+ *   hundred images arriving in a burst used to be a hundred model rebuilds and
+ *   a hundred redraws; it is now one.
  */
 export class SpriteCache implements SpriteSource {
+  /** Settled assets: the image, or `null` when the fetch failed. */
   private readonly images = new Map<string, HTMLImageElement | null>();
+  /** Assets currently in flight, so nothing is fetched twice. */
+  private readonly loading = new Map<string, Promise<void>>();
+  /** Set while a redraw notification is already booked for this frame. */
+  private notifying = false;
+  /**
+   * Bumped by {@link clear}, so a fetch started before it cannot land after it.
+   *
+   * The editor clears this cache precisely when an asset has been repainted; an
+   * in-flight request for the old file finishing afterwards would put the
+   * version the author just replaced back in front of them (ADR-0030).
+   */
+  private era = 0;
 
   /**
    * @param resolveUrl turns a content path into a URL the document can fetch
-   * @param onLoad called once per image that finishes loading
+   * @param onLoad called at most once per frame in which an image arrived
    */
   constructor(
     private readonly resolveUrl: (asset: string) => string,
@@ -257,22 +292,19 @@ export class SpriteCache implements SpriteSource {
     if (cached !== undefined) {
       return cached;
     }
-    // Recorded as "loading" straight away, so a redraw does not queue the same
-    // image again on every frame.
-    this.images.set(asset, null);
-
-    const image = new Image();
-    image.addEventListener('load', () => {
-      this.images.set(asset, image);
-      this.onLoad();
-    });
-    image.addEventListener('error', () => {
-      // Left as `null`: it draws as a missing-sprite outline, which is the
-      // truth, and it is not retried on every frame.
-      this.onLoad();
-    });
-    image.src = this.resolveUrl(asset);
+    void this.load(asset);
     return null;
+  }
+
+  /** Starts every load in `assets` at once and resolves when all have settled. */
+  preload(assets: Iterable<string>): Promise<void> {
+    const waits: Promise<void>[] = [];
+    for (const asset of assets) {
+      if (asset.length > 0) {
+        waits.push(this.load(asset));
+      }
+    }
+    return Promise.all(waits).then(() => undefined);
   }
 
   /** The natural size of a loaded image, for the editor to fit a box to it. */
@@ -284,5 +316,75 @@ export class SpriteCache implements SpriteSource {
   /** Forgets every image, so edited assets are fetched again. */
   clear(): void {
     this.images.clear();
+    this.loading.clear();
+    this.era += 1;
+  }
+
+  /**
+   * Fetches one asset, once.
+   *
+   * The promise never rejects: a missing file is a fact about the content, not
+   * an error for a renderer to handle, and every caller of {@link preload} is
+   * waiting to find out that it has stopped waiting.
+   */
+  private load(asset: string): Promise<void> {
+    const inFlight = this.loading.get(asset);
+    if (inFlight !== undefined) {
+      return inFlight;
+    }
+    if (this.images.has(asset)) {
+      // Already settled, including a failure: it is not retried on every frame.
+      return Promise.resolve();
+    }
+    // Recorded as "loading" straight away, so a redraw does not queue the same
+    // image again on every frame.
+    this.images.set(asset, null);
+
+    const era = this.era;
+    const promise = new Promise<void>((settled) => {
+      const image = new Image();
+      const finish = (loaded: boolean): void => {
+        // Whoever waited on this fetch stops waiting either way; what a fetch
+        // from before a `clear` may no longer do is *answer* for the asset.
+        if (era === this.era) {
+          if (loaded) {
+            this.images.set(asset, image);
+          }
+          // Left as `null` when it failed: it draws as a missing-sprite outline
+          // or as the tile's colour, which is the truth.
+          this.loading.delete(asset);
+          this.notify();
+        }
+        settled();
+      };
+      image.addEventListener('load', () => finish(true));
+      image.addEventListener('error', () => finish(false));
+      image.src = this.resolveUrl(asset);
+    });
+    this.loading.set(asset, promise);
+    return promise;
+  }
+
+  /**
+   * Books one redraw for the frame an image arrived in.
+   *
+   * A frame is the right unit: nothing the consumer does with the news can be
+   * seen before the next one, so telling it a hundred times is a hundred model
+   * rebuilds nobody looks at.
+   */
+  private notify(): void {
+    if (this.notifying) {
+      return;
+    }
+    this.notifying = true;
+    const announce = (): void => {
+      this.notifying = false;
+      this.onLoad();
+    };
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(announce);
+    } else {
+      queueMicrotask(announce);
+    }
   }
 }

@@ -2,6 +2,10 @@
   <section class="stage">
     <canvas #canvas></canvas>
 
+    @if (loadingArt()) {
+      <div class="stage-loading">{{ 'ui.viewport.loadingMap' | t }}</div>
+    }
+
     <div class="viewport-tools">
       <button type="button" (click)="zoom(1.2)" [title]="'ui.viewport.zoomIn' | t">＋</button>
       <button type="button" (click)="zoom(1 / 1.2)" [title]="'ui.viewport.zoomOut' | t">－</button>
@@ -164,6 +168,9 @@
             </div>
             <div class="row">
               <span>{{ 'ui.stats.terrainFills' | t }}</span><span>{{ frame.terrainBatches }}</span>
+            </div>
+            <div class="row">
+              <span>{{ 'ui.stats.tilePictures' | t }}</span><span>{{ frame.tilePictures }}</span>
             </div>
             <div class="row">
               <span>{{ 'ui.stats.lastFrame' | t }}</span>

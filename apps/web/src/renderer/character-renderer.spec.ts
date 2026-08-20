@@ -1,7 +1,24 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { PixelRect, ResolvedCharacter, ResolvedLayer } from '../content/content-types';
-import { CharacterBox, drawCharacter, pixelUnder, placement } from './character-renderer';
+import {
+  CharacterBox,
+  SpriteCache,
+  SpriteSource,
+  drawCharacter,
+  pixelUnder,
+  placement,
+} from './character-renderer';
+
+/**
+ * A sprite source over a fixed answer.
+ *
+ * Drawing never preloads — it is the caller that says in advance what it will
+ * need — so these doubles resolve that half of the interface and say no more.
+ */
+function sourceOf(image: (asset: string) => CanvasImageSource | null): SpriteSource {
+  return { image, preload: () => Promise.resolve() };
+}
 
 /**
  * The renderer's whole job is putting authored pixels on screen without moving
@@ -145,7 +162,7 @@ describe('drawCharacter', () => {
         true,
       ),
       BOX,
-      { image: () => image },
+      sourceOf(() => image),
     );
 
     // placement(): zoom 3, originX 4. The canvas is 64 wide, so the axis sits
@@ -170,7 +187,7 @@ describe('drawCharacter', () => {
         { layer: 'body', variant: 'd', rect: [21, 12, 22, 54], asset: 'a.png', tint: '' },
       ]),
       BOX,
-      { image: () => ({}) as CanvasImageSource },
+      sourceOf(() => ({}) as CanvasImageSource),
     );
     expect(context.translate).not.toHaveBeenCalled();
     expect(context.scale).not.toHaveBeenCalled();
@@ -192,7 +209,7 @@ describe('drawCharacter', () => {
         },
       ]),
       BOX,
-      { image: () => image },
+      sourceOf(() => image),
     );
 
     expect(context.imageSmoothingEnabled).toBe(false);
@@ -218,7 +235,7 @@ describe('drawCharacter', () => {
         { layer: 'hair', variant: 'v', rect: [0, 0, 64, 128], asset: 'front.png', tint: '' },
       ]),
       BOX,
-      { image: (asset) => images.get(asset) ?? null },
+      sourceOf((asset) => images.get(asset) ?? null),
     );
 
     expect(drawn).toEqual(['back.png', 'front.png']);
@@ -233,7 +250,7 @@ describe('drawCharacter', () => {
         { layer: 'hair', variant: 'v', rect: [0, 0, 64, 128], asset: 'absent.png', tint: '' },
       ]),
       BOX,
-      { image: () => null },
+      sourceOf(() => null),
     );
 
     expect(context.strokeRect).toHaveBeenCalled();
@@ -247,7 +264,7 @@ describe('drawCharacter', () => {
       context as unknown as CanvasRenderingContext2D,
       character([{ layer: 'flat', variant: 'v', rect: [10, 10, 0, 20], asset: 'a.png', tint: '' }]),
       BOX,
-      { image: () => ({}) as CanvasImageSource },
+      sourceOf(() => ({}) as CanvasImageSource),
     );
 
     expect(context.drawImage).not.toHaveBeenCalled();
@@ -280,7 +297,7 @@ describe('drawCharacter', () => {
           },
         ]),
         BOX,
-        { image: () => image },
+        sourceOf(() => image),
       );
     } finally {
       created.mockRestore();
@@ -293,5 +310,124 @@ describe('drawCharacter', () => {
     expect(scratch.globalCompositeOperation).toBe('destination-in');
     // What lands on the page is the scratch canvas, at the zoomed box.
     expect(context.drawImage).toHaveBeenCalledWith(element, 64, 40, 72, 90);
+  });
+});
+
+/**
+ * The cache's two jobs beyond holding images: fetching what is about to be
+ * needed, and not shouting about it
+ * (`docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`).
+ */
+describe('SpriteCache', () => {
+  /** An `Image` whose loads are fired by the test, not by a network. */
+  class ScriptedImage {
+    static pending: { url: string; load: () => void; fail: () => void }[] = [];
+    private readonly handlers = new Map<string, () => void>();
+
+    addEventListener(type: string, handler: () => void): void {
+      this.handlers.set(type, handler);
+    }
+
+    set src(url: string) {
+      ScriptedImage.pending.push({
+        url,
+        load: () => this.handlers.get('load')?.(),
+        fail: () => this.handlers.get('error')?.(),
+      });
+    }
+  }
+
+  /**
+   * Runs `body` with the scripted image installed.
+   *
+   * `await`ed inside the `try`, deliberately: returning the promise would put
+   * the real `Image` back at the body's first suspension point, and everything
+   * after it would quietly fetch for real.
+   */
+  async function scripted<T>(body: () => Promise<T>): Promise<T> {
+    const previous = globalThis.Image;
+    ScriptedImage.pending = [];
+    globalThis.Image = ScriptedImage as unknown as typeof Image;
+    try {
+      return await body();
+    } finally {
+      globalThis.Image = previous;
+    }
+  }
+
+  /** Long enough for a booked animation frame — or its microtask stand-in. */
+  const nextFrame = (): Promise<void> => new Promise((done) => setTimeout(done, 32));
+
+  it('resolves a preload once every asset has settled, missing ones included', async () => {
+    await scripted(async () => {
+      const cache = new SpriteCache((asset) => `/content/${asset}`);
+      let settled = false;
+      const warmed = cache.preload(['a.png', 'b.png']).then(() => {
+        settled = true;
+      });
+
+      expect(ScriptedImage.pending).toHaveLength(2);
+      ScriptedImage.pending[0]?.load();
+      await nextFrame();
+      // One of two is not "loaded": the caller is waiting for the whole map.
+      expect(settled).toBe(false);
+
+      // A file that is not there answers too, or the map never draws at all.
+      ScriptedImage.pending[1]?.fail();
+      await warmed;
+      expect(settled).toBe(true);
+      expect(cache.image('a.png')).not.toBeNull();
+      expect(cache.image('b.png')).toBeNull();
+    });
+  });
+
+  it('fetches an asset once, however many times it is asked for', async () => {
+    await scripted(async () => {
+      const cache = new SpriteCache((asset) => asset);
+      cache.image('grass.png');
+      cache.image('grass.png');
+      void cache.preload(['grass.png']);
+
+      expect(ScriptedImage.pending).toHaveLength(1);
+    });
+  });
+
+  it('drops a fetch that finishes after the cache was cleared', async () => {
+    await scripted(async () => {
+      const cache = new SpriteCache((asset) => asset);
+      cache.image('hair.png');
+      const stale = ScriptedImage.pending[0];
+
+      // The author repainted the file; everything held is now the old version.
+      cache.clear();
+      stale?.load();
+      await nextFrame();
+
+      // The old fetch answered into a cache that no longer wants it, and the
+      // next request goes back to the file (ADR-0030).
+      expect(cache.image('hair.png')).toBeNull();
+      expect(ScriptedImage.pending).toHaveLength(2);
+    });
+  });
+
+  it('announces a burst of arrivals once, not once per image', async () => {
+    await scripted(async () => {
+      let redraws = 0;
+      const cache = new SpriteCache(
+        (asset) => asset,
+        () => {
+          redraws += 1;
+        },
+      );
+      void cache.preload(['a.png', 'b.png', 'c.png', 'd.png']);
+      for (const image of ScriptedImage.pending) {
+        image.load();
+      }
+      await nextFrame();
+
+      // Four images, one redraw: nothing anyone can see happens between two of
+      // them, and each redraw used to rebuild the whole render model.
+      expect(redraws).toBe(1);
+    });
   });
 });

@@ -119,13 +119,7 @@ const NOTHING: ResolvedTileRender = {
  *   rerolls it
  */
 export function variantRoll(col: number, row: number, salt: string): number {
-  const PRIME = 16777619;
-  let hash = 2166136261;
-  // Rust hashes the salt's UTF-8 bytes, so this does too — a tile id is ASCII
-  // in practice, and "in practice" is not what a mirrored hash may rest on.
-  for (const byte of utf8(salt)) {
-    hash = Math.imul(hash ^ byte, PRIME);
-  }
+  let hash = saltHash(salt);
   for (const value of [col, row]) {
     // The same four little-endian bytes Rust hashes, for negative values too.
     const bits = value | 0;
@@ -134,6 +128,34 @@ export function variantRoll(col: number, row: number, salt: string): number {
     }
   }
   return hash >>> 0;
+}
+
+const PRIME = 16777619;
+
+/**
+ * The hash of a salt alone, before any coordinate is mixed in.
+ *
+ * Memoised because the salt is a tile id and the coordinates are not: a map
+ * rolls the same dozen ids across every visible cell of every frame, and
+ * walking a string's bytes each time was one allocation and one loop per cell
+ * for an answer that never changes. The rolled value is untouched — this is
+ * the same FNV-1a state, resumed rather than recomputed.
+ */
+const saltHashes = new Map<string, number>();
+
+function saltHash(salt: string): number {
+  const cached = saltHashes.get(salt);
+  if (cached !== undefined) {
+    return cached;
+  }
+  let hash = 2166136261;
+  // Rust hashes the salt's UTF-8 bytes, so this does too — a tile id is ASCII
+  // in practice, and "in practice" is not what a mirrored hash may rest on.
+  for (const byte of utf8(salt)) {
+    hash = Math.imul(hash ^ byte, PRIME);
+  }
+  saltHashes.set(salt, hash);
+  return hash;
 }
 
 /** The UTF-8 bytes of a string, the way Rust's `str::as_bytes` sees it. */

@@ -685,6 +685,7 @@ Read in order:
 35. **ADR-0035 — tile art is authored per level and resolved, never transformed**
 36. **ADR-0036 — a cell may choose its tile art, and a cliff may be borrowed**
 37. **ADR-0037 — a flat map is drawn from flat art, or from colour**
+38. **ADR-0038 — a map is drawn from shared pictures, and only once it has them**
 
 `CLAUDE.md` contains project-level instructions for Claude Code and other coding
 agents.

@@ -249,6 +249,27 @@ router-outlet {
   pointer-events: none;
 }
 
+/*
+ * What the stage says while it is holding a map back for its pictures.
+ *
+ * The canvas is deliberately empty until every image a map is painted from has
+ * arrived (`docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`), and an
+ * empty canvas with nothing on it reads as a broken tool rather than as a busy
+ * one.
+ */
+.stage-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  pointer-events: none;
+}
+
 .banner {
   border-radius: var(--radius);
   padding: 10px 12px;
