@@ -1,0 +1,159 @@
+/* One row of controls, wrapping when the column is narrow. It is worn by two
+   different surfaces, so it sizes itself and assumes nothing about what is
+   below it (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+:host {
+  display: block;
+}
+
+/* Down the side instead of across the top: same controls, no height taken from
+   what is being drawn (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+:host(.vertical) {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+}
+
+.toolbar.column {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 4px;
+  width: 92px;
+}
+
+.toolbar.column .tools {
+  flex-direction: column;
+  gap: 2px;
+}
+
+.toolbar.column .spacer {
+  display: none;
+}
+
+.toolbar.column .swatch,
+.toolbar.column .alpha,
+.toolbar.column .zoom,
+.toolbar.column .toggle {
+  justify-content: space-between;
+}
+
+.toolbar.column button {
+  padding: 3px 6px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.toolbar.column .swatch,
+.toolbar.column .alpha {
+  gap: 4px;
+  font-size: 10px;
+}
+
+.toolbar.column .alpha input {
+  width: 44px;
+}
+
+/* No room for the number beside the slider; the slider is the control. */
+.toolbar.column .alpha .value {
+  display: none;
+}
+
+.toolbar.column .zoom {
+  align-self: center;
+}
+
+.palette.column {
+  display: grid;
+  grid-template-columns: repeat(4, 18px);
+  gap: 3px;
+  width: 92px;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.toolbar .spacer {
+  flex: 1;
+}
+
+.tools {
+  display: flex;
+  gap: 2px;
+}
+
+.tools button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #11161d;
+}
+
+.swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.swatch input[type='color'] {
+  width: 28px;
+  height: 24px;
+  padding: 0;
+}
+
+.alpha {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.alpha input {
+  width: 84px;
+}
+
+.alpha .value {
+  font-family: var(--mono);
+  min-width: 3ch;
+  text-align: right;
+}
+
+.zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.palette .chip {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
+
+.palette .chip.active {
+  outline: 2px solid var(--accent);
+}

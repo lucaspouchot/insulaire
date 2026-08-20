@@ -1,0 +1,55 @@
+<div class="frame">
+  <!-- The rail, and under it whatever the open category browses. One column:
+       a category name and a character name are both three words wide. -->
+  <aside class="side">
+    <nav class="rail" [attr.aria-label]="'ui.editor.asset.rail' | t">
+      @for (category of categories; track category.id) {
+        <a
+          [routerLink]="['/editor', 'asset', category.id]"
+          routerLinkActive="active"
+          [title]="category.summaryKey | t"
+          [class.planned]="category.status === 'planned'"
+        >
+          {{ category.titleKey | t }}
+          @if (category.status === 'planned') {
+            <span class="badge">{{ 'ui.editor.module.soon' | t }}</span>
+          }
+        </a>
+      }
+    </nav>
+
+    <div class="side-list">
+      <ng-content select="[list]" />
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="frame-toolbar">
+      <ng-content select="[toolbar]" />
+    </div>
+
+    <ng-content select="[banner]" />
+
+    <div class="body">
+      <section class="scene">
+        <ng-content select="[scene]" />
+      </section>
+
+      @if (hasInspector()) {
+        <div
+          class="divider"
+          role="separator"
+          aria-orientation="vertical"
+          (pointerdown)="onDividerDown($event)"
+          (pointermove)="onDividerMove($event)"
+          (pointerup)="onDividerUp($event)"
+          (pointercancel)="onDividerUp($event)"
+        ></div>
+
+        <aside class="inspector" [style.width]="inspectorWidth()">
+          <ng-content select="[inspector]" />
+        </aside>
+      }
+    </div>
+  </div>
+</div>

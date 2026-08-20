@@ -1,0 +1,664 @@
+/* The characters category. The frame around it — toolbar, three columns, dock
+   — is `asset-workspace.css`; what is here dresses the four slots this category
+   fills (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+
+/* This category is the flex item beside `asset-editor-page.ts`'s rail: it grows
+   into the rest of the row, and `min-width: 0` is what lets the grid inside it
+   be narrower than its widest child rather than pushing past the window. */
+:host {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+.toolbar .path {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.toolbar .spacer {
+  flex: 1;
+}
+
+/* The view controls: zoom, fit, grid. Beside the file name, because that is the
+   one bar every surface shares
+   (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+.toolbar .view {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 8px;
+}
+
+.toolbar .view .readout {
+  min-width: 34px;
+  font-family: var(--mono);
+  font-size: 11px;
+  text-align: center;
+  color: var(--text-dim);
+}
+
+.toolbar .view button,
+.toolbar .toggle {
+  font-size: 11px;
+  padding: 2px 7px;
+}
+
+.toolbar .toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 0 0 8px;
+  color: var(--text-dim);
+}
+
+.toolbar .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+
+.issues-count {
+  font-size: 11px;
+  color: var(--error);
+}
+
+.readonly,
+.pending {
+  font-size: 11px;
+  color: var(--warn);
+}
+
+.banner {
+  margin: 8px 12px 0;
+}
+
+/* The character list lives under the category rail, in the frame's own side
+   column (docs/adr/ADR-0039-one-editor-for-everything-drawn.md), so it is a
+   narrow thing and its panel wears no chrome of its own. */
+.library .panel {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.library .add {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.library .add button {
+  width: 100%;
+}
+
+.form {
+  min-height: 0;
+}
+
+/* ------------------------------------------------------------------- scene */
+
+/* Its own class, not `.scene`: the frame's slot is a `<section class="scene">`
+   and this is the element projected *into* it. Two elements one inside the
+   other under the same name is how this ended up not filling its own slot —
+   the frame's rule cannot reach across view encapsulation to say so, so the
+   category says it here (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+.character-scene {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  min-width: 0;
+}
+
+.character-scene-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.character-scene-bar .spacer {
+  flex: 1;
+}
+
+.character-scene-bar .readout {
+  min-width: 30px;
+  font-family: var(--mono);
+  text-align: center;
+}
+
+/* What the stage is showing, said in the bar rather than on a line of its own:
+   every line under the stage is a line the figure does not get. */
+.character-scene-bar .note {
+  flex: 1 1 0;
+  min-width: 0;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.character-scene-bar .zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.character-scene-bar button {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  font-size: 11px;
+}
+
+.character-scene-bar {
+  overflow: hidden;
+}
+
+/* One line each. A hint that wraps is two lines the figure does not get; the
+   full text is still there for a pointer that stops on it. */
+.character-scene .hint {
+  margin: 4px 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.character-scene-bar .toggle.on {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+}
+
+/* Which surface is on: the composed figure, or the sprite alone. One control,
+   two positions — the shape of the choice it is making
+   (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+.switch {
+  display: inline-flex;
+  align-items: stretch;
+  padding: 1px;
+  gap: 0;
+}
+
+.switch .side {
+  padding: 2px 8px;
+  border-radius: calc(var(--radius) - 1px);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.switch .side.on {
+  background: var(--accent);
+  color: #11161d;
+}
+
+/* The stage takes every pixel the scene has: a figure is 128 pixels tall and an
+   author needs it whole, at a zoom they can see, with the tools on screen at
+   the same time. That is what the bottom dock was costing
+   (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+/* The toolbar over the figure, on one row, exactly as the flat view wears it:
+   one surface, one bar, in one place (ADR-0039). It is compact enough to stay a
+   single row, which is what the height of this column depends on. */
+.composed {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* No chrome of its own: the checkerboard already says where the canvas is, and
+   a panel's padding and border here is a dozen rows of pixels the figure does
+   not get (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+.composed .panel.stage {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin-bottom: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.character-scene app-pixel-editor {
+  flex: 1;
+  min-height: 0;
+}
+
+/* The left column's modules, one at a time. Sticky, because the point of the
+   bar is moving between them without first scrolling back to find it. */
+.tabs {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  background: var(--bg);
+}
+
+.tabs button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  justify-content: center;
+  padding: 6px 4px;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.tabs button.on {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+}
+
+.tabs .count {
+  padding: 0 4px;
+  font-family: var(--mono);
+  font-size: 9px;
+  line-height: 14px;
+  border-radius: 7px;
+  background: var(--bg-raised);
+}
+
+/* The layer list is bounded so the panels under it — the skeleton and the
+   variants of whatever is selected — stay on screen with it. A share of the
+   *inspector*, not of the window: the column is the author's to widen and the
+   window's height has nothing to do with how long this list is. */
+.layer-list {
+  max-height: 34cqh;
+  min-height: 120px;
+  overflow-y: auto;
+}
+
+/* One row, one line. The name gives up the width; the buttons never do, and
+   nothing wraps onto a second line it did not need. */
+.layer-list .node {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.layer-list .node .id {
+  flex: 1;
+  min-width: 0;
+}
+
+.layer-list .node .count,
+.layer-list .node button {
+  flex: none;
+}
+
+.layer-list .node .count {
+  font-size: 10px;
+}
+
+.panel {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+}
+
+.panel h2 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.row input,
+.row select {
+  width: 100%;
+}
+
+/* One definition of the project. */
+.pick-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 5px 8px;
+  text-align: left;
+  font-size: 12px;
+}
+
+.pick-row.on {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+}
+
+.pick-row .name {
+  flex: 1;
+}
+
+.pick-row .tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+/* The canvas size: two numbers with a × between them. */
+.pair {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pair input {
+  width: 72px;
+}
+
+.pair .times,
+.pair .unit {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* A parameter, a layer or a variant: a bordered block of lines. */
+.node {
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.node.on {
+  border-color: var(--accent-dim);
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.line + .line {
+  margin-top: 6px;
+}
+
+.line input[type='text'],
+.line select {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.line input.id {
+  flex: 0 0 110px;
+  font-family: var(--mono);
+}
+
+.line select.asset {
+  flex: 2;
+  min-width: 0;
+  font-family: var(--mono);
+}
+
+/* The file input itself is hidden; the label is the button. */
+.upload {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.upload:hover {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+}
+
+.upload input {
+  display: none;
+}
+
+.line input[type='color'] {
+  flex: 0 0 34px;
+  padding: 0;
+  height: 24px;
+}
+
+.bounds,
+.when {
+  flex-wrap: wrap;
+}
+
+.bounds label,
+.when label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.bounds input,
+.when input {
+  width: 72px;
+  font-size: 11px;
+}
+
+.when .label {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.options {
+  margin-top: 6px;
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
+}
+
+.count {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.pick {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+}
+
+button.remove {
+  color: var(--error);
+}
+
+button.small {
+  margin-top: 4px;
+  font-size: 11px;
+}
+
+.add {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.hint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.hint.ok {
+  color: var(--ok);
+}
+
+.hint.warn {
+  color: var(--warn);
+}
+
+.resolved {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.resolved.inline {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resolved.missing {
+  color: var(--warn);
+  font-style: italic;
+}
+
+/* The stage scrolls, because a zoomed canvas is bigger than the panel. It has
+   no ceiling of its own any more: it takes the height the scene column has, and
+   a 520px cap on a 1400px screen was leaving a figure small in a large empty
+   panel (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+/* Centred at every zoom, and still scrollable past the edges when the canvas
+   is the larger of the two. `safe` is the whole trick: plain centring in an
+   overflowing box pushes the top-left corner out of reach, and a figure whose
+   head cannot be scrolled to is worse than one sitting in a corner
+   (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+/* `hidden` unless a zoom was asked for, and that is not a detail: while the
+   stage is *fitting*, the canvas is sized from this element's client box, so a
+   scrollbar appearing shrinks the box, which shrinks the canvas, which removes
+   the scrollbar, which grows the box — a loop the observer runs at frame rate
+   and the author sees as a shivering figure. Nothing overflows a fit, so
+   nothing needs to scroll (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+.stage-frame {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: safe center;
+  justify-content: safe center;
+  border-radius: var(--radius);
+  border-bottom: 2px solid var(--border);
+}
+
+.stage-frame.zoomed {
+  overflow: auto;
+}
+
+/* A drawing surface, not a document: a drag is a stroke, never a selection. */
+.stage-frame.painting {
+  user-select: none;
+  touch-action: none;
+}
+
+/* The character itself, sized by the draw so the two agree on every pixel.
+
+   The transparency checker is *not* here: a CSS background is a fixed number of
+   screen pixels, which contradicts the pixel grid the moment the stage zooms.
+   The draw paints it, in authored pixels (ADR-0030). */
+.stage-canvas {
+  display: block;
+  flex: none;
+  border-radius: var(--radius);
+  background-color: var(--bg);
+  image-rendering: pixelated;
+}
+
+.stage-canvas.paint {
+  cursor: crosshair;
+}
+
+.stage-canvas.pick {
+  cursor: copy;
+}
+
+/* What is playing, under the stage. The toggles that used to sit here are in
+   the scene bar above it now, with the mode switch they belong beside. */
+.stage .line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.stage button.toggle {
+  flex: 0 0 auto;
+  font-size: 12px;
+}
+
+.stage .toggle.on {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+}
+
+.stage .pose {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.issue {
+  margin: 0 0 6px;
+  font-size: 11px;
+  color: var(--error);
+}
+
+.issue.warn {
+  color: var(--warn);
+}
+
+.issue .code {
+  margin-right: 6px;
+  font-family: var(--mono);
+}
+
+.issue .where {
+  margin-right: 6px;
+  font-family: var(--mono);
+  color: var(--text-dim);
+}
+
+/* A condition an animation sets rather than the player: the same control, told
+   apart, because one is a choice and the other is a pose
+   (`docs/adr/ADR-0033-animations-set-pose-values.md`). */
+.line.when label.pose span {
+  color: var(--accent);
+}
+
+.line.when label.pose input {
+  border-color: var(--accent-dim);
+}

@@ -1,0 +1,83 @@
+<div class="toolbar" [class.column]="orientation() === 'column'">
+  <div class="tools" role="group" [attr.aria-label]="'ui.editor.asset.pixels' | t">
+    @for (entry of tools; track entry) {
+      <button
+        type="button"
+        [class.active]="tool() === entry"
+        [disabled]="!enabled()"
+        [title]="'ui.editor.asset.tool.' + entry | t"
+        (click)="toolPicked.emit(entry)"
+      >
+        {{ 'ui.editor.asset.tool.' + entry | t }}
+      </button>
+    }
+  </div>
+
+  <label class="swatch">
+    <input type="color" [value]="color()" (input)="onColorInput($event)" />
+    <span>{{ 'ui.editor.asset.color' | t }}</span>
+  </label>
+
+  <label class="alpha" [title]="'ui.editor.asset.alphaHint' | t">
+    {{ 'ui.editor.asset.alpha' | t }}
+    <input
+      type="range"
+      min="0"
+      max="255"
+      step="1"
+      [value]="alpha()"
+      (input)="onAlphaInput($event)"
+    />
+    <span class="value">{{ alpha() }}</span>
+  </label>
+
+  <div class="spacer"></div>
+
+  <button
+    type="button"
+    [disabled]="!canUndo()"
+    [title]="'ui.editor.asset.undo' | t"
+    (click)="undone.emit()"
+  >
+    ↶
+  </button>
+  <button
+    type="button"
+    [disabled]="!canRedo()"
+    [title]="'ui.editor.asset.redo' | t"
+    (click)="redone.emit()"
+  >
+    ↷
+  </button>
+  @if (clearLabel().length > 0) {
+    <button type="button" [disabled]="!enabled()" (click)="cleared.emit()">
+      {{ clearLabel() | t }}
+    </button>
+  }
+
+  @if (hasGuides()) {
+    <label class="toggle">
+      <input type="checkbox" [checked]="showGuides()" (change)="guidesToggled.emit()" />
+      {{ 'ui.editor.asset.guides' | t }}
+    </label>
+  }
+</div>
+
+@if (palette().length > 0) {
+  <div
+    class="palette"
+    [class.column]="orientation() === 'column'"
+    [attr.aria-label]="'ui.editor.asset.palette' | t"
+  >
+    @for (entry of palette(); track entry) {
+      <button
+        type="button"
+        class="chip"
+        [class.active]="entry === color()"
+        [style.background]="entry"
+        [title]="entry"
+        (click)="colorPicked.emit(entry)"
+      ></button>
+    }
+  </div>
+}

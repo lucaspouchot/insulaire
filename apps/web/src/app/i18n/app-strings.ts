@@ -106,15 +106,10 @@ const EN: StringTree = {
           summary:
             'Paint terrain and elevation, place entities and points of interest, link maps together.',
         },
-        character: {
-          title: 'Characters',
-          summary:
-            'How a kind of character is drawn, and what may be chosen about one — players, NPCs and monsters alike.',
-        },
         asset: {
-          title: 'Assets',
+          title: 'Resources',
           summary:
-            'The images a world is drawn from: tiles today — their surfaces, their elevation levels and the pixels themselves.',
+            'Everything the game is drawn from, and the pixels themselves: tiles and characters today, objects, decorations and effects later.',
         },
         scenario: {
           title: 'Scenario',
@@ -267,6 +262,10 @@ const EN: StringTree = {
         tabParameters: 'Choices',
         tabLayers: 'Layers',
         tabAnimation: 'Animation',
+        pinTimeline: 'Pin the timeline',
+        scene: 'What the scene shows',
+        sceneComposed: 'Composed',
+        sceneFlat: 'Flat',
         animations: 'Animations',
         noAnimations: 'This character does not move yet.',
         addAnimation: 'New animation',
@@ -337,16 +336,8 @@ const EN: StringTree = {
         when: 'Shown when',
         anyValue: 'any',
         pixels: 'Pixels',
-        paintMode: 'Paint',
         zoom: 'Zoom',
         fitZoom: 'Fit',
-        pencil: 'Pencil',
-        eraser: 'Eraser',
-        picker: 'Take a colour (or hold Alt)',
-        color: 'Colour',
-        palette: 'Colours used',
-        undo: 'Undo (Ctrl+Z)',
-        redo: 'Redo (Ctrl+Shift+Z)',
         paintHint:
           'Drag on the preview to paint {layer}. Alt takes the colour under the pointer, and Ctrl with the wheel zooms.',
         paintUntinted:
@@ -388,12 +379,20 @@ const EN: StringTree = {
         duplicate: 'Duplicate',
         remove: 'Delete',
         hasArt: 'Drawn from images',
+        rail: 'Kinds of resource',
         categories: {
           tiles: 'Tiles',
+          tilesSummary:
+            'The hexagons a world is paved with: their surfaces, their levels of relief, and the pixels themselves.',
           characters: 'Characters',
+          charactersSummary:
+            'How a kind of character is drawn, what may be chosen about it, and how it moves — players, NPCs and monsters alike.',
           objects: 'Objects',
+          objectsSummary: 'The things standing on a map: props, containers, what a player may pick up.',
           decorations: 'Decorations',
+          decorationsSummary: 'What dresses a tile without changing it: grass, rubble, edges.',
           effects: 'Effects',
+          effectsSummary: 'What is drawn over the world for a moment: hits, weather, spells.',
         },
         tabs: {
           definition: 'Tile',
@@ -457,15 +456,15 @@ const EN: StringTree = {
         geometryNote:
           '{width}×{flat} flat · {width}×{surface} surface · {width}×{elevation} elevation · {step} px per level',
         preview: 'Preview',
+        fitZoom: 'Fit',
+        paintNoImage: 'Open an image in the panel on the right, then draw on the hexagon.',
         elevationAt: 'Elevation {level}',
         board: 'Several tiles',
         pixels: 'Pixels',
         tool: {
           pencil: 'Pencil',
           eraser: 'Eraser',
-          fill: 'Fill',
-          picker: 'Pick a colour',
-          select: 'Select',
+          picker: 'Picker',
         },
         color: 'Colour',
         alpha: 'Opacity',
@@ -476,8 +475,6 @@ const EN: StringTree = {
         undo: 'Undo (Ctrl+Z)',
         redo: 'Redo (Ctrl+Shift+Z)',
         clearAll: 'Clear image',
-        clearSelection: 'Clear selection',
-        zoomIn: 'Zoom in',
         zoomOut: 'Zoom out',
         noImageOpen: 'Open an image to edit its pixels.',
         imageSize: '{width}×{height} px',
@@ -485,7 +482,6 @@ const EN: StringTree = {
         imagesUnsaved: '{count} image(s) with unwritten pixels',
         gridZoomHint: 'The pixel grid appears from {zoom}×.',
         paintHint: 'Drag to draw. Alt takes the colour under the pointer, and Ctrl with the wheel zooms.',
-        selectHint: 'Drag to select, then drag inside it — or use the arrow keys — to move those pixels.',
         faces: {
           flat: 'flat',
           surface: 'surface',
@@ -865,15 +861,10 @@ const FR: StringTree = {
           summary:
             'Peindre le terrain et le relief, placer entités et lieux, relier les cartes entre elles.',
         },
-        character: {
-          title: 'Personnages',
-          summary:
-            'Comment un type de personnage est dessiné, et ce que l’on peut choisir à son sujet — joueurs, PNJ et monstres compris.',
-        },
         asset: {
           title: 'Ressources',
           summary:
-            'Les images dont un monde est dessiné : les tuiles pour l’instant — leurs surfaces, leurs niveaux d’élévation et les pixels eux-mêmes.',
+            'Tout ce dont le jeu est dessiné, et les pixels eux-mêmes : tuiles et personnages aujourd’hui, objets, décors et effets ensuite.',
         },
         scenario: {
           title: 'Scénario',
@@ -1026,6 +1017,10 @@ const FR: StringTree = {
         tabParameters: 'Choix',
         tabLayers: 'Couches',
         tabAnimation: 'Animation',
+        pinTimeline: 'Épingler la timeline',
+        scene: 'Ce que montre la scène',
+        sceneComposed: 'Composé',
+        sceneFlat: 'À plat',
         animations: 'Animations',
         noAnimations: 'Ce personnage ne bouge pas encore.',
         addAnimation: 'Nouvelle animation',
@@ -1096,16 +1091,8 @@ const FR: StringTree = {
         when: 'Affichée si',
         anyValue: 'indifférent',
         pixels: 'Pixels',
-        paintMode: 'Dessiner',
         zoom: 'Zoom',
         fitZoom: 'Ajuster',
-        pencil: 'Crayon',
-        eraser: 'Gomme',
-        picker: 'Prélever une couleur (ou maintenir Alt)',
-        color: 'Couleur',
-        palette: 'Couleurs utilisées',
-        undo: 'Annuler (Ctrl+Z)',
-        redo: 'Rétablir (Ctrl+Maj+Z)',
         paintHint:
           'Glissez sur l’aperçu pour peindre {layer}. Alt prélève la couleur sous le pointeur, et Ctrl avec la molette zoome.',
         paintUntinted:
@@ -1149,12 +1136,21 @@ const FR: StringTree = {
         duplicate: 'Dupliquer',
         remove: 'Supprimer',
         hasArt: 'Dessinée à partir d’images',
+        rail: 'Familles de ressources',
         categories: {
           tiles: 'Tuiles',
+          tilesSummary:
+            'Les hexagones dont un monde est pavé : leurs surfaces, leurs niveaux de relief, et les pixels eux-mêmes.',
           characters: 'Personnages',
+          charactersSummary:
+            'Comment un type de personnage est dessiné, ce que l’on peut choisir à son sujet et comment il bouge — joueurs, PNJ et monstres compris.',
           objects: 'Objets',
+          objectsSummary:
+            'Ce qui se tient sur une carte : accessoires, contenants, ce qu’un joueur peut ramasser.',
           decorations: 'Décors',
+          decorationsSummary: 'Ce qui habille une tuile sans la changer : herbes, gravats, bordures.',
           effects: 'Effets',
+          effectsSummary: 'Ce qui se dessine par-dessus le monde un instant : coups, météo, sorts.',
         },
         tabs: {
           definition: 'Tuile',
@@ -1219,15 +1215,16 @@ const FR: StringTree = {
         geometryNote:
           '{width}×{flat} à plat · {width}×{surface} surface · {width}×{elevation} élévation · {step} px par niveau',
         preview: 'Aperçu',
+        fitZoom: 'Ajuster',
+        paintNoImage:
+          'Ouvrez une image dans le panneau de droite, puis dessinez sur l’hexagone.',
         elevationAt: 'Élévation {level}',
         board: 'Plusieurs tuiles',
         pixels: 'Pixels',
         tool: {
           pencil: 'Crayon',
           eraser: 'Gomme',
-          fill: 'Remplissage',
           picker: 'Pipette',
-          select: 'Sélection',
         },
         color: 'Couleur',
         alpha: 'Opacité',
@@ -1239,8 +1236,6 @@ const FR: StringTree = {
         undo: 'Annuler (Ctrl+Z)',
         redo: 'Rétablir (Ctrl+Maj+Z)',
         clearAll: 'Effacer l’image',
-        clearSelection: 'Effacer la sélection',
-        zoomIn: 'Agrandir',
         zoomOut: 'Réduire',
         noImageOpen: 'Ouvrez une image pour en modifier les pixels.',
         imageSize: '{width}×{height} px',
@@ -1249,8 +1244,6 @@ const FR: StringTree = {
         gridZoomHint: 'La grille de pixels apparaît à partir de {zoom}×.',
         paintHint:
           'Faites glisser pour dessiner. Alt prend la couleur sous le pointeur, Ctrl + molette zoome.',
-        selectHint:
-          'Faites glisser pour sélectionner, puis glissez à l’intérieur — ou utilisez les flèches — pour déplacer ces pixels.',
         faces: {
           flat: 'à plat',
           surface: 'surface',

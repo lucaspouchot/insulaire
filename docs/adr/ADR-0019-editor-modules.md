@@ -35,6 +35,14 @@ modules are declared once in `editor-modules.ts`:
 /editor/scenario   PlannedModulePage    planned
 ```
 
+*(Both of those became components, and then one absorbed the other:
+`docs/adr/ADR-0039-one-editor-for-everything-drawn.md` folded `character` into
+`asset` as a category, and `/editor/character` no longer exists. The registry is
+still the single source — it simply has one fewer entry, and the asset module
+carries a second registry of its own for its categories. That a module could
+shrink as well as grow is the same property this ADR wanted: a module is a
+domain, not a screen.)*
+
 Two of those were planned entries that became components, which is the shape
 this ADR predicted: the title screen editor and the language editor cost one
 registry entry and one component each, and nothing else moved.

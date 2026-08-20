@@ -77,11 +77,16 @@ export const CATEGORIES: readonly { readonly id: CharacterCategory; readonly lab
   ];
 
 /**
- * Which module of the editor's left column is open.
+ * Which module of the inspector is open.
  *
  * Grouped by the question each answers — which character, what may be chosen
  * about it, what it is drawn from, how it moves — because seven panels stacked
  * in one scroller meant scrolling past four to reach the fifth.
+ *
+ * The timeline is wide, and this is a column; what makes that work is that the
+ * column is **resizable**, so an author editing an animation drags the
+ * inspector open and gets the width back from the scene
+ * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
  */
 export type EditorTab = 'character' | 'parameters' | 'layers' | 'animation';
 

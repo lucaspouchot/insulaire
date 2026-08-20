@@ -195,11 +195,26 @@ function drawLayer(
 /**
  * The sprite recoloured, at its authored size.
  *
- * `multiply` keeps the drawing's own shading — a near-white sprite becomes the
- * tint, its darker pixels become darker shades of it — and `destination-in`
- * puts the original alpha back, so the fill does not spill into the
- * transparent margin. This is what lets one greyscale hair sprite serve every
- * hair colour.
+ * Multiplying keeps the drawing's own shading: a near-white sprite becomes the
+ * tint, its darker pixels darker shades of it. That is what lets one greyscale
+ * hair sprite serve every hair colour.
+ *
+ * # Why this is a pixel loop and not a composite operation
+ *
+ * This used to be `multiply` over the whole scratch canvas followed by
+ * `destination-in` to put the alpha back, which is right for every fully opaque
+ * pixel and wrong for every other one. A canvas blend mode composites as well
+ * as blends: where the destination is only *partly* there, the opaque fill
+ * arrives at full strength over the gap it leaves, so a pixel at alpha `a` came
+ * out at `tint x (1 - a + a x shade)` — the more transparent, the closer to flat
+ * tint. A soft edge came back as a pale halo in the tint's own colour, and
+ * `docs/adr/ADR-0030-the-editor-paints-its-sprites.md` forbade partial alpha on
+ * a character *because of this function*.
+ *
+ * `ImageData` is non-premultiplied, so the honest version is the arithmetic the
+ * blend mode was standing in for: multiply the RGB, carry the alpha through
+ * untouched. A pixel at half alpha is now the shade it was drawn as, at half
+ * alpha, and ADR-0039 lifted the prohibition on the strength of it.
  */
 function tinted(
   image: CanvasImageSource,
@@ -217,12 +232,62 @@ function tinted(
 
   context.imageSmoothingEnabled = false;
   context.drawImage(image, 0, 0, width, height);
-  context.globalCompositeOperation = 'multiply';
-  context.fillStyle = color;
-  context.fillRect(0, 0, width, height);
-  context.globalCompositeOperation = 'destination-in';
-  context.drawImage(image, 0, 0, width, height);
+
+  const tint = resolveColor(context, color);
+  if (tint === null) {
+    return scratch;
+  }
+  const pixels = context.getImageData(0, 0, width, height);
+  const data = pixels.data;
+  for (let at = 0; at < data.length; at += 4) {
+    if (data[at + 3] === 0) {
+      continue;
+    }
+    data[at] = Math.round((data[at] * tint[0]) / 255);
+    data[at + 1] = Math.round((data[at + 1] * tint[1]) / 255);
+    data[at + 2] = Math.round((data[at + 2] * tint[2]) / 255);
+  }
+  context.putImageData(pixels, 0, 0);
   return scratch;
+}
+
+/**
+ * A CSS colour as `[r, g, b]`, or `null` when the canvas cannot make sense of
+ * it.
+ *
+ * The canvas is asked rather than a parser written: assigning to `fillStyle`
+ * and reading it back is the specified way to normalise *any* colour a
+ * stylesheet accepts — a name, `#rgb`, `hsl()` — into a serialised form, and
+ * that form is `#rrggbb` unless the colour carries an alpha of its own.
+ * A tint's own alpha is ignored: what a layer is transparent by is its pixels
+ * (ADR-0039), not its colour.
+ */
+function resolveColor(
+  context: CanvasRenderingContext2D,
+  color: string,
+): [number, number, number] | null {
+  // Two sentinels, because an unreadable colour is *ignored* by the setter
+  // rather than reported: assigning over two different starting values and
+  // getting two different answers back is what says the assignment did nothing.
+  context.fillStyle = '#000000';
+  context.fillStyle = color;
+  const serialised = String(context.fillStyle).trim();
+  context.fillStyle = '#ffffff';
+  context.fillStyle = color;
+  if (String(context.fillStyle).trim() !== serialised) {
+    return null;
+  }
+
+  const hex = /^#([0-9a-f]{6})$/i.exec(serialised);
+  if (hex !== null) {
+    const value = Number.parseInt(hex[1], 16);
+    return [(value >> 16) & 0xff, (value >> 8) & 0xff, value & 0xff];
+  }
+  const parts = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i.exec(serialised);
+  if (parts !== null) {
+    return [Number(parts[1]), Number(parts[2]), Number(parts[3])];
+  }
+  return null;
 }
 
 function outlineMissing(

@@ -1,0 +1,540 @@
+<app-asset-workspace>
+  <div toolbar class="toolbar">
+    <select (change)="selectTileSet($event)" [attr.aria-label]="'ui.editor.asset.tileSet' | t">
+      @for (id of tileSetIds(); track id) {
+        <option [value]="id" [selected]="id === tileSetId()">{{ id }}</option>
+      }
+    </select>
+
+    <span class="path">{{ contentRoot }}/{{ tileSetId() }}</span>
+    <!-- The view controls, in the one bar every surface shares
+         (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). -->
+    <span class="view" [title]="'ui.editor.asset.zoomIn' | t">
+      <button type="button" class="small" (click)="zoomBy(-1)" aria-label="−">−</button>
+      <span class="readout">{{ shownZoom() }}×</span>
+      <button type="button" class="small" (click)="zoomBy(1)" aria-label="+">+</button>
+      <button type="button" class="small" (click)="fitZoom()">
+        {{ 'ui.editor.asset.fitZoom' | t }}
+      </button>
+    </span>
+    <label class="toggle">
+      <input type="checkbox" [checked]="showGrid()" (change)="toggleGrid()" />
+      {{ 'ui.editor.asset.grid' | t }}
+    </label>
+    <span class="spacer"></span>
+
+    @if (!valid()) {
+      <span class="issues-count">{{
+        'ui.editor.asset.issueCount' | t: { count: issues().length }
+      }}</span>
+    }
+    @if (unsavedImages() > 0) {
+      <span class="pending">
+        {{ 'ui.editor.asset.imagesUnsaved' | t: { count: unsavedImages() } }}
+      </span>
+    }
+    @if (dirty()) {
+      <span class="dot" [title]="'ui.editor.asset.unsaved' | t"></span>
+    }
+    @if (!writable()) {
+      <span class="readonly">{{ 'ui.editor.asset.readOnly' | t }}</span>
+    }
+    <button type="button" [disabled]="!writable() || !valid()" (click)="save()">
+      {{ 'ui.editor.asset.save' | t }}
+    </button>
+  </div>
+
+  @if (failure(); as message) {
+    <p banner class="banner error">
+      {{ 'ui.editor.asset.failed' | t: { message: message } }}
+      <button type="button" (click)="dismiss()">{{ 'ui.common.dismiss' | t }}</button>
+    </p>
+  }
+  @if (status(); as saved) {
+    <p banner class="banner ok">
+      {{ 'ui.editor.asset.saved' | t: { file: saved } }}
+      <button type="button" (click)="dismiss()">{{ 'ui.common.dismiss' | t }}</button>
+    </p>
+  }
+
+  <!-- --------------------------------------------------------------- list -->
+  <div list class="browser">
+    <input
+      type="search"
+      [value]="search()"
+      (input)="onSearch($event)"
+      [placeholder]="'ui.editor.asset.search' | t"
+    />
+
+    <ul class="tiles">
+      @for (entry of tiles(); track entry.id) {
+        <li>
+          <button
+            type="button"
+            [class.active]="entry.id === selectedTileId()"
+            (click)="selectTile(entry.id)"
+          >
+            <span class="swatch" [style.background]="entry.visual.fallbackColor"></span>
+            <span class="name">{{ entry.name || entry.id }}</span>
+            <span class="id">{{ entry.id }}</span>
+            @if (
+              entry.art?.flat?.length ||
+              entry.art?.surface?.length ||
+              entry.art?.elevation?.levels?.length
+            ) {
+              <span class="painted" [title]="'ui.editor.asset.hasArt' | t">▦</span>
+            }
+          </button>
+        </li>
+      } @empty {
+        <li class="empty">{{ 'ui.editor.asset.noTiles' | t }}</li>
+      }
+    </ul>
+
+    <div class="browser-actions">
+      <button type="button" (click)="createTile()">{{ 'ui.editor.asset.createTile' | t }}</button>
+      <button type="button" [disabled]="tile() === null" (click)="duplicateSelected()">
+        {{ 'ui.editor.asset.duplicate' | t }}
+      </button>
+      <button
+        type="button"
+        class="danger"
+        [disabled]="tile() === null || (tileSet()?.tiles?.length ?? 0) <= 1"
+        (click)="removeSelected()"
+      >
+        {{ 'ui.editor.asset.remove' | t }}
+      </button>
+    </div>
+  </div>
+
+  <!-- --------------------------------------------------------------- scene -->
+  <!-- The hexagon *is* the drawing surface: what an author is judging is the
+       tile in place, at the size the map draws it, and a second flat copy of
+       the same image beside it was two of everything
+       (docs/adr/ADR-0039-one-editor-for-everything-drawn.md, and
+       docs/adr/ADR-0030-the-editor-paints-its-sprites.md for the rule it
+       follows). -->
+  <div scene class="tile-scene">
+    <div class="preview-bar">
+      <div class="elevation">
+        <button type="button" (click)="stepElevation(-1)">−</button>
+        <span>{{ 'ui.editor.asset.elevationAt' | t: { level: previewElevation() } }}</span>
+        <button type="button" (click)="stepElevation(1)">+</button>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" [checked]="previewBoard()" (change)="toggleBoard()" />
+        {{ 'ui.editor.asset.board' | t }}
+      </label>
+      <span class="geometry-note">
+        @if (openName(); as asset) {
+          <span [title]="openLabel()">{{ asset }}</span>
+        } @else {
+          {{
+            'ui.editor.asset.geometryNote'
+              | t
+                : {
+                    width: geometry().width,
+                    flat: geometry().flatHeight,
+                    surface: geometry().surfaceHeight,
+                    elevation: geometry().elevationHeight,
+                    step: geometry().elevationStep,
+                  }
+          }}
+        }
+      </span>
+    </div>
+
+    <app-pixel-tools
+      [tool]="tool()"
+      [color]="color()"
+      [alpha]="alpha()"
+      [canUndo]="canUndo()"
+      [canRedo]="canRedo()"
+      [enabled]="paintable()"
+      [palette]="sharedPalette()"
+      clearLabel="ui.editor.asset.clearAll"
+      (toolPicked)="setTool($event)"
+      (colorPicked)="setColor($event)"
+      (alphaPicked)="alpha.set($event)"
+      (undone)="undo()"
+      (redone)="redo()"
+      (cleared)="clearImage()"
+    />
+
+    <div class="preview-canvas painting" [class.zoomed]="previewZoom() !== null">
+      <canvas
+        #preview
+        [class.paint]="paintable()"
+        [class.pick]="tool() === 'picker'"
+        (pointerdown)="onPointerDown($event)"
+        (pointermove)="onPointerMove($event)"
+        (pointerup)="onPointerUp()"
+        (pointercancel)="onPointerUp()"
+      ></canvas>
+    </div>
+
+    @if (!paintable()) {
+      <p class="hint">{{ 'ui.editor.asset.paintNoImage' | t }}</p>
+    }
+  </div>
+
+  <!-- ----------------------------------------------------------- inspector -->
+  <div inspector class="inspector">
+    @if (tile(); as current) {
+      <nav class="tabs">
+        @for (entry of tabs; track entry) {
+          <button type="button" [class.active]="tab() === entry" (click)="setTab(entry)">
+            {{ 'ui.editor.asset.tabs.' + entry | t }}
+          </button>
+        }
+      </nav>
+
+      @switch (tab()) {
+        @case ('definition') {
+          <div class="fields">
+            <label>
+              {{ 'ui.editor.asset.name' | t }}
+              <input type="text" [value]="current.name ?? ''" (change)="renameTile($event)" />
+            </label>
+            <label>
+              {{ 'ui.editor.asset.id' | t }}
+              <input type="text" [value]="current.id" (change)="changeTileId($event)" />
+            </label>
+            @if (!idUsable()) {
+              <p class="warn">{{ 'ui.editor.asset.badId' | t }}</p>
+            }
+            <p class="hint">{{ 'ui.editor.asset.idHint' | t }}</p>
+            <label>
+              {{ 'ui.editor.asset.terrain' | t }}
+              <input
+                type="text"
+                [value]="current.terrain"
+                (change)="changeField('terrain', $event)"
+              />
+            </label>
+            <label>
+              {{ 'ui.editor.asset.movementCost' | t }}
+              <input
+                type="number"
+                min="0"
+                [value]="current.movementCost"
+                (change)="changeMovementCost($event)"
+              />
+            </label>
+            <p class="hint">{{ 'ui.editor.asset.movementHint' | t }}</p>
+            <label>
+              {{ 'ui.editor.asset.tags' | t }}
+              <input
+                type="text"
+                [value]="(current.tags ?? []).join(', ')"
+                (change)="changeTags($event)"
+              />
+            </label>
+            <label>
+              {{ 'ui.editor.asset.visualId' | t }}
+              <input
+                type="text"
+                [value]="current.visual.visualId"
+                (change)="changeField('visualId', $event)"
+              />
+            </label>
+            <label>
+              {{ 'ui.editor.asset.fallbackColor' | t }}
+              <input
+                type="color"
+                [value]="current.visual.fallbackColor"
+                (change)="changeField('fallbackColor', $event)"
+              />
+            </label>
+            <p class="hint">{{ 'ui.editor.asset.fallbackHint' | t }}</p>
+          </div>
+        }
+
+        @case ('flat') {
+          <div class="fields">
+            <p class="hint">{{ 'ui.editor.asset.flatHint' | t }}</p>
+            <ul class="variants">
+              @for (variant of flatVariants(); track variant.id; let index = $index) {
+                <li [class.open]="isOpen(-2, index)">
+                  <button type="button" class="pick" (click)="openVariant(-2, index)">
+                    <span class="vid">{{ variant.id }}</span>
+                    <span class="asset">{{ variant.asset }}</span>
+                  </button>
+                  <label class="import" [title]="'ui.editor.asset.import' | t">
+                    <input
+                      type="file"
+                      accept="image/png,image/*"
+                      (change)="importImage(-2, index, $event)"
+                    />
+                    ⇪
+                  </label>
+                  <button type="button" class="danger" (click)="removeVariant(-2, index)">×</button>
+                </li>
+              } @empty {
+                <li class="empty">{{ 'ui.editor.asset.noVariants' | t }}</li>
+              }
+            </ul>
+            <button
+              type="button"
+              [disabled]="flatVariants().length >= maxVariants"
+              (click)="addVariant(-2)"
+            >
+              {{ 'ui.editor.asset.addVariant' | t }}
+            </button>
+            <p class="hint">
+              {{
+                'ui.editor.asset.flatSize'
+                  | t: { width: geometry().width, height: geometry().flatHeight }
+              }}
+            </p>
+          </div>
+        }
+
+        @case ('surface') {
+          <div class="fields">
+            <p class="hint">{{ 'ui.editor.asset.surfaceHint' | t }}</p>
+            <ul class="variants">
+              @for (variant of surfaceVariants(); track variant.id; let index = $index) {
+                <li [class.open]="isOpen(-1, index)">
+                  <button type="button" class="pick" (click)="openVariant(-1, index)">
+                    <span class="vid">{{ variant.id }}</span>
+                    <span class="asset">{{ variant.asset }}</span>
+                  </button>
+                  <label class="import" [title]="'ui.editor.asset.import' | t">
+                    <input
+                      type="file"
+                      accept="image/png,image/*"
+                      (change)="importImage(-1, index, $event)"
+                    />
+                    ⇪
+                  </label>
+                  <button type="button" class="danger" (click)="removeVariant(-1, index)">×</button>
+                </li>
+              } @empty {
+                <li class="empty">{{ 'ui.editor.asset.noVariants' | t }}</li>
+              }
+            </ul>
+            <button
+              type="button"
+              [disabled]="surfaceVariants().length >= maxVariants"
+              (click)="addVariant(-1)"
+            >
+              {{ 'ui.editor.asset.addVariant' | t }}
+            </button>
+            <p class="hint">
+              {{
+                'ui.editor.asset.surfaceSize'
+                  | t: { width: geometry().width, height: geometry().surfaceHeight }
+              }}
+            </p>
+          </div>
+        }
+
+        @case ('elevation') {
+          <div class="fields">
+            <p class="hint">{{ 'ui.editor.asset.elevationHint' | t }}</p>
+
+            <p class="level-row">
+              <span class="level-name">{{ 'ui.editor.asset.levelZero' | t }}</span>
+              <span class="hint">{{ 'ui.editor.asset.levelZeroHint' | t }}</span>
+            </p>
+
+            @for (level of levels(); track $index; let index = $index) {
+              <section class="level">
+                <header>
+                  <span class="level-name">
+                    {{ 'ui.editor.asset.level' | t: { level: index + 1 } }}
+                  </span>
+                  <input
+                    type="text"
+                    [value]="level.name ?? ''"
+                    [placeholder]="'ui.editor.asset.levelName' | t"
+                    (change)="renameLevel(index + 1, $event)"
+                  />
+                  <button type="button" class="danger" (click)="removeLevel(index + 1)">×</button>
+                </header>
+                <ul class="variants">
+                  @for (variant of level.variants; track variant.id; let vi = $index) {
+                    <li [class.open]="isOpen(index + 1, vi)">
+                      <button type="button" class="pick" (click)="openVariant(index + 1, vi)">
+                        <span class="vid">{{ variant.id }}</span>
+                        <span class="asset">{{ variant.asset }}</span>
+                      </button>
+                      <label class="import" [title]="'ui.editor.asset.import' | t">
+                        <input
+                          type="file"
+                          accept="image/png,image/*"
+                          (change)="importImage(index + 1, vi, $event)"
+                        />
+                        ⇪
+                      </label>
+                      <button type="button" class="danger" (click)="removeVariant(index + 1, vi)">
+                        ×
+                      </button>
+                    </li>
+                  } @empty {
+                    <li class="empty">{{ 'ui.editor.asset.noVariants' | t }}</li>
+                  }
+                </ul>
+                <button
+                  type="button"
+                  [disabled]="level.variants.length >= maxVariants"
+                  (click)="addVariant(index + 1)"
+                >
+                  {{ 'ui.editor.asset.addVariant' | t }}
+                </button>
+              </section>
+            }
+
+            <button type="button" [disabled]="levels().length >= maxLevels" (click)="addLevel()">
+              {{ 'ui.editor.asset.addLevel' | t }}
+            </button>
+
+            @if (levels().length > 0) {
+              <section class="repeat">
+                <h4>{{ 'ui.editor.asset.beyond' | t: { level: levels().length + 1 } }}</h4>
+                <div class="modes">
+                  @for (mode of ['last', 'level', 'pattern']; track mode) {
+                    <button
+                      type="button"
+                      [class.active]="repeatMode() === mode"
+                      (click)="setRepeatMode($any(mode))"
+                    >
+                      {{ 'ui.editor.asset.repeat.' + mode | t }}
+                    </button>
+                  }
+                </div>
+
+                @switch (repeatMode()) {
+                  @case ('last') {
+                    <p class="hint">
+                      {{ 'ui.editor.asset.repeat.lastHint' | t: { level: levels().length } }}
+                    </p>
+                  }
+                  @case ('level') {
+                    <label>
+                      {{ 'ui.editor.asset.repeat.source' | t }}
+                      <select (change)="setRepeatLevel($event)">
+                        @for (number of levelNumbers(); track number) {
+                          <!-- `selected` on the option, not `value` on the
+                                 select: the binding runs before the options
+                                 exist, so the select would show the first one
+                                 while the file held another. -->
+                          <option [value]="number" [selected]="number === repeatLevel()">
+                            {{ 'ui.editor.asset.level' | t: { level: number } }}
+                          </option>
+                        }
+                      </select>
+                    </label>
+                  }
+                  @case ('pattern') {
+                    <p class="hint">{{ 'ui.editor.asset.repeat.patternHint' | t }}</p>
+                    <div class="pattern">
+                      @for (number of levelNumbers(); track number) {
+                        <button
+                          type="button"
+                          [class.active]="inPattern(number)"
+                          (click)="togglePatternLevel(number)"
+                        >
+                          {{ 'ui.editor.asset.level' | t: { level: number } }}
+                        </button>
+                      }
+                    </div>
+                  }
+                }
+              </section>
+            }
+
+            <p class="hint">
+              {{
+                'ui.editor.asset.elevationSize'
+                  | t
+                    : {
+                        width: geometry().width,
+                        height: geometry().elevationHeight,
+                        shoulder: shoulderDepth(),
+                        faces: faceHeight(),
+                      }
+              }}
+            </p>
+            <p class="hint">{{ 'ui.editor.asset.facesHint' | t }}</p>
+          </div>
+        }
+
+        @case ('geometry') {
+          <div class="fields">
+            <p class="hint">{{ 'ui.editor.asset.geometryHint' | t }}</p>
+            <label>
+              {{ 'ui.editor.asset.geometry.width' | t }}
+              <input
+                type="number"
+                min="1"
+                [max]="maxImageSize"
+                [value]="geometry().width"
+                (change)="changeGeometry('width', $event)"
+              />
+            </label>
+            <label>
+              {{ 'ui.editor.asset.geometry.flatHeight' | t }}
+              <input
+                type="number"
+                min="1"
+                [max]="maxImageSize"
+                [value]="geometry().flatHeight"
+                (change)="changeGeometry('flatHeight', $event)"
+              />
+            </label>
+            <label>
+              {{ 'ui.editor.asset.geometry.surfaceHeight' | t }}
+              <input
+                type="number"
+                min="1"
+                [max]="maxImageSize"
+                [value]="geometry().surfaceHeight"
+                (change)="changeGeometry('surfaceHeight', $event)"
+              />
+            </label>
+            <label>
+              {{ 'ui.editor.asset.geometry.elevationHeight' | t }}
+              <input
+                type="number"
+                min="1"
+                [max]="maxImageSize"
+                [value]="geometry().elevationHeight"
+                (change)="changeGeometry('elevationHeight', $event)"
+              />
+            </label>
+            <label>
+              {{ 'ui.editor.asset.geometry.elevationStep' | t }}
+              <input
+                type="number"
+                min="1"
+                [max]="maxImageSize"
+                [value]="geometry().elevationStep"
+                (change)="changeGeometry('elevationStep', $event)"
+              />
+            </label>
+            <p class="hint">
+              {{ 'ui.editor.asset.geometry.stepHint' | t: { faces: faceHeight() } }}
+            </p>
+          </div>
+        }
+      }
+    } @else {
+      <p class="empty">{{ 'ui.editor.asset.noTileOpen' | t }}</p>
+    }
+
+    <section class="issues">
+      <h4>{{ 'ui.editor.asset.issues' | t }}</h4>
+      @for (issue of issues(); track issue.code + issue.path) {
+        <p class="issue" [class.error]="issue.severity === 'error'">
+          <span class="code">{{ issue.code }}</span>
+          <span class="where">{{ issue.path }}</span>
+          <span>{{ issue.message }}</span>
+        </p>
+      } @empty {
+        <p class="hint">{{ 'ui.editor.asset.noIssues' | t }}</p>
+      }
+    </section>
+  </div>
+</app-asset-workspace>

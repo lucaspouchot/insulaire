@@ -12,17 +12,12 @@
  * (`docs/adr/ADR-0014-hex-coordinate-model.md`).
  */
 
-import {
-  TileArt,
-  TileArtGeometry,
-  faceHeight,
-  shoulderLine,
-} from '../content/content-types';
+import { TileArt, TileArtGeometry, faceHeight, shoulderLine } from '../content/content-types';
 import { Offset } from '../core/hex/hex-coords';
 import { HexLayout, Point } from '../core/hex/hex-layout';
 import { SpriteSource } from './character-renderer';
 import { Projection } from './projection';
-import { projectionRatiosOf, resolveTileRender, variantRoll } from './tile-art';
+import { CellArt, projectionRatiosOf, resolveTileRender, variantRoll } from './tile-art';
 
 /** Colours the preview draws with; chrome, never content. */
 const CHROME = {
@@ -43,6 +38,15 @@ export interface PreviewCell {
   /** Colour drawn when the images are not loaded. */
   readonly fallbackColor: string;
   readonly elevation: number;
+  /**
+   * Which variants this cell draws, overriding the roll.
+   *
+   * The map rolls a variant per cell so a field does not repeat, and the editor
+   * needs the opposite: the cell being painted must show the image being
+   * painted, not whichever one the hash chose
+   * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+   */
+  readonly choice?: CellArt;
 }
 
 /** How a preview board is laid out on the canvas. */
@@ -52,15 +56,31 @@ export interface PreviewLayout {
   /** Where the hex plane's origin lands on the canvas, in CSS pixels. */
   readonly originX: number;
   readonly originY: number;
+  /** What the board actually occupies, padding included, in CSS pixels. */
+  readonly contentWidth: number;
+  readonly contentHeight: number;
 }
+
+/**
+ * Smallest hexagon the framing will produce, in CSS pixels.
+ *
+ * Only there to keep a degenerate box from asking for a size of zero: a real
+ * one is decided by whichever side of the frame is tighter.
+ */
+const MIN_HEX_SIZE = 0.5;
 
 /**
  * The layout that fits `cells` into `width x height`, whole hexes and centred.
  *
- * The hex size is a real number rather than a whole one: a hexagon has no
- * pixel grid of its own, and the images inside it are blitted with smoothing
- * off. What the editor keeps whole is the **pixel editor's** zoom, which is
- * where a click has to land on the pixel it points at.
+ * The hex size is a real number rather than a whole one: a hexagon has no pixel
+ * grid of its own, and the images inside it are blitted with smoothing off.
+ *
+ * `zoom` overrides the fitting: it is **screen pixels per authored pixel**, the
+ * same unit the character stage zooms in, so a tile at `6` is a tile whose
+ * pixels are six-pixel blocks whatever the panel's size
+ * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`). The board is still
+ * centred, and {@link PreviewLayout.contentWidth} says how much room it wants —
+ * a caller with a scroller gives it that and lets the rest scroll.
  */
 export function fitPreview(
   cells: readonly PreviewCell[],
@@ -69,6 +89,7 @@ export function fitPreview(
   height: number,
   mode: 'topDown' | 'isometric' = 'isometric',
   padding = 12,
+  zoom: number | null = null,
 ): PreviewLayout {
   const { tilt, elevationRatio } = projectionRatiosOf(geometry);
   const probe = new HexLayout(1);
@@ -96,6 +117,14 @@ export function fitPreview(
     // height `n` is a stack of `n` images, each a step further down, and framing
     // to the top one alone crops the cliff out of its own preview.
     const steps = Math.max(0, cell.elevation);
+    if (steps === 0) {
+      // A cell on the ground draws no faces at all, so framing for a cliff it
+      // does not have leaves a third of the box empty under it — which matters
+      // now that the hexagon is what a tile is painted on
+      // (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+      maxY = Math.max(maxY, top + geometry.surfaceHeight * perPixel);
+      continue;
+    }
     maxY = Math.max(
       maxY,
       top +
@@ -109,21 +138,36 @@ export function fitPreview(
       projection: Projection.from(mode, 1, tilt, elevationRatio),
       originX: 0,
       originY: 0,
+      contentWidth: 0,
+      contentHeight: 0,
     };
   }
 
   const usableWidth = Math.max(1, width - padding * 2);
   const usableHeight = Math.max(1, height - padding * 2);
-  const size = Math.max(
-    2,
+  // No floor beyond "not zero": a hexagon too small to read is a legible
+  // answer to a box too small to draw in, and a *minimum* size is not — it
+  // makes the board overflow a short box, which the frame then clips. The
+  // preview scales; it never crops
+  // (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+  const fitted = Math.max(
+    MIN_HEX_SIZE,
     Math.min(usableWidth / Math.max(1e-6, maxX - minX), usableHeight / Math.max(1e-6, maxY - minY)),
   );
+  // An asked-for zoom is in authored pixels; the probe says what one hexagon of
+  // size 1 measures, and the ratio is the size that makes the two agree.
+  const size =
+    zoom === null
+      ? fitted
+      : Math.max(MIN_HEX_SIZE, (geometry.width * zoom) / Math.max(1e-6, probe.hexWidth));
 
   return {
     layout: new HexLayout(size),
     projection: Projection.from(mode, size, tilt, elevationRatio),
     originX: width / 2 - ((minX + maxX) / 2) * size,
     originY: height / 2 - ((minY + maxY) / 2) * size,
+    contentWidth: (maxX - minX) * size + padding * 2,
+    contentHeight: (maxY - minY) * size + padding * 2,
   };
 }
 
@@ -155,6 +199,70 @@ export function drawPreview(
   context.restore();
 }
 
+/** Where one image of a cell lands on the canvas, in CSS pixels. */
+export interface PreviewImageBox {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * A point on the canvas, in the coordinates the boxes below are given in.
+ *
+ * `drawPreview` translates the context by the layout's origin and then draws
+ * every cell in the hex plane's own coordinates, so a box and a click are in
+ * two different frames. This is the one place that says so: a caller turning a
+ * pointer into a pixel goes through here first
+ * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+ */
+export function previewPointOf(point: Point, view: PreviewLayout): Point {
+  return { x: point.x - view.originX, y: point.y - view.originY };
+}
+
+/**
+ * Where a cell's image of `kind` is blitted, at `drop` steps down the stack.
+ *
+ * In the **hex plane's** coordinates, which is the frame `drawPreviewCell`
+ * draws in — put a pointer through {@link previewPointOf} before comparing.
+ *
+ * The editor's other half of `drawPreviewCell`: a click on the hexagon has to
+ * come back as a pixel of the image under it, and the only way the two cannot
+ * drift is for both to read this
+ * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`,
+ * `docs/adr/ADR-0030-the-editor-paints-its-sprites.md` for the character
+ * precedent).
+ */
+export function previewImageBox(
+  cell: PreviewCell,
+  geometry: TileArtGeometry,
+  view: PreviewLayout,
+  kind: ImageKind,
+  drop = 0,
+): PreviewImageBox {
+  const { layout, projection } = view;
+  const centre = projection.project(layout.centerOf(cell.at), cell.elevation);
+  const width = layout.hexWidth;
+  const left = centre.x - width / 2;
+  const top = centre.y - (layout.hexHeight * projection.tilt) / 2;
+  const perPixel = width / Math.max(1, geometry.width);
+
+  if (kind === 'flat') {
+    const height = geometry.flatHeight * perPixel;
+    return { x: left, y: centre.y - height / 2, width, height };
+  }
+  if (kind === 'surface') {
+    return { x: left, y: top, width, height: geometry.surfaceHeight * perPixel };
+  }
+  const shoulder = top + shoulderLine(geometry) * perPixel;
+  return {
+    x: left,
+    y: shoulder + drop * projection.elevationStep,
+    width,
+    height: geometry.elevationHeight * perPixel,
+  };
+}
+
 function drawPreviewCell(
   context: CanvasRenderingContext2D,
   cell: PreviewCell,
@@ -162,13 +270,7 @@ function drawPreviewCell(
   view: PreviewLayout,
   images: SpriteSource | null,
 ): void {
-  const { layout, projection } = view;
-  const centre = projection.project(layout.centerOf(cell.at), cell.elevation);
-  const width = layout.hexWidth;
-  const left = centre.x - width / 2;
-  const top = centre.y - (layout.hexHeight * projection.tilt) / 2;
-  const perPixel = width / Math.max(1, geometry.width);
-  const shoulder = top + shoulderLine(geometry) * perPixel;
+  const { projection } = view;
 
   // The preview stands on the ground, so its faces reach all the way down —
   // there is no neighbour to hide them behind.
@@ -179,6 +281,7 @@ function drawPreviewCell(
     cell.elevation,
     0,
     variantRoll(cell.at.col, cell.at.row, cell.tileId),
+    cell.choice ?? {},
   );
 
   // A flat cell is one image over the whole hexagon, or the colour when the
@@ -190,8 +293,8 @@ function drawPreviewCell(
       fillSilhouette(context, cell, view, cell.fallbackColor);
       return;
     }
-    const height = geometry.flatHeight * perPixel;
-    context.drawImage(image, left, centre.y - height / 2, width, height);
+    const box = previewImageBox(cell, geometry, view, 'flat');
+    context.drawImage(image, box.x, box.y, box.width, box.height);
     return;
   }
 
@@ -209,19 +312,15 @@ function drawPreviewCell(
     if (image === null) {
       continue;
     }
-    context.drawImage(
-      image,
-      left,
-      shoulder + layer.drop * projection.elevationStep,
-      width,
-      geometry.elevationHeight * perPixel,
-    );
+    const box = previewImageBox(cell, geometry, view, 'elevation', layer.drop);
+    context.drawImage(image, box.x, box.y, box.width, box.height);
     drewSomething = true;
   }
   if (render.surface !== null) {
     const image = images?.image(render.surface) ?? null;
     if (image !== null) {
-      context.drawImage(image, left, top, width, geometry.surfaceHeight * perPixel);
+      const box = previewImageBox(cell, geometry, view, 'surface');
+      context.drawImage(image, box.x, box.y, box.width, box.height);
       drewSomething = true;
     }
   }

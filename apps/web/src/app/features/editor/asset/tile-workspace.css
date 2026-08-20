@@ -1,17 +1,16 @@
-/* Browser, stage, inspector: the shape the character editor uses, with a third
-   column because an asset editor browses as well as edits. */
+/* The tiles category. The frame around it — toolbar, three columns, dock — is
+   `asset-workspace.css`; what is here dresses the four slots this category
+   fills (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+
+/* This category is the flex item beside `asset-editor-page.ts`'s rail: it grows
+   into the rest of the row, and `min-width: 0` is what lets the grid inside it
+   be narrower than its widest child rather than pushing past the window. */
 :host {
   display: block;
-  height: 100%;
+  flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
-}
-
-.asset-editor {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
 }
 
 .toolbar {
@@ -25,6 +24,37 @@
 
 .toolbar .spacer {
   flex: 1;
+}
+
+/* Zoom, fit and the grid: beside the file name, in the one bar every surface
+   shares (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+.toolbar .view {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 8px;
+}
+
+.toolbar .view .readout {
+  min-width: 34px;
+  font-family: var(--mono);
+  font-size: 11px;
+  text-align: center;
+  color: var(--text-dim);
+}
+
+.toolbar .view button {
+  font-size: 11px;
+  padding: 2px 7px;
+}
+
+.toolbar .toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 8px;
+  font-size: 11px;
+  color: var(--text-dim);
 }
 
 .toolbar .path {
@@ -71,48 +101,13 @@
   border: 1px solid var(--border);
 }
 
-.columns {
-  display: grid;
-  grid-template-columns: 240px minmax(0, 1fr) 340px;
-  gap: 12px;
-  padding: 12px;
-  flex: 1;
-  min-height: 0;
-}
-
-/* ------------------------------------------------------------------ browser */
+/* --------------------------------------------------------------------- list */
 
 .browser {
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-height: 0;
-}
-
-.categories {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.categories button {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  text-align: left;
-}
-
-.categories button.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #11161d;
-}
-
-.badge {
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-dim);
 }
 
 .tiles {
@@ -184,22 +179,31 @@
   color: var(--error);
 }
 
-/* -------------------------------------------------------------------- stage */
+/* -------------------------------------------------------------------- scene */
 
-.stage {
+/* The hexagon, and nothing else. It had a flat copy of the same image under it
+   for one version of this editor, which meant two surfaces showing the same
+   pixels, neither of them big enough
+   (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+.tile-scene {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
   min-height: 0;
   min-width: 0;
 }
 
+/* One line, always: every line this bar wraps onto is a line the hexagon under
+   it does not get (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
 .preview-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  min-width: 0;
   font-size: 11px;
   color: var(--text-dim);
+  white-space: nowrap;
 }
 
 .preview-bar .spacer {
@@ -217,21 +221,70 @@
   gap: 4px;
 }
 
+/* The first thing to give up room: it is the only thing in the bar that is not
+   a control. */
 .geometry-note {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
   font-family: var(--mono);
 }
 
+/* `min-height: 0` and no `overflow: hidden`: the canvas is drawn to whatever
+   box this ends up being, and `fitPreview()` scales the board to fit it. What
+   used to be here was a floor of 200px and a clip, which is a crop with extra
+   steps (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+/* `hidden` while fitting: the canvas is sized from this element's client box,
+   so a scrollbar would shrink the box, shrink the canvas and remove itself —
+   a loop the resize observer runs at frame rate
+   (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). At a zoom the board
+   is larger than the panel on purpose, and then it scrolls. */
 .preview-canvas {
   flex: 1;
-  min-height: 200px;
+  min-height: 0;
+  overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg);
-  overflow: hidden;
 }
 
+/* A belt beside the braces: the canvas is sized in script from this box, and a
+   frame that cannot be overflowed is what keeps a stale size from being drawn
+   over the inspector while the observer catches up. */
 .preview-canvas canvas {
   display: block;
+  /* Nearest-neighbour to the screen: the hexagon is where the pixels are
+     judged now, so it may not resample them. */
+  image-rendering: pixelated;
+}
+
+.preview-canvas.zoomed {
+  overflow: auto;
+}
+
+.preview-canvas.painting {
+  user-select: none;
+  touch-action: none;
+}
+
+.preview-canvas canvas.paint {
+  cursor: crosshair;
+}
+
+.preview-canvas canvas.pick {
+  cursor: copy;
+}
+
+.preview-bar .toggle.on {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+}
+
+.preview-bar button {
+  padding: 2px 7px;
+  font-size: 11px;
 }
 
 /* ---------------------------------------------------------------- inspector */

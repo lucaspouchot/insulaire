@@ -122,7 +122,11 @@ column; ADR-0036 replaced that with faces that follow the surface, because
 alternating read as courses of masonry rather than as one cut.)*
 
 **The asset editor is the tool, and its preview is the renderer.** It browses by
-category so that objects and decorations are entries rather than new screens;
+category so that objects and decorations are entries rather than new screens
+*(and so, since `docs/adr/ADR-0039-one-editor-for-everything-drawn.md`, are
+characters: the category list is now what routes the module, the pixel editor
+below is shared by every category, and the alpha this paragraph calls a tile's
+privilege is available to all of them)*;
 it draws its preview through `HexLayout`, `Projection` and the same resolver;
 and it paints the images through `SpriteDocument`, which grew a flood fill, a
 movable rectangular selection and an alpha for this. The alpha is the one thing

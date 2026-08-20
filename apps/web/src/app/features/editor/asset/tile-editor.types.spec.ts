@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { TileDefinition } from '../../../../content/content-types';
+import { ASSET_CATEGORIES, assetCategory } from './asset-categories';
 import {
-  ASSET_CATEGORIES,
   SURFACE_LEVEL,
   artOf,
   blankTile,
@@ -17,26 +17,45 @@ import {
   variantAt,
   variantLetter,
   variantsOf,
-} from './asset-editor.types';
+} from './tile-editor.types';
 
 /**
  * The asset editor's decisions, tested without Angular.
  *
- * The component owns signals and a canvas; everything that can be wrong about
- * *what it does* — the id it proposes, the art it writes, the rule it records —
- * lives in the module this exercises, which is the same split the character
- * editor uses.
+ * The components own signals and a canvas; everything that can be wrong about
+ * *what they do* — which categories exist, the id a tile proposes, the art it
+ * writes, the rule it records — lives in the two modules this exercises, which
+ * is the same split `character-editor.types.ts` uses
+ * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
  */
-describe('asset editor', () => {
+describe('asset categories', () => {
+  it('opens tiles and characters, and declares the ones still coming', () => {
+    expect(ASSET_CATEGORIES[0]).toMatchObject({ id: 'tiles', status: 'available' });
+    // Characters used to be a module of their own; they are a category now
+    // (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+    expect(assetCategory('characters')).toMatchObject({ status: 'available' });
+    // Declared rather than hidden: the rail is the map of what the tool will be.
+    expect(ASSET_CATEGORIES.filter((entry) => entry.status === 'planned').length).toBeGreaterThan(
+      0,
+    );
+  });
+
+  it('gives every category a label and a summary to route with', () => {
+    for (const entry of ASSET_CATEGORIES) {
+      expect(entry.titleKey.startsWith('ui.editor.asset.categories.')).toBe(true);
+      expect(entry.summaryKey.startsWith('ui.editor.asset.categories.')).toBe(true);
+    }
+  });
+
+  it('answers nothing for a category nobody registered', () => {
+    expect(assetCategory('sounds')).toBeUndefined();
+  });
+});
+
+describe('tile workspace', () => {
   function tile(): TileDefinition {
     return blankTile('grass', 'Grass');
   }
-
-  it('offers tiles first and declares the categories that are still coming', () => {
-    expect(ASSET_CATEGORIES[0]).toMatchObject({ id: 'tiles', status: 'available' });
-    // Declared rather than hidden: the browser is the map of what the tool will be.
-    expect(ASSET_CATEGORIES.filter((entry) => entry.status === 'planned').length).toBeGreaterThan(0);
-  });
 
   it('creates a tile that draws a colour until it is given art', () => {
     const created = tile();

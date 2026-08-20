@@ -104,8 +104,9 @@ resolves a definition passed in, which is what the editor needs for content it
 is still writing. Resolution is total, so an unfinished definition previews as
 whatever it currently is.
 
-**The editor is generic.** `/editor/character` creates and edits definitions of
-any category; the player's is simply the first one this project ships. Its
+**The editor is generic.** `/editor/asset/characters` — `/editor/character`
+until `docs/adr/ADR-0039-one-editor-for-everything-drawn.md` moved it — creates
+and edits definitions of any category; the player's is simply the first one this project ships. Its
 preview is the real `control-field`, the real resolver and the real renderer, so
 what an author sees is what a player gets.
 

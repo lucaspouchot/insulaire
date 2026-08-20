@@ -26,7 +26,8 @@ function sourceOf(image: (asset: string) => CanvasImageSource | null): SpriteSou
  * upstream — which variant, which tint, which box — was decided by the Rust
  * resolver, so these tests record calls rather than pixels.
  */
-function recordingContext() {
+function recordingContext(pixels?: number[]) {
+  const data = Uint8ClampedArray.from(pixels ?? []);
   return {
     fillStyle: '',
     strokeStyle: '',
@@ -40,6 +41,11 @@ function recordingContext() {
     restore: vi.fn(),
     translate: vi.fn(),
     scale: vi.fn(),
+    // The scratch canvas of `tinted()`: what `drawImage` put there is whatever
+    // the caller seeded, and the tint is arithmetic on it.
+    getImageData: vi.fn(() => ({ data })),
+    putImageData: vi.fn(),
+    data,
   };
 }
 
@@ -271,12 +277,11 @@ describe('drawCharacter', () => {
   });
 
   /**
-   * A tinted sprite goes through an offscreen canvas — multiply for the shading,
-   * then `destination-in` to put the alpha back — so what reaches the page is
-   * the recoloured sprite rather than a rectangle of paint.
+   * A tinted sprite goes through an offscreen canvas, so what reaches the page
+   * is the recoloured sprite rather than a rectangle of paint.
    */
   it('recolours a tinted sprite through an offscreen canvas', () => {
-    const scratch = recordingContext();
+    const scratch = recordingContext([255, 255, 255, 255]);
     const element = { width: 0, height: 0, getContext: () => scratch };
     const created = vi
       .spyOn(document, 'createElement')
@@ -306,10 +311,77 @@ describe('drawCharacter', () => {
     // The scratch canvas is the sprite's own size, not the zoomed one.
     expect(element.width).toBe(24);
     expect(element.height).toBe(30);
-    expect(scratch.fillStyle).toBe('#8b5a2b');
-    expect(scratch.globalCompositeOperation).toBe('destination-in');
+    // A white pixel comes out as the tint itself: that is what makes one
+    // greyscale sprite serve every colour.
+    expect([...scratch.data]).toEqual([0x8b, 0x5a, 0x2b, 255]);
+    expect(scratch.putImageData).toHaveBeenCalled();
     // What lands on the page is the scratch canvas, at the zoomed box.
     expect(context.drawImage).toHaveBeenCalledWith(element, 64, 40, 72, 90);
+  });
+
+  /**
+   * The reason ADR-0030 forbade partial alpha on a character, and the reason
+   * ADR-0039 could allow it.
+   *
+   * The old pipeline multiplied an opaque fill over the scratch canvas, which
+   * blends *and* composites: where a pixel was half there, half the tint
+   * arrived at full strength, so a mid-grey at alpha 128 came back at roughly
+   * `(105, 68, 32)` — visibly paler than its own shade, a halo in the tint's
+   * colour. Multiplying the RGB and leaving the alpha alone gives the shade it
+   * was drawn as, at the alpha it was drawn at.
+   */
+  it('tints a half-transparent pixel by its shade, not toward the flat tint', () => {
+    const scratch = recordingContext([128, 128, 128, 128, 0, 0, 0, 0]);
+    const element = { width: 0, height: 0, getContext: () => scratch };
+    const created = vi
+      .spyOn(document, 'createElement')
+      .mockReturnValue(element as unknown as HTMLElement);
+    const image = {} as CanvasImageSource;
+
+    try {
+      drawCharacter(
+        recordingContext() as unknown as CanvasRenderingContext2D,
+        character([
+          { layer: 'hair', variant: 'soft', rect: [0, 0, 2, 1], asset: 'h.png', tint: '#8b5a2b' },
+        ]),
+        BOX,
+        sourceOf(() => image),
+      );
+    } finally {
+      created.mockRestore();
+    }
+
+    // 128 x 139 / 255, 128 x 90 / 255, 128 x 43 / 255 — and the alpha untouched.
+    expect([...scratch.data].slice(0, 4)).toEqual([70, 45, 22, 128]);
+    // A fully clear pixel is left exactly as it was: no tint spills into the
+    // transparent margin.
+    expect([...scratch.data].slice(4)).toEqual([0, 0, 0, 0]);
+  });
+
+  /** An unreadable tint leaves the sprite alone rather than painting it black. */
+  it('draws the sprite as authored when the tint is not a colour', () => {
+    const scratch = recordingContext([200, 100, 50, 255]);
+    const element = { width: 0, height: 0, getContext: () => scratch };
+    const created = vi
+      .spyOn(document, 'createElement')
+      .mockReturnValue(element as unknown as HTMLElement);
+    const image = {} as CanvasImageSource;
+
+    try {
+      drawCharacter(
+        recordingContext() as unknown as CanvasRenderingContext2D,
+        character([
+          { layer: 'hair', variant: 'v', rect: [0, 0, 1, 1], asset: 'h.png', tint: 'not a colour' },
+        ]),
+        BOX,
+        sourceOf(() => image),
+      );
+    } finally {
+      created.mockRestore();
+    }
+
+    expect([...scratch.data]).toEqual([200, 100, 50, 255]);
+    expect(scratch.putImageData).not.toHaveBeenCalled();
   });
 });
 

@@ -1,0 +1,157 @@
+/* The rail-and-list column, then the open category. Nothing here knows what is
+   in them (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+:host {
+  display: block;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.frame {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+}
+
+/* ---------------------------------------------------------------- the side */
+
+.side {
+  flex: 0 0 168px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+.rail {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.rail a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+  text-decoration: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+}
+
+.rail a:hover {
+  color: var(--text);
+  background: var(--bg-raised);
+}
+
+.rail a.active {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+  background: var(--bg-raised);
+}
+
+.rail a.planned {
+  opacity: 0.7;
+}
+
+.badge {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+/* What the open category browses: the rest of the column, scrolling on its own. */
+.side-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 6px;
+}
+
+/* ---------------------------------------------------------------- the main */
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.frame-toolbar {
+  flex: none;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  padding: 10px 12px 10px 10px;
+  gap: 0;
+}
+
+.scene {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* The grab handle between the two. Wider than it looks, because a 1px target
+   is a target nobody hits. */
+.divider {
+  flex: none;
+  width: 10px;
+  margin: 0 1px;
+  cursor: ew-resize;
+  touch-action: none;
+  background: linear-gradient(
+    to right,
+    transparent 4px,
+    var(--border) 4px,
+    var(--border) 6px,
+    transparent 6px
+  );
+}
+
+.divider:hover {
+  background: linear-gradient(
+    to right,
+    transparent 3px,
+    var(--accent) 3px,
+    var(--accent) 7px,
+    transparent 7px
+  );
+}
+
+/* A container, so what is inside can lay itself out against the width the
+   author dragged to rather than against the window: the animation timeline is
+   three columns in a wide inspector and one in a narrow one, and the window
+   knows nothing about which. */
+/* `min-width: 0` is load-bearing: a flex item's minimum is its *content* by
+   default, so one wide child — a timeline of a dozen frames — silently pushes
+   the column past the width the author dragged to, and then the divider cannot
+   pull it back. The width here is the author's, and what is inside scrolls. */
+.inspector {
+  flex: none;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  container-type: inline-size;
+}
+
+@media (max-width: 1200px) {
+  .side {
+    flex-basis: 140px;
+  }
+}

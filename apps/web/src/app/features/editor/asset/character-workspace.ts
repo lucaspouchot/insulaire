@@ -85,7 +85,10 @@ import {
   usesOptions,
   wouldLoop,
 } from './character-editor.types';
+import { AssetWorkspace } from './asset-workspace';
 import { CharacterAnimator } from './character-animator';
+import { PixelEditor, steppedZoom } from './pixel-editor';
+import { PixelTool, PixelTools } from './pixel-tools';
 import {
   CHARACTER_SCHEMA_VERSION,
   ContentRef,
@@ -115,12 +118,14 @@ import { LocaleAuthoringService } from '../../../services/locale-authoring.servi
 import { CharacterLibraryService } from '../../../services/character-library.service';
 import { CONTENT_ROOT, ProjectStoreService } from '../../../services/project-store.service';
 
-/** Height of the preview's drawing box, in CSS pixels.
+/**
+ * Smallest drawing box the fit will work with, in CSS pixels.
  *
- * Chosen so a 128-pixel-tall canvas — the shape most standing characters are
- * authored at — reaches a 3× zoom rather than stopping at 2×.
+ * Only a floor for a panel that has not been laid out yet: the box the fit
+ * actually uses is the frame's own, height included
+ * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
  */
-const PREVIEW_HEIGHT = 400;
+const MIN_STAGE = 120;
 
 /** Where an uploaded sprite goes: a convention, not a rule. */
 const ASSET_DIR = 'assets/characters';
@@ -147,7 +152,7 @@ const ZOOM_STEPS: readonly number[] = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32];
 const MAX_STAGE = 3072;
 
 /** From this zoom up, the stage rules the pixel grid. */
-const GRID_ZOOM = 8;
+const GRID_ZOOM = 6;
 
 /** Smallest a transparency square may get on screen, in CSS pixels. */
 const MIN_CHECKER = 6;
@@ -165,8 +170,6 @@ const MAX_BACKING = 4096;
 const RECENT_COLORS = 8;
 
 /** What a click on the stage does. */
-type PaintTool = 'pencil' | 'eraser' | 'picker';
-
 /** Colour of the bones drawn between a node and its parent. */
 const BONE_COLOR = 'rgba(122, 192, 255, 0.75)';
 
@@ -174,10 +177,17 @@ const BONE_COLOR = 'rgba(122, 192, 255, 0.75)';
 const JOINT_COLOR = '#7ac0ff';
 
 @Component({
-  selector: 'app-character-editor-page',
-  imports: [TranslatePipe, ControlField, CharacterAnimator],
-  templateUrl: './character-editor-page.html',
-  styleUrl: './character-editor-page.css',
+  selector: 'app-character-workspace',
+  imports: [
+    TranslatePipe,
+    ControlField,
+    AssetWorkspace,
+    CharacterAnimator,
+    PixelEditor,
+    PixelTools,
+  ],
+  templateUrl: './character-workspace.html',
+  styleUrl: './character-workspace.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
   // Undo is a keystroke wherever the pointer happens to be, so the listener is
   // on the document — and refuses to fire while a form field holds the caret.
@@ -188,7 +198,7 @@ const JOINT_COLOR = '#7ac0ff';
     '(window:beforeunload)': 'onUnload($event)',
   },
 })
-export class CharacterEditorPage implements AfterViewInit, OnDestroy {
+export class CharacterWorkspace implements AfterViewInit, OnDestroy {
   private readonly store = inject(ProjectStoreService);
   private readonly engine = inject(EngineService);
   private readonly i18n = inject(I18nService);
@@ -223,14 +233,40 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
   /** Whole-number zoom the preview settled on, for the readout. */
   protected readonly zoom = signal(1);
 
-  /** `true` while the stage is a drawing surface rather than a preview. */
-  protected readonly painting = signal(false);
   /** What the pointer does on the stage. */
-  protected readonly tool = signal<PaintTool>('pencil');
+  protected readonly tool = signal<PixelTool>('pencil');
   /** The colour the pencil paints with. */
   protected readonly color = signal('#c9b28a');
+  /**
+   * Opacity of the pencil, `0..255`.
+   *
+   * Opaque by default and the author's to change: ADR-0030 forbade partial
+   * alpha on a character because the tint pipeline turned a soft edge into a
+   * pale halo, and the pipeline multiplies per pixel now
+   * (`character-renderer.ts`, ADR-0039).
+   */
+  protected readonly alpha = signal(255);
+  /**
+   * Which surface the scene shows.
+   *
+   * `composed` is ADR-0030's: the figure, painted where it stands, which is the
+   * only place the last three pixels can be judged. `flat` is the shared
+   * {@link PixelEditor} over the very same buffer — the same document, so a
+   * stroke in one is already in the other, and nothing has to be kept in step.
+   */
+  protected readonly scene = signal<'composed' | 'flat'>('composed');
   /** The zoom the author asked for; `null` fits the character to the stage. */
   protected readonly paintZoom = signal<number | null>(null);
+  /**
+   * Whether the pixel grid is drawn over the canvas.
+   *
+   * A view setting rather than a paint one: an author lining a cape up with a
+   * shoulder wants the grid without picking up a pencil
+   * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+   */
+  protected readonly showGrid = signal(true);
+  /** The flat view's zoom, so the file bar steps whichever surface is open. */
+  protected readonly flatZoom = signal(6);
   /** Colours used lately, so a tone carries from one sprite to the next. */
   private readonly recent = signal<readonly string[]>([]);
   /** Bumped by every stroke, so the palette and the buttons re-read the pixels. */
@@ -466,9 +502,19 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
    * Never on a mirror: it has no tracks of its own, and a drag that silently
    * edited the animation it reflects would move the *other* direction too.
    */
+  /**
+   * Whether a drag on the stage moves the open node instead of painting it.
+   *
+   * The stage has one pointer and two jobs, and what decides between them is
+   * **which panel is open**: an author with the animation editor in front of
+   * them is placing a limb, and one with the layers panel open is drawing. It
+   * used to be the paint toggle, and the paint toggle is gone
+   * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`). The hint under
+   * the stage says which one a drag will do.
+   */
   protected readonly posable = computed(
     () =>
-      !this.painting() &&
+      this.tab() === 'animation' &&
       this.animation() !== null &&
       this.animation()?.mirrorOf == null &&
       this.layer() !== null,
@@ -585,17 +631,20 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
     effect(() => {
       this.resolved();
       this.strokes();
-      this.painting();
       this.paintZoom();
+      this.showGrid();
+      this.scene();
       this.draw();
     });
     // Every sprite the character draws is opened, not just the one being
     // edited: that is what makes the palette the *character's* palette, and
     // what makes switching layers instant rather than a decode away.
+    //
+    // The flat view needs them too, and needs them without paint mode: it *is*
+    // the image, so arriving there with nothing decoded showed "open an image"
+    // over a layer that was already selected
+    // (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
     effect(() => {
-      if (!this.painting()) {
-        return;
-      }
       for (const drawn of this.resolved()?.layers ?? []) {
         this.requireSprite(drawn.asset);
       }
@@ -1782,14 +1831,21 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
 
   // ------------------------------------------------------------------ pixels
 
-  /** Turns the stage into a drawing surface, or back into a preview. */
-  protected togglePaint(): void {
-    this.finishStroke();
-    this.painting.update((on) => !on);
+  protected setTool(tool: PixelTool): void {
+    this.tool.set(tool);
   }
 
-  protected setTool(tool: PaintTool): void {
-    this.tool.set(tool);
+  /**
+   * A stroke the flat view made.
+   *
+   * It painted the same {@link SpriteDocument} the composed stage paints, so
+   * there is nothing to copy across — only the counter every palette, button
+   * and figure reads, and a redraw for when the scene switches back
+   * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+   */
+  protected onFlatPainted(): void {
+    this.strokes.update((count) => count + 1);
+    this.draw();
   }
 
   protected setColor(color: string): void {
@@ -1802,7 +1858,19 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
     return this.paintZoom() ?? this.zoom();
   }
 
+  /**
+   * Steps the zoom of whichever surface is open.
+   *
+   * One pair of buttons, in the file bar, for the composed stage and the flat
+   * view both: an author should not have to find a different control depending
+   * on which one they are looking at
+   * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+   */
   protected zoomBy(delta: number): void {
+    if (this.scene() === 'flat') {
+      this.flatZoom.set(steppedZoom(this.flatZoom(), delta));
+      return;
+    }
     const steps = this.zoomSteps();
     const from = steps.findIndex((step) => step >= this.effectiveZoom());
     const at = from < 0 ? steps.length - 1 : from;
@@ -1812,9 +1880,22 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
     }
   }
 
+  /** The zoom on screen, whichever surface is showing it. */
+  protected readonly shownZoom = computed(() =>
+    this.scene() === 'flat' ? this.flatZoom() : this.effectiveZoom(),
+  );
+
   /** Back to the zoom that fits the whole character in the stage. */
   protected fitZoom(): void {
+    if (this.scene() === 'flat') {
+      this.flatZoom.set(6);
+      return;
+    }
     this.paintZoom.set(null);
+  }
+
+  protected toggleGrid(): void {
+    this.showGrid.update((on) => !on);
   }
 
   /**
@@ -1837,7 +1918,7 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
     }
     const sprite = this.sprite();
     const at = this.pixelAt(event);
-    if (!this.painting() || sprite === null || at === null || !sprite.holds(at.x, at.y)) {
+    if (sprite === null || at === null || !sprite.holds(at.x, at.y)) {
       return;
     }
     event.preventDefault();
@@ -1973,7 +2054,7 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
       return;
     }
     const color = this.tool() === 'eraser' ? null : this.color();
-    if (sprite.stroke(from.x, from.y, x, y, color)) {
+    if (sprite.stroke(from.x, from.y, x, y, color, this.alpha())) {
       // Drawn here rather than through the effect: a pencil a frame behind the
       // pointer is a pencil nobody can aim.
       this.draw();
@@ -2019,7 +2100,7 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
 
   /** Undo and redo, wherever the pointer is — but never while typing. */
   protected onKeyDown(event: KeyboardEvent): void {
-    if (!this.painting() || isTyping(event.target) || !(event.ctrlKey || event.metaKey)) {
+    if (isTyping(event.target) || !(event.ctrlKey || event.metaKey)) {
       return;
     }
     const key = event.key.toLowerCase();
@@ -2073,7 +2154,6 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
         target.sprite = { ...target.sprite, asset: path };
       }
     });
-    this.painting.set(true);
   }
 
   /** Which variant of the open layer is the one on screen. */
@@ -2212,9 +2292,18 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
     // author looking closely at a sprite is not necessarily about to paint it.
     const explicit = this.paintZoom();
     const resolution = resolved?.resolution ?? this.resolution();
+    // Fitting means the *frame*, both ways. It used to mean the frame's width
+    // and a fixed 400px of height, which is why a fit in a tall panel left the
+    // figure small with a band of nothing under it, and why the box the click
+    // arithmetic used did not match the panel it was drawn in (ADR-0039).
     const width =
-      explicit === null ? Math.max(1, Math.floor(frame.clientWidth)) : resolution.width * explicit;
-    const height = explicit === null ? PREVIEW_HEIGHT : resolution.height * explicit;
+      explicit === null
+        ? Math.max(MIN_STAGE, Math.floor(frame.clientWidth))
+        : resolution.width * explicit;
+    const height =
+      explicit === null
+        ? Math.max(MIN_STAGE, Math.floor(frame.clientHeight))
+        : resolution.height * explicit;
 
     // The shell is zoomed by the interface scale, so a layout pixel is not a
     // screen pixel (`app/app.css`). The backing store follows the *screen*, or
@@ -2257,7 +2346,7 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
     this.paintTransparency(context, resolved.resolution, zoom, originX, originY);
     this.strokeCanvasBounds(context, resolved.resolution, zoom, originX, originY);
     drawCharacter(context, this.painted(resolved), box, this.source);
-    if (this.painting() && zoom >= GRID_ZOOM) {
+    if (this.showGrid() && zoom >= GRID_ZOOM) {
       this.strokeGrid(context, resolved.resolution, zoom, originX, originY);
     }
 
@@ -2361,7 +2450,7 @@ export class CharacterEditorPage implements AfterViewInit, OnDestroy {
    */
   private painted(resolved: ResolvedCharacter): ResolvedCharacter {
     const target = this.target();
-    if (!this.painting() || target === null || target.tint.length === 0) {
+    if (target === null || target.tint.length === 0) {
       return resolved;
     }
     return {

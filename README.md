@@ -167,10 +167,21 @@ into `demo_refuge` — whose own door leads back out.
 ### Other editors
 
 `/editor` is a shell with one tab per module (ADR-0019). **Maps**, **Title
-screen**, **Settings**, **Languages** and **Characters** are implemented;
-**Assets** and **Scenario** are registered and route to a placeholder describing
-what they will own. Adding one is an entry in `editor-modules.ts` plus a
-component.
+screen**, **Settings**, **Languages** and **Resources** are implemented;
+**Scenario** is registered and routes to a placeholder describing what it will
+own. Adding one is an entry in `editor-modules.ts` plus a component.
+
+**Resources** is where everything the game is *drawn from* is authored, one
+category per kind (ADR-0039). **Tiles** and **Characters** open today; objects,
+decorations and effects are listed and open a placeholder. Every category wears
+the same frame: the category rail on the left with that category's own list
+under it, the scene in the middle, the definition on the right, and a **divider
+you drag** between the two — a timeline wants a wide inspector and a figure
+wants a wide scene. They share one set of pixel tools — pencil, eraser,
+eyedropper, an opacity — and both paint **on the thing itself**: a character on
+the composed figure, a tile on its hexagon. Zoom, *Fit* and the pixel grid sit
+in the file bar, above whichever surface is open, so they are always in the same
+place.
 
 **Title screen** edits `menu/title-screen.json`: background, logo, splash,
 music, theme, and the buttons with their label keys. Images and music are
@@ -190,7 +201,7 @@ The application's own settings — volumes, interface scale, language, window
 size, seed — are *not* editable there, because they are not content: the
 application implements each one (`app/settings/engine-settings.schema.ts`).
 
-**Characters** edits `characters/*.json`: how a *kind* of character is drawn,
+**Resources → Characters** edits `characters/*.json`: how a *kind* of character is drawn,
 and what may be chosen about one (ADR-0028, ADR-0029). A character is composed
 of **sprites** on a pixel canvas it declares — up to 256 a side, chosen by
 whoever authors it.
@@ -209,12 +220,21 @@ pixel art. A **tint** recolours a sprite, either with a fixed colour or from a
 parameter: one greyscale hair sprite serves every hair colour instead of one
 image per colour.
 
-The preview is also where the sprites are **painted** (ADR-0030). *Paint* turns
-the stage into a drawing surface for the image behind the open layer: pencil,
-eraser, eyedropper (or hold Alt), undo with Ctrl+Z, and a whole-number zoom —
-Ctrl with the wheel, or the ± buttons. The palette offers the colours the
-character already uses, most-used first, so two layers stay on the same browns.
-A layer with no image can create a transparent one at its box's size.
+The scene is also where the sprites are **painted** (ADR-0030), and it always
+is — there is no paint mode to turn on. The composed figure is the drawing
+surface for the image behind the open layer: pencil, eraser, eyedropper (or hold
+Alt), an opacity, undo with Ctrl+Z, and a whole-number zoom from the file bar or
+Ctrl with the wheel. The palette offers the colours the character already uses,
+most-used first, so two layers stay on the same browns. A layer with no image
+can create a transparent one at its box's size.
+
+With the **Animation** panel open and an animation selected, a drag on the stage
+moves the open node at that frame instead of painting it — that is how a pose is
+authored, and the hint under the stage says which of the two a drag will do
+(ADR-0039).
+
+*Flat* switches the scene to that one sprite seen alone, with the same tools
+over the same buffer — a stroke in one view is already in the other.
 
 While painting, the edited layer is drawn **without its tint**: what the pencil
 writes is the file itself, so two greys are compared as greys. Pixels live in
@@ -354,7 +374,8 @@ apps/web/src/
   renderer/        framework-free Canvas renderer, camera, sprite registry
   engine/          boundary types + runtime WASM loader
   app/             Angular shell, services, editor modules, play page
-    features/editor/  shell + map editor + placeholder modules (ADR-0019)
+    features/editor/  shell + map, title, settings, locale and resource
+                      editors, and one placeholder page (ADR-0019, ADR-0039)
     build-features*.ts, app.routes*.ts   dev vs client build seam (ADR-0018)
 
 content/
@@ -610,8 +631,9 @@ types the application uses — including the whole change-map loop.
 - **A tick still advances one map.** Zones are authored, validated and edited,
   but the zone-wide tick they exist for is not written: maps outside the one the
   player stands on stay frozen (ADR-0021).
-- **The asset and scenario editors are placeholders** — registered tabs
-  describing what they will own, with no implementation (ADR-0019).
+- **The scenario editor is a placeholder** — a registered tab describing what
+  it will own, with no implementation (ADR-0019). So are three of the five
+  resource categories: objects, decorations and effects (ADR-0039).
 - **Characters are authored but not yet worn.** Definitions are edited,
   validated and resolved into drawable sprites, but no entity on the map is
   drawn from one and no screen offers a player its choices: map entities still
@@ -621,12 +643,15 @@ types the application uses — including the whole change-map loop.
 - **The shipped character's sprites are placeholders** — eight small PNGs under
   `content/assets/characters/`, there to exercise the pipeline, not to be
   looked at.
-- **No undo/redo outside the pixel tools**, no copy/paste in the editor. The
-  character editor's paint mode undoes the last 32 strokes, in memory only
-  (ADR-0030); nothing else in the editor undoes anything.
+- **No undo/redo outside the pixel tools**, no copy/paste in the editor. Paint
+  mode undoes the last 32 strokes, in memory only (ADR-0030); nothing else in
+  the editor undoes anything.
 - **The pixel tools are for retouching**, not for drawing a sprite from
-  scratch: no selection, no fill, no brush size, no sprite sheets. Art made
-  elsewhere still arrives through the ⤒ upload button (ADR-0030).
+  scratch: three tools, no fill, no selection, no brush size, no sub-layers, no
+  sprite sheets. Art made elsewhere still arrives through the ⤒ upload button
+  (ADR-0030, ADR-0039).
+- **A tile is painted on its hexagon** — there is no flat pixel view for tiles,
+  though the hexagon zooms like any other surface (ADR-0039).
 - **Only `pointy` orientation** is implemented; `flat` is in the schema and
   rejected by validation.
 - **Isometric relief is drawn, not simulated.** `elevation` lifts a cell and
@@ -686,6 +711,7 @@ Read in order:
 36. **ADR-0036 — a cell may choose its tile art, and a cliff may be borrowed**
 37. **ADR-0037 — a flat map is drawn from flat art, or from colour**
 38. **ADR-0038 — a map is drawn from shared pictures, and only once it has them**
+39. **ADR-0039 — one editor for everything the game is drawn from**
 
 `CLAUDE.md` contains project-level instructions for Claude Code and other coding
 agents.

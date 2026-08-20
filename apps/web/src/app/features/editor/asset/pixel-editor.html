@@ -1,0 +1,52 @@
+<div class="pixel-editor">
+  <app-pixel-tools
+    [tool]="tool()"
+    [color]="color()"
+    [alpha]="alpha()"
+    [canUndo]="canUndo()"
+    [canRedo]="canRedo()"
+    [enabled]="sprite() !== null"
+    [hasGuides]="geometry() !== null"
+    [showGuides]="showGuides()"
+    [palette]="palette()"
+    clearLabel="ui.editor.asset.clearAll"
+    (toolPicked)="setTool($event)"
+    (colorPicked)="setColor($event)"
+    (alphaPicked)="alpha.set($event)"
+    (undone)="undo()"
+    (redone)="redo()"
+    (cleared)="clear()"
+    (guidesToggled)="toggleGuides()"
+  />
+
+  <div class="stage-scroll">
+    @if (sprite() === null) {
+      <p class="empty">{{ 'ui.editor.asset.noImageOpen' | t }}</p>
+    } @else {
+      <canvas
+        #stage
+        (pointerdown)="onPointerDown($event)"
+        (pointermove)="onPointerMove($event)"
+        (pointerup)="onPointerUp()"
+        (pointercancel)="onPointerUp()"
+        (wheel)="onWheel($event)"
+      ></canvas>
+    }
+  </div>
+
+  <p class="hint">
+    @if (size(); as dimensions) {
+      <span class="target">{{ label() }}</span>
+      <span>{{
+        'ui.editor.asset.imageSize' | t: { width: dimensions.width, height: dimensions.height }
+      }}</span>
+    }
+    @if (unsaved()) {
+      <span class="dirty">{{ 'ui.editor.asset.imageUnsaved' | t }}</span>
+    }
+    @if (zoom() < gridZoom) {
+      <span>{{ 'ui.editor.asset.gridZoomHint' | t: { zoom: gridZoom } }}</span>
+    }
+    <span>{{ 'ui.editor.asset.paintHint' | t }}</span>
+  </p>
+</div>

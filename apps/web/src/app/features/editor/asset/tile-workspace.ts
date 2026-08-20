@@ -1,19 +1,21 @@
 /**
- * The asset editor.
+ * The **tiles** category of the asset editor.
  *
- * It edits the **resources a world is drawn from**. Tiles are the first kind it
- * can open — a browser on the left, a preview and the pixel tools in the
- * middle, the definition on the right — and the shape is deliberately not a
- * tile screen: a category is a row in {@link ASSET_CATEGORIES}, and objects,
- * decorations and effects arrive as entries rather than as new pages
- * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+ * One of the workspaces `asset-editor-page.ts` routes to, wearing the frame
+ * every category wears: the tile list on the left, the pixels in the middle,
+ * the definition on the right, and the hexagon in the dock
+ * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`). What a tile *is*
+ * and how its art resolves by level is
+ * `docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`.
  *
  * Three things this screen is careful about.
  *
  * **The preview is not a mock-up.** It draws with `HexLayout`, `Projection` and
  * the same resolver the map renderer uses, so a tile that looks right here
  * looks right on a map (`docs/adr/ADR-0014-hex-coordinate-model.md`,
- * `docs/adr/ADR-0016-isometric-projection.md`).
+ * `docs/adr/ADR-0016-isometric-projection.md`). It sits in the dock because it
+ * is *context* rather than the thing being edited — and because sharing a
+ * column with the pixel tools is what used to leave it clipped.
  *
  * **There is one copy of every image.** The pixel editor writes into a
  * {@link SpriteDocument}, and the preview draws from that same buffer — so a
@@ -60,18 +62,28 @@ import { SpriteDocument } from '../../../../content/sprite-document';
 import { serializeTileSet } from '../../../../content/tile-set-serializer';
 import { ValidationReport } from '../../../../engine/engine.types';
 import { SpriteCache, SpriteSource } from '../../../../renderer/character-renderer';
+import { CellArt } from '../../../../renderer/tile-art';
 import {
   ImageKind,
   PreviewCell,
+  PreviewLayout,
   drawPreview,
   fitPreview,
+  previewImageBox,
+  previewPointOf,
 } from '../../../../renderer/tile-preview';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
 import { ContentWorkspaceService } from '../../../services/content-workspace.service';
 import { EngineService } from '../../../services/engine.service';
-import { CONTENT_ROOT, ProjectStoreService, contentUrl } from '../../../services/project-store.service';
 import {
-  ASSET_CATEGORIES,
+  CONTENT_ROOT,
+  ProjectStoreService,
+  contentUrl,
+} from '../../../services/project-store.service';
+import { AssetWorkspace } from './asset-workspace';
+import { steppedZoom } from './pixel-editor';
+import { PixelTool, PixelTools } from './pixel-tools';
+import {
   ImageTarget,
   RepeatMode,
   FLAT_LEVEL,
@@ -91,43 +103,54 @@ import {
   sameTarget,
   variantAt,
   variantsOf,
-} from './asset-editor.types';
-import { TilePixelEditor } from './tile-pixel-editor';
+} from './tile-editor.types';
 
 /** The board the multi-tile preview lays out, in offset coordinates. */
 const BOARD_WIDTH = 3;
 const BOARD_HEIGHT = 3;
 
+/** Room left around the board, in CSS pixels. */
+const PREVIEW_PADDING = 12;
+
+/** Below this many screen pixels a square, a pixel grid is noise. */
+const GRID_ZOOM = 6;
+
 /** Highest elevation the preview will step to; enough to prove a repeat rule. */
 const MAX_PREVIEW_ELEVATION = 24;
 
 @Component({
-  selector: 'app-asset-editor-page',
-  imports: [TranslatePipe, TilePixelEditor],
-  templateUrl: './asset-editor-page.html',
-  styleUrl: './asset-editor-page.css',
+  selector: 'app-tile-workspace',
+  imports: [TranslatePipe, AssetWorkspace, PixelTools],
+  templateUrl: './tile-workspace.html',
+  styleUrl: './tile-workspace.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class AssetEditorPage implements AfterViewInit, OnDestroy {
+export class TileWorkspace implements AfterViewInit, OnDestroy {
   private readonly store = inject(ProjectStoreService);
   private readonly workspace = inject(ContentWorkspaceService);
   private readonly engine = inject(EngineService);
 
   private readonly previewRef = viewChild<ElementRef<HTMLCanvasElement>>('preview');
 
-  protected readonly categories = ASSET_CATEGORIES;
   protected readonly tabs = TILE_EDITOR_TABS;
   protected readonly maxLevels = MAX_ELEVATION_LEVELS;
   protected readonly maxVariants = MAX_TILE_VARIANTS;
   protected readonly maxImageSize = MAX_TILE_IMAGE_SIZE;
   protected readonly contentRoot = CONTENT_ROOT;
 
-  protected readonly category = signal('tiles');
   protected readonly tab = signal<TileEditorTab>('definition');
   protected readonly search = signal('');
   protected readonly tileSetId = signal<string | null>(null);
   protected readonly selectedTileId = signal<string | null>(null);
-  protected readonly previewElevation = signal(2);
+  /**
+   * How tall the painted cell stands.
+   *
+   * Flat on the ground by default: the hexagon is the drawing surface now
+   * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`), and a cell raised
+   * two steps spends most of the scene on a cliff nobody is painting. Opening a
+   * level raises it to that level, because a face has to exist to be drawn on.
+   */
+  protected readonly previewElevation = signal(0);
   protected readonly previewBoard = signal(false);
   /**
    * Which projection the preview draws in.
@@ -142,6 +165,38 @@ export class AssetEditorPage implements AfterViewInit, OnDestroy {
     this.tab() === 'flat' ? 'topDown' : 'isometric',
   );
   protected readonly openImage = signal<ImageTarget | null>(null);
+
+  /**
+   * Screen pixels per authored pixel; `null` fits the board to the panel.
+   *
+   * A tile is painted on its hexagon, so it needs the zoom a drawing surface
+   * needs — the same ladder the character stage and the flat view step through
+   * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+   */
+  protected readonly previewZoom = signal<number | null>(null);
+  /**
+   * The hexagon is a drawing surface, always.
+   *
+   * There is no mode: this screen exists to draw tiles, and a button that has
+   * to be pressed before the pencil works is a button in the way
+   * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+   */
+  /** Whether the pixel grid is drawn over the image being painted. */
+  protected readonly showGrid = signal(true);
+  protected readonly tool = signal<PixelTool>('pencil');
+  protected readonly color = signal('#8ec07c');
+  /** Opacity of the pencil, `0..255`: a tile is blitted as it stands. */
+  protected readonly alpha = signal(255);
+  /** Where the pointer was when it last painted, in the image's own pixels. */
+  private stroking: { x: number; y: number } | null = null;
+  /**
+   * What the last draw put on the canvas.
+   *
+   * Kept so a click can be turned back into a pixel of the image under it: the
+   * framing is decided at draw time and there is no second copy of it
+   * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+   */
+  private view: { layout: PreviewLayout; width: number; height: number } | null = null;
   protected readonly status = signal<string | null>(null);
   protected readonly failure = signal<string | null>(null);
   protected readonly dirty = signal(false);
@@ -195,14 +250,29 @@ export class AssetEditorPage implements AfterViewInit, OnDestroy {
   ngAfterViewInit(): void {
     this.schedulePreview();
     window.addEventListener('resize', this.onResize);
+    // The window is not the only thing that resizes this canvas: the divider
+    // between the scene and the inspector does, and so does the pixel editor
+    // growing under it. The canvas is sized from its parent's box in `paint`,
+    // so a parent that changes without a repaint leaves a canvas at the old
+    // size — drawn *past* its own frame
+    // (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+    const box = this.previewRef()?.nativeElement.parentElement;
+    if (box !== null && box !== undefined && typeof ResizeObserver !== 'undefined') {
+      this.watching = new ResizeObserver(() => this.schedulePreview());
+      this.watching.observe(box);
+    }
   }
 
   ngOnDestroy(): void {
     window.removeEventListener('resize', this.onResize);
+    this.watching?.disconnect();
     cancelAnimationFrame(this.frame);
   }
 
   private readonly onResize = (): void => this.schedulePreview();
+
+  /** Watches the preview's own box, which the layout may resize on its own. */
+  private watching: ResizeObserver | null = null;
 
   // ------------------------------------------------------------------ browse
 
@@ -301,15 +371,7 @@ export class AssetEditorPage implements AfterViewInit, OnDestroy {
   });
 
   /** The 1-based numbers of the explicit levels, for the pickers. */
-  protected readonly levelNumbers = computed(() =>
-    this.levels().map((_level, index) => index + 1),
-  );
-
-  protected selectCategory(id: string): void {
-    if (ASSET_CATEGORIES.find((entry) => entry.id === id)?.status === 'available') {
-      this.category.set(id);
-    }
-  }
+  protected readonly levelNumbers = computed(() => this.levels().map((_level, index) => index + 1));
 
   protected selectTileSet(event: Event): void {
     this.tileSetId.set((event.target as HTMLSelectElement).value);
@@ -326,8 +388,30 @@ export class AssetEditorPage implements AfterViewInit, OnDestroy {
     this.search.set((event.target as HTMLInputElement).value);
   }
 
+  /**
+   * Opens a panel, and with it the first image that panel can paint.
+   *
+   * The hexagon draws whichever image is open (`paintedChoice`), so a tab with
+   * no image open shows a rolled variant and paints nothing. Opening one is
+   * what the author meant by opening the tab
+   * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+   */
   protected setTab(tab: TileEditorTab): void {
     this.tab.set(tab);
+    const level = levelOfTab(tab);
+    if (level === null) {
+      return;
+    }
+    const tile = this.tile();
+    const open = this.openImage();
+    if (tile === null || (open !== null && open.level === level)) {
+      return;
+    }
+    if (variantsOf(tile, level).length === 0) {
+      this.openImage.set(null);
+      return;
+    }
+    this.openVariant(level, 0);
   }
 
   // ---------------------------------------------------------------- mutation
@@ -372,7 +456,10 @@ export class AssetEditorPage implements AfterViewInit, OnDestroy {
     if (set === null) {
       return;
     }
-    const id = freeId('tile', set.tiles.map((tile) => tile.id));
+    const id = freeId(
+      'tile',
+      set.tiles.map((tile) => tile.id),
+    );
     set.tiles.push(blankTile(id, id));
     this.selectedTileId.set(id);
     this.tab.set('definition');
@@ -385,7 +472,10 @@ export class AssetEditorPage implements AfterViewInit, OnDestroy {
     if (set === null || tile === null) {
       return;
     }
-    const id = freeId(`${tile.id}_copy`, set.tiles.map((entry) => entry.id));
+    const id = freeId(
+      `${tile.id}_copy`,
+      set.tiles.map((entry) => entry.id),
+    );
     set.tiles.push(duplicateTile(tile, id, `${tile.name ?? tile.id} copy`));
     this.selectedTileId.set(id);
     this.touch();
@@ -528,6 +618,12 @@ export class AssetEditorPage implements AfterViewInit, OnDestroy {
 
   protected openVariant(level: number, variant: number): void {
     this.openImage.set({ level, variant });
+    // A face only exists on a cell tall enough to show it, and the hexagon is
+    // where it is painted now
+    // (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+    if (level >= 1 && this.previewElevation() < level) {
+      this.previewElevation.set(level);
+    }
     void this.ensureSession(level, variant);
   }
 
@@ -588,6 +684,14 @@ export class AssetEditorPage implements AfterViewInit, OnDestroy {
     }
     return variantAt(tile, target)?.asset ?? '';
   });
+
+  /**
+   * The open image's file name, without its directories.
+   *
+   * The bar it sits in is one line and the path is four segments of convention;
+   * what an author reads is `grass_a.png`.
+   */
+  protected readonly openName = computed(() => this.openLabel().split('/').pop() ?? '');
 
   /** Every colour the set's open images use, so its tiles keep one palette. */
   protected readonly sharedPalette = computed<readonly string[]>(() => {
@@ -830,6 +934,34 @@ export class AssetEditorPage implements AfterViewInit, OnDestroy {
     );
   }
 
+  /** The zoom on screen: the one asked for, or the one the fit settled on. */
+  protected readonly shownZoom = computed(() => {
+    this.revision();
+    return this.previewZoom() ?? Math.round((this.fittedZoom() ?? 1) * 10) / 10;
+  });
+
+  /** What the last fit worked out, in screen pixels per authored pixel. */
+  private readonly fitted = signal<number | null>(null);
+
+  private fittedZoom(): number | null {
+    return this.fitted();
+  }
+
+  protected zoomBy(delta: number): void {
+    this.previewZoom.set(steppedZoom(this.previewZoom() ?? this.fitted() ?? 1, delta));
+    this.schedulePreview();
+  }
+
+  protected fitZoom(): void {
+    this.previewZoom.set(null);
+    this.schedulePreview();
+  }
+
+  protected toggleGrid(): void {
+    this.showGrid.update((on) => !on);
+    this.schedulePreview();
+  }
+
   protected toggleBoard(): void {
     this.previewBoard.update((on) => !on);
   }
@@ -842,6 +974,32 @@ export class AssetEditorPage implements AfterViewInit, OnDestroy {
    * tiles the set actually declares, so it is the set being checked rather than
    * one tile repeated.
    */
+  /**
+   * Which cell of the board is the one being painted.
+   *
+   * The middle of the board, or the only cell when there is no board — and it
+   * is the *centre column* that carries the open tile, so a click always lands
+   * on the tile the inspector is showing.
+   */
+  private paintedAt(): { col: number; row: number } {
+    return this.previewBoard() ? { col: 1, row: 1 } : { col: 0, row: 0 };
+  }
+
+  /**
+   * The variants the painted cell must draw: the ones being edited.
+   *
+   * A map rolls a variant per cell so a field does not repeat itself; an editor
+   * needs the opposite, or an author paints `grass_b` while looking at
+   * `grass_f` (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+   */
+  private paintedChoice(): CellArt {
+    const target = this.openImage();
+    if (target === null) {
+      return {};
+    }
+    return target.level >= 1 ? { elevationVariant: target.variant } : { surface: target.variant };
+  }
+
   private previewCells(): PreviewCell[] {
     const set = this.tileSet();
     const tile = this.tile();
@@ -849,14 +1007,17 @@ export class AssetEditorPage implements AfterViewInit, OnDestroy {
       return [];
     }
     const elevation = this.previewElevation();
+    const painted = this.paintedAt();
+    const choice = this.paintedChoice();
     if (!this.previewBoard()) {
       return [
         {
-          at: { col: 0, row: 0 },
+          at: painted,
           tileId: tile.id,
           art: tile.art,
           fallbackColor: tile.visual.fallbackColor,
           elevation,
+          choice,
         },
       ];
     }
@@ -868,16 +1029,174 @@ export class AssetEditorPage implements AfterViewInit, OnDestroy {
         // both "this tile against itself" and "against another" are on screen.
         const neighbour = set.tiles[(row * BOARD_WIDTH + col) % set.tiles.length];
         const drawn = col === 1 ? tile : (neighbour ?? tile);
+        const isPainted = col === painted.col && row === painted.row;
         cells.push({
           at: { col, row },
           tileId: drawn.id,
           art: drawn.art,
           fallbackColor: drawn.visual.fallbackColor,
           elevation: col === 1 ? elevation : Math.max(0, elevation - 1),
+          choice: isPainted ? choice : undefined,
         });
       }
     }
     return cells;
+  }
+
+  // ------------------------------------------------------------------ paint
+
+  protected setTool(tool: PixelTool): void {
+    this.tool.set(tool);
+  }
+
+  protected setColor(color: string): void {
+    this.color.set(color);
+  }
+
+  /** `true` when there is an image open and a surface to paint it on. */
+  protected readonly paintable = computed(() => this.openSprite() !== null);
+
+  protected readonly canUndo = computed(() => {
+    this.revision();
+    return this.openSprite()?.canUndo === true;
+  });
+
+  protected readonly canRedo = computed(() => {
+    this.revision();
+    return this.openSprite()?.canRedo === true;
+  });
+
+  protected undo(): void {
+    if (this.openSprite()?.undo() === true) {
+      this.onPainted();
+    }
+  }
+
+  protected redo(): void {
+    if (this.openSprite()?.redo() === true) {
+      this.onPainted();
+    }
+  }
+
+  protected clearImage(): void {
+    const sprite = this.openSprite();
+    if (sprite === null) {
+      return;
+    }
+    sprite.begin();
+    for (let y = 0; y < sprite.height; y += 1) {
+      for (let x = 0; x < sprite.width; x += 1) {
+        sprite.plot(x, y, null);
+      }
+    }
+    sprite.end();
+    this.onPainted();
+  }
+
+  protected onPointerDown(event: PointerEvent): void {
+    const sprite = this.openSprite();
+    const at = this.pixelAt(event);
+    if (sprite === null || at === null || !sprite.holds(at.x, at.y)) {
+      return;
+    }
+    event.preventDefault();
+    // Alt is the eyedropper wherever you are (ADR-0030).
+    if (this.tool() === 'picker' || event.altKey) {
+      const color = sprite.colorAt(at.x, at.y);
+      if (color !== null) {
+        this.color.set(color);
+      }
+      return;
+    }
+    (event.target as HTMLElement).setPointerCapture?.(event.pointerId);
+    sprite.begin();
+    this.stroking = at;
+    this.paintTo(at.x, at.y);
+  }
+
+  protected onPointerMove(event: PointerEvent): void {
+    if (this.stroking === null) {
+      return;
+    }
+    const at = this.pixelAt(event);
+    if (at !== null) {
+      this.paintTo(at.x, at.y);
+    }
+  }
+
+  protected onPointerUp(): void {
+    this.finishStroke();
+  }
+
+  private paintTo(x: number, y: number): void {
+    const sprite = this.openSprite();
+    const from = this.stroking;
+    if (sprite === null || from === null) {
+      return;
+    }
+    const color = this.tool() === 'eraser' ? null : this.color();
+    if (sprite.stroke(from.x, from.y, x, y, color, this.alpha())) {
+      this.onPainted();
+    }
+    this.stroking = { x, y };
+  }
+
+  /** Closes the open stroke, which is what makes it one step of the undo. */
+  private finishStroke(): void {
+    if (this.stroking === null) {
+      return;
+    }
+    this.stroking = null;
+    this.openSprite()?.end();
+  }
+
+  /**
+   * The pixel of the open image under a pointer, or `null` when it is not over
+   * it at all.
+   *
+   * The box comes from `previewImageBox()` — the same call the draw makes — so
+   * the click and the blit cannot drift apart. The pointer is measured against
+   * the canvas *element* rather than the layout, because the interface scale
+   * multiplies one and not the other (ADR-0030).
+   */
+  private pixelAt(event: PointerEvent): { x: number; y: number } | null {
+    const canvas = this.previewRef()?.nativeElement;
+    const view = this.view;
+    const sprite = this.openSprite();
+    const target = this.openImage();
+    const cells = this.previewCells();
+    const painted = this.paintedAt();
+    const cell = cells.find((one) => one.at.col === painted.col && one.at.row === painted.row);
+    if (
+      canvas === undefined ||
+      view === null ||
+      sprite === null ||
+      target === null ||
+      cell === undefined
+    ) {
+      return null;
+    }
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) {
+      return null;
+    }
+    const scale = view.width / rect.width;
+    const point = previewPointOf(
+      { x: (event.clientX - rect.left) * scale, y: (event.clientY - rect.top) * scale },
+      view.layout,
+    );
+
+    // A stacked face is drawn once per step; the one showing this level is the
+    // one that many steps down from the cell's own height.
+    const drop = target.level >= 1 ? Math.max(0, cell.elevation - target.level) : 0;
+    const box = previewImageBox(cell, this.geometry(), view.layout, this.openKind(), drop);
+    if (box.width <= 0 || box.height <= 0) {
+      return null;
+    }
+    return {
+      x: Math.floor(((point.x - box.x) / box.width) * sprite.width),
+      y: Math.floor(((point.y - box.y) / box.height) * sprite.height),
+    };
   }
 
   private schedulePreview(): void {
@@ -887,12 +1206,29 @@ export class AssetEditorPage implements AfterViewInit, OnDestroy {
 
   private paintPreview(): void {
     const canvas = this.previewRef()?.nativeElement;
-    if (canvas === undefined) {
+    const frame = canvas?.parentElement;
+    if (canvas === undefined || frame === null || frame === undefined) {
       return;
     }
-    const box = canvas.parentElement?.getBoundingClientRect();
-    const width = Math.max(1, Math.round(box?.width ?? canvas.clientWidth));
-    const height = Math.max(1, Math.round(box?.height ?? canvas.clientHeight));
+    // The *client* box, not the bounding rect: a scrollbar takes room from one
+    // and not the other, and sizing a canvas from the wrong one is how a
+    // scrollbar starts flickering itself in and out.
+    const boxWidth = Math.max(1, frame.clientWidth);
+    const boxHeight = Math.max(1, frame.clientHeight);
+    const cells = this.previewCells();
+    const geometry = this.geometry();
+    const zoom = this.previewZoom();
+    const mode = this.previewMode();
+
+    // At a zoom the board may want more room than the panel has, and then the
+    // canvas is the board's size and the panel scrolls it. Measured first,
+    // because the framing has to centre inside whatever the canvas ends up
+    // being (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+    const measured = fitPreview(cells, geometry, boxWidth, boxHeight, mode, PREVIEW_PADDING, zoom);
+    const width = zoom === null ? boxWidth : Math.max(boxWidth, Math.ceil(measured.contentWidth));
+    const height =
+      zoom === null ? boxHeight : Math.max(boxHeight, Math.ceil(measured.contentHeight));
+
     const ratio = window.devicePixelRatio || 1;
     canvas.width = Math.round(width * ratio);
     canvas.height = Math.round(height * ratio);
@@ -905,22 +1241,62 @@ export class AssetEditorPage implements AfterViewInit, OnDestroy {
     }
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
     context.clearRect(0, 0, width, height);
-
-    const cells = this.previewCells();
     if (cells.length === 0) {
       return;
     }
-    const geometry = this.geometry();
-    const view = fitPreview(cells, geometry, width, height, this.previewMode());
+
+    const view = fitPreview(cells, geometry, width, height, mode, PREVIEW_PADDING, zoom);
+    this.view = { layout: view, width, height };
+    this.fitted.set(view.layout.hexWidth / Math.max(1, geometry.width));
     drawPreview(context, cells, geometry, view, this.source);
+    this.strokeGrid(context, view);
+  }
+
+  /**
+   * The pixel grid, over the image being painted and nothing else.
+   *
+   * Only where an author is drawing: a grid over the whole board would be a
+   * hatch over neighbours nobody is editing. Below a few pixels a square it is
+   * noise, so it stops.
+   */
+  private strokeGrid(context: CanvasRenderingContext2D, view: PreviewLayout): void {
+    const sprite = this.openSprite();
+    const target = this.openImage();
+    const painted = this.paintedAt();
+    const cell = this.previewCells().find(
+      (one) => one.at.col === painted.col && one.at.row === painted.row,
+    );
+    if (!this.showGrid() || sprite === null || target === null || cell === undefined) {
+      return;
+    }
+    const drop = target.level >= 1 ? Math.max(0, cell.elevation - target.level) : 0;
+    const box = previewImageBox(cell, this.geometry(), view, this.openKind(), drop);
+    const perX = box.width / Math.max(1, sprite.width);
+    const perY = box.height / Math.max(1, sprite.height);
+    if (Math.min(perX, perY) < GRID_ZOOM) {
+      return;
+    }
+
+    context.save();
+    context.translate(view.originX, view.originY);
+    context.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+    context.lineWidth = 1;
+    context.beginPath();
+    for (let x = 1; x < sprite.width; x += 1) {
+      context.moveTo(box.x + x * perX, box.y);
+      context.lineTo(box.x + x * perX, box.y + box.height);
+    }
+    for (let y = 1; y < sprite.height; y += 1) {
+      context.moveTo(box.x, box.y + y * perY);
+      context.lineTo(box.x + box.width, box.y + y * perY);
+    }
+    context.stroke();
+    context.restore();
   }
 }
 
 /** The list of variants a pseudo-level or an elevation level names. */
-function listFor(
-  art: ReturnType<typeof artOf>,
-  level: number,
-): TileArtVariant[] | undefined {
+function listFor(art: ReturnType<typeof artOf>, level: number): TileArtVariant[] | undefined {
   if (level === FLAT_LEVEL) {
     return art.flat;
   }
@@ -943,4 +1319,20 @@ function loadImage(url: string): Promise<HTMLImageElement | null> {
     image.addEventListener('error', () => resolve(null));
     image.src = url;
   });
+}
+
+/**
+ * The image level a panel edits, or `null` for the ones that edit no image.
+ *
+ * `elevation` opens level 1: the ladder's first rung is the one every raised
+ * cell shows, whatever its height.
+ */
+function levelOfTab(tab: TileEditorTab): number | null {
+  if (tab === 'flat') {
+    return FLAT_LEVEL;
+  }
+  if (tab === 'surface') {
+    return SURFACE_LEVEL;
+  }
+  return tab === 'elevation' ? 1 : null;
 }

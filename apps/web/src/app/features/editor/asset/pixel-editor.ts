@@ -1,20 +1,22 @@
 /**
- * The pixel editor: one image, edited a pixel at a time.
+ * The pixel editor: one image, flat, edited a pixel at a time.
  *
- * A retouching tool grown up. `sprite-document.ts` already held the buffer, the
- * stroke, the undo history and the palette for the character stage
- * (`docs/adr/ADR-0030-the-editor-paints-its-sprites.md`); this is the same core
- * given the tools a **tile** needs — a fill, a rectangular selection you can
- * move, and an alpha, because a tile is blitted as it stands rather than tinted
+ * A retouching tool. `sprite-document.ts` holds the buffer, the stroke, the
+ * undo history and the palette (`docs/adr/ADR-0030-the-editor-paints-its-
+ * sprites.md`); this puts a canvas, a zoom and the guides around them, with an
+ * alpha for art that is blitted as it stands
  * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
  *
- * It is still not a drawing application. No sub-layers, no brush size, no
- * filters, no animation. When a job needs those the answer is a real pixel
- * editor and the import button next to this one.
+ * It is deliberately not a drawing application: three tools, no sub-layers, no
+ * brush size, no filters, no animation. When a job needs more the answer is a
+ * real pixel editor and the import button next to this one.
  *
- * It is a **component**, not a page: the asset editor embeds it, and the next
- * kind of asset will embed the same one. Nothing in it knows what a tile is
- * beyond the guides it is handed.
+ * It is a **component**, not a page, and every asset category embeds the same
+ * one: a tile's surface, a character's cape seen flat, and whatever objects and
+ * decorations turn out to be
+ * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`). Nothing in it knows
+ * what it is drawing beyond the guides it is handed — and it may be handed
+ * none.
  *
  * # Pixel-perfect
  *
@@ -34,22 +36,18 @@ import {
   computed,
   effect,
   input,
+  model,
   output,
   signal,
   viewChild,
 } from '@angular/core';
 
 import { TileArtGeometry } from '../../../../content/content-types';
-import { PALETTE_SIZE, PixelSelection, SpriteDocument } from '../../../../content/sprite-document';
+import { PALETTE_SIZE, SpriteDocument } from '../../../../content/sprite-document';
 import { ImageKind, drawChecker, drawGuides } from '../../../../renderer/tile-preview';
 import { I18nService } from '../../../i18n/i18n.service';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
-
-/** The tools, in the order the toolbar shows them. */
-export type PixelTool = 'pencil' | 'eraser' | 'fill' | 'picker' | 'select';
-
-/** The tools, for the template to iterate. */
-export const PIXEL_TOOLS: readonly PixelTool[] = ['pencil', 'eraser', 'fill', 'picker', 'select'];
+import { PixelTool, PixelTools } from './pixel-tools';
 
 /**
  * The zooms the editor steps through, in screen pixels per authored pixel.
@@ -58,7 +56,7 @@ export const PIXEL_TOOLS: readonly PixelTool[] = ['pencil', 'eraser', 'fill', 'p
  * a square block of screen pixels or it is a smear
  * (`docs/adr/ADR-0029-characters-are-composed-sprites.md`).
  */
-const ZOOM_STEPS: readonly number[] = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32];
+export const PIXEL_ZOOMS: readonly number[] = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32];
 
 /** Below this zoom a pixel grid is more noise than help. */
 const GRID_ZOOM = 6;
@@ -67,23 +65,44 @@ const GRID_ZOOM = 6;
 const MAX_STAGE = 2048;
 
 @Component({
-  selector: 'app-tile-pixel-editor',
-  imports: [TranslatePipe],
-  templateUrl: './tile-pixel-editor.html',
-  styleUrl: './tile-pixel-editor.css',
+  selector: 'app-pixel-editor',
+  imports: [TranslatePipe, PixelTools],
+  templateUrl: './pixel-editor.html',
+  styleUrl: './pixel-editor.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class TilePixelEditor implements AfterViewInit, OnDestroy {
+export class PixelEditor implements AfterViewInit, OnDestroy {
   /** The image being edited, or `null` when nothing is open. */
   readonly sprite = input<SpriteDocument | null>(null);
-  /** The pixel grid the image belongs to, for the guides. */
-  readonly geometry = input.required<TileArtGeometry>();
+  /**
+   * The pixel grid the image belongs to, for the guides — `null` when it has
+   * none.
+   *
+   * A tile is drawn onto a hexagon and wants the shoulders and the fold marked;
+   * a character's cape is drawn onto nothing at all. The component asks for
+   * guides rather than knowing what it is drawing
+   * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+   */
+  readonly geometry = input<TileArtGeometry | null>(null);
   /** Which guides to draw: only an elevation image has faces below it. */
   readonly kind = input<ImageKind>('surface');
   /** A label for the image, shown in the toolbar. */
   readonly label = input('');
   /** Colours offered beside the ones this image already uses. */
   readonly sharedPalette = input<readonly string[]>([]);
+
+  /**
+   * Screen pixels per authored pixel, owned by the host.
+   *
+   * A `model` rather than internal state because the zoom lives in the file
+   * bar now, above every surface: an author should not have to find a
+   * different set of buttons depending on which one is open
+   * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+   */
+  readonly zoom = model(6);
+
+  /** Whether the pixel grid is drawn over the image. Also the host's. */
+  readonly showGrid = model(true);
 
   /** Emitted whenever a stroke changes a pixel, so the host can redraw. */
   readonly edited = output<void>();
@@ -96,19 +115,13 @@ export class TilePixelEditor implements AfterViewInit, OnDestroy {
   protected readonly color = signal('#8ec07c');
   /** Opacity of the pencil, `0..255`. */
   protected readonly alpha = signal(255);
-  protected readonly zoomIndex = signal(4);
-  protected readonly showGrid = signal(true);
   protected readonly showGuides = signal(true);
   /** Bumped by every edit, so the palette and the buttons re-read the buffer. */
   protected readonly revision = signal(0);
-  /** The rectangle the select tool is holding, in image pixels. */
-  protected readonly selection = signal<PixelSelection | null>(null);
 
   /** Where the pointer was when it last painted, in image pixels. */
   private last: { x: number; y: number } | null = null;
-  /** Where a drag started: the selection anchor, or the move origin. */
-  private anchor: { x: number; y: number } | null = null;
-  private dragging: 'paint' | 'select' | 'move' | null = null;
+  private painting = false;
   private frame = 0;
 
   private readonly onKey = (event: KeyboardEvent): void => this.handleKey(event);
@@ -122,7 +135,6 @@ export class TilePixelEditor implements AfterViewInit, OnDestroy {
       this.zoom();
       this.showGrid();
       this.showGuides();
-      this.selection();
       this.revision();
       this.schedule();
     });
@@ -139,8 +151,6 @@ export class TilePixelEditor implements AfterViewInit, OnDestroy {
   }
 
   // ------------------------------------------------------------------- state
-
-  protected readonly zoom = computed(() => ZOOM_STEPS[this.zoomIndex()] ?? 4);
 
   protected readonly canUndo = computed(() => {
     this.revision();
@@ -174,7 +184,10 @@ export class TilePixelEditor implements AfterViewInit, OnDestroy {
     this.revision();
     const seen = new Set<string>();
     const colors: string[] = [];
-    for (const color of [...(this.sprite()?.palette(PALETTE_SIZE) ?? []), ...this.sharedPalette()]) {
+    for (const color of [
+      ...(this.sprite()?.palette(PALETTE_SIZE) ?? []),
+      ...this.sharedPalette(),
+    ]) {
       if (!seen.has(color)) {
         seen.add(color);
         colors.push(color);
@@ -186,16 +199,12 @@ export class TilePixelEditor implements AfterViewInit, OnDestroy {
     return colors;
   });
 
-  protected readonly tools = PIXEL_TOOLS;
   protected readonly gridZoom = GRID_ZOOM;
 
   // ----------------------------------------------------------------- actions
 
   protected setTool(tool: PixelTool): void {
     this.tool.set(tool);
-    if (tool !== 'select') {
-      this.selection.set(null);
-    }
   }
 
   protected setColor(color: string): void {
@@ -211,7 +220,7 @@ export class TilePixelEditor implements AfterViewInit, OnDestroy {
   }
 
   protected stepZoom(by: number): void {
-    this.zoomIndex.update((index) => Math.max(0, Math.min(ZOOM_STEPS.length - 1, index + by)));
+    this.zoom.set(steppedZoom(this.zoom(), by));
   }
 
   protected toggleGrid(): void {
@@ -234,37 +243,20 @@ export class TilePixelEditor implements AfterViewInit, OnDestroy {
     }
   }
 
-  /** Clears the selection, or the whole image when nothing is selected. */
+  /** Empties the image. */
   protected clear(): void {
     const sprite = this.sprite();
     if (sprite === null) {
       return;
     }
-    const box = this.selection() ?? { x: 0, y: 0, width: sprite.width, height: sprite.height };
     sprite.begin();
-    for (let y = box.y; y < box.y + box.height; y += 1) {
-      for (let x = box.x; x < box.x + box.width; x += 1) {
+    for (let y = 0; y < sprite.height; y += 1) {
+      for (let x = 0; x < sprite.width; x += 1) {
         sprite.plot(x, y, null);
       }
     }
     sprite.end();
     this.after();
-  }
-
-  /** Nudges the selection by whole pixels, which is what the arrow keys do. */
-  protected nudge(dx: number, dy: number): void {
-    const sprite = this.sprite();
-    const box = this.selection();
-    if (sprite === null || box === null) {
-      return;
-    }
-    sprite.begin();
-    const moved = sprite.moveSelection(box, dx, dy);
-    sprite.end();
-    if (moved) {
-      this.selection.set({ ...box, x: box.x + dx, y: box.y + dy });
-      this.after();
-    }
   }
 
   // ---------------------------------------------------------------- pointers
@@ -285,31 +277,7 @@ export class TilePixelEditor implements AfterViewInit, OnDestroy {
       return;
     }
 
-    if (this.tool() === 'select') {
-      const box = this.selection();
-      if (box !== null && inside(box, at)) {
-        this.dragging = 'move';
-        this.anchor = at;
-        sprite.begin();
-      } else {
-        this.dragging = 'select';
-        this.anchor = at;
-        this.selection.set({ x: at.x, y: at.y, width: 1, height: 1 });
-      }
-      return;
-    }
-
-    if (this.tool() === 'fill') {
-      sprite.begin();
-      const changed = sprite.fill(at.x, at.y, this.color(), this.alpha());
-      sprite.end();
-      if (changed) {
-        this.after();
-      }
-      return;
-    }
-
-    this.dragging = 'paint';
+    this.painting = true;
     sprite.begin();
     this.last = at;
     this.paintTo(at.x, at.y);
@@ -317,45 +285,18 @@ export class TilePixelEditor implements AfterViewInit, OnDestroy {
 
   protected onPointerMove(event: PointerEvent): void {
     const at = this.pixelUnder(event);
-    if (at === null || this.dragging === null) {
+    if (at === null || !this.painting) {
       return;
     }
-    if (this.dragging === 'paint') {
-      this.paintTo(at.x, at.y);
-      return;
-    }
-    const anchor = this.anchor;
-    if (anchor === null) {
-      return;
-    }
-    if (this.dragging === 'select') {
-      this.selection.set({
-        x: Math.min(anchor.x, at.x),
-        y: Math.min(anchor.y, at.y),
-        width: Math.abs(at.x - anchor.x) + 1,
-        height: Math.abs(at.y - anchor.y) + 1,
-      });
-      return;
-    }
-    // Moving: the delta is applied one step at a time so the drag reads live.
-    const box = this.selection();
-    if (box === null || (at.x === anchor.x && at.y === anchor.y)) {
-      return;
-    }
-    if (this.sprite()?.moveSelection(box, at.x - anchor.x, at.y - anchor.y) === true) {
-      this.selection.set({ ...box, x: box.x + (at.x - anchor.x), y: box.y + (at.y - anchor.y) });
-      this.anchor = at;
-      this.after();
-    }
+    this.paintTo(at.x, at.y);
   }
 
   protected onPointerUp(): void {
-    if (this.dragging === 'paint' || this.dragging === 'move') {
+    if (this.painting) {
       this.sprite()?.end();
       this.after();
     }
-    this.dragging = null;
-    this.anchor = null;
+    this.painting = false;
     this.last = null;
   }
 
@@ -405,21 +346,6 @@ export class TilePixelEditor implements AfterViewInit, OnDestroy {
       } else {
         this.undo();
       }
-      return;
-    }
-    if (this.selection() === null) {
-      return;
-    }
-    const nudges: Record<string, [number, number]> = {
-      ArrowLeft: [-1, 0],
-      ArrowRight: [1, 0],
-      ArrowUp: [0, -1],
-      ArrowDown: [0, 1],
-    };
-    const nudge = nudges[event.key];
-    if (nudge !== undefined) {
-      event.preventDefault();
-      this.nudge(nudge[0], nudge[1]);
     }
   }
 
@@ -451,11 +377,9 @@ export class TilePixelEditor implements AfterViewInit, OnDestroy {
     }
     const drawnWidth = sprite.width * this.zoom();
     const drawnHeight = sprite.height * this.zoom();
-    const x = Math.floor(
-      (((event.clientX - bounds.left) * drawnWidth) / bounds.width) / this.zoom(),
-    );
+    const x = Math.floor(((event.clientX - bounds.left) * drawnWidth) / bounds.width / this.zoom());
     const y = Math.floor(
-      (((event.clientY - bounds.top) * drawnHeight) / bounds.height) / this.zoom(),
+      ((event.clientY - bounds.top) * drawnHeight) / bounds.height / this.zoom(),
     );
     return sprite.holds(x, y) ? { x, y } : null;
   }
@@ -508,39 +432,41 @@ export class TilePixelEditor implements AfterViewInit, OnDestroy {
       context.stroke();
     }
 
-    if (this.showGuides()) {
-      drawGuides(context, this.geometry(), this.kind(), zoom, {
+    const geometry = this.geometry();
+    if (this.showGuides() && geometry !== null) {
+      drawGuides(context, geometry, this.kind(), zoom, {
         flat: this.i18n.t('ui.editor.asset.faces.flat'),
         surface: this.i18n.t('ui.editor.asset.faces.surface'),
         southWest: this.i18n.t('ui.editor.asset.faces.southWest'),
         southEast: this.i18n.t('ui.editor.asset.faces.southEast'),
       });
     }
-
-    const box = this.selection();
-    if (box !== null) {
-      context.save();
-      context.strokeStyle = '#ffd166';
-      context.setLineDash([4, 3]);
-      context.lineWidth = 1;
-      context.strokeRect(
-        box.x * zoom + 0.5,
-        box.y * zoom + 0.5,
-        box.width * zoom - 1,
-        box.height * zoom - 1,
-      );
-      context.restore();
-    }
   }
-}
-
-function inside(box: PixelSelection, at: { x: number; y: number }): boolean {
-  return (
-    at.x >= box.x && at.y >= box.y && at.x < box.x + box.width && at.y < box.y + box.height
-  );
 }
 
 function isTyping(target: EventTarget | null): boolean {
   const tag = (target as HTMLElement | null)?.tagName;
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+}
+
+/**
+ * The next zoom up or down the ladder.
+ *
+ * Shared, because the file bar steps the zoom of whichever surface is open and
+ * they all step through the same numbers
+ * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+ */
+export function steppedZoom(from: number, by: number): number {
+  const first = PIXEL_ZOOMS[0] ?? 1;
+  const last = PIXEL_ZOOMS[PIXEL_ZOOMS.length - 1] ?? 1;
+  const exact = PIXEL_ZOOMS.indexOf(from);
+  if (exact >= 0) {
+    return PIXEL_ZOOMS[Math.max(0, Math.min(PIXEL_ZOOMS.length - 1, exact + by))] ?? from;
+  }
+  // Off the ladder — a *fitted* zoom is whatever the panel worked out — so the
+  // first step in the direction asked, rather than index arithmetic that would
+  // skip one on the way up.
+  return by > 0
+    ? (PIXEL_ZOOMS.find((step) => step > from) ?? last)
+    : ([...PIXEL_ZOOMS].reverse().find((step) => step < from) ?? first);
 }

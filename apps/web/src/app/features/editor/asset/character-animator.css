@@ -1,8 +1,15 @@
 /* The animation editor: a list, a few settings, a timeline and one transform.
 
-   It is styled as a panel of the character editor rather than as a screen of
-   its own, because it edits the same document — the tokens and the panel shape
-   are `character-editor-page.css`'s, deliberately. */
+   It is styled as a panel of the characters workspace rather than as a screen
+   of its own, because it edits the same document — the tokens and the panel
+   shape are `character-workspace.css`'s, deliberately.
+
+   It lives in the inspector, whose width the author sets by dragging the
+   divider (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). So it lays
+   itself out against *that* width rather than the window's: one column when the
+   inspector is left alone, three once it is dragged wide enough for the
+   timeline to be worth reading — which is what an author does when they open
+   this tab to work rather than to look. */
 :host {
   display: block;
 }
@@ -13,6 +20,71 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-panel);
+}
+
+.panel.animator {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px 12px;
+  align-content: start;
+  min-height: 0;
+  margin-bottom: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.animations,
+.playback,
+.editing {
+  min-width: 0;
+}
+
+/* The list and, under it, the open animation's own settings — both answers to
+   "which animation". */
+.animations {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Dragged wide enough to be worth splitting. Against the *inspector's* width,
+   not the window's. */
+/* One column, always. Splitting this into columns put the timeline — the part
+   an author reads and clicks constantly — in the narrowest of them, and starved
+   the pose editor beside it. It gets the full width instead, and stays in view
+   while the rest scrolls (docs/adr/ADR-0039-one-editor-for-everything-drawn.md).
+
+   `sticky` rather than a fixed pane, because the author can switch it off: a
+   long timeline pinned to the top of a short column is worse than one that
+   scrolls away. */
+.playback.pinned {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 4px 0;
+  background: var(--bg);
+  box-shadow: 0 6px 8px -6px rgb(0 0 0 / 60%);
+}
+
+/* The frames run off the side of a narrow inspector; they scroll there rather
+   than widening the column. */
+.timeline {
+  overflow-x: auto;
+}
+
+.pin {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.pin button.on {
+  color: var(--accent);
+  border-color: var(--accent-dim);
 }
 
 .panel h2 {

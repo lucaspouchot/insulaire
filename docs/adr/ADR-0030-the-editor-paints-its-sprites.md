@@ -1,9 +1,16 @@
 # ADR-0030 — The Editor Paints the Sprites It Composes
 
 ## Status
-Accepted. Extends `docs/adr/ADR-0029-characters-are-composed-sprites.md`, which
-decided what a character is drawn *from*; this decides where those images are
-made. No schema, no engine boundary and no content file changes shape.
+Accepted, and amended twice by
+`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`. Extends
+`docs/adr/ADR-0029-characters-are-composed-sprites.md`, which decided what a
+character is drawn *from*; this decides where those images are made. No schema,
+no engine boundary and no content file changes shape.
+
+The two amendments are marked where they land: the screen this describes is now
+a **category of the asset editor** rather than a module of its own, and **partial
+alpha is allowed**, the prohibition below having been an argument about the tint
+pipeline that the pipeline now answers. Everything else here stands as written.
 
 ## Context
 
@@ -46,6 +53,14 @@ selection, no sub-layers, no brush size, no opacity, no fill and no animation.
 When a job needs those, the answer is a real pixel editor and the upload button
 ADR-0022 already provides — not a bigger tool here.
 
+*(Amended by ADR-0039, and the amendment is that this paragraph won.* A second
+paint stack grew for tiles, with a fill, a movable rectangular selection and an
+alpha; the two were the same buffer with different buttons, which was the real
+problem, and one shared `pixel-editor` fixed it. *What the sharing settled is
+which of the two toolbars was right, and it was this one: the fill and the
+selection are gone again, from the buttons and from `sprite-document.ts` both.
+Three tools, on every asset category. The alpha stayed — see below.)*
+
 **It stays in TypeScript, and nothing crosses the boundary.** Rust owns what a
 character *is*; a pixel is authoring, not a rule (`CLAUDE.md`). The core is
 `apps/web/src/content/sprite-document.ts`: a framework-free RGBA buffer with
@@ -58,10 +73,25 @@ drawn **without its tint**. What the pencil writes is what the file holds, so
 two greys are compared as two greys. Every other layer keeps its tint, because
 the point of painting here is the figure around it.
 
-**Whole pixels, whole alpha.** A painted pixel is opaque, an erased one is fully
-clear, and a drag is joined into a line so a fast pointer does not draw dots.
-Partial alpha would survive into the tint pipeline as a soft edge that no
-recolouring can fix.
+**Whole pixels, and whole alpha by default.** A painted pixel is opaque, an
+erased one is fully clear, and a drag is joined into a line so a fast pointer
+does not draw dots. That is what the pencil does when nobody asks otherwise,
+because pixel art has no use for a half-transparent pencil and a buffer full of
+alpha in the fifties is a sprite nobody can clean up later.
+
+*(Amended by ADR-0039: the author may now ask otherwise.* The original rule was
+absolute — partial alpha would survive into the tint pipeline as a soft edge no
+recolouring could fix — *and that was a claim about `tinted()`, not about
+authoring.* It was true of the pipeline as written: multiplying an opaque fill
+over a partly transparent sprite blends toward the flat tint where the sprite
+fades, so an edge pixel at half alpha came out at `tint × (1 - a + a·shade)`
+instead of `tint × shade` — a pale halo in the tint's own colour, which is
+exactly the fringe the rule described. *The tint is now exact: the multiply is
+per-pixel over the RGB with the alpha carried through untouched, so a pixel at
+half alpha is the shade it was drawn as, at half alpha. With that fixed there is
+no pipeline argument left, and forbidding a soft edge is a matter of taste an
+ADR has no business enforcing. The default is unchanged; the alpha control is
+the author's, and using it is their decision to defend.)*
 
 **The palette is made of the drawing.** Turning paint mode on opens every sprite
 the character draws, and colours are ranked by how much of all of them use each
@@ -129,11 +159,16 @@ Negative:
   scale, a browser zoom — passes through it;
 - turning paint mode on decodes every sprite the character draws, to build the
   palette — cheap at these sizes, and the reason it is a mode rather than
-  always on;
+  always on. *(ADR-0039 took the mode out: it was cheap enough that the click
+  was the expensive part. The stage always paints, and what a drag does when an
+  animation is open is decided by the open panel instead.)*
 - a second way to change content that Rust never sees: an image's *size* is
   authored here, and only "fit to image" keeps it and the `rect` in step
   (ADR-0029 already recorded that the engine cannot validate this);
 - no fill, no selection, no sheets — and each of those will be asked for.
+  *(Two of the three were asked for by ADR-0035 within the year and built for
+  tiles; ADR-0039 removed them again rather than spread them. The prediction was
+  right and the answer to it still is not more tools here.)*
 
 ## Rule
 

@@ -1,11 +1,17 @@
 /**
  * The editor's module registry.
  *
- * The editor is not one screen but a family of them: maps today, characters,
- * assets and scenarios later. They are declared here once and read by both the
- * routes (`editor.routes.ts`) and the shell's tab bar, so adding an editor is
- * one entry plus one component — never a second list to keep in step
+ * The editor is not one screen but a family of them: maps, the title screen,
+ * settings, languages, everything the game is drawn from, and scenarios later.
+ * They are declared here once and read by both the routes (`editor.routes.ts`)
+ * and the shell's tab bar, so adding an editor is one entry plus one component
+ * — never a second list to keep in step
  * (`docs/adr/ADR-0019-editor-modules.md`).
+ *
+ * A module is a **domain**, not a screen, which is why this list can shrink:
+ * characters were a module of their own until they became a category of the
+ * asset editor, and `asset-categories.ts` is the same kind of registry one
+ * level down (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
  *
  * Entries marked `planned` route to the placeholder page. They are listed on
  * purpose rather than hidden: the shell is the map of what the tool will be.
@@ -52,12 +58,6 @@ export const EDITOR_MODULES: readonly EditorModule[] = [
     id: 'locale',
     titleKey: 'ui.editor.modules.locale.title',
     summaryKey: 'ui.editor.modules.locale.summary',
-    status: 'available',
-  },
-  {
-    id: 'character',
-    titleKey: 'ui.editor.modules.character.title',
-    summaryKey: 'ui.editor.modules.character.summary',
     status: 'available',
   },
   {

@@ -1,15 +1,14 @@
 /**
- * The vocabulary of the asset editor, kept out of the component.
+ * The vocabulary of the **tile** workspace, kept out of the component.
  *
- * Same split as `character-editor.types.ts`: pure data and pure functions here,
- * signals and the DOM there. Everything in this file is testable without
- * Angular, and the component is thinner for it.
+ * Same split as `character-editor.types.ts` next door: pure data and pure
+ * functions here, signals and the DOM there. Everything in this file is
+ * testable without Angular, and the component is thinner for it.
  *
- * The editor is an **asset** editor, not a tile editor. Tiles are the first
- * kind it can open; the browser's categories, the routing and the naming are
- * all shaped so that objects, decorations and effects are another entry rather
- * than another screen
- * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+ * Tiles are one category of the asset editor
+ * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`); what a tile *is*
+ * and how its art resolves by level is
+ * `docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`.
  */
 
 import {
@@ -20,31 +19,6 @@ import {
   TileDefinition,
   TileSetDefinition,
 } from '../../../../content/content-types';
-
-/** A family of assets the editor can browse. */
-export interface AssetCategory {
-  /** Stable id, also the browser's selection value. */
-  readonly id: string;
-  /** Key of the label. */
-  readonly titleKey: string;
-  /** Whether this build can open it. */
-  readonly status: 'available' | 'planned';
-}
-
-/**
- * What the browser lists.
- *
- * Only `tiles` opens today. The rest are declared rather than hidden, for the
- * reason the editor shell declares its planned modules: the browser is the map
- * of what the tool will hold (`docs/adr/ADR-0019-editor-modules.md`).
- */
-export const ASSET_CATEGORIES: readonly AssetCategory[] = [
-  { id: 'tiles', titleKey: 'ui.editor.asset.categories.tiles', status: 'available' },
-  { id: 'characters', titleKey: 'ui.editor.asset.categories.characters', status: 'planned' },
-  { id: 'objects', titleKey: 'ui.editor.asset.categories.objects', status: 'planned' },
-  { id: 'decorations', titleKey: 'ui.editor.asset.categories.decorations', status: 'planned' },
-  { id: 'effects', titleKey: 'ui.editor.asset.categories.effects', status: 'planned' },
-];
 
 /** Which panel of the tile editor is open. */
 export type TileEditorTab = 'definition' | 'flat' | 'surface' | 'elevation' | 'geometry';
@@ -95,7 +69,9 @@ export const FLAT_LEVEL = -2;
 
 /** `true` when two targets point at the same image. */
 export function sameTarget(left: ImageTarget | null, right: ImageTarget | null): boolean {
-  return left !== null && right !== null && left.level === right.level && left.variant === right.variant;
+  return (
+    left !== null && right !== null && left.level === right.level && left.variant === right.variant
+  );
 }
 
 /** The variants of a target's list, or an empty list when it has none. */

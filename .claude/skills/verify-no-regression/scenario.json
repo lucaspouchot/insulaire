@@ -135,30 +135,40 @@
       "canvas": false
     },
     {
-      "name": "editor-character",
-      "path": "/editor/character",
+      "name": "editor-asset-characters",
+      "path": "/editor/asset/characters",
       "settleMs": 2500,
       "press": [
         {
-          "name": "editor-character-animation",
+          "name": "editor-asset-characters-flat",
+          "selector": ".character-scene-bar .switch",
+          "settleMs": 1200
+        },
+        {
+          "name": "editor-asset-characters-composed",
+          "selector": ".character-scene-bar .switch",
+          "settleMs": 1200
+        },
+        {
+          "name": "editor-asset-characters-animation",
           "selector": ".form .tabs button:nth-of-type(4)",
           "settleMs": 1200
         }
       ]
     },
     {
-      "name": "editor-asset",
-      "path": "/editor/asset",
+      "name": "editor-asset-tiles",
+      "path": "/editor/asset/tiles",
       "settleMs": 2500,
       "press": [
         {
-          "name": "editor-asset-flat",
-          "selector": ".inspector .tabs button:nth-of-type(2)",
+          "name": "editor-asset-tiles-surface",
+          "selector": ".inspector .tabs button:nth-of-type(3)",
           "settleMs": 1200
         },
         {
-          "name": "editor-asset-elevation",
-          "selector": ".inspector .tabs button:nth-of-type(4)",
+          "name": "editor-asset-tiles-flat",
+          "selector": ".inspector .tabs button:nth-of-type(2)",
           "settleMs": 1200
         }
       ]

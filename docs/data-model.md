@@ -307,7 +307,9 @@ with another tile drops its choice, because `grass_f` means nothing on sand
 The **asset editor** owns a fourth, smaller one: a `SpriteDocument` per image
 being painted (`apps/web/src/content/sprite-document.ts`), which is the buffer
 the pixel tools write into and the buffer the preview draws from — one copy of
-every image, never two (ADR-0030, ADR-0035). It is the only editor state that
+every image, never two (ADR-0030, ADR-0035). Every category of the asset editor
+holds them the same way, and a character's two scene modes are two views of the
+same buffer rather than two buffers (ADR-0039). It is the only editor state that
 is *not* mirrored into `localStorage`: unwritten pixels live in the tab, and the
 screen says how many there are.
 

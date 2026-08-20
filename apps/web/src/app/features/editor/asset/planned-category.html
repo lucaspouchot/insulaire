@@ -1,0 +1,15 @@
+<app-asset-workspace [hasInspector]="false">
+  <div toolbar class="toolbar">
+    <span class="path">{{ category()?.titleKey ?? 'ui.editor.planned.unknown' | t }}</span>
+  </div>
+
+  <div scene class="placeholder">
+    @if (category(); as entry) {
+      <h2>{{ entry.titleKey | t }}</h2>
+      <p class="summary">{{ entry.summaryKey | t }}</p>
+      <p class="hint">{{ 'ui.editor.planned.hint' | t: { file: 'asset-categories.ts' } }}</p>
+    } @else {
+      <h2>{{ 'ui.editor.planned.unknown' | t }}</h2>
+    }
+  </div>
+</app-asset-workspace>

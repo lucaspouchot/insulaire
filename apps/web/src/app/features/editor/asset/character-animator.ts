@@ -28,7 +28,7 @@
  * because it belongs to the animation and not to a node.
  */
 
-import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
 
 import {
   Animation,
@@ -116,6 +116,20 @@ export class CharacterAnimator {
   /** What the engine made of it, for the *global* readout. */
   readonly resolved = input<ResolvedCharacter | null>(null);
   readonly writable = input(true);
+
+  /**
+   * Whether the transport and the timeline stay in view while the rest scrolls.
+   *
+   * On by default: an author reading a keyframe scrolls to the pose editor and
+   * back constantly, and the grid is what they are reading against. Off is
+   * there because a tall timeline pinned to the top of a short column is the
+   * opposite of helpful (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+   */
+  protected readonly pinned = signal(true);
+
+  protected togglePinned(): void {
+    this.pinned.update((on) => !on);
+  }
 
   /** A whole new definition, for the page to apply. */
   readonly changed = output<CharacterDefinition>();

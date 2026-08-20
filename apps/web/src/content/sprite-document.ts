@@ -16,14 +16,17 @@
  *
  * A painted pixel is opaque and an erased one is fully clear. Pixel art has no
  * use for a half-transparent pencil, and a buffer full of alpha in the fifties
- * is what makes a sprite impossible to recolour later: the tint multiplies the
- * colour and restores the alpha, so a soft edge stays soft in every tint.
+ * is a sprite nobody can clean up later.
  *
- * A **tile** is the exception, and it is why {@link SpriteDocument.plot} takes
- * an alpha at all: a tile is blitted as it stands, never tinted, so a shoreline
- * that fades is a thing an artist may want
- * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`). The
- * character stage never passes one, so nothing about ADR-0030 changes.
+ * It is a default, not a rule: {@link SpriteDocument.plot} takes an alpha, and
+ * every editing surface offers it. A tile is blitted as it stands, so a
+ * shoreline that fades is a thing an artist may want
+ * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`); a
+ * character is tinted, and the tint multiplies the RGB per pixel and carries
+ * the alpha through untouched, so a soft edge stays the shade it was drawn as
+ * (`character-renderer.ts`,
+ * `docs/adr/ADR-0039-one-editor-for-everything-drawn.md`). ADR-0030 forbade
+ * the second of those until the tint stopped turning it into a halo.
  */
 
 /** How many strokes the history keeps. */
@@ -43,14 +46,6 @@ export const PALETTE_SIZE = 24;
 
 /** An erased pixel: clear, and carrying no colour to bleed out of it. */
 const CLEARED: readonly [number, number, number, number] = [0, 0, 0, 0];
-
-/** A rectangle of pixels, in the sprite's own coordinates. */
-export interface PixelSelection {
-  readonly x: number;
-  readonly y: number;
-  readonly width: number;
-  readonly height: number;
-}
 
 export class SpriteDocument {
   private data: Uint8ClampedArray;
@@ -169,12 +164,12 @@ export class SpriteDocument {
   /**
    * Paints one pixel, or erases it when given `null`.
    *
-   * `alpha` is `0..255` and defaults to opaque. A character's sprites never
-   * use anything else — a soft edge survives into the tint pipeline as a
-   * fringe no recolouring can fix (`docs/adr/ADR-0030-the-editor-paints-its-
-   * sprites.md`) — but a tile is blitted as it stands and a half-transparent
-   * shoreline is a thing an artist wants
-   * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+   * `alpha` is `0..255` and defaults to opaque, which is what a pencil does
+   * unless the author asks otherwise. Both kinds of art may ask: a tile is
+   * blitted as it stands (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-
+   * by-level.md`), and a character's tint multiplies the colour per pixel and
+   * leaves the alpha alone (`docs/adr/ADR-0039-one-editor-for-everything-
+   * drawn.md`, amending `docs/adr/ADR-0030-the-editor-paints-its-sprites.md`).
    *
    * @returns whether the pixel actually changed
    */
@@ -254,111 +249,6 @@ export class SpriteDocument {
     }
   }
 
-  /**
-   * Floods the region of matching pixels reachable from `x, y`.
-   *
-   * "Matching" is exact, alpha included: pixel art has hard edges, so a
-   * tolerance would be a way to bleed through the one-pixel outline the artist
-   * drew to stop exactly this. Four-connected, for the same reason — a
-   * diagonal is a boundary in a small sprite.
-   *
-   * @returns whether any pixel changed
-   */
-  fill(x: number, y: number, color: string | null, alpha = 255): boolean {
-    if (!this.holds(x, y)) {
-      return false;
-    }
-    const target = this.rgbaAt(x, y);
-    const replacement = color === null ? CLEARED : parseHex(color);
-    if (replacement === null) {
-      return false;
-    }
-    const filled: [number, number, number, number] =
-      color === null
-        ? [0, 0, 0, 0]
-        : [
-            replacement[0],
-            replacement[1],
-            replacement[2],
-            Math.max(0, Math.min(255, Math.round(alpha))),
-          ];
-    if (sameRgba(target, filled)) {
-      return false;
-    }
-
-    // An explicit stack rather than recursion: a 256-square sprite is 65 536
-    // pixels deep in the worst case, which is a blown call stack.
-    const stack: number[] = [x, y];
-    let changed = false;
-    while (stack.length > 0) {
-      const py = stack.pop() as number;
-      const px = stack.pop() as number;
-      if (!this.holds(px, py) || !sameRgba(this.rgbaAt(px, py), target)) {
-        continue;
-      }
-      this.write(px, py, filled);
-      changed = true;
-      stack.push(px + 1, py, px - 1, py, px, py + 1, px, py - 1);
-    }
-    return changed;
-  }
-
-  /**
-   * Moves the pixels inside `selection` by `dx, dy`, leaving clear behind.
-   *
-   * The source region is cleared *before* the pixels land, so a move over its
-   * own overlap does not erase what it just wrote. Anything pushed off the edge
-   * is gone, which is what "move" means on a fixed canvas.
-   *
-   * @returns whether any pixel changed
-   */
-  moveSelection(selection: PixelSelection, dx: number, dy: number): boolean {
-    const box = this.clampSelection(selection);
-    if (box === null || (dx === 0 && dy === 0)) {
-      return false;
-    }
-
-    const lifted: (readonly [number, number, number, number])[] = [];
-    for (let y = 0; y < box.height; y += 1) {
-      for (let x = 0; x < box.width; x += 1) {
-        lifted.push(this.rgbaAt(box.x + x, box.y + y));
-      }
-    }
-
-    let changed = false;
-    for (let y = 0; y < box.height; y += 1) {
-      for (let x = 0; x < box.width; x += 1) {
-        changed = this.plot(box.x + x, box.y + y, null) || changed;
-      }
-    }
-    for (let y = 0; y < box.height; y += 1) {
-      for (let x = 0; x < box.width; x += 1) {
-        const pixel = lifted[y * box.width + x];
-        const at = { x: box.x + x + Math.round(dx), y: box.y + y + Math.round(dy) };
-        if (pixel === undefined || !this.holds(at.x, at.y)) {
-          continue;
-        }
-        if (!sameRgba(this.rgbaAt(at.x, at.y), pixel)) {
-          this.write(at.x, at.y, pixel);
-          changed = true;
-        }
-      }
-    }
-    return changed;
-  }
-
-  /** `selection` cropped to the sprite, or `null` when none of it is inside. */
-  clampSelection(selection: PixelSelection): PixelSelection | null {
-    const left = Math.max(0, Math.round(selection.x));
-    const top = Math.max(0, Math.round(selection.y));
-    const right = Math.min(this.width, Math.round(selection.x + selection.width));
-    const bottom = Math.min(this.height, Math.round(selection.y + selection.height));
-    if (right <= left || bottom <= top) {
-      return null;
-    }
-    return { x: left, y: top, width: right - left, height: bottom - top };
-  }
-
   undo(): boolean {
     const previous = this.past.pop();
     if (previous === undefined) {
@@ -412,32 +302,6 @@ export class SpriteDocument {
   /** The alpha of a pixel, `0..255`; `0` outside the sprite. */
   alphaAt(x: number, y: number): number {
     return this.holds(x, y) ? (this.data[(y * this.width + x) * 4 + 3] ?? 0) : 0;
-  }
-
-  /** The four channels of a pixel; clear outside the sprite. */
-  private rgbaAt(x: number, y: number): readonly [number, number, number, number] {
-    if (!this.holds(x, y)) {
-      return CLEARED;
-    }
-    const at = (y * this.width + x) * 4;
-    return [
-      this.data[at] ?? 0,
-      this.data[at + 1] ?? 0,
-      this.data[at + 2] ?? 0,
-      this.data[at + 3] ?? 0,
-    ];
-  }
-
-  /** Writes four channels straight in, bookkeeping included. */
-  private write(x: number, y: number, rgba: readonly [number, number, number, number]): void {
-    const at = (y * this.width + x) * 4;
-    this.data[at] = rgba[0];
-    this.data[at + 1] = rgba[1];
-    this.data[at + 2] = rgba[2];
-    this.data[at + 3] = rgba[3];
-    this.strokeChanged = true;
-    this.saved = false;
-    this.changes += 1;
   }
 
   /**
@@ -511,15 +375,6 @@ export class SpriteDocument {
       }, 'image/png');
     });
   }
-}
-
-function sameRgba(
-  left: readonly [number, number, number, number],
-  right: readonly [number, number, number, number],
-): boolean {
-  return (
-    left[0] === right[0] && left[1] === right[1] && left[2] === right[2] && left[3] === right[3]
-  );
 }
 
 function createCanvas(width: number, height: number): HTMLCanvasElement | null {

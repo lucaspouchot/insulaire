@@ -1,0 +1,20 @@
+@let planned = entry();
+<section class="placeholder">
+  @if (planned === undefined) {
+    <h2>{{ 'ui.editor.planned.unknown' | t }}</h2>
+  } @else {
+    <h2>{{ planned.titleKey | t }}</h2>
+    <p class="summary">{{ planned.summaryKey | t }}</p>
+
+    @if (planned.planKeys?.length) {
+      <h3>{{ 'ui.editor.planned.heading' | t }}</h3>
+      <ul>
+        @for (plan of planned.planKeys; track plan) {
+          <li>{{ plan | t }}</li>
+        }
+      </ul>
+    }
+
+    <p class="hint">{{ 'ui.editor.planned.hint' | t: { file: planned.source } }}</p>
+  }
+</section>
