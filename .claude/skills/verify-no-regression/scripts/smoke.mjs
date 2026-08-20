@@ -13,7 +13,9 @@
  *      on a fixed seed and dispatches a fixed command sequence straight at the
  *      WASM module — no UI in the way. Ticks, positions, events, rejections and
  *      RNG draws are recorded. The engine is deterministic (ADR-0011), so this
- *      transcript is byte-stable unless a rule, the content or the RNG changed.
+ *      transcript is byte-stable unless a rule, the content or the RNG changed
+ *      — the version string it also carries is a note, not behaviour, see
+ *      `NOT_BEHAVIOUR`.
  *
  *   2. **Screenshots.** Each page of the app is opened, left to settle and
  *      captured, together with a 32x32 grayscale signature of its canvas. The
@@ -54,6 +56,14 @@ const REPO = resolve(HERE, '../../../..');
 
 /** Above this mean per-pixel difference (0-255) a canvas counts as changed. */
 const SIGNATURE_TOLERANCE = 4;
+
+/**
+ * Transcript paths that record what ran rather than how it behaved. They are
+ * reported as notes and never count as a regression: the engine version moves
+ * on every release bump without a rule, a tick or a pixel following it, and
+ * diffing it only forced a second full run of this harness to accept one line.
+ */
+const NOT_BEHAVIOUR = new Set(['engine.version']);
 
 // ---------------------------------------------------------------------------
 // Arguments
@@ -658,7 +668,9 @@ function signatureDistance(before, after) {
 }
 
 function compare(current, baseline) {
-  const transcript = diff(baseline.transcript, current.transcript);
+  const changes = diff(baseline.transcript, current.transcript);
+  const transcript = changes.filter((change) => !NOT_BEHAVIOUR.has(change.path));
+  const noted = changes.filter((change) => NOT_BEHAVIOUR.has(change.path));
   const screens = [];
   const byName = new Map(baseline.shots.map((shot) => [shot.name, shot]));
   for (const shot of current.shots) {
@@ -680,7 +692,7 @@ function compare(current, baseline) {
       screens.push({ name: shot.name, status: 'missing' });
     }
   }
-  return { transcript, screens };
+  return { transcript, noted, screens };
 }
 
 // ---------------------------------------------------------------------------
@@ -745,6 +757,7 @@ async function main() {
       out: options.out,
       problems: run.problems,
       transcriptDiff: comparison?.transcript ?? [],
+      transcriptNotes: comparison?.noted ?? [],
       screens: comparison?.screens ?? run.shots.map((shot) => ({ name: shot.name, status: 'recorded' })),
     };
     await writeFile(join(options.out, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
@@ -772,6 +785,7 @@ function print(report, log) {
   log(`verdict: ${report.verdict}`);
   for (const problem of report.problems) log(`  error on ${problem.page}: ${problem.text}`);
   for (const change of report.transcriptDiff) log(`  transcript ${change.path}: ${change.before} -> ${change.after}`);
+  for (const note of report.transcriptNotes) log(`  note ${note.path}: ${note.before} -> ${note.after} (not behaviour)`);
   for (const screen of report.screens) {
     const distance = screen.canvasDistance === undefined ? '' : ` (canvas Δ ${screen.canvasDistance})`;
     log(`  screen ${screen.name}: ${screen.status}${distance}`);

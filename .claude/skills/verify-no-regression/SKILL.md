@@ -100,6 +100,7 @@ Reading the report:
 | `verdict: no-baseline` | first run on this machine — record one (step 6) |
 | `problems[]` | console errors or uncaught exceptions — **always a real defect** |
 | `transcriptDiff[]` | `path: before -> after`, e.g. `steps[3].state.player.at[0]: 5 -> 4` |
+| `transcriptNotes[]` | recorded but not behaviour, so never a regression — today only `engine.version`, which moves on a release bump (`NOT_BEHAVIOUR` in `smoke.mjs`) |
 | `screens[].status` | `identical` · `similar` (pixels differ, canvas does not) · `changed` · `new` · `missing` |
 
 ## 6. Decide, then report
