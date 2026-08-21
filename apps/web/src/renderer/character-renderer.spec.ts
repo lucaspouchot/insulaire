@@ -10,6 +10,8 @@ import {
   placement,
 } from './character-renderer';
 
+import { packSpriteBundle } from '../../../../scripts/sprite-bundle.mjs';
+
 /**
  * A sprite source over a fixed answer.
  *
@@ -501,5 +503,164 @@ describe('SpriteCache', () => {
       // them, and each redraw used to rebuild the whole render model.
       expect(redraws).toBe(1);
     });
+  });
+
+  /**
+   * A stand-in for the browser's decoder: a bundle slice becomes something with
+   * a size, which is all the cache and the renderer ever ask of it.
+   */
+  function scriptedBitmaps(): { decoded: string[]; restore: () => void } {
+    const decoded: string[] = [];
+    const previous = globalThis.createImageBitmap;
+    globalThis.createImageBitmap = (async (blob: Blob) => {
+      decoded.push(await blob.text());
+      return { width: 64, height: 40, close: () => {} } as unknown as ImageBitmap;
+    }) as typeof createImageBitmap;
+    return { decoded, restore: () => (globalThis.createImageBitmap = previous) };
+  }
+
+  /** A response carrying `files` packed by the real writer. */
+  function bundleResponse(files: { path: string; body: string }[]): Response {
+    const packed = packSpriteBundle(
+      files.map((file) => ({
+        path: file.path,
+        type: 'image/png',
+        bytes: Buffer.from(file.body, 'utf8'),
+      })),
+    );
+    const body = new ArrayBuffer(packed.byteLength);
+    new Uint8Array(body).set(packed);
+    return new Response(body, { status: 200 });
+  }
+
+  it('fills the cache from one request, so nothing is fetched per file', async () => {
+    const bitmaps = scriptedBitmaps();
+    const fetching = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      bundleResponse([
+        { path: 'grass.png', body: 'GRASS' },
+        { path: 'rock.png', body: 'ROCK' },
+      ]),
+    );
+    try {
+      await scripted(async () => {
+        const cache = new SpriteCache((asset) => asset);
+        await cache.loadBundle('/content/tile-art.bundle');
+
+        expect(fetching).toHaveBeenCalledTimes(1);
+        expect(bitmaps.decoded).toEqual(['GRASS', 'ROCK']);
+        expect(cache.image('grass.png')).not.toBeNull();
+
+        // The point of the bundle: warming the map now asks the network for
+        // nothing at all (ADR-0040).
+        await cache.preload(['grass.png', 'rock.png']);
+        expect(ScriptedImage.pending).toHaveLength(0);
+      });
+    } finally {
+      bitmaps.restore();
+      fetching.mockRestore();
+    }
+  });
+
+  it('reports its size from a bundled sprite as well as a fetched one', async () => {
+    const bitmaps = scriptedBitmaps();
+    const fetching = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(bundleResponse([{ path: 'grass.png', body: 'GRASS' }]));
+    try {
+      const cache = new SpriteCache((asset) => asset);
+      await cache.loadBundle('/content/tile-art.bundle');
+
+      // An `ImageBitmap` has no `naturalWidth`; the editor fits boxes to this.
+      expect(cache.naturalSize('grass.png')).toEqual({ width: 64, height: 40 });
+    } finally {
+      bitmaps.restore();
+      fetching.mockRestore();
+    }
+  });
+
+  it('rejects when there is no bundle, leaving the per-file path to answer', async () => {
+    const fetching = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('', { status: 404 }));
+    try {
+      await scripted(async () => {
+        const cache = new SpriteCache((asset) => asset);
+
+        await expect(cache.loadBundle('/content/tile-art.bundle')).rejects.toThrow(/404/);
+
+        // The optimisation failed and the map still loads: this is the fallback
+        // every caller catches into (ADR-0040).
+        void cache.preload(['grass.png']);
+        expect(ScriptedImage.pending.map((image) => image.url)).toEqual(['grass.png']);
+      });
+    } finally {
+      fetching.mockRestore();
+    }
+  });
+
+  it('leaves an asset that is already being fetched alone', async () => {
+    const bitmaps = scriptedBitmaps();
+    const fetching = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(bundleResponse([{ path: 'grass.png', body: 'BUNDLED' }]));
+    try {
+      await scripted(async () => {
+        const cache = new SpriteCache((asset) => asset);
+        // An open editing session started this one; the file behind it is the
+        // version the author has already moved past (ADR-0030).
+        cache.image('grass.png');
+        await cache.loadBundle('/content/tile-art.bundle');
+
+        expect(cache.image('grass.png')).toBeNull();
+        ScriptedImage.pending[0]?.load();
+        await nextFrame();
+        expect(cache.image('grass.png')).not.toBeNull();
+      });
+    } finally {
+      bitmaps.restore();
+      fetching.mockRestore();
+    }
+  });
+
+  it('drops a bundle that lands after the cache was cleared', async () => {
+    const bitmaps = scriptedBitmaps();
+    const fetching = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(bundleResponse([{ path: 'grass.png', body: 'GRASS' }]));
+    try {
+      await scripted(async () => {
+        const cache = new SpriteCache((asset) => asset);
+        const landing = cache.loadBundle('/content/tile-art.bundle');
+        cache.clear();
+        await landing;
+
+        // Same rule as a single fetch: what was in flight describes the files
+        // the author has just replaced, and asking again goes back to the file.
+        expect(cache.image('grass.png')).toBeNull();
+        expect(ScriptedImage.pending.map((image) => image.url)).toEqual(['grass.png']);
+      });
+    } finally {
+      bitmaps.restore();
+      fetching.mockRestore();
+    }
+  });
+
+  it('fetches the bundle once, however many callers ask for it', async () => {
+    const bitmaps = scriptedBitmaps();
+    const fetching = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(bundleResponse([{ path: 'grass.png', body: 'GRASS' }]));
+    try {
+      const cache = new SpriteCache((asset) => asset);
+      await Promise.all([
+        cache.loadBundle('/content/tile-art.bundle'),
+        cache.loadBundle('/content/tile-art.bundle'),
+      ]);
+
+      expect(fetching).toHaveBeenCalledTimes(1);
+    } finally {
+      bitmaps.restore();
+      fetching.mockRestore();
+    }
   });
 });

@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { TileArt, shoulderDepth, shoulderLine } from '../content/content-types';
 import { offset } from '../core/hex/hex-coords';
@@ -550,5 +550,94 @@ describe('HexMapRenderer tile art', () => {
 
     renderer.draw(600, 600);
     expect(canvas.blits.length).toBeGreaterThan(0);
+  });
+
+  it('asks for the bundle before it asks for a single file', async () => {
+    const asked: string[] = [];
+    let landed = (): void => undefined;
+    const source: SpriteSource = {
+      image: (asset: string) => ({ asset }) as unknown as CanvasImageSource,
+      preload: (assets: Iterable<string>) => {
+        asked.push(`preload:${[...assets].length}`);
+        return Promise.resolve();
+      },
+      loadBundle: (url: string) => {
+        asked.push(`bundle:${url}`);
+        return new Promise<void>((resolve) => (landed = resolve));
+      },
+    };
+    const canvas = recorder();
+    const renderer = new HexMapRenderer(
+      canvas.context,
+      LAYOUT,
+      new Camera(),
+      undefined,
+      source,
+      '/content/tile-art.bundle',
+    );
+    renderer.setModel(modelWith(FULL));
+
+    const warmed = renderer.warmTileArt();
+
+    // The order is the whole point: a `preload` that ran first would fetch the
+    // files the bundle is about to carry
+    // (`docs/adr/ADR-0040-tile-art-travels-as-one-bundle.md`).
+    expect(asked).toEqual(['bundle:/content/tile-art.bundle']);
+    // And nothing is drawn meanwhile, so no frame resolves a cell and asks for
+    // its images one at a time.
+    renderer.draw(600, 600);
+    expect(canvas.blits).toHaveLength(0);
+    expect(renderer.isWarming).toBe(true);
+
+    landed();
+    await warmed;
+
+    expect(asked[1]).toMatch(/^preload:/);
+    expect(renderer.isWarming).toBe(false);
+  });
+
+  it('loads the map file by file when the bundle cannot be read', async () => {
+    const asked: string[] = [];
+    const source: SpriteSource = {
+      image: (asset: string) => ({ asset }) as unknown as CanvasImageSource,
+      preload: (assets: Iterable<string>) => {
+        asked.push(`preload:${[...assets].length}`);
+        return Promise.resolve();
+      },
+      loadBundle: () => Promise.reject(new Error('no bundle at that URL')),
+    };
+    const canvas = recorder();
+    const renderer = new HexMapRenderer(
+      canvas.context,
+      LAYOUT,
+      new Camera(),
+      undefined,
+      source,
+      '/content/tile-art.bundle',
+    );
+    renderer.setModel(modelWith(FULL));
+
+    await renderer.warmTileArt();
+
+    expect(asked[0]).toMatch(/^preload:/);
+    expect(renderer.isWarming).toBe(false);
+    renderer.draw(600, 600);
+    expect(canvas.blits.length).toBeGreaterThan(0);
+  });
+
+  it('never asks for a bundle when it was given no URL', async () => {
+    const loadBundle = vi.fn(() => Promise.resolve());
+    const source: SpriteSource = {
+      image: (asset: string) => ({ asset }) as unknown as CanvasImageSource,
+      preload: () => Promise.resolve(),
+      loadBundle,
+    };
+    const canvas = recorder();
+    const renderer = new HexMapRenderer(canvas.context, LAYOUT, new Camera(), undefined, source);
+    renderer.setModel(modelWith(FULL));
+
+    await renderer.warmTileArt();
+
+    expect(loadBundle).not.toHaveBeenCalled();
   });
 });

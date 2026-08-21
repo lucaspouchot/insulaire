@@ -28,6 +28,10 @@
  */
 
 import { ResolvedCharacter, ResolvedLayer, SpriteResolution } from '../content/content-types';
+import { unpackSpriteBundle } from '../content/sprite-bundle';
+
+/** What a cache holds for one asset: a fetched file, or a slice of a bundle. */
+type SpriteImage = HTMLImageElement | ImageBitmap;
 
 /** Where on the canvas a character is drawn, in CSS pixels. */
 export interface CharacterBox {
@@ -51,6 +55,16 @@ export interface SpriteSource {
    * (`docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`).
    */
   preload(assets: Iterable<string>): Promise<void>;
+  /**
+   * Fills the source from **one** file carrying many sprites, if it can.
+   *
+   * Optional, because a source over open editing buffers has nothing to fetch:
+   * the map's cache implements it, the asset workspaces do not. A source that
+   * offers it is expected to reject rather than half-fill when the bundle
+   * cannot be read, so the caller falls back to {@link preload}
+   * (`docs/adr/ADR-0040-tile-art-travels-as-one-bundle.md`).
+   */
+  loadBundle?(url: string): Promise<void>;
 }
 
 /** The canvas element's rendered box, as `getBoundingClientRect()` gives it. */
@@ -325,7 +339,7 @@ function outlineMissing(
  */
 export class SpriteCache implements SpriteSource {
   /** Settled assets: the image, or `null` when the fetch failed. */
-  private readonly images = new Map<string, HTMLImageElement | null>();
+  private readonly images = new Map<string, SpriteImage | null>();
   /** Assets currently in flight, so nothing is fetched twice. */
   private readonly loading = new Map<string, Promise<void>>();
   /** Set while a redraw notification is already booked for this frame. */
@@ -338,6 +352,13 @@ export class SpriteCache implements SpriteSource {
    * version the author just replaced back in front of them (ADR-0030).
    */
   private era = 0;
+  /**
+   * The bundle fetch, once started, so a second caller waits on the first.
+   *
+   * Reset by {@link clear}: an author who has just repainted a tile must get
+   * the new file, and the bundle is where the old one would hide.
+   */
+  private bundle: Promise<void> | null = null;
 
   /**
    * @param resolveUrl turns a content path into a URL the document can fetch
@@ -372,16 +393,81 @@ export class SpriteCache implements SpriteSource {
     return Promise.all(waits).then(() => undefined);
   }
 
+  /**
+   * Fills the cache from **one** bundle instead of one request per asset.
+   *
+   * A map is painted from a hundred and eighty-odd sprites of about 1.4 kB.
+   * Fetched individually the browser queues them six at a time and the map
+   * waits on the queue, not on the bytes; fetched as a bundle it is one request
+   * and one wait (`docs/adr/ADR-0040-tile-art-travels-as-one-bundle.md`).
+   *
+   * This is an **optimisation, never a rule**. It rejects when there is no
+   * bundle to be had — an unknown URL, a corrupt file, a browser without
+   * `createImageBitmap` — and a caller that catches it simply falls back to
+   * {@link preload}, which fetches the same pixels one file at a time. That is
+   * the same bargain composition strikes in ADR-0038: faster when it works,
+   * identical when it does not.
+   *
+   * An asset already settled or in flight keeps what it has: an open editing
+   * session must never be overwritten by the file it was started from.
+   */
+  loadBundle(url: string): Promise<void> {
+    if (this.bundle !== null) {
+      return this.bundle;
+    }
+    const era = this.era;
+    const promise = (async () => {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`no sprite bundle at ${url} (${response.status})`);
+      }
+      const sprites = unpackSpriteBundle(await response.arrayBuffer());
+      const decoded = await Promise.all(
+        sprites.map(
+          async (sprite) =>
+            [
+              sprite.path,
+              await createImageBitmap(new Blob([sprite.bytes], { type: sprite.type })),
+            ] as const,
+        ),
+      );
+      if (era !== this.era) {
+        // Cleared while this was in flight: these are the files the author has
+        // just replaced, and putting them back is exactly what `era` prevents.
+        return;
+      }
+      for (const [path, bitmap] of decoded) {
+        if (!this.images.has(path)) {
+          this.images.set(path, bitmap);
+        }
+      }
+      this.notify();
+    })();
+    this.bundle = promise;
+    return promise;
+  }
+
   /** The natural size of a loaded image, for the editor to fit a box to it. */
   naturalSize(asset: string): { width: number; height: number } | null {
     const image = this.images.get(asset);
-    return image == null ? null : { width: image.naturalWidth, height: image.naturalHeight };
+    if (image == null) {
+      return null;
+    }
+    // An `<img>` reports its intrinsic size as `natural*`; an `ImageBitmap` out
+    // of a bundle has no intrinsic/rendered distinction to draw, and reports
+    // the only size it has. Asked by shape rather than by `instanceof`, because
+    // `HTMLImageElement` is not a global everywhere this code runs — the specs
+    // exercise it outside a DOM, and so would a worker.
+    return 'naturalWidth' in image
+      ? { width: image.naturalWidth, height: image.naturalHeight }
+      : { width: image.width, height: image.height };
   }
 
   /** Forgets every image, so edited assets are fetched again. */
   clear(): void {
     this.images.clear();
     this.loading.clear();
+    this.bundle = null;
     this.era += 1;
   }
 

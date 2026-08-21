@@ -127,6 +127,17 @@ export class HexMapRenderer {
      * it loads (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
      */
     private readonly images: SpriteSource | null = null,
+    /**
+     * Where every tile sprite can be had in one request, or `null` to fetch
+     * them one at a time.
+     *
+     * A map is a hundred and eighty-odd files of about 1.4 kB, and what it
+     * waits on is the number of requests rather than the bytes
+     * (`docs/adr/ADR-0040-tile-art-travels-as-one-bundle.md`). It is an
+     * optimisation: when there is no bundle to be had, {@link warmTileArt}
+     * fetches the same pixels file by file and draws the same map.
+     */
+    private readonly bundleUrl: string | null = null,
   ) {
     this.projection = this.projectionFor(this.model);
     this.appearances = new TileAppearanceCache(images);
@@ -172,16 +183,41 @@ export class HexMapRenderer {
       // never blit.
       return Promise.resolve();
     }
+    // Set **synchronously**, before anything is awaited: `draw` paints the
+    // background alone while this is true, and a frame slipping through before
+    // it would resolve its cells one by one and start exactly the per-file
+    // fetches the bundle exists to avoid.
     this.warming = true;
     // A source that fails outright must still let the map through: the tiles it
     // could not fetch draw their colour, which is what a missing file has
     // always looked like (`docs/adr/ADR-0009-assets-tilesets.md`).
-    return images
-      .preload(assets)
+    const bundle = this.loadBundle();
+    return (bundle === null ? images.preload(assets) : bundle.then(() => images.preload(assets)))
       .catch(() => undefined)
       .finally(() => {
         this.warming = false;
       });
+  }
+
+  /**
+   * Fetches the sprite bundle, or `null` when there is none to fetch.
+   *
+   * `null` rather than a resolved promise, so a renderer with no bundle asks
+   * its source for the files **synchronously**, exactly as it did before there
+   * was a bundle. A microtask between "start warming" and "start fetching" is
+   * not something anyone can see, but it is a behaviour change, and a warm is
+   * not the place to introduce one.
+   *
+   * Never rejects: a bundle that cannot be had is not an error but a slower
+   * path, and the `preload` that follows fetches the same sprites one at a
+   * time (`docs/adr/ADR-0040-tile-art-travels-as-one-bundle.md`).
+   */
+  private loadBundle(): Promise<void> | null {
+    const images = this.images;
+    if (images === null || this.bundleUrl === null || images.loadBundle === undefined) {
+      return null;
+    }
+    return images.loadBundle(this.bundleUrl).catch(() => undefined);
   }
 
   /**
@@ -193,9 +229,16 @@ export class HexMapRenderer {
    * whole of what it draws.
    */
   warmPalette(): Promise<void> {
-    return (
-      this.images?.preload(this.appearances.assets()).catch(() => undefined) ?? Promise.resolve()
-    );
+    const images = this.images;
+    if (images === null) {
+      return Promise.resolve();
+    }
+    // Through the bundle too, on the chance the map was drawn from colours and
+    // never warmed: once a map has loaded this is already in hand and resolves
+    // without a request.
+    const bundle = this.loadBundle();
+    const assets = (): Promise<void> => images.preload(this.appearances.assets());
+    return (bundle === null ? assets() : bundle.then(assets)).catch(() => undefined);
   }
 
   /** `true` while the map is being held back for its art; see {@link warmTileArt}. */

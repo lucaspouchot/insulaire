@@ -22,6 +22,7 @@
  * ```text
  *   GET    /api/content/health        which directory is being served
  *   GET    /api/content/tree          every content file, with size and mtime
+ *   GET    /content/tile-art.bundle   every tile sprite, in one response
  *   GET    /content/<path>            read a file
  *   PUT    /api/content/<path>        write a file, creating directories
  *   DELETE /api/content/<path>        remove a file
@@ -33,6 +34,13 @@ import { dirname, join, relative, sep } from 'node:path';
 
 import { contentDir, describeContentDir } from './content-dir.mjs';
 import { MAX_UPLOAD_BYTES, contentTypeOf, safeContentPath } from './content-paths.mjs';
+import {
+  TILE_ART_BUNDLE,
+  TILE_ART_DIR,
+  collectSprites,
+  packSpriteBundle,
+  spriteSignature,
+} from './sprite-bundle.mjs';
 
 const READ_PREFIX = '/content/';
 const API_PREFIX = '/api/content/';
@@ -60,6 +68,10 @@ async function handle(request, response, root, readOnly) {
 
   if (path === '/api/content/tree') {
     return sendJson(response, 200, { root, readOnly, files: await tree(root) });
+  }
+
+  if (path === READ_PREFIX + TILE_ART_BUNDLE && request.method === 'GET') {
+    return sendTileArtBundle(response, root);
   }
 
   if (path.startsWith(READ_PREFIX) && request.method === 'GET') {
@@ -105,6 +117,49 @@ async function tree(root) {
   }
   files.sort((a, b) => a.path.localeCompare(b.path));
   return files;
+}
+
+/**
+ * Bundles held in memory, by content root: `{ signature, buffer }`.
+ *
+ * Keyed by root rather than kept in a closure because two servers may run at
+ * once — a developer's and the smoke harness's — and they may be serving two
+ * different games.
+ */
+const tileArtBundles = new Map();
+
+/**
+ * Serves every tile sprite as one response, rebuilding it when the files move.
+ *
+ * This is the whole point of the bundle: a map is a hundred and eighty-odd
+ * requests' worth of 1.4 kB PNGs, and the browser spends its time queueing them
+ * rather than downloading them
+ * (`docs/adr/ADR-0040-tile-art-travels-as-one-bundle.md`).
+ *
+ * It is generated, never stored: the content directory holds the individual
+ * PNGs, which are what the asset editor opens and writes. The signature — every
+ * path, size and mtime under `assets/tiles` — is what makes a cached bundle
+ * safe to keep while an author is painting through this same server, and what
+ * makes it rebuild when the seeder or a `git checkout` changes the art behind
+ * our back (ADR-0022, ADR-0030).
+ */
+async function sendTileArtBundle(response, root) {
+  const signature = await spriteSignature(root, TILE_ART_DIR);
+  let bundle = tileArtBundles.get(root);
+  if (bundle === undefined || bundle.signature !== signature) {
+    bundle = { signature, buffer: packSpriteBundle(await collectSprites(root, TILE_ART_DIR)) };
+    tileArtBundles.set(root, bundle);
+  }
+
+  response.writeHead(200, {
+    'content-type': 'application/octet-stream',
+    'content-length': bundle.buffer.byteLength,
+    // Same rule as every other content read: the files under it change while
+    // the page is open, and a cached bundle would show the author their
+    // previous stroke.
+    'cache-control': 'no-store',
+  });
+  return response.end(bundle.buffer);
 }
 
 async function readEntry(response, root, target) {

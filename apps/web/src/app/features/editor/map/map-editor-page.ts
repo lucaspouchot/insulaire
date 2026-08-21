@@ -34,6 +34,7 @@ import {
 import { Offset } from '../../../../core/hex/hex-coords';
 import { HexLayout } from '../../../../core/hex/hex-layout';
 import { ProjectionMode, WorldDefinition } from '../../../../content/content-types';
+import { TILE_ART_BUNDLE } from '../../../../content/sprite-bundle';
 import { DocumentLink, DocumentTile, WorldDocument } from '../../../../content/world-document';
 import { serializeWorld } from '../../../../content/world-serializer';
 import { ValidationReport } from '../../../../engine/engine.types';
@@ -370,6 +371,9 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       // simply never asks for one
       // (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
       this.tileImages,
+      // All of them in one request rather than one each
+      // (`docs/adr/ADR-0040-tile-art-travels-as-one-bundle.md`).
+      contentUrl(TILE_ART_BUNDLE),
     );
     this.renderer.setModel(this.buildModel(document));
     this.warmTileArt();

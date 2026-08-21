@@ -1250,6 +1250,36 @@ Every world file carries all four record arrays — `tiles`, `entities`,
 Plain `JSON.stringify(world, null, 2)` is still valid input — the format
 requirement is on writing, not reading.
 
+### The tile-art bundle
+
+`/content/tile-art.bundle` is **generated, never authored**. It carries every
+allowed file under `assets/tiles/` in one response, so a map costs one request
+instead of the hundred and eighty-four its sprites would
+(`docs/adr/ADR-0040-tile-art-travels-as-one-bundle.md`).
+
+```text
+  0   magic        4 bytes   "ISLB"
+  4   version      u32 LE    1
+  8   headerBytes  u32 LE    length of the JSON header
+  12  header       { "entries": [ { path, type, offset, length } ] }
+  ..  payload      every file, concatenated, in header order
+```
+
+`offset` counts from the first byte of the payload. Entries are sorted by path,
+so the same directory always packs to the same bytes.
+
+Two things answer that URL and the runtime cannot tell them apart: the dev
+server builds it in memory, rebuilding whenever a path, size or mtime under
+`assets/tiles/` moves (`scripts/content-server.mjs`), and a build writes it into
+`apps/web/public/content/` (`scripts/sync-content.mjs`). What is authored,
+edited and versioned remains the individual PNGs; `.bundle` is not an allowed
+content extension, so one cannot be uploaded, and it is absent from
+`/api/content/tree`.
+
+Reading it is optional. A caller that cannot — no file, a corrupt header, no
+`createImageBitmap` — falls back to fetching each sprite on its own and draws
+exactly the same pixels.
+
 ---
 
 ## Versioning and migration

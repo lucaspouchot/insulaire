@@ -51,6 +51,7 @@ import { HexMapRenderer } from '../../../renderer/hex-map-renderer';
 import { toProjectionMode } from '../../../renderer/projection';
 import { RenderModel, cellArtChoicesOf, elevationRangeOf } from '../../../renderer/render-model';
 import { SpriteRegistry } from '../../../renderer/sprite-registry';
+import { TILE_ART_BUNDLE } from '../../../content/sprite-bundle';
 import { serializeWorld } from '../../../content/world-serializer';
 import { I18nService } from '../../i18n/i18n.service';
 import { SettingsService } from '../../settings/settings.service';
@@ -402,6 +403,9 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       // simply never asks for one
       // (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
       this.tileImages,
+      // All of them in one request rather than one each
+      // (`docs/adr/ADR-0040-tile-art-travels-as-one-bundle.md`).
+      contentUrl(TILE_ART_BUNDLE),
     );
     // The elevation range is scanned once per loaded world, never per frame.
     this.renderer.setModel(this.buildModel(view, terrain, elevation, elevationRangeOf(elevation)));

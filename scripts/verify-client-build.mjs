@@ -22,8 +22,22 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const buildDir = join(repoRoot, 'apps', 'web', 'dist', 'web', 'browser');
 
-/** Without these, the game cannot start at all. */
-const REQUIRED = ['index.html', join('wasm', 'insulaire_engine_bg.wasm'), join('content', 'project.json')];
+/**
+ * Without these, the game cannot start at all — or starts far slower than it
+ * should.
+ *
+ * The tile-art bundle is in the list even though a missing one is survivable:
+ * the client would fall back to fetching every sprite on its own, which is the
+ * hundred-and-eighty-four requests the bundle exists to remove
+ * (`docs/adr/ADR-0040-tile-art-travels-as-one-bundle.md`). A build that lost it
+ * lost `sync-content`, and that is worth failing on rather than shipping.
+ */
+const REQUIRED = [
+  'index.html',
+  join('wasm', 'insulaire_engine_bg.wasm'),
+  join('content', 'project.json'),
+  join('content', 'tile-art.bundle'),
+];
 
 /**
  * Component selectors that exist only in the editor. The editor is reached from
