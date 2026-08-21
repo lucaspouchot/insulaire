@@ -54,6 +54,7 @@ pathfinding, procedural generation, **saving and loading** (the title screen's
 | **Rust** | ≥ 1.82 (stable) | Install from <https://rustup.rs>. |
 | **wasm32 target** | — | `rustup target add wasm32-unknown-unknown` |
 | **GTK/WebKit dev packages** | — | Linux only, and only to build the desktop shell — see *Delivering the game*. |
+| **MSVC C++ build tools, WebView2** | — | Windows only, same. WebView2 already ships with Windows 11 and current Windows 10. |
 
 `wasm-pack` is **not** a manual install: it comes in as a dev dependency of this
 repository, so `npm install` provides it.
@@ -546,6 +547,12 @@ Steam itself is a seam, not an integration: `apps/desktop/src/steam.rs` is
 inert unless the crate is built `--features steam`, because the Steamworks SDK
 is not redistributable (ADR-0020).
 
+Building on Windows needs the **MSVC C++ build tools** ("Desktop development
+with C++" in the Visual Studio Build Tools) and the **WebView2 runtime**, which
+current Windows versions already carry. `just` finds no `sh` there, so the
+justfile runs its recipes through PowerShell (`set windows-shell`); the commands
+themselves are the same ones.
+
 Building on Linux needs the GTK and WebKit development packages:
 
 ```bash
@@ -662,6 +669,14 @@ types the application uses — including the whole change-map loop.
   wrong order.
 - **Isometric mode gives up whole-viewport terrain batching**: it batches per
   visible row, because elevated cells overlap the row behind them.
+- **The Linux desktop shell inside WSLg is not a performance reference.** WSL
+  exposes `/dev/dri/card0` as *vgem*, a virtual device that renders nothing —
+  the real GPU is behind `/dev/dxg` — so WebKitGTK falls back and prints
+  `libEGL warning: DRI3 error: Could not get DRI3 device`. Canvas frames there
+  cost orders of magnitude more than the same build costs in a browser on the
+  same machine, and the pointer lags the highlight because WSLg presents the
+  window through RDP while Windows draws the cursor natively. Measure the
+  renderer in `just run`, or in a build made on the target platform.
 - **Palette limit of 256 tiles**, because the packed buffer is one byte per cell.
 - **No save/load of a game in progress.** The RNG state is serialisable and
   travels in every snapshot, but no save system is built on it yet.

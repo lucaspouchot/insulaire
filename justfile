@@ -1,3 +1,9 @@
+# Windows has no `sh`, which is what `just` reaches for by default, so every
+# recipe here would fail before running a single command. The recipes are lists
+# of `npm` and `node` calls and nothing else — no pipes, no globbing, no POSIX —
+# so PowerShell runs them exactly as a shell does.
+set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
+
 # Start the dev environment. Extra arguments go to `ng serve` untouched, so
 # `just run --host 0.0.0.0` exposes the app to the local network and
 # `just run --port 4399` moves it off the default port.
