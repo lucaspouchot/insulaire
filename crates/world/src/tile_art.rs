@@ -111,7 +111,7 @@ pub const MAX_ELEVATION_LEVELS: usize = 32;
 /// Most variants one surface or one elevation level may offer.
 pub const MAX_TILE_VARIANTS: usize = 16;
 
-/// Most layers [`resolve_tile_render`] will stack for one cell.
+/// Most layers — **bands** — [`resolve_tile_render`] will stack for one cell.
 ///
 /// A drop of two hundred steps is drawn two hundred sprites deep otherwise, and
 /// everything past the first few dozen is below the bottom of any viewport.
@@ -200,6 +200,32 @@ impl TileArtGeometry {
     #[must_use]
     pub const fn face_height(&self) -> u32 {
         self.elevation_height.saturating_sub(self.shoulder_depth())
+    }
+
+    /// How many levels of elevation one drawn band of faces spans.
+    ///
+    /// A band is [`face_height`](Self::face_height) tall and a level lifts
+    /// [`elevation_step`](Self::elevation_step), so a set whose step is a whole
+    /// band answers `1` — one image per level, edge to edge, which is what
+    /// every set said before the two were told apart. A **shorter** step means
+    /// one image covers several levels: the cliff is lower without the art
+    /// being sliced into repeating strips, which is the whole point of a step
+    /// shorter than a band (`docs/adr/ADR-0041-a-cliff-is-stacked-in-bands.md`).
+    ///
+    /// Never zero, and never so large that bands would gap: it rounds *down*,
+    /// so a band that does not divide evenly overlaps its neighbour by the
+    /// remainder instead of leaving the colour wall showing through.
+    #[must_use]
+    pub const fn band_levels(&self) -> u32 {
+        if self.elevation_step == 0 {
+            return 1;
+        }
+        let levels = self.face_height() / self.elevation_step;
+        if levels == 0 {
+            1
+        } else {
+            levels
+        }
     }
 }
 
@@ -353,7 +379,11 @@ impl TileArt {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResolvedTileLayer {
-    /// The height this layer stands at, 1-based.
+    /// The band this layer draws, counted from the ground, 1-based.
+    ///
+    /// A band spans [`TileArtGeometry::band_levels`] levels of elevation, so
+    /// this is the height the layer stands at only when a level *is* a band —
+    /// and it is the ladder level the layer asks for either way.
     pub level: u32,
     /// The explicit level whose art draws it; equal to `level` unless repeated.
     pub source_level: u32,
@@ -361,9 +391,11 @@ pub struct ResolvedTileLayer {
     pub asset: String,
     /// Steps of [`TileArtGeometry::elevation_step`] below the cell's top face.
     ///
-    /// `0` is the layer whose surface *is* the top face. The whole image moves;
-    /// nothing inside it is transformed.
-    pub drop: u32,
+    /// `0` is the layer whose band starts at the top face. **Signed**: the
+    /// topmost band of a stack may start above it, because bands are stacked
+    /// from the foot up and the top face — drawn last — covers whatever sticks
+    /// out. The whole image moves; nothing inside it is transformed.
+    pub drop: i32,
 }
 
 /// What to draw for one cell, back to front.
@@ -477,11 +509,17 @@ pub struct CellArt<'a> {
 /// [`variant_roll`] for the cell, and `cell` is whatever the author chose by
 /// hand; [`CellArt::default`] is the ordinary case, where everything is rolled.
 ///
-/// In an isometric world the stack runs from `base + 1` to `elevation`, one
-/// layer per visible step, and each layer's `drop` is how many steps below the
-/// top face it sits. When nothing is visible — a flat cell, or one no higher
-/// than its neighbours — the surface image is the whole answer.
+/// In an isometric world the stack is built out of **bands**, not out of
+/// levels: `band_levels` is how many levels one drawn image spans
+/// ([`TileArtGeometry::band_levels`]), bands are stacked from the cell's foot
+/// up so the lowest one ends on the hexagon's silhouette, and each layer's
+/// `drop` is how many steps below the top face its band starts — negative for
+/// the topmost band when it overshoots, which the top face covers. Pass `1` for
+/// a set whose step *is* its band, and the stack is one image per visible step
+/// exactly as it always was. When nothing is visible — a flat cell, or one no
+/// higher than its neighbours — the surface image is the whole answer.
 #[must_use]
+#[allow(clippy::too_many_arguments)] // a cell's whole question, asked once per visible tile per frame
 pub fn resolve_tile_render(
     tile_id: &str,
     art: &TileArt,
@@ -490,6 +528,7 @@ pub fn resolve_tile_render(
     base: i32,
     roll: u32,
     cell: CellArt<'_>,
+    band_levels: u32,
 ) -> ResolvedTileRender {
     // A top-down hexagon has no tilt and no side faces, so it has its own
     // images and borrows nothing from the isometric ones: a surface is the top
@@ -507,9 +546,7 @@ pub fn resolve_tile_render(
         };
     }
 
-    let steps = u32::try_from(elevation.saturating_sub(base))
-        .unwrap_or(0)
-        .min(MAX_STACKED_LEVELS);
+    let steps = u32::try_from(elevation.saturating_sub(base)).unwrap_or(0);
     // The top face is the tile's own, at every height: an elevation image is
     // the faces and nothing else, so raising a cell never costs it the variety
     // its surfaces give it.
@@ -539,13 +576,26 @@ pub fn resolve_tile_render(
     // a different number of variants wraps rather than losing the layer.
     let chosen = cell.elevation_variant.or(surface_index);
 
-    let mut layers = Vec::with_capacity(steps as usize);
-    for drop in (0..steps).rev() {
-        // `level` is the height this layer stands at. A cell dug below the
-        // ground it fronts still needs its faces drawn, and levels at or below
-        // zero have no art of their own, so they borrow level 1's.
-        let height = elevation.saturating_sub(i32::try_from(drop).unwrap_or(0));
-        let level = u32::try_from(height).unwrap_or(0).max(1);
+    // One image per band, lowest first. The lowest band's own bottom is the
+    // cell's foot, so a cliff ends on the hexagon's silhouette whatever its
+    // height, and everything a band covers above that is hidden under the band
+    // — or the top face — standing on it.
+    let band_levels = band_levels.max(1);
+    let bands = steps.div_ceil(band_levels);
+    let drawn = bands.min(MAX_STACKED_LEVELS);
+    let mut layers = Vec::with_capacity(drawn as usize);
+    // Deeper than the cap is below the bottom of any viewport, so the *top*
+    // bands are the ones kept and colour fills the rest, exactly as it does for
+    // a tile that authors no ladder at all.
+    for band in (bands - drawn + 1)..=bands {
+        // Which ladder level a band draws is its index from the ground, so a
+        // cliff standing on higher ground shows the stratum its taller
+        // neighbour shows at that height. A cell dug below the ground it fronts
+        // still needs faces, and bands at or below zero have no art of their
+        // own, so they borrow level 1's.
+        let index_from_ground =
+            i64::from(base).div_euclid(i64::from(band_levels)) + i64::from(band);
+        let level = u32::try_from(index_from_ground.max(1)).unwrap_or(1);
         let Some(source_level) = faces.elevation.source_level(level) else {
             continue;
         };
@@ -556,11 +606,14 @@ pub fn resolve_tile_render(
         let Some(variant) = at(&source.variants, index) else {
             continue;
         };
+        // Where the band's own top sits, in steps under the top face: the foot
+        // is `steps` down, and this band's bottom is `band` bands above it.
+        let drop = i64::from(steps) - i64::from(band) * i64::from(band_levels);
         layers.push(ResolvedTileLayer {
             level,
             source_level,
             asset: variant.asset.clone(),
-            drop,
+            drop: i32::try_from(drop).unwrap_or(0),
         });
     }
 
@@ -635,6 +688,7 @@ mod tests {
             0,
             0,
             CellArt::default(),
+            1,
         );
 
         assert_eq!(
@@ -654,6 +708,7 @@ mod tests {
             0,
             0,
             CellArt::default(),
+            1,
         );
         assert!(resolved.is_empty());
     }
@@ -669,9 +724,10 @@ mod tests {
             0,
             0,
             CellArt::default(),
+            1,
         );
 
-        let stack: Vec<(u32, u32, &str)> = resolved
+        let stack: Vec<(u32, i32, &str)> = resolved
             .layers
             .iter()
             .map(|layer| (layer.level, layer.drop, layer.asset.as_str()))
@@ -690,6 +746,60 @@ mod tests {
             resolved.surface.as_deref(),
             Some("assets/tiles/grass_01.png")
         );
+    }
+
+    #[test]
+    fn a_band_spanning_two_levels_is_one_image_over_both() {
+        // The shipped shape: a level lifts half a band, so three levels of
+        // relief are one whole image and half of the next — not three slices of
+        // the same picture, which is what reads as stripes on a cliff.
+        let art = art(vec![level("a"), level("b"), level("c")], None);
+        let resolved = resolve_tile_render(
+            "mountain",
+            &art,
+            ProjectionMode::Isometric,
+            3,
+            0,
+            0,
+            CellArt::default(),
+            2,
+        );
+
+        let stack: Vec<(u32, i32, &str)> = resolved
+            .layers
+            .iter()
+            .map(|layer| (layer.level, layer.drop, layer.asset.as_str()))
+            .collect();
+        // Lowest first: level 1's band ends on the foot three steps down, and
+        // level 2's starts one step *above* the top face, which covers it.
+        assert_eq!(
+            stack,
+            vec![(1, 1, "assets/tiles/a.png"), (2, -1, "assets/tiles/b.png")]
+        );
+    }
+
+    #[test]
+    fn a_band_asks_for_the_ladder_level_its_height_stands_at() {
+        // A cliff whose foot is two levels up starts at the same band its
+        // taller neighbour is showing there, so strata line up across a map.
+        let art = art(vec![level("a"), level("b"), level("c")], None);
+        let perched = resolve_tile_render(
+            "mountain",
+            &art,
+            ProjectionMode::Isometric,
+            4,
+            2,
+            0,
+            CellArt::default(),
+            2,
+        );
+
+        let stack: Vec<(u32, i32, &str)> = perched
+            .layers
+            .iter()
+            .map(|layer| (layer.level, layer.drop, layer.asset.as_str()))
+            .collect();
+        assert_eq!(stack, vec![(2, 0, "assets/tiles/b.png")]);
     }
 
     #[test]
@@ -718,6 +828,7 @@ mod tests {
             0,
             0,
             CellArt::default(),
+            1,
         );
         let sources: Vec<u32> = resolved
             .layers
@@ -738,6 +849,7 @@ mod tests {
             0,
             0,
             CellArt::default(),
+            1,
         );
 
         // One asset, three drops: the image is displaced, never transformed.
@@ -797,6 +909,7 @@ mod tests {
             0,
             0,
             CellArt::default(),
+            1,
         );
 
         // The stack is capped, and every one of its layers reuses level 2's
@@ -825,6 +938,7 @@ mod tests {
                 0,
                 0,
                 CellArt::default(),
+                1,
             );
             assert_eq!(
                 resolved.surface.as_deref(),
@@ -857,6 +971,7 @@ mod tests {
             0,
             0,
             CellArt::default(),
+            1,
         );
 
         assert_eq!(resolved.surface, None);
@@ -875,6 +990,7 @@ mod tests {
             4,
             0,
             CellArt::default(),
+            1,
         );
         assert_eq!(resolved.layers.len(), 1);
         assert_eq!(resolved.layers[0].level, 5);
@@ -892,6 +1008,7 @@ mod tests {
             -3,
             0,
             CellArt::default(),
+            1,
         );
         assert_eq!(resolved.layers.len(), 2);
         // Nothing is authored below level 1, so those steps borrow it.
@@ -935,6 +1052,7 @@ mod tests {
             0,
             1,
             CellArt::default(),
+            1,
         );
         let assets: Vec<&str> = resolved
             .layers
@@ -970,6 +1088,7 @@ mod tests {
             0,
             1,
             CellArt::default(),
+            1,
         );
         assert_eq!(resolved.flat.as_deref(), Some("assets/tiles/flat_b.png"));
         assert_eq!(resolved.surface, None);
@@ -985,6 +1104,7 @@ mod tests {
             0,
             1,
             CellArt::default(),
+            1,
         );
         assert_eq!(isometric.flat, None);
         assert_eq!(isometric.surface.as_deref(), Some("assets/tiles/top_b.png"));
@@ -1008,6 +1128,7 @@ mod tests {
             0,
             0,
             CellArt::default(),
+            1,
         );
         assert!(resolved.is_empty());
     }
@@ -1027,10 +1148,11 @@ mod tests {
             ..CellArt::default()
         };
 
-        let flat = resolve_tile_render("rock", &art, ProjectionMode::TopDown, 0, 0, 0, chosen);
+        let flat = resolve_tile_render("rock", &art, ProjectionMode::TopDown, 0, 0, 0, chosen, 1);
         assert_eq!(flat.flat.as_deref(), Some("assets/tiles/flat_b.png"));
 
-        let tilted = resolve_tile_render("rock", &art, ProjectionMode::Isometric, 0, 0, 0, chosen);
+        let tilted =
+            resolve_tile_render("rock", &art, ProjectionMode::Isometric, 0, 0, 0, chosen, 1);
         assert_eq!(tilted.surface.as_deref(), Some("assets/tiles/top_b.png"));
 
         // Index 2 exists among the surfaces and not among the flats; wrapping
@@ -1039,7 +1161,7 @@ mod tests {
             surface: Some(2),
             ..CellArt::default()
         };
-        let flat = resolve_tile_render("rock", &art, ProjectionMode::TopDown, 0, 0, 0, wrapped);
+        let flat = resolve_tile_render("rock", &art, ProjectionMode::TopDown, 0, 0, 0, wrapped, 1);
         assert_eq!(flat.flat.as_deref(), Some("assets/tiles/flat_a.png"));
     }
 
@@ -1066,6 +1188,7 @@ mod tests {
             0,
             1,
             CellArt::default(),
+            1,
         );
         assert!(resolved
             .layers
@@ -1098,6 +1221,7 @@ mod tests {
                 0,
                 roll,
                 CellArt::default(),
+                1,
             );
             assert_eq!(
                 resolved.surface.as_deref(),
@@ -1138,6 +1262,7 @@ mod tests {
                 elevation: None,
                 elevation_variant: Some(0),
             },
+            1,
         );
 
         assert_eq!(
@@ -1170,6 +1295,7 @@ mod tests {
                 elevation: Some(&cliff),
                 elevation_variant: None,
             },
+            1,
         );
 
         assert_eq!(
@@ -1206,6 +1332,7 @@ mod tests {
                 elevation: Some(&cliff),
                 elevation_variant: None,
             },
+            1,
         );
         assert_eq!(borrowed.layers.len(), 3);
 
@@ -1221,6 +1348,7 @@ mod tests {
                 elevation: Some(&flat),
                 elevation_variant: None,
             },
+            1,
         );
         assert!(flattened.layers.is_empty());
     }
@@ -1252,6 +1380,7 @@ mod tests {
                 elevation: None,
                 elevation_variant: None,
             },
+            1,
         );
         assert_eq!(resolved.surface.as_deref(), Some("assets/tiles/c.png"));
         assert_eq!(resolved.layers.len(), 1);

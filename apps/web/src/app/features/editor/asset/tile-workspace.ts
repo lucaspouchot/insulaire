@@ -55,6 +55,7 @@ import {
   TileDefinition,
   TileSetDefinition,
   tileArtGeometry,
+  bandLevels,
   faceHeight,
   shoulderDepth,
 } from '../../../../content/content-types';
@@ -621,8 +622,11 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
     // A face only exists on a cell tall enough to show it, and the hexagon is
     // where it is painted now
     // (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
-    if (level >= 1 && this.previewElevation() < level) {
-      this.previewElevation.set(level);
+    // A band spans several levels when a step is shorter than the faces, so the
+    // cell has to be that much taller before the level being painted is on it.
+    const needed = level * bandLevels(this.geometry());
+    if (level >= 1 && this.previewElevation() < needed) {
+      this.previewElevation.set(needed);
     }
     void this.ensureSession(level, variant);
   }
@@ -1186,9 +1190,10 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
       view.layout,
     );
 
-    // A stacked face is drawn once per step; the one showing this level is the
-    // one that many steps down from the cell's own height.
-    const drop = target.level >= 1 ? Math.max(0, cell.elevation - target.level) : 0;
+    // A stacked face is drawn once per band; the one showing this level is that
+    // many bands down from the cell's own height. It may be negative — the
+    // topmost band starts above the top face, which covers what sticks out.
+    const drop = dropOf(cell.elevation, target.level, this.geometry());
     const box = previewImageBox(cell, this.geometry(), view.layout, this.openKind(), drop);
     if (box.width <= 0 || box.height <= 0) {
       return null;
@@ -1269,7 +1274,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
     if (!this.showGrid() || sprite === null || target === null || cell === undefined) {
       return;
     }
-    const drop = target.level >= 1 ? Math.max(0, cell.elevation - target.level) : 0;
+    const drop = dropOf(cell.elevation, target.level, this.geometry());
     const box = previewImageBox(cell, this.geometry(), view, this.openKind(), drop);
     const perX = box.width / Math.max(1, sprite.width);
     const perY = box.height / Math.max(1, sprite.height);
@@ -1301,6 +1306,19 @@ function listFor(art: ReturnType<typeof artOf>, level: number): TileArtVariant[]
     return art.flat;
   }
   return level === SURFACE_LEVEL ? art.surface : art.elevation.levels[level - 1]?.variants;
+}
+
+/**
+ * Where the band drawing `level` sits on a preview cell of this height.
+ *
+ * In steps under the top face, the same number `resolveTileRender` gives the
+ * renderer: a band spans `bandLevels` levels, so level `n` starts `n` bands
+ * above the cell's foot. Negative once the band overshoots the top face, which
+ * is drawn last and covers it — the pixels stay clickable either way, because
+ * the box the pointer is measured against is this same number.
+ */
+function dropOf(elevation: number, level: number, geometry: TileArtGeometry): number {
+  return level >= 1 ? elevation - level * bandLevels(geometry) : 0;
 }
 
 /** How tall an image of this level is, on the set's own grid. */

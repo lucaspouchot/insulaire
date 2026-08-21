@@ -128,19 +128,27 @@ against the set that was passed in, so `elevationTile` may name any tile in it.
   "tileId": "cliff",
   "elevation": 3,
   "layers": [
-    { "level": 1, "sourceLevel": 1, "asset": "assets/tiles/cliff_a.png", "drop": 2 },
-    { "level": 2, "sourceLevel": 2, "asset": "assets/tiles/cliff_b.png", "drop": 1 },
-    { "level": 3, "sourceLevel": 2, "asset": "assets/tiles/cliff_b.png", "drop": 0 }
+    { "level": 1, "sourceLevel": 1, "asset": "assets/tiles/cliff_a.png", "drop": 1 },
+    { "level": 2, "sourceLevel": 2, "asset": "assets/tiles/cliff_b.png", "drop": -1 }
   ]
 }
 ```
 
+Three steps of relief, on a set whose band spans two of them: one whole image
+and half of the next, not three slices of the same picture. A set whose step
+*is* its band answers three layers here, at drops `2`, `1` and `0`.
+
 Lowest face first. `surface` is the cell's top face and is present at **every**
 height — an elevation image holds the side faces alone — so a host draws the
 layers and then the surface over them. `drop` counts `art.elevationStep`
-authored pixels below the hexagon's lower shoulder line: the whole image moves
-and nothing inside it is transformed
-(`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+authored pixels below the hexagon's lower shoulder line, and is **signed**: one
+layer is one *band* of faces rather than one level of elevation
+(`docs/content-format.md`), bands are stacked from the cell's foot so the lowest
+ends on its silhouette, and the topmost may therefore start above the top face,
+which is drawn over it. `level` is the band's index from the ground, which is
+the ladder level it asks for. The whole image moves and nothing inside it is
+transformed (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`,
+`docs/adr/ADR-0041-a-cliff-is-stacked-in-bands.md`).
 
 **One projection answers, never both.** A `topDown` request comes back with
 `flat` alone — the untilted hexagon, drawn over the whole cell, with no
@@ -468,7 +476,7 @@ Everything the renderer needs about a world **except** the per-cell buffers.
   "orientation": "pointy",
   "projection": "isometric",
   "tileSetId": "mvp_terrain",
-  "tileArt": { "width": 64, "surfaceHeight": 40, "elevationHeight": 26, "elevationStep": 16 },
+  "tileArt": { "width": 64, "surfaceHeight": 40, "elevationHeight": 26, "elevationStep": 8 },
   "palette": [
     { "index": 0, "id": "grass", "name": "Grass", "terrain": "grass",
       "movementCost": 1, "passable": true,

@@ -170,6 +170,26 @@
           "name": "editor-asset-tiles-flat",
           "selector": ".inspector .tabs button:nth-of-type(2)",
           "settleMs": 1200
+        },
+        {
+          "name": "editor-asset-tiles-rock",
+          "selector": ".browser .tiles li:nth-of-type(5) button",
+          "settleMs": 900
+        },
+        {
+          "name": "editor-asset-tiles-elevation",
+          "selector": ".inspector .tabs button:nth-of-type(4)",
+          "settleMs": 1200
+        },
+        {
+          "name": "editor-asset-tiles-raised",
+          "selector": ".preview-bar .elevation button:nth-of-type(2)",
+          "settleMs": 900
+        },
+        {
+          "name": "editor-asset-tiles-raised-2",
+          "selector": ".preview-bar .elevation button:nth-of-type(2)",
+          "settleMs": 900
         }
       ]
     },

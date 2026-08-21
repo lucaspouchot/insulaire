@@ -32,7 +32,7 @@
  * come last, unoccluded; see {@link HexMapRenderer.drawLayered}.
  */
 
-import { shoulderLine } from '../content/content-types';
+import { bandLevels, shoulderLine } from '../content/content-types';
 import { Offset, fromIndex, indexIn, sameOffset } from '../core/hex/hex-coords';
 import { HexLayout, Point, Rect } from '../core/hex/hex-layout';
 import { Camera } from './camera';
@@ -574,6 +574,9 @@ export class HexMapRenderer {
     /** Cells whose art is loaded; blitted after the colour batches. */
     const painted: PaintedCell[] = [];
     let visited = 0;
+    // How many levels one drawn band covers, so a stack that is one image for
+    // every two steps is not mistaken for a cliff whose art ran out.
+    const span = bandLevels(model.tileArt);
 
     for (let row = minRow; row <= maxRow; row += 1) {
       for (let col = range.minCol; col <= range.maxCol; col += 1) {
@@ -595,7 +598,7 @@ export class HexMapRenderer {
           // edge of a ditch. Its faces are still exposed, so the colour wall is
           // filled behind the art that does exist: whatever is authored covers
           // it, and what is not reads as a drop instead of a hole.
-          if (this.facesAreShort(appearance.render, elevation, base)) {
+          if (this.facesAreShort(appearance.render, elevation, base, span)) {
             this.addWallTo(pathFor(walls, paletteIndex), cell, elevation, base);
           }
           continue;
@@ -653,8 +656,14 @@ export class HexMapRenderer {
    * (`docs/adr/ADR-0009-assets-tilesets.md`: `fallbackColor` is what is drawn
    * wherever a texture is not).
    */
-  private facesAreShort(render: ResolvedTileRender, elevation: number, base: number): boolean {
-    return render.layers.length < Math.max(0, elevation - base);
+  private facesAreShort(
+    render: ResolvedTileRender,
+    elevation: number,
+    base: number,
+    span: number,
+  ): boolean {
+    const steps = Math.max(0, elevation - base);
+    return render.layers.length < Math.ceil(steps / span);
   }
 
   /**
@@ -663,9 +672,10 @@ export class HexMapRenderer {
    *
    * The destination is the *projected* top face's bounding box, so the picture
    * agrees with the polygon path, with hit-testing and with the grid by
-   * construction. An elevation image starts at the hexagon's lower shoulders —
-   * it is the faces alone — and a repeated level is the same image moved down
-   * whole steps, nothing inside it transformed
+   * construction. An elevation image is the faces alone, hung from the hexagon's
+   * lower shoulders and moved by its layer's `drop` — which the resolver
+   * measured so that the lowest band of a stack ends on the silhouette, and may
+   * therefore be negative for the topmost one, which the surface covers
    * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
    *
    * A composed picture stacked those layers once, at the tile set's own
@@ -697,7 +707,13 @@ export class HexMapRenderer {
     if (picture !== null) {
       // Scaled from the authored grid, like every other tile image, so the
       // picture and the hexagon the grid stroke draws are the same shape.
-      ctx.drawImage(picture, left, top, width, pictureHeight * perPixel);
+      ctx.drawImage(
+        picture,
+        left,
+        top - painted.appearance.pictureTop * perPixel,
+        width,
+        pictureHeight * perPixel,
+      );
       this.batchCount += 1;
       return;
     }

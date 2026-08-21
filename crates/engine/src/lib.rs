@@ -193,6 +193,7 @@ impl Engine {
             base,
             roll,
             cell.against(&palette),
+            tile_set.art.band_levels(),
         ))
     }
 

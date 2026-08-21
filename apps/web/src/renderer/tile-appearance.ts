@@ -48,6 +48,7 @@ import {
   MAX_TILE_VARIANTS,
   TileArt,
   TileArtGeometry,
+  bandLevels,
   shoulderLine,
 } from '../content/content-types';
 import { Offset } from '../core/hex/hex-coords';
@@ -89,6 +90,15 @@ export interface TileAppearance {
   readonly picture: CanvasImageSource | null;
   /** Height of {@link picture} in *authored* pixels, for the renderer to scale. */
   readonly pictureHeight: number;
+  /**
+   * Authored rows the picture starts **above** the top face's own top row.
+   *
+   * Zero for every ordinary look. A band taller than the surface's shoulder
+   * line starts higher than the top face does — the face art is drawn under it
+   * either way — and the picture has to carry those rows so the composed path
+   * and the layer-at-a-time path draw the same thing.
+   */
+  readonly pictureTop: number;
 }
 
 /**
@@ -139,6 +149,7 @@ class Look implements TileAppearance {
   ready = false;
   picture: CanvasImageSource | null = null;
   pictureHeight = 0;
+  pictureTop = 0;
 
   constructor(readonly render: ResolvedTileRender) {}
 }
@@ -439,6 +450,7 @@ export class TileAppearanceCache {
       base,
       roll,
       cell,
+      bandLevels(this.model.tileArt),
     );
     return isEmptyRender(render) ? null : new Look(render);
   }
@@ -458,6 +470,7 @@ export class TileAppearanceCache {
     if (composed !== null) {
       look.picture = composed.picture;
       look.pictureHeight = composed.height;
+      look.pictureTop = composed.top;
     }
     return look;
   }
@@ -496,7 +509,7 @@ export class TileAppearanceCache {
    */
   private compose(
     render: ResolvedTileRender,
-  ): { picture: CanvasImageSource; height: number } | null {
+  ): { picture: CanvasImageSource; height: number; top: number } | null {
     const images = this.images;
     const art = this.model.tileArt;
     if (images === null) {
@@ -505,15 +518,18 @@ export class TileAppearanceCache {
 
     if (render.flat !== null) {
       const image = images.image(render.flat);
-      return image === null ? null : { picture: image, height: art.flatHeight };
+      return image === null ? null : { picture: image, height: art.flatHeight, top: 0 };
     }
 
     const surface = render.surface === null ? null : images.image(render.surface);
     if (render.layers.length === 0) {
-      return surface === null ? null : { picture: surface, height: art.surfaceHeight };
+      return surface === null
+        ? null
+        : { picture: surface, height: art.surfaceHeight, top: 0 };
     }
 
-    const height = composedHeight(render, art);
+    const above = composedTop(render, art);
+    const height = composedHeight(render, art) + above;
     const width = Math.max(1, Math.ceil(art.width));
     const rows = Math.max(1, Math.ceil(height));
     if (this.composedPixels + width * rows > MAX_COMPOSED_PIXELS) {
@@ -529,7 +545,7 @@ export class TileAppearanceCache {
     // Authored pixels are blitted one to one here; the single scale happens
     // when the renderer draws the composed picture into the hexagon.
     context.imageSmoothingEnabled = false;
-    const line = shoulderLine(art);
+    const line = shoulderLine(art) + above;
     for (const layer of render.layers) {
       const image = images.image(layer.asset);
       if (image !== null) {
@@ -544,16 +560,17 @@ export class TileAppearanceCache {
     }
     // Last, so the top face is never the thing a face image happens to cover.
     if (surface !== null) {
-      context.drawImage(surface, 0, 0, art.width, art.surfaceHeight);
+      context.drawImage(surface, 0, above, art.width, art.surfaceHeight);
     }
-    return { picture: composition.target, height };
+    return { picture: composition.target, height, top: above };
   }
 }
 
 /**
- * How tall a stacked look is, in authored pixels.
+ * How tall a stacked look is, below the top face's own top row.
  *
  * The deepest layer's own bottom, or the top face when nothing hangs below it.
+ * {@link composedTop} answers for the other end.
  */
 export function composedHeight(render: ResolvedTileRender, art: TileArtGeometry): number {
   let deepest = 0;
@@ -564,4 +581,21 @@ export function composedHeight(render: ResolvedTileRender, art: TileArtGeometry)
     art.surfaceHeight,
     shoulderLine(art) + deepest * art.elevationStep + art.elevationHeight,
   );
+}
+
+/**
+ * Authored rows a stacked look reaches **above** the top face's top row.
+ *
+ * Zero for every ordinary look, because a stack hangs from the shoulder line
+ * and the shoulder line is three quarters of the way down the top face. A band
+ * deep enough to overshoot it — art drawn on a canvas taller than the hexagon
+ * it stands under — needs those rows in the picture, or the composed path would
+ * clip what the layer-at-a-time path draws.
+ */
+export function composedTop(render: ResolvedTileRender, art: TileArtGeometry): number {
+  let highest = 0;
+  for (const layer of render.layers) {
+    highest = Math.min(highest, shoulderLine(art) + layer.drop * art.elevationStep);
+  }
+  return Math.max(0, -highest);
 }

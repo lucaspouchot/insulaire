@@ -280,7 +280,13 @@ fn the_demo_world_matches_its_documented_shape() {
     // Every tile the shipped art draws carries it through to the renderer
     // (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
     assert_eq!(view.tile_art.width, 64);
-    assert_eq!(view.tile_art.elevation_step, view.tile_art.face_height());
+    // The ladders draw a full band of faces and a level lifts half of one, so a
+    // cliff reads at half the height the same art used to give it and the rest
+    // of each band hides under the layer above.
+    assert_eq!(
+        view.tile_art.face_height(),
+        2 * view.tile_art.elevation_step
+    );
     let art_of = |id: &str| {
         &view
             .palette

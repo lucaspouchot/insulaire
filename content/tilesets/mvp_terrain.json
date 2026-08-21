@@ -7,7 +7,7 @@
     "flatHeight": 74,
     "surfaceHeight": 40,
     "elevationHeight": 26,
-    "elevationStep": 16
+    "elevationStep": 8
   },
   "tiles": [
     {

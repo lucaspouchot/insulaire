@@ -22,6 +22,8 @@ import {
   TileSetDefinition,
   WORLD_SCHEMA_VERSION,
   WorldDefinition,
+  bandLevels,
+  tileArtGeometry,
 } from '../content/content-types';
 import { WorldDocument } from '../content/world-document';
 import { serializeWorld } from '../content/world-serializer';
@@ -272,6 +274,71 @@ describe.skipIf(!built)('engine boundary', () => {
     expect(resolveTileRender('meadow', meadow.art, 'topDown', 0, 0, 0).flat).toBeNull();
   });
 
+  it('resolves a step shorter than its band exactly as the mirror does', () => {
+    // The shipped shape since the relief was halved: a level lifts half a band,
+    // so one image spans two levels and the stack is bands rather than slices.
+    // Rust reads the span off the tile set; the mirror is told it, and the two
+    // have to agree layer for layer
+    // (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+    const set: TileSetDefinition = {
+      id: 'halved',
+      schemaVersion: TILE_SET_SCHEMA_VERSION,
+      art: { width: 32, flatHeight: 37, surfaceHeight: 20, elevationHeight: 13, elevationStep: 4 },
+      tiles: [
+        {
+          id: 'cliff',
+          terrain: 'rock',
+          movementCost: 1,
+          visual: { visualId: 'terrain.rock', fallbackColor: '#7a7169' },
+          art: {
+            surface: [{ id: 'a', asset: 'assets/tiles/top_a.png' }],
+            elevation: {
+              levels: [
+                { variants: [{ id: 'a', asset: 'assets/tiles/side_a.png' }] },
+                { variants: [{ id: 'a', asset: 'assets/tiles/rock_a.png' }] },
+              ],
+              repeat: { level: 2 },
+            },
+          },
+        },
+      ],
+    };
+    const json = JSON.stringify(set);
+    const instance = engine();
+    expect((JSON.parse(instance.validateTileSet(json)) as ValidationReport).valid).toBe(true);
+
+    const span = bandLevels(tileArtGeometry(set));
+    expect(span).toBe(2);
+
+    for (const elevation of [0, 1, 2, 3, 4, 9]) {
+      for (const base of [0, 1, 3]) {
+        const rust = JSON.parse(
+          instance.previewTileRender(json, 'cliff', 'isometric', elevation, base, 0, '{}'),
+        ) as ResolvedTileRender;
+        const mirror = resolveTileRender(
+          'cliff',
+          set.tiles[0]?.art,
+          'isometric',
+          elevation,
+          base,
+          0,
+          {},
+          span,
+        );
+
+        expect(mirror, `at ${elevation} over ${base}`).toEqual(wire(rust));
+      }
+    }
+
+    // And the shape itself, so a mirror that drifted *together* would still be
+    // caught: three steps of cliff are one whole band and half of the next.
+    const three = resolveTileRender('cliff', set.tiles[0]?.art, 'isometric', 3, 0, 0, {}, span);
+    expect(three.layers.map((layer) => [layer.level, layer.drop])).toEqual([
+      [1, 1],
+      [2, -1],
+    ]);
+  });
+
   it('loads the shipped content without issues', () => {
     const instance = engine();
 
@@ -297,12 +364,15 @@ describe.skipIf(!built)('engine boundary', () => {
 
     // The shipped art rides on the palette, which is the renderer's one lookup
     // per cell (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+    // The step is half the 16-pixel band the ladders draw: the shipped set lifts
+    // a level by half its own faces, so cliffs read at half height without a
+    // single asset being redrawn.
     expect(view.tileArt).toEqual({
       width: 64,
       flatHeight: 74,
       surfaceHeight: 40,
       elevationHeight: 26,
-      elevationStep: 16,
+      elevationStep: 8,
     });
     expect(view.palette.find((tile) => tile.id === 'grass')?.art?.surface).toHaveLength(8);
     expect(

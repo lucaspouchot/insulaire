@@ -453,7 +453,7 @@ const EN: StringTree = {
           elevationStep: 'Pixels per level',
         },
         stepHint:
-          'The faces are {faces} pixels tall. A step taller than that leaves a gap between stacked levels.',
+          'The faces are {faces} pixels tall. A shorter step draws the same faces for shallower relief — the level above hides the rest — and a taller one leaves a gap between stacked levels.',
         geometryNote:
           '{width}×{flat} flat · {width}×{surface} surface · {width}×{elevation} elevation · {step} px per level',
         preview: 'Preview',
@@ -1213,7 +1213,7 @@ const FR: StringTree = {
           elevationStep: 'Pixels par niveau',
         },
         stepHint:
-          'Les faces mesurent {faces} pixels. Un palier plus grand laisse un vide entre les niveaux empilés.',
+          'Les faces mesurent {faces} pixels. Un palier plus court dessine les mêmes faces pour un relief plus bas — le niveau du dessus masque le reste — et un palier plus grand laisse un vide entre les niveaux empilés.',
         geometryNote:
           '{width}×{flat} à plat · {width}×{surface} surface · {width}×{elevation} élévation · {step} px par niveau',
         preview: 'Aperçu',

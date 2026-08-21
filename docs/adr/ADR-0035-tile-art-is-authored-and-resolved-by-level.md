@@ -1,7 +1,7 @@
 # ADR-0035 — Tile Art Is Authored per Level and Resolved, Never Transformed
 
 ## Status
-Accepted, with one amendment and one correction.
+Accepted, with two amendments and one correction.
 
 **Amended by ADR-0036** (*A Cell May Choose Its Tile Art, and a Cliff May Be
 Borrowed*): a placed cell may name its surface variant, borrow another tile's
@@ -10,13 +10,22 @@ shows by default now follows the surface instead of being rolled again at every
 level. Everything else here stands: the ladder, the repeat rule, the derived
 geometry, the mirrored resolver and the Rule at the foot of this file.
 
+**Amended by ADR-0041** (*A Cliff Is Stacked in Bands, Not in Levels*): the
+band an artist draws and the distance a level lifts a cell are two numbers, not
+one. A band is what the canvas leaves under the `V`
+(`elevationHeight − shoulderDepth`); `elevationStep` is the lift; and when the
+lift is shorter, a cliff draws **one image per band** — stacked from its foot,
+with a signed `drop` — instead of one per level, which showed the same slice of
+the same picture over and over. A set whose step *is* its band is unaffected,
+layer for layer. Everything else here stands.
+
 **Corrected below:** the paragraph describing an elevation image said that
 everything under the `V` was face. It never was. `faceGuides()` in
-`apps/web/src/renderer/tile-preview.ts` has always marked a band one step thick,
-and `addWallTo` has always drawn the colour behind it as one — but the shipped
-art was generated from the sentence rather than from the guides, so every cliff
-overhung its own silhouette by ten pixels and showed a flat sawn-off foot
-wherever no cell stood in front of it. The wording is fixed, and
+`apps/web/src/renderer/tile-preview.ts` has always marked the band the canvas
+leaves room for, and `addWallTo` has always drawn the colour behind it as one —
+but the shipped art was generated from the sentence rather than from the guides,
+so every cliff overhung its own silhouette by ten pixels and showed a flat
+sawn-off foot wherever no cell stood in front of it. The wording is fixed, and
 `scripts/tile-art.test.mjs` now measures the shipped PNGs so prose is no longer
 the authority on it.
 
@@ -67,13 +76,15 @@ rolls the same eight grass surfaces its flat neighbours do.
 
 **The faces are a band, not the rest of the canvas.** An elevation image's first
 row is the hexagon's lower shoulder line, so its top `shoulderDepth` rows are
-the `V` those two edges cut; under that it holds a band exactly `elevationStep`
-rows thick whose **lower** edge repeats the same `V`. One layer therefore meets
-the next edge to edge, and the last of a stack ends on the hexagon's own
-outline rather than on a flat cut. The canvas is `shoulderDepth + elevationStep`
-tall only because the `V` has to fit above the band: its four corners are never
-drawing room, and a pixel put there is an overhang that no wall behind it
-covers.
+the `V` those two edges cut; under that it holds a band filling the rest of the
+canvas — `elevationHeight − shoulderDepth` rows — whose **lower** edge repeats
+the same `V`. The last of a stack therefore ends on the hexagon's own outline
+rather than on a flat cut. Its four corners are never drawing room, and a pixel
+put there is an overhang that no wall behind it covers. A level *lifts* a cell
+by `elevationStep`, which is the whole band in the simple case — layers then
+meet edge to edge, one per level — and less than it when a set wants the same
+art to draw shallower relief, where one image covers several levels
+(`docs/adr/ADR-0041-a-cliff-is-stacked-in-bands.md`).
 
 Nothing rotates, mirrors, skews or scales any part of an image to produce
 another part. The only thing resolution does to an image is choose it and say
@@ -94,8 +105,10 @@ TileDefinition + elevation + variant roll ──> resolve() ──> ResolvedTile
 **Levels above the last explicit one are produced by a rule, not by art.**
 `ElevationRepeat` is `{ "level": n }` — reuse one — or `{ "pattern": [a, b] }` —
 cycle several; absent reuses the highest explicit level. A cell of height *h*
-standing over a base of *b* resolves to `h − b` layers, each the whole image
-moved down `drop × elevationStep` pixels. Ten steps of cliff cost two images.
+standing over a base of *b* resolves to one layer per band it crosses
+(`docs/adr/ADR-0041-a-cliff-is-stacked-in-bands.md`), each the whole image moved
+`drop × elevationStep` pixels from the hexagon's lower shoulder line. Ten steps
+of cliff cost two images.
 
 **The authored pixel grid is the authority on the projection.** A tile set
 declares `art { width, surfaceHeight, elevationHeight, elevationStep }`, and
@@ -188,6 +201,7 @@ Negative:
 ## Rule
 
 No part of a tile's art may be produced from another part, and no elevation
-image may carry a top face or paint outside its one-step band. Resolution chooses an image and offsets it
-vertically; a rotation, a mirror, a skew or a non-integer scale of tile art is a
-bug, and a face that needs to differ is a face an artist draws.
+image may carry a top face or paint outside its band. Resolution chooses an
+image and offsets it vertically; a rotation, a mirror, a skew or a non-integer
+scale of tile art is a bug, and a face that needs to differ is a face an artist
+draws.

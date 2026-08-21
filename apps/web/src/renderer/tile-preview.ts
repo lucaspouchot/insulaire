@@ -12,7 +12,13 @@
  * (`docs/adr/ADR-0014-hex-coordinate-model.md`).
  */
 
-import { TileArt, TileArtGeometry, faceHeight, shoulderLine } from '../content/content-types';
+import {
+  TileArt,
+  TileArtGeometry,
+  bandLevels,
+  faceHeight,
+  shoulderLine,
+} from '../content/content-types';
 import { Offset } from '../core/hex/hex-coords';
 import { HexLayout, Point } from '../core/hex/hex-layout';
 import { SpriteSource } from './character-renderer';
@@ -125,11 +131,14 @@ export function fitPreview(
       maxY = Math.max(maxY, top + geometry.surfaceHeight * perPixel);
       continue;
     }
+    // The bottom of the *lowest band*, which ends on the cell's foot: one band
+    // below the top face, plus the whole image under that line.
     maxY = Math.max(
       maxY,
       top +
-        (shoulderLine(geometry) + geometry.elevationHeight) * perPixel +
-        Math.max(0, steps - 1) * probeProjection.elevationStep,
+        geometry.elevationHeight * perPixel +
+        (shoulderLine(geometry) + (steps - bandLevels(geometry)) * geometry.elevationStep) *
+          perPixel,
     );
   }
   if (!Number.isFinite(minX)) {
@@ -282,6 +291,7 @@ function drawPreviewCell(
     0,
     variantRoll(cell.at.col, cell.at.row, cell.tileId),
     cell.choice ?? {},
+    bandLevels(geometry),
   );
 
   // A flat cell is one image over the whole hexagon, or the colour when the
@@ -301,7 +311,7 @@ function drawPreviewCell(
   // Colour behind whatever art exists, on the same rule the map renderer uses:
   // a tile with a top face and no cliff art still has to read as standing above
   // the ground rather than hovering over a hole.
-  const bare = render.layers.length < Math.max(0, cell.elevation);
+  const bare = render.layers.length < Math.ceil(Math.max(0, cell.elevation) / bandLevels(geometry));
   if (bare) {
     fillSilhouette(context, cell, view, cell.fallbackColor);
   }

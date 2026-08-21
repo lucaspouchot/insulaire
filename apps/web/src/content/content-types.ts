@@ -64,9 +64,10 @@ export interface TileVisual {
  * image holds the tilted top face alone. An **elevation** image holds only the
  * side faces: its first row is the hexagon's lower shoulder line, so its top
  * {@link shoulderDepth} rows are the `V` the two lower edges cut, and below
- * that it carries a band one {@link TileArtGeometry.elevationStep} thick
- * following the same `V`
- * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+ * that it carries a band {@link faceHeight} thick following the same `V`
+ * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`). How far
+ * that band lifts a cell is {@link TileArtGeometry.elevationStep}, which may be
+ * shorter — one image then spans several levels; see {@link bandLevels}.
  */
 export interface TileArtGeometry {
   width: number;
@@ -181,6 +182,25 @@ export function shoulderLine(geometry: TileArtGeometry): number {
 /** Height of the faces themselves, below the `V`. */
 export function faceHeight(geometry: TileArtGeometry): number {
   return Math.max(0, geometry.elevationHeight - shoulderDepth(geometry));
+}
+
+/**
+ * How many levels of elevation one drawn band of faces spans.
+ *
+ * A band is as thick as the canvas leaves room for — {@link faceHeight} — and a
+ * level lifts `elevationStep`, so a set whose step is a whole band answers `1`:
+ * one image per level, edge to edge, which is what every set said before the
+ * two were told apart. A **shorter** step means one image covers several
+ * levels, which is how the same art draws a lower cliff without being sliced
+ * into a repeating strip
+ * (`docs/adr/ADR-0041-a-cliff-is-stacked-in-bands.md`).
+ *
+ * Rounds down and never to zero, so a band that does not divide evenly overlaps
+ * its neighbour by the remainder rather than leaving a gap.
+ */
+export function bandLevels(geometry: TileArtGeometry): number {
+  const step = Math.max(1, geometry.elevationStep);
+  return Math.max(1, Math.floor(faceHeight(geometry) / step));
 }
 
 /** How the renderer projects a world; mirrors the engine's `ProjectionMode`. */

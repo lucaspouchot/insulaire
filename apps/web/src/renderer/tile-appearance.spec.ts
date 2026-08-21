@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { TileArt, shoulderLine } from '../content/content-types';
+import { TileArt, faceHeight, shoulderDepth, shoulderLine } from '../content/content-types';
 import { offset } from '../core/hex/hex-coords';
 import { SpriteSource } from './character-renderer';
 import { RenderModel, emptyRenderModel } from './render-model';
@@ -50,12 +50,17 @@ describe('TileAppearanceCache', () => {
     return { factory, made };
   }
 
-  function modelWith(art: TileArt, projection: 'topDown' | 'isometric' = 'isometric'): RenderModel {
+  function modelWith(
+    art: TileArt,
+    projection: 'topDown' | 'isometric' = 'isometric',
+    tileArt = GEOMETRY,
+  ): RenderModel {
     return {
       ...emptyRenderModel(),
       width: 16,
       height: 16,
       projection,
+      tileArt,
       palette: [
         {
           index: 0,
@@ -229,6 +234,50 @@ describe('TileAppearanceCache', () => {
       shoulderLine(GEOMETRY),
       0,
     ]);
+  });
+
+  it('draws one band per two levels when a level lifts half a band', () => {
+    // The shipped shape: the art keeps its whole band and a level lifts half of
+    // it, so three levels of relief are one image and half of the next — not
+    // three slices of the same picture, which is what reads as stripes.
+    const overlapping = { ...GEOMETRY, elevationStep: faceHeight(GEOMETRY) / 2 };
+    const { factory, made } = recorder();
+    const cache = cacheOf(modelWith(ONE_VARIANT, 'isometric', overlapping), imagesOf(), factory);
+
+    const raised = cache.of(0, 0, offset(0, 0), 3, 0);
+
+    // Two images for three steps, and they walk the ladder one level per band.
+    expect(raised?.render.layers.map((layer) => layer.level)).toEqual([1, 2]);
+    const composed = made[0];
+    expect(composed?.blits.map((blit) => blit.y)).toEqual([
+      shoulderLine(overlapping) + overlapping.elevationStep,
+      shoulderLine(overlapping) - overlapping.elevationStep,
+      0,
+    ]);
+    // The one thing that has to hold: the lowest band ends exactly where the
+    // hexagon's silhouette does, three steps below the shoulders — which is
+    // where `addWallTo` puts the foot of the colour wall behind the art
+    // (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+    const foot =
+      shoulderLine(overlapping) + 3 * overlapping.elevationStep + shoulderDepth(overlapping);
+    expect((composed?.blits[0]?.y ?? 0) + overlapping.elevationHeight).toBe(foot);
+    expect(composed?.height).toBe(foot);
+    // The topmost band starts above the top face, which is drawn last over it.
+    expect(composed?.blits[1]?.y).toBeLessThan(shoulderLine(overlapping));
+    expect(raised?.pictureTop).toBe(0);
+  });
+
+  it('shows one whole band the step a cell is tall enough for it', () => {
+    const overlapping = { ...GEOMETRY, elevationStep: faceHeight(GEOMETRY) / 2 };
+    const { factory, made } = recorder();
+    const cache = cacheOf(modelWith(ONE_VARIANT, 'isometric', overlapping), imagesOf(), factory);
+
+    const raised = cache.of(0, 0, offset(0, 0), 2, 0);
+
+    // Two steps *are* one band, so the image sits exactly on the shoulder line
+    // and every row of it is exposed.
+    expect(raised?.render.layers).toHaveLength(1);
+    expect(made[0]?.blits.map((blit) => blit.y)).toEqual([shoulderLine(overlapping), 0]);
   });
 
   it('composes a cell once, however many cells wear it', () => {

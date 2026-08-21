@@ -2,10 +2,13 @@
  * The shipped tile art draws the shape the renderer extrudes.
  *
  * `docs/content-format.md` says an elevation image holds the two side faces as
- * a band **one `elevationStep` thick whose lower edge follows the same `V` as
- * its upper one** — the outline `faceGuides` marks in the asset editor, and the
- * outline of the `fallbackColor` wall the renderer fills behind the art
- * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+ * a band **filling the canvas under the `V`, its lower edge following the same
+ * `V` as its upper one** — the outline `faceGuides` marks in the asset editor,
+ * and the outline of the `fallbackColor` wall the renderer fills behind the art
+ * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`). That
+ * band is `elevationHeight - shoulderDepth` thick, which is *not* the same
+ * question as how far a level lifts a cell: the shipped set lifts half a band
+ * per level, and the renderer hides the other half under the layer above.
  *
  * Nothing enforced that, and it is invisible in the common case: a cliff whose
  * foot has ground in front of it has that ground's top face painted over
@@ -110,8 +113,9 @@ function opaqueRun(image, x) {
 }
 
 const tileSet = JSON.parse(readFileSync(join(CONTENT, 'tilesets/mvp_terrain.json'), 'utf8'));
-const { width, flatHeight, surfaceHeight, elevationHeight, elevationStep } = tileSet.art;
+const { width, flatHeight, surfaceHeight, elevationHeight } = tileSet.art;
 const shoulder = Math.floor(surfaceHeight / 4);
+const band = elevationHeight - shoulder;
 
 const elevationAssets = tileSet.tiles.flatMap((tile) =>
   (tile.art?.elevation?.levels ?? []).flatMap((level) =>
@@ -153,19 +157,20 @@ test('every shipped image is drawn on the grid its tile set declares', () => {
   }
 });
 
-test('an elevation image draws one step of relief, and no overhang', () => {
+test('an elevation image fills its band, and never overhangs it', () => {
   for (const asset of elevationAssets) {
     const image = decodeAlpha(join(CONTENT, asset));
     const tops = [];
     for (let x = 0; x < image.width; x += 1) {
       const run = opaqueRun(image, x);
       assert.ok(run !== null, `${asset}: column ${x} draws nothing`);
-      // Exactly one step: a taller run is an overhang past the hexagon's
-      // silhouette, a shorter one leaves a seam where the next layer starts.
+      // Exactly the band the canvas leaves room for: a taller run cannot fit
+      // (the image would have to be taller), and a shorter one leaves a seam
+      // where the layer under it starts — whatever the step turns out to be.
       assert.equal(
         run.height,
-        elevationStep,
-        `${asset}: column ${x} is ${run.height} rows, not one ${elevationStep}px step`,
+        band,
+        `${asset}: column ${x} is ${run.height} rows, not a ${band}px band`,
       );
       tops.push(run.first);
     }

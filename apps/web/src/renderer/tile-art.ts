@@ -27,6 +27,15 @@
  * A cell's top face always comes from its **surface** variants, at every
  * height, so raising a tile never costs it the variety its surfaces give it.
  *
+ * # A stack is made of bands, not of levels
+ *
+ * One image covers `bandLevels` levels of elevation — the band an artist drew,
+ * divided by what a level lifts — and the stack is built from the cell's foot
+ * up. A set whose step is its whole band answers `1` and gets one image per
+ * step, as it always did; a shorter step spreads each image over several levels
+ * instead of drawing the same slice of it over and over
+ * (`docs/adr/ADR-0041-a-cliff-is-stacked-in-bands.md`).
+ *
  * # A cell may choose, and mostly does not
  *
  * Which variant a cell draws is a hash of its coordinates, so a map costs
@@ -63,13 +72,25 @@ export const MAX_STACKED_LEVELS = 64;
 
 /** One image to draw for a cell, and how far below its top face it sits. */
 export interface ResolvedTileLayer {
-  /** The height this layer stands at, 1-based. */
+  /**
+   * The band this layer draws, counted from the ground, 1-based.
+   *
+   * A band spans `bandLevels` levels of elevation, so this is the height the
+   * layer stands at only when a level *is* a band — and it is the ladder level
+   * the layer asks for either way.
+   */
   readonly level: number;
   /** The explicit level whose art draws it; equal to `level` unless repeated. */
   readonly sourceLevel: number;
   /** Path of the image under the content root. */
   readonly asset: string;
-  /** Steps of {@link TileArtGeometry.elevationStep} below the cell's top face. */
+  /**
+   * Steps of {@link TileArtGeometry.elevationStep} below the cell's top face.
+   *
+   * **Signed**: the topmost band of a stack may start above it, because bands
+   * are stacked from the foot up and the top face — drawn last — covers what
+   * sticks out.
+   */
   readonly drop: number;
 }
 
@@ -268,10 +289,14 @@ export interface CellArt {
  * is extruded exactly as far as it is visible. `cell` is whatever the author
  * chose by hand; `{}` is the ordinary case, where everything is rolled.
  *
- * In an isometric world the stack runs from `base + 1` to `elevation`, one
- * layer per visible step, and each layer's `drop` is how many steps below the
- * top face it sits. When nothing is visible the surface image is the whole
- * answer.
+ * In an isometric world the stack is built out of **bands**: `bandLevels` is
+ * how many levels one drawn image spans, bands are stacked from the cell's foot
+ * up so the lowest one ends on the hexagon's silhouette, and each layer's
+ * `drop` is how many steps below the top face its band starts — negative for
+ * the topmost band when it overshoots, which the top face covers. `1` — the
+ * default, and what a set whose step *is* its band asks for — gives one image
+ * per visible step, exactly as before. When nothing is visible the surface
+ * image is the whole answer.
  */
 export function resolveTileRender(
   tileId: string,
@@ -281,6 +306,7 @@ export function resolveTileRender(
   base: number,
   roll: number,
   cell: CellArt = {},
+  bandLevels = 1,
 ): ResolvedTileRender {
   if (art === undefined) {
     return { ...NOTHING, tileId, elevation };
@@ -291,7 +317,7 @@ export function resolveTileRender(
     const index = cell.surface ?? variantIndex(roll, art.flat?.length ?? 0);
     return { tileId, elevation, flat: assetAt(art.flat, index), surface: null, layers: [] };
   }
-  const steps = Math.min(Math.max(0, elevation - base), MAX_STACKED_LEVELS);
+  const steps = Math.max(0, elevation - base);
   // The top face is the tile's own, at every height: an elevation image is the
   // faces and nothing else.
   const surfaceIndex = cell.surface ?? variantIndex(roll, art.surface?.length ?? 0);
@@ -311,10 +337,21 @@ export function resolveTileRender(
 
   const levels = levelsOf(faces.elevation);
   const layers: ResolvedTileLayer[] = [];
-  for (let drop = steps - 1; drop >= 0; drop -= 1) {
-    // A cell dug below the ground it fronts still needs its faces drawn, and
-    // levels at or below zero have no art of their own, so they borrow level 1's.
-    const level = Math.max(1, elevation - drop);
+  // One image per band, lowest first. The lowest band's own bottom is the
+  // cell's foot, so a cliff ends on the hexagon's silhouette whatever its
+  // height, and whatever a band covers above that is hidden under the band — or
+  // the top face — standing on it.
+  const span = Math.max(1, Math.floor(bandLevels));
+  const bands = Math.ceil(steps / span);
+  // Deeper than the cap is below the bottom of any viewport, so the *top* bands
+  // are the ones kept and colour fills the rest.
+  const drawn = Math.min(bands, MAX_STACKED_LEVELS);
+  for (let band = bands - drawn + 1; band <= bands; band += 1) {
+    // Which ladder level a band draws is its index from the ground, so a cliff
+    // standing on higher ground shows the stratum its taller neighbour shows at
+    // that height. A cell dug below the ground it fronts still needs faces, and
+    // bands at or below zero have no art of their own, so they borrow level 1's.
+    const level = Math.max(1, Math.floor(base / span) + band);
     const source = sourceLevel(faces.elevation, level);
     if (source === null) {
       continue;
@@ -323,7 +360,9 @@ export function resolveTileRender(
     if (asset === null) {
       continue;
     }
-    layers.push({ level, sourceLevel: source, asset, drop });
+    // Where the band's own top sits, in steps under the top face: the foot is
+    // `steps` down, and this band's bottom is `band` bands above it.
+    layers.push({ level, sourceLevel: source, asset, drop: steps - band * span });
   }
 
   return { tileId, elevation, flat: null, surface, layers };

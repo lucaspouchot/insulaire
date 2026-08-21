@@ -47,7 +47,7 @@ The palette a world may paint with.
   "id": "mvp_terrain",
   "schemaVersion": 2,
   "name": "MVP Terrain",
-  "art": { "width": 64, "surfaceHeight": 40, "elevationHeight": 26, "elevationStep": 16 },
+  "art": { "width": 64, "surfaceHeight": 40, "elevationHeight": 26, "elevationStep": 8 },
   "tiles": [
     {
       "id": "grass",
@@ -90,9 +90,11 @@ files say `3`.
 | `elevationHeight` | integer | `13` | Height of an elevation image: the `V` the lower edges cut, then the faces. |
 | `elevationStep` | integer | `8` | Authored pixels one level of relief lifts a tile. |
 
-The shipped set draws at **64 x 74 flats, 64 x 40 surfaces and 64 x 26 faces,
-16 px per level** — the defaults' ratios at twice the resolution, so the map is
-unchanged and there is four times the room to draw in.
+The shipped set draws at **64 x 74 flats, 64 x 40 surfaces and 64 x 26 faces**,
+which is the defaults' ratios at twice the resolution — so there is four times
+the room to draw in — and lifts a cell by **8 px per level**, half the 16-pixel
+band those faces fill — so one image spans two levels and the relief reads at
+half height with the art unchanged; see the band and the step below.
 
 All five are `1..512`. The defaults apply only when a set declares no `art`
 block at all; a set that declares one must give every field, `flatHeight`
@@ -125,19 +127,42 @@ other's outline — that is what makes them two images
 for the projection in force draws its `fallbackColor`, exactly as a tile with no
 art at all does.
 
-**What is drawn is a band, not the rest of the canvas.** The faces are
-`elevationStep` rows thick and their lower edge follows the same `V` as their
-upper one, which is the outline the asset editor's guides mark. The canvas is
-taller than the band only because the `V` has to fit above it. Painting into
-that spare room paints an **overhang**: layers still stack, but the lowest one
-ends on a flat cut instead of on the hexagon's silhouette, and it juts past the
-`fallbackColor` wall it is meant to cover. Wherever the ground continues in
-front of the cliff the next row's top face hides that; at the edge of the map,
-or beside a neighbour standing higher than the cliff's foot, it does not.
+**What is drawn is a band, not the rest of the canvas.** The faces fill
+`elevationHeight − surfaceHeight / 4` rows — everything under the `V` — and
+their lower edge follows the same `V` as their upper one, which is the outline
+the asset editor's guides mark. Painting outside it paints an **overhang**:
+layers still stack, but the lowest one ends on a flat cut instead of on the
+hexagon's silhouette, and it juts past the `fallbackColor` wall it is meant to
+cover. Wherever the ground continues in front of the cliff the next row's top
+face hides that; at the edge of the map, or beside a neighbour standing higher
+than the cliff's foot, it does not.
 
-`elevationHeight` must therefore exceed `surfaceHeight / 4`, or there is no room
-for a face; and an `elevationStep` taller than the faces stacks levels with a
-gap, which is a warning rather than an error.
+**The band is not the step, and a stack is made of bands.** `elevationStep` is
+how far one level *lifts* a cell, and it may be shorter than the band the artist
+drew. One image then spans several levels rather than being sliced: a cliff
+draws **one image per band**, not one per level, where a band covers
+
+```text
+  bandLevels = floor(faceHeight / elevationStep)      at least 1
+```
+
+levels of elevation. The shipped set is a 16-pixel band lifted 8 pixels a level,
+so `bandLevels` is `2`: three levels of relief are one whole image and half of
+the next, and the same art draws a cliff half as tall as it used to without one
+asset being redrawn or one row of it repeating.
+
+Bands are stacked **from the foot up**, so the lowest one ends on the hexagon's
+own silhouette whatever the cell's height, and the topmost may start *above* the
+top face — which is drawn last and covers it. That is why a layer's `drop` is
+signed (`docs/adr/ADR-0041-a-cliff-is-stacked-in-bands.md`). Which ladder level a band draws is its index from the ground
+(`floor(base / bandLevels) + n`), so a cliff standing on higher ground shows the
+stratum its taller neighbour shows at that height. A step *equal* to the band —
+the common case, and the defaults — makes `bandLevels` `1`, one image per level,
+and every number above collapses to what it always was.
+
+`elevationHeight` must exceed `surfaceHeight / 4`, or there is no room for a
+face; and an `elevationStep` taller than the band stacks levels with a gap,
+which is a warning rather than an error.
 
 **This is also where the isometric projection comes from.** The renderer derives
 its tilt from `surfaceHeight / width` and its per-level lift from
@@ -222,11 +247,12 @@ are pointy-top (ADR-0014), so a raised tile exposes a **south-west** and a
 **south-east** face meeting at its south vertex.
 
 **Resolution.** A cell of height `h` standing over a base of `b` — the lower of
-its two front neighbours — draws `h − b` face layers, capped at 64, with its
-surface over them. The layer at height `L` is the image of `sourceLevel(L)`,
-placed at the hexagon's lower shoulder line and moved down
-`(h − L) × elevationStep` authored pixels. The whole image moves; nothing inside
-it is transformed.
+its two front neighbours — draws `ceil((h − b) / bandLevels)` face layers,
+capped at 64 and counted from its foot, with its surface over them. Band `n` is
+the image of `sourceLevel(floor(b / bandLevels) + n)`, placed at the hexagon's
+lower shoulder line and moved down `(h − b) − n × bandLevels` steps — a negative
+number for a topmost band that overshoots the top face. The whole image moves;
+nothing inside it is transformed.
 
 Which **surface** variant a cell takes — or which **flat** one, in a top-down
 world; the same index serves both lists and wraps when they are different
