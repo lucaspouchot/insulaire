@@ -151,6 +151,14 @@ Before a major implementation:
 4. implement engine logic independently of the DOM where possible;
 5. connect the UI afterward.
 
+Every image is drawn by **PixelLab**, through the
+`generate-images-with-pixellab` skill — tile art, character layers, portraits,
+props, title art, icons, a banner, a rough. Whatever the destination, and not
+only what ships in `content/`. Diagrams, charts and mockups made of real markup
+are not images in this sense and are not generated. When the PixelLab balance
+does not allow a call, say so and ask — never substitute a placeholder for the
+image that was asked for without saying it.
+
 ## Initial non-goals
 
 Do not add without an explicit requirement:
