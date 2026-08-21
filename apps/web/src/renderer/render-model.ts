@@ -135,7 +135,15 @@ export interface RenderModel {
   readonly locations: readonly RenderLocation[];
   readonly links: readonly RenderLink[];
   readonly overlays: readonly RenderOverlay[];
-  readonly hover: Offset | null;
+  /**
+   * The selected hex.
+   *
+   * The *hovered* hex is deliberately not here. It changes with the pointer
+   * rather than with the world, and putting it in the model made every hex the
+   * cursor crossed rebuild a model and schedule an Angular pass to move two
+   * strokes. The renderer owns it, and {@link CanvasView} — which is what knows
+   * the pointer moved — tells it directly through `setHover`.
+   */
   readonly selected: Offset | null;
   readonly showGrid: boolean;
   readonly showCoordinates: boolean;
@@ -238,7 +246,6 @@ export function emptyRenderModel(): RenderModel {
     locations: [],
     links: [],
     overlays: [],
-    hover: null,
     selected: null,
     showGrid: true,
     showCoordinates: false,

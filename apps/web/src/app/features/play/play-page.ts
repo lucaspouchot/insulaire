@@ -146,8 +146,18 @@ export class PlayPage implements AfterViewInit, OnDestroy {
     }));
   });
 
+  /**
+   * Bumped a few times a second while frames are being drawn.
+   *
+   * The readout used to hang off `revision`, which meant it only refreshed when
+   * the model was rebuilt — and once hovering stopped rebuilding one, it froze
+   * on whichever frame happened to be the last rebuild's, usually the costly
+   * first draw of a map. A renderer readout has to be driven by the renderer.
+   */
+  protected readonly frameTick = signal(0);
+
   protected readonly stats = computed(() => {
-    this.revision();
+    this.frameTick();
     return this.renderer?.frameStats ?? null;
   });
 
@@ -373,7 +383,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       // A door changed the map: the engine already swapped the session, the UI
       // just has to draw the world it now says it is on.
       if (result.state.worldId !== this.worldView()?.worldId) {
-        this.hover.set(null);
+        this.view?.clearHover();
         this.selected.set(null);
         this.loadWorldIntoRenderer(result.state.worldId, false);
       }
@@ -412,15 +422,15 @@ export class PlayPage implements AfterViewInit, OnDestroy {
     this.warmTileArt();
 
     this.view = new CanvasView(this.canvasRef().nativeElement, this.renderer, {
-      onHover: (cell) => {
-        this.hover.set(cell);
-        this.refresh();
-      },
+      // Only the readout: the highlight itself is the renderer's, set by
+      // `CanvasView` before this runs.
+      onHover: (cell) => this.hover.set(cell),
       onClick: (cell) => {
         this.selected.set(cell);
         this.moveTo(cell);
       },
       onResize: () => this.view?.fit(),
+      onFrameDrawn: () => this.frameTick.update((value) => value + 1),
     });
     this.view.fit();
   }
@@ -521,7 +531,6 @@ export class PlayPage implements AfterViewInit, OnDestroy {
           stroke: 'rgba(255, 209, 102, 0.55)',
         },
       ],
-      hover: this.hover(),
       selected: this.selected(),
       showGrid: this.showGrid(),
       showCoordinates: false,

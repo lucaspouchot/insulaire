@@ -183,8 +183,19 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     return cell === null || document === null ? null : document.linkAt(cell);
   });
 
+  /**
+   * Bumped a few times a second while frames are being drawn, and only while
+   * the readout is open.
+   *
+   * It used to hang off `revision`, which meant it only refreshed when the
+   * document changed — and once hovering stopped rebuilding the model, it froze
+   * on whichever frame the last edit had drawn. A renderer readout has to be
+   * driven by the renderer.
+   */
+  protected readonly frameTick = signal(0);
+
   protected readonly stats = computed(() => {
-    this.revision();
+    this.frameTick();
     return this.renderer?.frameStats ?? null;
   });
 
@@ -379,16 +390,22 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     this.warmTileArt();
 
     this.view = new CanvasView(this.canvasRef().nativeElement, this.renderer, {
-      onHover: (cell) => {
-        this.hover.set(cell);
-        this.refresh();
-      },
+      // The outline is already drawn by the time this runs: `CanvasView` sets it
+      // on the renderer itself. All that is left is the coordinate readout, so
+      // no model is rebuilt and no `revision` is bumped here.
+      onHover: (cell) => this.hover.set(cell),
       onClick: (cell) => {
         this.selected.set(cell);
         this.applyTool(cell);
       },
       onDragPaint: (cell) => this.applyTool(cell),
       onResize: () => this.frameOnce(),
+      onFrameDrawn: () => {
+        // Closed readout, no work: the panel is the only reader.
+        if (this.showStats()) {
+          this.frameTick.update((value) => value + 1);
+        }
+      },
     });
     this.frameOnce();
   }
@@ -670,7 +687,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       this.selectedTile.set(document.palette[0]?.id ?? null);
     }
     this.selected.set(null);
-    this.hover.set(null);
+    this.view?.clearHover();
     this.report.set(null);
     this.message.set(null);
     this.rebuild();
@@ -1181,7 +1198,6 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
         label: link.name.length > 0 ? link.name : link.targetWorld,
       })),
       overlays: [],
-      hover: this.hover(),
       selected: this.selected(),
       showGrid: this.showGrid(),
       showCoordinates: this.showCoordinates(),

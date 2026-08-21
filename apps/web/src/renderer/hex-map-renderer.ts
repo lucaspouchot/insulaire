@@ -96,7 +96,20 @@ export interface FrameStats {
   tilePictures: number;
   /** Milliseconds spent in the last `draw`. */
   lastFrameMs: number;
+  /**
+   * The worst `lastFrameMs` of the last {@link PEAK_WINDOW_MS} of drawing.
+   *
+   * The number that matters when frames are *occasionally* slow. A readout
+   * sampled a few times a second reads whatever frame it lands on and never
+   * sees the stall — and a stall is what a hand notices. It also tells a frame
+   * that is expensive every time apart from one that was expensive once, which
+   * is the difference between a renderer to fix and a map that has just loaded.
+   */
+  peakFrameMs: number;
 }
+
+/** The window {@link FrameStats.peakFrameMs} is the worst of. */
+const PEAK_WINDOW_MS = 2000;
 
 export class HexMapRenderer {
   private model: RenderModel = emptyRenderModel();
@@ -107,8 +120,21 @@ export class HexMapRenderer {
     terrainBatches: 0,
     tilePictures: 0,
     lastFrameMs: 0,
+    peakFrameMs: 0,
   };
+  private peakFrameMs = 0;
+  /** When the current peak window opened. */
+  private peakSince = 0;
   private batchCount = 0;
+  /**
+   * The hex under the pointer, outlined but otherwise inert.
+   *
+   * Renderer state rather than model state: it changes at the rate a hand
+   * moves, and it changes nothing else — no cell, no entity, no reachable set.
+   * Keeping it out of the model is what lets a hover cost one redraw instead of
+   * a model rebuild and a change-detection pass.
+   */
+  private hovered: Offset | null = null;
   /** One shared picture per distinct look; see {@link TileAppearanceCache}. */
   private readonly appearances: TileAppearanceCache;
   /** Set while {@link warmTileArt} is loading the art the model is made of. */
@@ -141,6 +167,19 @@ export class HexMapRenderer {
   ) {
     this.projection = this.projectionFor(this.model);
     this.appearances = new TileAppearanceCache(images);
+  }
+
+  /**
+   * Outlines a hex as hovered, or `null` to outline none.
+   *
+   * Cheap by construction — the next frame draws the new outline — so the
+   * caller may set it as often as the pointer moves. It survives
+   * {@link setModel}: the world changing under a still pointer does not move
+   * the pointer. A host that opens *another* map clears it, since the hex it
+   * named is not the same place any more (`CanvasView.clearHover`).
+   */
+  setHover(cell: Offset | null): void {
+    this.hovered = cell;
   }
 
   /** Replaces the model drawn by the next {@link draw}. */
@@ -391,13 +430,7 @@ export class HexMapRenderer {
     // (`docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`).
     if (model.width === 0 || model.height === 0 || this.warming) {
       ctx.restore();
-      this.stats = {
-        cellsDrawn: 0,
-        cellsTotal: model.width * model.height,
-        terrainBatches: 0,
-        tilePictures: this.appearances.size,
-        lastFrameMs: performance.now() - startedAt,
-      };
+      this.recordFrame(startedAt, model, 0, 0);
       return;
     }
 
@@ -422,12 +455,30 @@ export class HexMapRenderer {
 
     ctx.restore();
 
+    this.recordFrame(startedAt, model, cellsDrawn, this.batchCount);
+  }
+
+  /** Books what a frame cost, and keeps the worst of the recent ones. */
+  private recordFrame(
+    startedAt: number,
+    model: RenderModel,
+    cellsDrawn: number,
+    terrainBatches: number,
+  ): void {
+    const finishedAt = performance.now();
+    const lastFrameMs = finishedAt - startedAt;
+    if (finishedAt - this.peakSince > PEAK_WINDOW_MS) {
+      this.peakSince = finishedAt;
+      this.peakFrameMs = 0;
+    }
+    this.peakFrameMs = Math.max(this.peakFrameMs, lastFrameMs);
     this.stats = {
       cellsDrawn,
       cellsTotal: model.width * model.height,
-      terrainBatches: this.batchCount,
+      terrainBatches,
       tilePictures: this.appearances.size,
-      lastFrameMs: performance.now() - startedAt,
+      lastFrameMs,
+      peakFrameMs: this.peakFrameMs,
     };
   }
 
@@ -440,7 +491,7 @@ export class HexMapRenderer {
       this.drawGrid(model, range, range.minRow, range.maxRow);
     }
     this.drawOverlays(model, model.overlays.map((overlay) => ({ overlay, cells: overlay.cells })));
-    this.drawHighlight(model, model.hover, CHROME.hover, 2);
+    this.drawHighlight(model, this.hovered, CHROME.hover, 2);
     this.drawHighlight(model, model.selected, CHROME.selection, 3);
     this.drawLocations(model, model.locations);
     this.drawLinks(model, model.links);
@@ -486,8 +537,8 @@ export class HexMapRenderer {
           .map(({ overlay, byRow }) => ({ overlay, cells: byRow.get(row) ?? [] }))
           .filter(({ cells }) => cells.length > 0),
       );
-      if (model.hover?.row === row) {
-        this.drawHighlight(model, model.hover, CHROME.hover, 2);
+      if (this.hovered?.row === row) {
+        this.drawHighlight(model, this.hovered, CHROME.hover, 2);
       }
       if (model.selected?.row === row) {
         this.drawHighlight(model, model.selected, CHROME.selection, 3);

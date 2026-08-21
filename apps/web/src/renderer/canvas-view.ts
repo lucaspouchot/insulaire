@@ -16,6 +16,9 @@ import { HexMapRenderer } from './hex-map-renderer';
 /** How far the pointer may travel during a press and still count as a click. */
 const CLICK_SLOP_PX = 4;
 
+/** How often {@link CanvasViewHandlers.onFrameDrawn} may fire, in milliseconds. */
+const STATS_SAMPLE_MS = 250;
+
 export interface CanvasViewHandlers {
   /** The hex under the cursor changed (or the cursor left the map). */
   onHover?(cell: Offset | null): void;
@@ -35,6 +38,15 @@ export interface CanvasViewHandlers {
   onDragPaint?(cell: Offset): void;
   /** The viewport was resized, in CSS pixels. */
   onResize?(width: number, height: number): void;
+  /**
+   * A frame was drawn, so the renderer's statistics are fresh.
+   *
+   * Throttled to {@link STATS_SAMPLE_MS} rather than fired per frame: a host
+   * turns this into a signal write, and a change-detection pass inside the
+   * frame loop would be measuring itself. It exists for a debug readout, which
+   * is unreadable faster than this anyway.
+   */
+  onFrameDrawn?(): void;
 }
 
 export class CanvasView {
@@ -43,6 +55,8 @@ export class CanvasView {
   private frameHandle = 0;
   private needsRedraw = true;
   private disposed = false;
+  /** When {@link CanvasViewHandlers.onFrameDrawn} last fired. */
+  private statsSampledAt = 0;
 
   private viewportWidth = 0;
   private viewportHeight = 0;
@@ -79,6 +93,21 @@ export class CanvasView {
   /** Requests a redraw on the next animation frame. */
   invalidate(): void {
     this.needsRedraw = true;
+  }
+
+  /**
+   * Forgets the hovered hex, as if the pointer had left the canvas.
+   *
+   * The host calls this when what the cursor is over stops meaning anything —
+   * another map opened, a door crossed. It has to come through here rather than
+   * the host clearing its own state: the pointer has not moved, so nothing else
+   * would clear the outline the renderer is still drawing, and this class would
+   * go on believing the cursor is over a hex it has already reported.
+   */
+  clearHover(): void {
+    if (this.hovered !== null) {
+      this.setHover(null);
+    }
   }
 
   /** Current viewport size in CSS pixels. */
@@ -165,10 +194,24 @@ export class CanvasView {
         const ratio = this.canvas.width / Math.max(1, this.viewportWidth);
         context.setTransform(ratio, 0, 0, ratio, 0, 0);
         this.renderer.draw(this.viewportWidth, this.viewportHeight);
+        this.sampleStats();
       }
     }
     this.frameHandle = requestAnimationFrame(this.loop);
   };
+
+  /** Announces fresh statistics, at most every {@link STATS_SAMPLE_MS}. */
+  private sampleStats(): void {
+    if (this.handlers.onFrameDrawn === undefined) {
+      return;
+    }
+    const now = performance.now();
+    if (now - this.statsSampledAt < STATS_SAMPLE_MS) {
+      return;
+    }
+    this.statsSampledAt = now;
+    this.handlers.onFrameDrawn();
+  }
 
   private pointAt(event: PointerEvent | WheelEvent): Point {
     const rect = this.canvas.getBoundingClientRect();
@@ -205,11 +248,12 @@ export class CanvasView {
       return;
     }
 
+    // Off the map on both sides counts as unchanged: a pointer wandering the
+    // margin around a map reports nothing and redraws nothing.
     const cell = this.renderer.cellAtScreen(point);
-    if (!sameOffset(cell, this.hovered) || (cell === null) !== (this.hovered === null)) {
-      this.hovered = cell;
-      this.handlers.onHover?.(cell);
-      this.invalidate();
+    const unchanged = cell === null ? this.hovered === null : sameOffset(cell, this.hovered);
+    if (!unchanged) {
+      this.setHover(cell);
     }
 
     if (this.painting && cell !== null && !sameOffset(cell, this.lastPaintedCell)) {
@@ -267,11 +311,23 @@ export class CanvasView {
   }
 
   private handlePointerLeave(): void {
-    if (this.hovered !== null) {
-      this.hovered = null;
-      this.handlers.onHover?.(null);
-      this.invalidate();
-    }
+    this.clearHover();
+  }
+
+  /**
+   * Moves the outline, then tells the host.
+   *
+   * The renderer is set *here* rather than by the host: the outline is chrome
+   * over the map, not part of what the map is, so a hover costs this class one
+   * assignment and one frame. What the host does with the news — a coordinate
+   * readout, a tooltip — is its own business and must not be on the path
+   * between the hand and the highlight.
+   */
+  private setHover(cell: Offset | null): void {
+    this.hovered = cell;
+    this.renderer.setHover(cell);
+    this.invalidate();
+    this.handlers.onHover?.(cell);
   }
 
   private handleWheel(event: WheelEvent): void {

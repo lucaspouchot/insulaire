@@ -641,3 +641,96 @@ describe('HexMapRenderer tile art', () => {
     expect(loadBundle).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * The hover outline belongs to the renderer, not to the model.
+ *
+ * A hex the pointer crosses changes nothing about the world, so it must not
+ * cost a model: the host used to rebuild one per hex, which put a rebuild and a
+ * change-detection pass between the hand and two strokes of chrome.
+ */
+describe('HexMapRenderer hover', () => {
+  const HEX_SIZE = 24;
+  const LAYOUT = new HexLayout(HEX_SIZE);
+
+  beforeAll(() => {
+    globalThis.Path2D ??= class {
+      moveTo(): void {}
+      lineTo(): void {}
+      closePath(): void {}
+      addPath(): void {}
+    } as unknown as typeof Path2D;
+  });
+
+  /** Records the colour of every stroke, which is all a highlight is. */
+  function strokeRecorder(): { context: CanvasRenderingContext2D; strokes: string[] } {
+    const strokes: string[] = [];
+    let colour = '';
+    const context = new Proxy(
+      {},
+      {
+        get(_target, property) {
+          if (property === 'stroke') {
+            return () => strokes.push(colour);
+          }
+          if (property === 'measureText') {
+            return () => ({ width: 0 });
+          }
+          return () => undefined;
+        },
+        set(_target, property, value) {
+          if (property === 'strokeStyle') {
+            colour = String(value);
+          }
+          return true;
+        },
+      },
+    ) as CanvasRenderingContext2D;
+    return { context, strokes };
+  }
+
+  function flatModel(): RenderModel {
+    const width = 4;
+    const height = 4;
+    return {
+      ...emptyRenderModel(),
+      width,
+      height,
+      terrain: new Uint8Array(width * height),
+      elevation: new Int8Array(width * height),
+      // The grid strokes too, and nothing here is about the grid.
+      showGrid: false,
+    };
+  }
+
+  it('outlines the hovered hex, and nothing when there is none', () => {
+    const canvas = strokeRecorder();
+    const renderer = new HexMapRenderer(canvas.context, LAYOUT, new Camera());
+    renderer.setModel(flatModel());
+
+    renderer.draw(400, 400);
+    expect(canvas.strokes).toHaveLength(0);
+
+    renderer.setHover(offset(1, 2));
+    renderer.draw(400, 400);
+    expect(canvas.strokes).toHaveLength(1);
+
+    renderer.setHover(null);
+    renderer.draw(400, 400);
+    expect(canvas.strokes).toHaveLength(1);
+  });
+
+  it('keeps the hovered hex across a new model', () => {
+    const canvas = strokeRecorder();
+    const renderer = new HexMapRenderer(canvas.context, LAYOUT, new Camera());
+    renderer.setModel(flatModel());
+    renderer.setHover(offset(1, 2));
+
+    // The world moved under a pointer that did not: an entity stepped, a tile
+    // was painted. The cursor is still over the same hex.
+    renderer.setModel(flatModel());
+    renderer.draw(400, 400);
+
+    expect(canvas.strokes).toHaveLength(1);
+  });
+});

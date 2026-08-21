@@ -176,6 +176,10 @@
               <span>{{ 'ui.stats.lastFrame' | t }}</span>
               <span>{{ 'ui.stats.frameValue' | t: { ms: frame.lastFrameMs.toFixed(2) } }}</span>
             </div>
+            <div class="row">
+              <span>{{ 'ui.stats.peakFrame' | t }}</span>
+              <span>{{ 'ui.stats.frameValue' | t: { ms: frame.peakFrameMs.toFixed(2) } }}</span>
+            </div>
           </div>
         </section>
       }
