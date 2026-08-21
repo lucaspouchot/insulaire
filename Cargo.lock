@@ -26,7 +26,7 @@ dependencies = [
 
 [[package]]
 name = "insulaire-engine"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "insulaire-simulation",
  "insulaire-world",
@@ -37,7 +37,7 @@ dependencies = [
 
 [[package]]
 name = "insulaire-simulation"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "insulaire-world",
  "serde",
@@ -47,7 +47,7 @@ dependencies = [
 
 [[package]]
 name = "insulaire-wasm"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "console_error_panic_hook",
  "insulaire-engine",
@@ -56,7 +56,7 @@ dependencies = [
 
 [[package]]
 name = "insulaire-world"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "serde",
  "serde_json",
