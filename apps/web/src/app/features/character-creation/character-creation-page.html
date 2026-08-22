@@ -1,0 +1,163 @@
+<section class="creation-page">
+  <header class="creation-header">
+    <button type="button" class="exit" (click)="exit()">
+      <span aria-hidden="true">←</span>
+      {{ 'ui.creation.backToTitle' | t }}
+    </button>
+
+    @if (screens().length > 0) {
+      <nav class="steps" [attr.aria-label]="'ui.creation.progress' | t">
+        @for (entry of screens(); track entry.id; let index = $index) {
+          <span
+            class="step"
+            [class.current]="index === screenIndex()"
+            [class.done]="index < screenIndex()"
+          >
+            <i>{{ index + 1 }}</i>
+            <small>{{ entry.titleKey | t }}</small>
+          </span>
+        }
+      </nav>
+    }
+  </header>
+
+  <div class="progress-line" aria-hidden="true">
+    <span [style.width.%]="progress()"></span>
+  </div>
+
+  <main class="creation-viewport">
+    @if (busy()) {
+      <div class="state-card loading">{{ 'ui.creation.loading' | t }}</div>
+    } @else if (error(); as failure) {
+      <div class="state-card error">
+        <h1>{{ 'ui.creation.failed' | t }}</h1>
+        <p>{{ failure }}</p>
+        <button type="button" (click)="exit()">{{ 'ui.creation.backToTitle' | t }}</button>
+      </div>
+    } @else {
+      @for (active of activeScreens(); track active.id) {
+        <article class="creation-screen" [attr.data-transition]="active.transition ?? 'none'">
+          <div class="screen-copy">
+            <p class="eyebrow">
+              {{ 'ui.creation.step' | t: { current: screenIndex() + 1, total: screens().length } }}
+            </p>
+            <h1>{{ active.titleKey | t }}</h1>
+            @if (active.textKey) {
+              <p class="introduction">{{ active.textKey | t }}</p>
+            }
+          </div>
+
+          <div class="screen-layout" [class.without-preview]="previewBlocks().length === 0">
+            <div class="fields">
+              @for (block of contentBlocks(); track $index) {
+                @switch (block.type) {
+                  @case ('text') {
+                    <p class="authored-text">{{ block.textKey | t }}</p>
+                  }
+
+                  @case ('choice') {
+                    @if (choiceFor(block.choice); as field) {
+                      @if (choiceVisible(field)) {
+                        <div class="field-card">
+                          <app-control-field
+                            [field]="field"
+                            [value]="choiceValue(field)"
+                            (changed)="setChoiceValue(field.id, $event)"
+                          />
+                        </div>
+                      }
+                    }
+                  }
+
+                  @case ('characteristic') {
+                    @if (characteristicFor(block.characteristic); as field) {
+                      <div class="field-card characteristic-card">
+                        @if (!isCharacteristicNull(field.id)) {
+                          <app-control-field
+                            [field]="controlFor(field)"
+                            [value]="characteristicValue(field)"
+                            (changed)="setCharacteristicValue(field.id, $event)"
+                          />
+                        } @else {
+                          <div class="null-field">
+                            <span>{{ field.labelKey | t }}</span>
+                            <strong>{{ 'ui.creation.noValue' | t }}</strong>
+                          </div>
+                        }
+                        @if (field.nullable) {
+                          <label class="nullable">
+                            <input
+                              type="checkbox"
+                              [checked]="isCharacteristicNull(field.id)"
+                              (change)="setCharacteristicNull(field, $any($event.target).checked)"
+                            />
+                            <span>{{ 'ui.creation.noValue' | t }}</span>
+                          </label>
+                        }
+                      </div>
+                    }
+                  }
+
+                  @case ('summary') {
+                    @if (result(); as resolved) {
+                      <section class="summary">
+                        <h2>{{ 'ui.creation.summary' | t }}</h2>
+                        <dl>
+                          @for (field of summaryChoices(); track field.id) {
+                            <div>
+                              <dt>{{ field.labelKey | t }}</dt>
+                              <dd>{{ displayValue(field, resolved.choices[field.id]) }}</dd>
+                            </div>
+                          }
+                          @for (field of summaryCharacteristics(); track field.id) {
+                            <div>
+                              <dt>{{ field.labelKey | t }}</dt>
+                              <dd>{{ displayValue(field, resolved.characteristics[field.id]) }}</dd>
+                            </div>
+                          }
+                        </dl>
+                      </section>
+                    }
+                  }
+                }
+              }
+            </div>
+
+            @if (previewBlocks().length > 0) {
+              <aside class="previews" [attr.aria-label]="'ui.creation.preview' | t">
+                @for (_preview of previewBlocks(); track $index) {
+                  <div class="preview-frame">
+                    <canvas #previewCanvas></canvas>
+                    <span class="preview-label">{{ 'ui.creation.preview' | t }}</span>
+                  </div>
+                }
+              </aside>
+            }
+          </div>
+        </article>
+      }
+    }
+  </main>
+
+  @if (!busy() && error() === null && screen() !== null) {
+    <footer class="creation-actions">
+      <button type="button" class="previous" (click)="previous()">
+        {{ 'ui.creation.previous' | t }}
+      </button>
+      @if (lastScreen()) {
+        <button
+          type="button"
+          class="primary start"
+          [disabled]="result() === null"
+          (click)="start()"
+        >
+          {{ 'ui.creation.start' | t }}
+        </button>
+      } @else {
+        <button type="button" class="primary next" (click)="next()">
+          {{ 'ui.creation.next' | t }}
+        </button>
+      }
+    </footer>
+  }
+</section>

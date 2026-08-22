@@ -447,7 +447,8 @@ const EN: StringTree = {
           charactersSummary:
             'How a kind of character is drawn, what may be chosen about it, and how it moves — players, NPCs and monsters alike.',
           objects: 'Objects',
-          objectsSummary: 'The things standing on a map: props, containers, what a player may pick up.',
+          objectsSummary:
+            'The things standing on a map: props, containers, what a player may pick up.',
           decorations: 'Decorations',
           decorationsSummary: 'What dresses a tile without changing it: grass, rubble, edges.',
           effects: 'Effects',
@@ -464,7 +465,8 @@ const EN: StringTree = {
         id: 'Id',
         idHint:
           'The id is what a map stores. Changing it leaves every map that painted the old one pointing at nothing; the name may change freely.',
-        badId: 'An id may hold lower-case letters, digits, - and _, and must start with a letter or a digit.',
+        badId:
+          'An id may hold lower-case letters, digits, - and _, and must start with a letter or a digit.',
         terrain: 'Terrain family',
         movementCost: 'Movement cost',
         movementHint: '0 means impassable.',
@@ -527,7 +529,8 @@ const EN: StringTree = {
         },
         color: 'Colour',
         alpha: 'Opacity',
-        alphaHint: 'A tile is drawn as it stands, so a partly transparent pixel stays partly transparent.',
+        alphaHint:
+          'A tile is drawn as it stands, so a partly transparent pixel stays partly transparent.',
         palette: 'Colours used',
         grid: 'Grid',
         guides: 'Guides',
@@ -540,7 +543,8 @@ const EN: StringTree = {
         imageUnsaved: 'Unwritten',
         imagesUnsaved: '{count} image(s) with unwritten pixels',
         gridZoomHint: 'The pixel grid appears from {zoom}×.',
-        paintHint: 'Drag to draw. Alt takes the colour under the pointer, and Ctrl with the wheel zooms.',
+        paintHint:
+          'Drag to draw. Alt takes the colour under the pointer, and Ctrl with the wheel zooms.',
         faces: {
           flat: 'flat',
           surface: 'surface',
@@ -785,6 +789,22 @@ const EN: StringTree = {
       seedFixed: 'Fixed',
       seedRandom: 'Random',
       seed: 'Seed value',
+    },
+    creation: {
+      documentTitle: 'Create your character',
+      loading: 'Preparing character creation…',
+      failed: 'Character creation could not be opened',
+      backToTitle: 'Back to title',
+      progress: 'Character creation progress',
+      step: 'Step {current} of {total}',
+      preview: 'Character preview',
+      summary: 'Summary',
+      noValue: 'No value',
+      yes: 'Yes',
+      no: 'No',
+      previous: 'Previous',
+      next: 'Next',
+      start: 'Begin adventure',
     },
     title: {
       newGame: 'New game',
@@ -1266,7 +1286,8 @@ const FR: StringTree = {
           objectsSummary:
             'Ce qui se tient sur une carte : accessoires, contenants, ce qu’un joueur peut ramasser.',
           decorations: 'Décors',
-          decorationsSummary: 'Ce qui habille une tuile sans la changer : herbes, gravats, bordures.',
+          decorationsSummary:
+            'Ce qui habille une tuile sans la changer : herbes, gravats, bordures.',
           effects: 'Effets',
           effectsSummary: 'Ce qui se dessine par-dessus le monde un instant : coups, météo, sorts.',
         },
@@ -1289,7 +1310,8 @@ const FR: StringTree = {
         tags: 'Étiquettes, séparées par des virgules',
         visualId: 'Identifiant visuel',
         fallbackColor: 'Couleur de repli',
-        fallbackHint: 'Dessinée pendant le chargement des images, et partout où la tuile n’en a pas.',
+        fallbackHint:
+          'Dessinée pendant le chargement des images, et partout où la tuile n’en a pas.',
         flatHint:
           'L’hexagone entier, vu de dessus, pour une carte en vue de dessus. Ce n’est pas la même forme qu’une surface — rien n’est incliné ici — donc ce sont deux images distinctes, et aucune n’est étirée dans la forme de l’autre. Une tuile sans image à plat est dessinée dans sa couleur de repli sur une carte en vue de dessus.',
         flatSize: 'Une image à plat fait {width}×{height}.',
@@ -1315,7 +1337,8 @@ const FR: StringTree = {
           last: 'Répéter le dernier',
           level: 'Répéter un niveau',
           pattern: 'Répéter un motif',
-          lastHint: 'Tout ce qui est plus haut réutilise le niveau {level}, décalé d’un palier à la fois.',
+          lastHint:
+            'Tout ce qui est plus haut réutilise le niveau {level}, décalé d’un palier à la fois.',
           source: 'Niveau source',
           patternHint: 'Choisissez les niveaux du cycle, dans l’ordre.',
         },
@@ -1334,8 +1357,7 @@ const FR: StringTree = {
           '{width}×{flat} à plat · {width}×{surface} surface · {width}×{elevation} élévation · {step} px par niveau',
         preview: 'Aperçu',
         fitZoom: 'Ajuster',
-        paintNoImage:
-          'Ouvrez une image dans le panneau de droite, puis dessinez sur l’hexagone.',
+        paintNoImage: 'Ouvrez une image dans le panneau de droite, puis dessinez sur l’hexagone.',
         elevationAt: 'Élévation {level}',
         board: 'Plusieurs tuiles',
         pixels: 'Pixels',
@@ -1346,8 +1368,7 @@ const FR: StringTree = {
         },
         color: 'Couleur',
         alpha: 'Opacité',
-        alphaHint:
-          'Une tuile est dessinée telle quelle : un pixel semi-transparent le reste.',
+        alphaHint: 'Une tuile est dessinée telle quelle : un pixel semi-transparent le reste.',
         palette: 'Couleurs utilisées',
         grid: 'Grille',
         guides: 'Repères',
@@ -1610,6 +1631,22 @@ const FR: StringTree = {
       seedFixed: 'Fixe',
       seedRandom: 'Aléatoire',
       seed: 'Valeur de la graine',
+    },
+    creation: {
+      documentTitle: 'Créer votre personnage',
+      loading: 'Préparation de la création du personnage…',
+      failed: 'Impossible d’ouvrir la création du personnage',
+      backToTitle: 'Retour au titre',
+      progress: 'Progression de la création du personnage',
+      step: 'Étape {current} sur {total}',
+      preview: 'Aperçu du personnage',
+      summary: 'Récapitulatif',
+      noValue: 'Aucune valeur',
+      yes: 'Oui',
+      no: 'Non',
+      previous: 'Précédent',
+      next: 'Suivant',
+      start: 'Commencer l’aventure',
     },
     title: {
       newGame: 'Nouvelle partie',

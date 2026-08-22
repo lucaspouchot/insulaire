@@ -37,6 +37,14 @@ export const routes: Routes = [
     loadComponent: () => import('./settings/settings-page').then((m) => m.SettingsPage),
   },
   {
+    path: 'character-creation',
+    title: pageTitle('ui.creation.documentTitle'),
+    loadComponent: () =>
+      import('./features/character-creation/character-creation-page').then(
+        (m) => m.CharacterCreationPage,
+      ),
+  },
+  {
     path: 'play',
     title: pageTitle('ui.app.title.play'),
     loadComponent: () => import('./features/play/play-page').then((m) => m.PlayPage),

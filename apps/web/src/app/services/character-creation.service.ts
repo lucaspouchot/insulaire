@@ -5,7 +5,7 @@
 
 import { Injectable, inject, signal } from '@angular/core';
 
-import { CharacterCreationDefinition } from '../../content/content-types';
+import { CharacterCreationDefinition, CharacterCreationResult } from '../../content/content-types';
 import { CharacterLibraryService } from './character-library.service';
 import { EngineService } from './engine.service';
 import { ProjectStoreService, contentUrl } from './project-store.service';
@@ -17,6 +17,8 @@ export class CharacterCreationService {
   private readonly characters = inject(CharacterLibraryService);
 
   readonly definition = signal<CharacterCreationDefinition | null>(null);
+  /** The result accepted by the player for this new-game journey. */
+  readonly result = signal<CharacterCreationResult | null>(null);
 
   private json: string | null = null;
   private loading: Promise<CharacterCreationDefinition | null> | null = null;
@@ -63,5 +65,15 @@ export class CharacterCreationService {
     this.json = json;
     this.engine.loadCharacterCreation(json);
     this.definition.set(this.engine.characterCreation());
+  }
+
+  /** Starts a fresh traversal without carrying an earlier draft forward. */
+  begin(): void {
+    this.result.set(null);
+  }
+
+  /** Keeps the accepted generic result available for the session that follows. */
+  complete(result: CharacterCreationResult): void {
+    this.result.set(structuredClone(result));
   }
 }

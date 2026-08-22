@@ -74,11 +74,15 @@ export class App {
    * the development tooling leaking into the product
    * (`docs/adr/ADR-0024-authored-title-screen.md`). The settings screen is the
    * same argument — it is a screen a *player* opens, it fills the window, and
-   * it carries its own way back to wherever it was opened from. Every other
-   * screen keeps the bar, which is also how a developer leaves those two.
+   * it carries its own way back to wherever it was opened from. Character
+   * creation is also part of the game's own presentation and carries its own
+   * workflow navigation. Every other screen keeps the bar.
    */
   protected readonly showChrome = computed(
-    () => !this.url().startsWith('/title') && !this.url().startsWith('/settings'),
+    () =>
+      !this.url().startsWith('/title') &&
+      !this.url().startsWith('/settings') &&
+      !this.url().startsWith('/character-creation'),
   );
 
   /** `true` while the Title link would throw a running game away. */

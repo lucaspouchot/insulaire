@@ -762,8 +762,10 @@ is unbounded, naming only `min: 0` is `0..+∞`, and two authored bounds are a
 custom range. `select` is an enum, boolean controls are booleans, and `text` is
 free text.
 
-`screens[]` are traversed in order. Their `transition` is `none`, `fade`,
-`slideLeft` or `slideUp`. Blocks are:
+`screens[]` are traversed in order. When the declaration is present, **New
+game** opens this workflow before the play route; a project that declares no
+character creation keeps starting play directly. Their `transition` is `none`,
+`fade`, `slideLeft` or `slideUp`. Blocks are:
 
 | `type` | Fields | Meaning |
 |---|---|---|

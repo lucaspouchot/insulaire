@@ -642,10 +642,10 @@ types the application uses — including the whole change-map loop.
   it will own, with no implementation (ADR-0019). So are three of the five
   resource categories: objects, decorations and effects (ADR-0039).
 - **Characters are authored but not yet worn.** Definitions and the generic
-  creation workflow are edited, validated and resolved into drawable sprites,
-  but the player-facing creation route does not yet feed its result into
-  `GameState`, and map entities still use `EntityTemplate` visuals (ADR-0028,
-  ADR-0042).
+  creation workflow are edited, validated, traversed from **New game** and
+  resolved into drawable sprites, but its result is not yet carried by
+  `GameState` or saves, and map entities still use `EntityTemplate` visuals
+  (ADR-0028, ADR-0042).
 - **A character is one still frame.** No animation, no directions, no sprite
   sheets: a variant names one image (ADR-0029).
 - **The shipped character's sprites are placeholders** — eight small PNGs under

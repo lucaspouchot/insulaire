@@ -260,7 +260,7 @@ export class TitlePage implements OnDestroy {
         if (this.engine.hasGame()) {
           this.engine.endGame();
         }
-        await this.router.navigate(['/play']);
+        await this.router.navigate(['/character-creation']);
         break;
       case 'continue':
         // Unreachable while `hasSaves` is false; kept so the day saves exist,
