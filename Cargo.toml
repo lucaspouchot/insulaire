@@ -8,7 +8,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.16.0"
+version = "0.17.0"
 edition = "2021"
 rust-version = "1.82"
 publish = false
@@ -21,9 +21,9 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"
 
-insulaire-world = { path = "crates/world", version = "0.16.0" }
-insulaire-simulation = { path = "crates/simulation", version = "0.16.0" }
-insulaire-engine = { path = "crates/engine", version = "0.16.0" }
+insulaire-world = { path = "crates/world", version = "0.17.0" }
+insulaire-simulation = { path = "crates/simulation", version = "0.17.0" }
+insulaire-engine = { path = "crates/engine", version = "0.17.0" }
 
 # `wasm-pack` builds a size-optimised artefact; the workspace release profile is
 # tuned for the WASM bundle rather than for native benchmarks.
