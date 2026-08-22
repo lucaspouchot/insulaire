@@ -16,6 +16,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import {
   CharacterDefinition,
+  CharacterCreationDefinition,
+  CharacterCreationResult,
   ResolvedCharacter,
   TILE_SET_SCHEMA_VERSION,
   TileDefinition,
@@ -129,9 +131,10 @@ describe.skipIf(!built)('engine boundary', () => {
     instance.loadSettings(readText('content/settings.json'));
   }
 
-  /** Every character definition the manifest lists; the project needs them all. */
+  /** Every character definition and the creation file that depends on them. */
   function loadShippedCharacters(instance: RawInsulaireEngine): void {
     instance.loadCharacter(readText('content/characters/human_player.json'));
+    instance.loadCharacterCreation(readText('content/character-creation.json'));
   }
 
   it('reports that it is running as WebAssembly', () => {
@@ -737,8 +740,13 @@ describe.skipIf(!built)('engine boundary', () => {
     expect(definition.category).toBe('player');
     expect(definition.resolution).toEqual({ width: 64, height: 128 });
     expect(definition.parameters?.map((parameter) => parameter.id)).toEqual([
+      'lineage',
+      'gender',
       'hairStyle',
       'hairColor',
+      'eyeColor',
+      'height',
+      'bust',
       'armor',
       'cape',
     ]);
@@ -786,6 +794,30 @@ describe.skipIf(!built)('engine boundary', () => {
       instance.resolveCharacter('human_player', JSON.stringify({ cape: false }), undefined, 0),
     ) as ResolvedCharacter;
     expect(bare.layers.some((layer) => layer.layer === 'cape')).toBe(false);
+  });
+
+  it('resolves generic character creation without race or gender branches', () => {
+    const instance = engine();
+    instance.loadCharacter(readText('content/characters/human_player.json'));
+    const json = readText('content/character-creation.json');
+    const outcome = JSON.parse(instance.loadCharacterCreation(json)) as LoadOutcome;
+    expect(outcome.report.issues).toEqual([]);
+
+    const definition = JSON.parse(instance.characterCreation()) as CharacterCreationDefinition;
+    expect(definition.choices?.map((choice) => choice.id)).toContain('lineage');
+    expect(definition.choices?.map((choice) => choice.id)).not.toContain('armor');
+
+    const result = JSON.parse(
+      instance.resolveCharacterCreation(
+        JSON.stringify({ lineage: 'elf', gender: 'man', hairStyle: 'long' }),
+        JSON.stringify({ name: 'Neris', mana: null }),
+      ),
+    ) as CharacterCreationResult;
+    expect(result.character).toBe('human_player');
+    expect(result.parameters).toMatchObject({ lineage: 'elf', gender: 'man', hairStyle: 'long' });
+    expect(result.parameters['armor']).toBeUndefined();
+    expect(result.characteristics['name']).toBe('Neris');
+    expect(result.characteristics['mana']).toBeNull();
   });
 
   /**
@@ -962,6 +994,7 @@ describe.skipIf(!built)('engine boundary', () => {
     expect(outcome.report.valid).toBe(true);
     const summary = JSON.parse(instance.contentSummary()) as ContentSummary;
     expect(summary.characters).toEqual(['human_player']);
+    expect(summary.characterCreation).toBe('new_game');
   });
 
   it('rejects a world with no player, listing the reason', () => {

@@ -407,6 +407,51 @@ impl InsulaireEngine {
         self.inner.character_ids().map_err(to_js)
     }
 
+    /// Parses, validates and registers a generic character-creation
+    /// declaration. Character definitions must be loaded first.
+    #[wasm_bindgen(js_name = loadCharacterCreation)]
+    pub fn load_character_creation(&mut self, json: &str) -> Result<String, JsValue> {
+        self.inner.load_character_creation(json).map_err(to_js)
+    }
+
+    /// Validates a character-creation declaration without registering it.
+    #[wasm_bindgen(js_name = validateCharacterCreation)]
+    pub fn validate_character_creation(&self, json: &str) -> Result<String, JsValue> {
+        self.inner.validate_character_creation(json).map_err(to_js)
+    }
+
+    /// Returns the registered `CharacterCreationDefinition`.
+    #[wasm_bindgen(js_name = characterCreation)]
+    pub fn character_creation(&self) -> Result<String, JsValue> {
+        self.inner.character_creation().map_err(to_js)
+    }
+
+    /// Resolves submitted creation choices and characteristics without
+    /// interpreting any author-owned id.
+    #[wasm_bindgen(js_name = resolveCharacterCreation)]
+    pub fn resolve_character_creation(
+        &self,
+        choices_json: &str,
+        characteristics_json: &str,
+    ) -> Result<String, JsValue> {
+        self.inner
+            .resolve_character_creation(choices_json, characteristics_json)
+            .map_err(to_js)
+    }
+
+    /// Resolves a creation definition passed in by the editor.
+    #[wasm_bindgen(js_name = previewCharacterCreation)]
+    pub fn preview_character_creation(
+        &self,
+        creation_json: &str,
+        choices_json: &str,
+        characteristics_json: &str,
+    ) -> Result<String, JsValue> {
+        self.inner
+            .preview_character_creation(creation_json, choices_json, characteristics_json)
+            .map_err(to_js)
+    }
+
     /// Resolves a definition **passed in** against a customisation, at a moment
     /// of an animation — the editor's preview, for content that is not
     /// registered yet. Returns a `ResolvedCharacter`.

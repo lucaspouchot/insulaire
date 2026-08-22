@@ -410,6 +410,7 @@ export class ProjectStoreService {
       // Carried through untouched, like the title screen below: the character
       // editor owns this list and declares its own files.
       characters: project.characters,
+      characterCreation: project.characterCreation,
       // Carried through untouched, like the languages below: these name files
       // the editor does not hold documents for, so regenerating them from what
       // happens to be loaded would drop the title screen and the settings on
@@ -738,6 +739,18 @@ export class ProjectStoreService {
     return declared?.path ?? `characters/${id}.json`;
   }
 
+  /** Declares or replaces the project's single character-creation file. */
+  declareCharacterCreation(id: string, path: string): void {
+    const project = this.requireProject();
+    this.projectSignal.set({ ...project, characterCreation: { id, path } });
+    this.touch();
+  }
+
+  /** Where the character-creation declaration lives. */
+  characterCreationPath(): string {
+    return this.projectSignal()?.characterCreation?.path ?? 'character-creation.json';
+  }
+
   // ------------------------------------------------------------------ saving
   //
   // What a save has to write is a *difference* between the documents and the
@@ -927,6 +940,7 @@ function mergeManifest(onDisk: ProjectDefinition, stored: ProjectDefinition): Pr
     tileSets: union(onDisk.tileSets, stored.tileSets),
     worlds: union(onDisk.worlds, stored.worlds),
     characters: union(onDisk.characters ?? [], stored.characters ?? []),
+    characterCreation: onDisk.characterCreation ?? stored.characterCreation,
   };
 }
 

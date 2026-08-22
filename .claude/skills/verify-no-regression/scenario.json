@@ -135,6 +135,38 @@
       "canvas": false
     },
     {
+      "name": "editor-character-creation",
+      "path": "/editor/creation",
+      "settleMs": 2500,
+      "press": [
+        {
+          "name": "editor-character-creation-characteristics",
+          "selector": ".subtabs button:nth-of-type(2)",
+          "settleMs": 700
+        },
+        {
+          "name": "editor-character-creation-workflow",
+          "selector": ".subtabs button:nth-of-type(3)",
+          "settleMs": 700
+        },
+        {
+          "name": "editor-character-creation-choices-again",
+          "selector": ".subtabs button:nth-of-type(1)",
+          "settleMs": 700
+        },
+        {
+          "name": "editor-character-creation-appearance",
+          "selector": ".preview-bar button:last-of-type",
+          "settleMs": 700
+        },
+        {
+          "name": "editor-character-creation-attributes",
+          "selector": ".preview-bar button:last-of-type",
+          "settleMs": 700
+        }
+      ]
+    },
+    {
       "name": "editor-asset-characters",
       "path": "/editor/asset/characters",
       "settleMs": 2500,

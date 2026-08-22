@@ -381,6 +381,8 @@ export interface ProjectDefinition {
   worlds: ContentRef[];
   /** Character definitions to load. Absent means the project ships none. */
   characters?: ContentRef[];
+  /** Generic player-character creation declaration. */
+  characterCreation?: ContentRef;
   /** The title screen a client opens on. Absent means it starts on a map. */
   titleScreen?: ContentRef;
   /** The settings this game offers. The application's own are not content. */
@@ -538,8 +540,8 @@ export interface SettingsDefinition {
 /** Values by field id, as stored and as `createGame` receives them. */
 export type SettingsValues = Record<string, SettingValue>;
 
-/** Mirrors `CHARACTER_SCHEMA_VERSION`; `2` is the sprite format (ADR-0029). */
-export const CHARACTER_SCHEMA_VERSION = 2;
+/** Mirrors `CHARACTER_SCHEMA_VERSION`; `3` makes child boxes anchor-relative. */
+export const CHARACTER_SCHEMA_VERSION = 3;
 
 /** Largest sprite canvas a character may declare, on either side. */
 export const MAX_SPRITE_RESOLUTION = 256;
@@ -797,6 +799,64 @@ export interface CharacterDefinition {
 
 /** Chosen values by parameter id — a character's customisation. */
 export type CharacterValues = Record<string, SettingValue>;
+
+/** Mirrors `CHARACTER_CREATION_SCHEMA_VERSION`. */
+export const CHARACTER_CREATION_SCHEMA_VERSION = 1;
+
+/** Where a creation choice sends its resolved value. */
+export type CreationBinding =
+  | { kind: 'character' }
+  | { kind: 'parameter'; parameter: string };
+
+/** A generic creation choice using the shared control vocabulary. */
+export interface CreationChoice extends ControlDefinition {
+  binding: CreationBinding;
+}
+
+/** A value stored on the player independently of appearance. */
+export interface CharacteristicDefinition
+  extends Omit<ControlDefinition, 'default'> {
+  default: SettingValue | null;
+  nullable?: boolean;
+}
+
+/** Animation used when moving between workflow screens. */
+export type ScreenTransition = 'none' | 'fade' | 'slideLeft' | 'slideUp';
+
+/** One item placed on a player-facing creation screen. */
+export type CreationBlock =
+  | { type: 'text'; textKey: string }
+  | { type: 'choice'; choice: string }
+  | { type: 'characteristic'; characteristic: string }
+  | { type: 'preview'; animation?: string; parameters?: Record<string, SettingValue> }
+  | { type: 'summary' };
+
+/** One ordered page of the creation workflow. */
+export interface CreationScreen {
+  id: string;
+  titleKey: string;
+  textKey?: string;
+  transition?: ScreenTransition;
+  blocks?: CreationBlock[];
+}
+
+/** Authored character creation, entirely neutral about choice semantics. */
+export interface CharacterCreationDefinition {
+  id: string;
+  schemaVersion: number;
+  baseCharacter?: string;
+  choices?: CreationChoice[];
+  characteristics?: CharacteristicDefinition[];
+  screens?: CreationScreen[];
+}
+
+/** Generic result produced by the Rust creation resolver. */
+export interface CharacterCreationResult {
+  character: string;
+  choices: Record<string, SettingValue>;
+  parameters: CharacterValues;
+  characteristics: Record<string, SettingValue | null>;
+}
 
 /** One layer of a resolved character, ready to draw. */
 export interface ResolvedLayer {

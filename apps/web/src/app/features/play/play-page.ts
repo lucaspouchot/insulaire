@@ -59,6 +59,7 @@ import { TranslatePipe } from '../../i18n/translate.pipe';
 import { EngineService } from '../../services/engine.service';
 import { ProjectStoreService, contentUrl } from '../../services/project-store.service';
 import { CharacterLibraryService } from '../../services/character-library.service';
+import { CharacterCreationService } from '../../services/character-creation.service';
 import { TitleScreenService } from '../../services/title-screen.service';
 
 const HEX_SIZE = 28;
@@ -95,6 +96,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
   private readonly settings = inject(SettingsService);
   private readonly titleScreen = inject(TitleScreenService);
   private readonly characters = inject(CharacterLibraryService);
+  private readonly characterCreation = inject(CharacterCreationService);
 
   private view: CanvasView | null = null;
   private renderer: HexMapRenderer | null = null;
@@ -177,6 +179,9 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       // will not load without them either
       // (`docs/adr/ADR-0028-character-definitions.md`).
       await this.characters.ensureLoaded();
+      // Character creation is optional content, but when the manifest names it
+      // it participates in project validation like every other file.
+      await this.characterCreation.ensureLoaded();
       // And the title screen, which Play never shows: it is loaded because the
       // *manifest names it*, and `loadProject` refuses a manifest naming a file
       // that is not registered (`project.unloadedTitleScreen`). Opening
@@ -286,6 +291,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
     this.titleScreen.register();
     this.settings.register();
     this.characters.register();
+    this.characterCreation.register();
     for (const tileSet of this.store.tileSetDefinitions()) {
       this.engine.loadTileSet(JSON.stringify(tileSet));
     }

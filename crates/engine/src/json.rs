@@ -418,6 +418,60 @@ impl JsonEngine {
         ok(&self.inner.character_ids())
     }
 
+    /// Registers a character-creation declaration; returns a `LoadOutcome`.
+    pub fn load_character_creation(&mut self, json: &str) -> JsonResult {
+        let outcome = self
+            .inner
+            .load_character_creation(json)
+            .map_err(|error| err(&error))?;
+        ok(&outcome)
+    }
+
+    /// Validates a character-creation declaration without registering it.
+    pub fn validate_character_creation(&self, json: &str) -> JsonResult {
+        let report = self
+            .inner
+            .validate_character_creation(json)
+            .map_err(|error| err(&error))?;
+        ok(&report)
+    }
+
+    /// Returns the registered `CharacterCreationDefinition`.
+    pub fn character_creation(&self) -> JsonResult {
+        let creation = self
+            .inner
+            .character_creation()
+            .map_err(|error| err(&error))?;
+        ok(&creation)
+    }
+
+    /// Resolves creation choices and characteristics into their generic result.
+    pub fn resolve_character_creation(
+        &self,
+        choices_json: &str,
+        characteristics_json: &str,
+    ) -> JsonResult {
+        let resolved = self
+            .inner
+            .resolved_character_creation(choices_json, characteristics_json)
+            .map_err(|error| err(&error))?;
+        ok(&resolved)
+    }
+
+    /// Resolves a creation definition passed in by the editor.
+    pub fn preview_character_creation(
+        &self,
+        creation_json: &str,
+        choices_json: &str,
+        characteristics_json: &str,
+    ) -> JsonResult {
+        let resolved = self
+            .inner
+            .preview_character_creation(creation_json, choices_json, characteristics_json)
+            .map_err(|error| err(&error))?;
+        ok(&resolved)
+    }
+
     /// Resolves a definition passed in against a customisation, at a moment of
     /// an animation; returns a
     /// [`ResolvedCharacter`](insulaire_world::ResolvedCharacter).
@@ -1346,6 +1400,27 @@ mod tests {
         ]
     }"##;
 
+    const CHARACTER_CREATION: &str = r##"{
+        "id": "new_game", "schemaVersion": 1, "baseCharacter": "human_player",
+        "choices": [
+            { "id": "anything", "labelKey": "game.creation.anything",
+              "control": "color", "default": "#4b3621",
+              "binding": { "kind": "parameter", "parameter": "hairColor" } }
+        ],
+        "characteristics": [
+            { "id": "age", "labelKey": "game.creation.age", "control": "number",
+              "default": 18, "min": 0, "max": 120, "nullable": false },
+            { "id": "mana", "labelKey": "game.creation.mana", "control": "number",
+              "default": null, "min": 0, "nullable": true }
+        ],
+        "screens": [{ "id": "identity", "titleKey": "game.creation.identity", "blocks": [
+            { "type": "choice", "choice": "anything" },
+            { "type": "characteristic", "characteristic": "age" },
+            { "type": "characteristic", "characteristic": "mana" },
+            { "type": "preview" }
+        ] }]
+    }"##;
+
     #[test]
     fn characters_load_and_resolve_through_the_string_api() {
         let mut engine = loaded();
@@ -1399,6 +1474,81 @@ mod tests {
         assert_eq!(resolved["values"]["cape"], true);
         assert_eq!(resolved["values"]["hairColor"], "#4b3621");
         assert!(resolved["values"].get("unknown").is_none());
+    }
+
+    #[test]
+    fn character_creation_loads_validates_and_resolves_through_the_string_api() {
+        let mut engine = loaded();
+        engine.load_character(CHARACTER).expect("character loads");
+
+        let validation = json(
+            &engine
+                .validate_character_creation(CHARACTER_CREATION)
+                .expect("validates"),
+        );
+        assert_eq!(validation["valid"], true);
+
+        let outcome = json(
+            &engine
+                .load_character_creation(CHARACTER_CREATION)
+                .expect("creation loads"),
+        );
+        assert_eq!(outcome["id"], "new_game");
+        assert_eq!(outcome["report"]["valid"], true);
+
+        let definition = json(&engine.character_creation().expect("definition"));
+        assert_eq!(definition["choices"][0]["id"], "anything");
+        assert_eq!(definition["characteristics"][1]["nullable"], true);
+        assert_eq!(
+            json(&engine.content_summary().expect("summary"))["characterCreation"],
+            "new_game"
+        );
+
+        let resolved = json(
+            &engine
+                .resolve_character_creation(
+                    r##"{ "anything": "#f2c14e", "unknown": true }"##,
+                    r#"{ "age": 999, "mana": null, "unknown": 3 }"#,
+                )
+                .expect("resolves"),
+        );
+        assert_eq!(resolved["character"], "human_player");
+        assert_eq!(resolved["choices"]["anything"], "#f2c14e");
+        assert_eq!(resolved["parameters"]["hairColor"], "#f2c14e");
+        assert_eq!(resolved["characteristics"]["age"], 120.0);
+        assert_eq!(resolved["characteristics"]["mana"], Value::Null);
+        assert!(resolved["choices"].get("unknown").is_none());
+        assert!(resolved["characteristics"].get("unknown").is_none());
+    }
+
+    #[test]
+    fn an_editor_can_preview_unregistered_character_creation() {
+        let engine = loaded();
+        let resolved = json(
+            &engine
+                .preview_character_creation(
+                    CHARACTER_CREATION,
+                    r##"{ "anything": "#ffffff" }"##,
+                    "{}",
+                )
+                .expect("previews"),
+        );
+
+        assert_eq!(resolved["parameters"]["hairColor"], "#ffffff");
+        assert_eq!(resolved["characteristics"]["age"], 18);
+        assert_eq!(resolved["characteristics"]["mana"], Value::Null);
+        assert_eq!(
+            code(&engine.character_creation().unwrap_err()),
+            "unknownContent"
+        );
+        assert_eq!(
+            code(
+                &engine
+                    .preview_character_creation("{", "{}", "{}")
+                    .unwrap_err()
+            ),
+            "parse"
+        );
     }
 
     /// The editor previews content that is not registered and need not be

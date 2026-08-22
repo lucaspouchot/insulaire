@@ -6,6 +6,26 @@
   "resolution": { "width": 64, "height": 128 },
   "parameters": [
     {
+      "id": "lineage",
+      "labelKey": "game.creation.lineage",
+      "control": "select",
+      "default": "human",
+      "options": [
+        { "value": "human", "labelKey": "game.creation.lineageHuman" },
+        { "value": "elf", "labelKey": "game.creation.lineageElf" }
+      ]
+    },
+    {
+      "id": "gender",
+      "labelKey": "game.creation.gender",
+      "control": "select",
+      "default": "woman",
+      "options": [
+        { "value": "woman", "labelKey": "game.creation.genderWoman" },
+        { "value": "man", "labelKey": "game.creation.genderMan" }
+      ]
+    },
+    {
       "id": "hairStyle",
       "labelKey": "game.character.hairStyle",
       "control": "select",
@@ -20,6 +40,32 @@
       "labelKey": "game.character.hairColor",
       "control": "color",
       "default": "#8b5a2b"
+    },
+    {
+      "id": "eyeColor",
+      "labelKey": "game.creation.eyeColor",
+      "control": "color",
+      "default": "#4f7cac"
+    },
+    {
+      "id": "height",
+      "labelKey": "game.creation.height",
+      "control": "slider",
+      "default": 170,
+      "min": 140,
+      "max": 210,
+      "step": 1,
+      "unit": "cm"
+    },
+    {
+      "id": "bust",
+      "labelKey": "game.creation.bust",
+      "control": "slider",
+      "default": 50,
+      "min": 0,
+      "max": 100,
+      "step": 5,
+      "unit": "%"
     },
     {
       "id": "armor",

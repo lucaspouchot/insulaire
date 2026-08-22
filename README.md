@@ -641,10 +641,11 @@ types the application uses — including the whole change-map loop.
 - **The scenario editor is a placeholder** — a registered tab describing what
   it will own, with no implementation (ADR-0019). So are three of the five
   resource categories: objects, decorations and effects (ADR-0039).
-- **Characters are authored but not yet worn.** Definitions are edited,
-  validated and resolved into drawable sprites, but no entity on the map is
-  drawn from one and no screen offers a player its choices: map entities still
-  use the `EntityTemplate` visuals (ADR-0028).
+- **Characters are authored but not yet worn.** Definitions and the generic
+  creation workflow are edited, validated and resolved into drawable sprites,
+  but the player-facing creation route does not yet feed its result into
+  `GameState`, and map entities still use `EntityTemplate` visuals (ADR-0028,
+  ADR-0042).
 - **A character is one still frame.** No animation, no directions, no sprite
   sheets: a variant names one image (ADR-0029).
 - **The shipped character's sprites are placeholders** — eight small PNGs under
@@ -727,6 +728,9 @@ Read in order:
 37. **ADR-0037 — a flat map is drawn from flat art, or from colour**
 38. **ADR-0038 — a map is drawn from shared pictures, and only once it has them**
 39. **ADR-0039 — one editor for everything the game is drawn from**
+40. **ADR-0040 — tile art travels as one bundle**
+41. **ADR-0041 — a cliff is stacked in bands**
+42. **ADR-0042 — character creation is a generic authored workflow**
 
 `CLAUDE.md` contains project-level instructions for Claude Code and other coding
 agents.

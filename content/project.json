@@ -16,6 +16,7 @@
   "characters": [
     { "id": "human_player", "path": "characters/human_player.json" }
   ],
+  "characterCreation": { "id": "new_game", "path": "character-creation.json" },
   "titleScreen": { "id": "main", "path": "menu/title-screen.json" },
   "settings": { "id": "insulaire_game", "path": "settings.json" },
   "locales": {

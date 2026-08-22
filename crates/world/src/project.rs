@@ -138,6 +138,13 @@ pub struct ProjectDefinition {
     /// (`docs/adr/ADR-0028-character-definitions.md`).
     #[serde(default)]
     pub characters: Vec<ContentRef>,
+    /// The player-facing character-creation workflow, if this game has one.
+    ///
+    /// The file contains generic choices and bindings. Words such as race or
+    /// gender are author-owned ids, never fields of the engine
+    /// (`docs/adr/ADR-0042-character-creation-is-a-generic-authored-workflow.md`).
+    #[serde(default)]
+    pub character_creation: Option<ContentRef>,
     /// The languages the game is available in, and their locale files.
     #[serde(default)]
     pub locales: LocalesDefinition,

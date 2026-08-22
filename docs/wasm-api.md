@@ -191,6 +191,10 @@ project declares, since a world file alone cannot say whether its zone exists
 (ADR-0021), and where the loaded **languages** are compared against the ones the
 manifest declares (ADR-0023).
 
+When `characterCreation` is present, load every character definition and then
+`loadCharacterCreation` before this call. Missing registration reports
+`project.unloadedCharacterCreation`.
+
 Errors: `parse`, `invalidContent` (`project.unloadedWorld`,
 `project.unknownStartWorld`, `world.unknownZone`, `locale.unloadedLanguage`, …).
 
@@ -328,6 +332,46 @@ Errors: `unknownContent` when no definition has that id.
 
 Ids of every registered definition, sorted.
 
+### `loadCharacterCreation(json: string): LoadOutcome`
+
+Registers the project's generic `CharacterCreationDefinition` (ADR-0042).
+Load character definitions first: a binding to `{ kind: "character" }`, a
+binding to a parameter and preview overrides are validated against them.
+
+Errors: `parse`, `invalidContent` (`characterCreation.unknownCharacter`,
+`characterCreation.unknownParameter`, `characterCreation.forwardCondition`, …).
+
+### `validateCharacterCreation(json: string): ValidationReport`
+
+The editor's side-effect-free pre-save check: the same cross-character
+validation as loading, plus localised keys against the languages already
+loaded.
+
+### `characterCreation(): CharacterCreationDefinition`
+
+The registered declaration, defaults filled in. Errors with `unknownContent`
+when the project declares none.
+
+### `resolveCharacterCreation(choicesJson, characteristicsJson): CharacterCreationResult`
+
+Resolves defaults, backwards `showIf` conditions and generic bindings into:
+
+```json
+{
+  "character": "human_player",
+  "choices": { "lineage": "elf", "hairStyle": "long" },
+  "parameters": { "lineage": "elf", "hairStyle": "long" },
+  "characteristics": { "name": "Neris", "mana": null }
+}
+```
+
+No id receives special treatment. A hidden choice contributes nothing.
+
+### `previewCharacterCreation(creationJson, choicesJson, characteristicsJson): CharacterCreationResult`
+
+The same resolution for the in-hand declaration the editor is changing. It
+does not register the declaration and does not require it to pass validation.
+
 ### `resolveCharacter(id, valuesJson, animation?, timeMs): ResolvedCharacter`
 
 ```ts
@@ -391,8 +435,8 @@ Errors: `parse` when either JSON argument is not JSON.
 
 ### `resetContent(): void`
 
-Forgets every loaded tile set, world, locale, title screen, settings declaration
-and project. Loading is otherwise additive
+Forgets every loaded tile set, world, locale, title screen, settings declaration,
+character definition, character-creation declaration and project. Loading is otherwise additive
 — a world stays registered under its id until something replaces it — so a host
 re-loading a whole project calls this first, or content the author deleted keeps
 satisfying the doors that point at it.
@@ -457,8 +501,8 @@ is the same validator `loadWorld` runs (ADR-0015).
 ### `contentSummary(): ContentSummary`
 
 What the registry holds: tile set ids, world summaries, the entity templates
-this build knows, the ids of the loaded character definitions, and `project` —
-the loaded manifest as
+this build knows, the ids of the loaded character definitions,
+`characterCreation` (its loaded id or `null`), and `project` — the loaded manifest as
 `{ id, name, startWorld, worldIds, languages }`, or `null` when none was loaded.
 Each language is `{ id, name, isDefault }`, in author order: what a language
 picker is built from.

@@ -31,5 +31,32 @@
     "armorLeather": "Leather",
     "armorPlate": "Plate",
     "cape": "Cape"
+  },
+  "creation": {
+    "lineage": "Lineage",
+    "lineageHelp": "The lineage offered at the start; other lineages may be unlocked later.",
+    "lineageHuman": "Human",
+    "lineageElf": "Elf",
+    "gender": "Gender",
+    "genderWoman": "Woman",
+    "genderMan": "Man",
+    "eyeColor": "Eye colour",
+    "height": "Height",
+    "bust": "Bust",
+    "name": "Name",
+    "age": "Age",
+    "hp": "Health",
+    "mana": "Mana",
+    "endurance": "Endurance",
+    "agility": "Agility",
+    "experience": "Experience",
+    "corruption": "Corruption",
+    "libido": "Libido",
+    "identityTitle": "Who are you?",
+    "identityText": "Choose an identity. These ids have no special meaning to the engine.",
+    "appearanceTitle": "Appearance",
+    "appearanceText": "Only the options available at creation are shown here.",
+    "attributesTitle": "Starting characteristics",
+    "attributesText": "Set the values stored on the player independently of appearance."
   }
 }

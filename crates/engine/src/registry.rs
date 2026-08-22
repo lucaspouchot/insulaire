@@ -8,10 +8,11 @@
 use std::collections::BTreeMap;
 
 use insulaire_world::{
-    validate_character, validate_locales, validate_project, validate_project_links,
-    validate_project_zones, validate_referenced_keys, validate_settings, validate_tile_set,
-    validate_title_screen, validate_world, CharacterDefinition, LoadedContent, LocaleBundle,
-    ProjectDefinition, ResolvedCharacter, SettingsDefinition, TemplateRegistry, TileSetDefinition,
+    validate_character, validate_character_creation, validate_locales, validate_project,
+    validate_project_links, validate_project_zones, validate_referenced_keys, validate_settings,
+    validate_tile_set, validate_title_screen, validate_world, CharacterCreationDefinition,
+    CharacterCreationResult, CharacterDefinition, LoadedContent, LocaleBundle, ProjectDefinition,
+    ResolvedCharacter, SettingsDefinition, TemplateRegistry, TileSetDefinition,
     TitleScreenDefinition, ValidationReport, WorldDefinition,
 };
 
@@ -24,6 +25,7 @@ pub struct ContentRegistry {
     worlds: BTreeMap<String, WorldDefinition>,
     locales: BTreeMap<String, LocaleBundle>,
     characters: BTreeMap<String, CharacterDefinition>,
+    character_creation: Option<CharacterCreationDefinition>,
     title_screen: Option<TitleScreenDefinition>,
     settings: Option<SettingsDefinition>,
     templates: TemplateRegistry,
@@ -151,13 +153,18 @@ impl ContentRegistry {
                 worlds: &self.world_ids(),
                 tile_sets: &self.tile_set_ids(),
                 characters: &self.character_ids(),
+                character_creation: self
+                    .character_creation
+                    .as_ref()
+                    .map(|creation| creation.id.as_str()),
                 title_screen: self.title_screen.as_ref().map(|screen| screen.id.as_str()),
                 settings: self.settings.as_ref().map(|settings| settings.id.as_str()),
             },
         )
         .merge(validate_project_zones(&project, self.worlds.values()))
         .merge(validate_locales(&project, self.locales.values()))
-        .merge(self.title_screen_key_report());
+        .merge(self.title_screen_key_report())
+        .merge(self.character_creation_key_report());
         if !report.valid {
             return Err(EngineError::Invalid {
                 what: format!("project `{}`", project.id),
@@ -442,6 +449,93 @@ impl ContentRegistry {
         self.characters.keys().cloned().collect()
     }
 
+    // ---------------------------------------------------- character creation
+
+    /// Parses, validates and registers the project's character creation.
+    ///
+    /// Character definitions must be registered first: bindings and preview
+    /// overrides are cross-file references, checked here rather than left for
+    /// a renderer to discover.
+    pub fn load_character_creation(
+        &mut self,
+        json: &str,
+    ) -> Result<(String, ValidationReport), EngineError> {
+        let creation = Self::parse_character_creation(json)?;
+        let report = validate_character_creation(&creation, self.characters.values());
+        if !report.valid {
+            return Err(EngineError::Invalid {
+                what: format!("character creation `{}`", creation.id),
+                report: Box::new(report),
+            });
+        }
+
+        let id = creation.id.clone();
+        self.character_creation = Some(creation);
+        Ok((id, report))
+    }
+
+    /// Validates a creation declaration without registering it, including
+    /// references to loaded characters and locale keys.
+    pub fn validate_character_creation_json(
+        &self,
+        json: &str,
+    ) -> Result<ValidationReport, EngineError> {
+        let creation = Self::parse_character_creation(json)?;
+        let report = validate_character_creation(&creation, self.characters.values());
+        if self.locales.is_empty() {
+            return Ok(report);
+        }
+        let bundles: Vec<&LocaleBundle> = self.locales.values().collect();
+        let keys = creation.referenced_keys();
+        let referenced: Vec<(&str, &str)> = keys
+            .iter()
+            .map(|(path, key)| (path.as_str(), *key))
+            .collect();
+        Ok(report.merge(validate_referenced_keys(referenced, &bundles)))
+    }
+
+    /// The registered character-creation declaration.
+    #[must_use]
+    pub const fn character_creation(&self) -> Option<&CharacterCreationDefinition> {
+        self.character_creation.as_ref()
+    }
+
+    /// Resolves creation values into a character id, parameter bag and player
+    /// characteristics, without interpreting any author-owned id.
+    #[must_use]
+    pub fn resolve_character_creation(
+        &self,
+        choices: &serde_json::Value,
+        characteristics: &serde_json::Value,
+    ) -> Option<CharacterCreationResult> {
+        self.character_creation
+            .as_ref()
+            .map(|creation| creation.resolve(choices, characteristics))
+    }
+
+    fn parse_character_creation(json: &str) -> Result<CharacterCreationDefinition, EngineError> {
+        serde_json::from_str(json).map_err(|source| EngineError::Parse {
+            what: "character creation".to_owned(),
+            message: source.to_string(),
+        })
+    }
+
+    fn character_creation_key_report(&self) -> ValidationReport {
+        let Some(creation) = &self.character_creation else {
+            return ValidationReport::clean();
+        };
+        if self.locales.is_empty() {
+            return ValidationReport::clean();
+        }
+        let bundles: Vec<&LocaleBundle> = self.locales.values().collect();
+        let keys = creation.referenced_keys();
+        let referenced: Vec<(&str, &str)> = keys
+            .iter()
+            .map(|(path, key)| (path.as_str(), *key))
+            .collect();
+        validate_referenced_keys(referenced, &bundles)
+    }
+
     /// Resolves a registered definition against a customisation, at a moment of
     /// an animation.
     ///
@@ -496,6 +590,7 @@ impl ContentRegistry {
         self.worlds.clear();
         self.locales.clear();
         self.characters.clear();
+        self.character_creation = None;
         self.title_screen = None;
         self.settings = None;
         self.project = None;

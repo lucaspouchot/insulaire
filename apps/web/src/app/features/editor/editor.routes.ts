@@ -119,6 +119,14 @@ export const EDITOR_ROUTES: Routes = [
         title: moduleTitle(requireModule('locale')),
         loadComponent: () => import('./locale/locale-editor-page').then((m) => m.LocaleEditorPage),
       },
+      {
+        path: 'creation',
+        title: moduleTitle(requireModule('creation')),
+        loadComponent: () =>
+          import('./creation/character-creation-editor-page').then(
+            (m) => m.CharacterCreationEditorPage,
+          ),
+      },
       ...EDITOR_MODULES.filter((module) => module.status === 'planned').map((module) => ({
         path: module.id,
         title: moduleTitle(module),

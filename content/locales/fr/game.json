@@ -31,5 +31,32 @@
     "armorLeather": "Cuir",
     "armorPlate": "Plates",
     "cape": "Cape"
+  },
+  "creation": {
+    "lineage": "Lignée",
+    "lineageHelp": "La lignée proposée au départ ; d’autres pourront être débloquées plus tard.",
+    "lineageHuman": "Humaine",
+    "lineageElf": "Elfe",
+    "gender": "Genre",
+    "genderWoman": "Femme",
+    "genderMan": "Homme",
+    "eyeColor": "Couleur des yeux",
+    "height": "Taille",
+    "bust": "Buste",
+    "name": "Nom",
+    "age": "Âge",
+    "hp": "Santé",
+    "mana": "Mana",
+    "endurance": "Endurance",
+    "agility": "Agilité",
+    "experience": "Expérience",
+    "corruption": "Corruption",
+    "libido": "Libido",
+    "identityTitle": "Qui êtes-vous ?",
+    "identityText": "Choisissez une identité. Ces identifiants n’ont aucun sens particulier pour le moteur.",
+    "appearanceTitle": "Apparence",
+    "appearanceText": "Seules les options disponibles à la création sont proposées ici.",
+    "attributesTitle": "Caractéristiques de départ",
+    "attributesText": "Définissez les valeurs liées au joueur indépendamment de son apparence."
   }
 }

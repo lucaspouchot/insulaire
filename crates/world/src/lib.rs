@@ -35,6 +35,7 @@
 
 pub mod animation;
 pub mod character;
+pub mod character_creation;
 pub mod definition;
 pub mod grid;
 pub mod hex;
@@ -63,6 +64,11 @@ pub use character::{
     AttachmentPoint, CharacterCategory, CharacterDefinition, CharacterLayer, ColorSource,
     LayerVariant, PixelRect, ResolvedCharacter, ResolvedLayer, ResolvedPose, Sprite,
     SpriteResolution, CHARACTER_SCHEMA_VERSION, MAX_SPRITE_RESOLUTION, UNRESOLVED_COLOR,
+};
+pub use character_creation::{
+    CharacterCreationDefinition, CharacterCreationResult, CharacteristicDefinition,
+    CreationBinding, CreationBlock, CreationChoice, CreationScreen, ScreenTransition,
+    CHARACTER_CREATION_SCHEMA_VERSION,
 };
 pub use definition::{
     EntityDefinition, HexOrientation, LinkTrigger, LocationDefinition, MapLinkDefinition,
@@ -94,8 +100,8 @@ pub use title_screen::{
     TitleScreenDefinition, TitleSplash, TitleTheme, TITLE_SCREEN_SCHEMA_VERSION,
 };
 pub use validation::{
-    validate_character, validate_locales, validate_project, validate_project_links,
-    validate_project_zones, validate_referenced_keys, validate_settings, validate_tile_set,
-    validate_title_screen, validate_world, LoadedContent, Severity, ValidationIssue,
-    ValidationReport,
+    validate_character, validate_character_creation, validate_locales, validate_project,
+    validate_project_links, validate_project_zones, validate_referenced_keys, validate_settings,
+    validate_tile_set, validate_title_screen, validate_world, LoadedContent, Severity,
+    ValidationIssue, ValidationReport,
 };

@@ -14,6 +14,8 @@
 import { Injectable, signal } from '@angular/core';
 
 import {
+  CharacterCreationDefinition,
+  CharacterCreationResult,
   CharacterDefinition,
   CharacterValues,
   PlacedTileArt,
@@ -251,6 +253,49 @@ export class EngineService {
   /** Ids of every registered character definition. */
   characterIds(): string[] {
     return this.parse<string[]>(() => this.engine().characterIds());
+  }
+
+  /** Registers the generic player-character creation declaration. */
+  loadCharacterCreation(json: string): LoadOutcome {
+    return this.parse<LoadOutcome>(() => this.engine().loadCharacterCreation(json));
+  }
+
+  /** Validates a creation declaration against the loaded character library. */
+  validateCharacterCreation(json: string): ValidationReport {
+    return this.parse<ValidationReport>(() => this.engine().validateCharacterCreation(json));
+  }
+
+  /** The registered creation declaration, defaults filled in by Rust. */
+  characterCreation(): CharacterCreationDefinition {
+    return this.parse<CharacterCreationDefinition>(() => this.engine().characterCreation());
+  }
+
+  /** Resolves generic choices into a character, appearance and characteristics. */
+  resolveCharacterCreation(
+    choices: Record<string, unknown>,
+    characteristics: Record<string, unknown>,
+  ): CharacterCreationResult {
+    return this.parse<CharacterCreationResult>(() =>
+      this.engine().resolveCharacterCreation(
+        JSON.stringify(choices),
+        JSON.stringify(characteristics),
+      ),
+    );
+  }
+
+  /** Resolves the definition currently held by the editor. */
+  previewCharacterCreation(
+    definition: CharacterCreationDefinition,
+    choices: Record<string, unknown>,
+    characteristics: Record<string, unknown>,
+  ): CharacterCreationResult {
+    return this.parse<CharacterCreationResult>(() =>
+      this.engine().previewCharacterCreation(
+        JSON.stringify(definition),
+        JSON.stringify(choices),
+        JSON.stringify(characteristics),
+      ),
+    );
   }
 
   /**

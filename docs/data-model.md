@@ -43,6 +43,11 @@ The manifest also lists the project's **characters**, each as `{ id, path }`:
 the definitions that say how a kind of character is drawn (ADR-0028). A project
 may ship none.
 
+The optional `characterCreation` reference names one generic authored workflow
+(ADR-0042). It does not make race or gender fields of `ProjectDefinition`; it
+points at a separate declaration whose author-owned ids resolve into an existing
+character definition and its parameters.
+
 The manifest also names the game's **settings** declaration
 (`content/settings.json`): sections, groups and fields described with the same
 control vocabulary the application's own settings use. The engine validates and
@@ -197,6 +202,37 @@ A character's **size** is its canvas, not a scale factor: a rat is authored at
 `CharacterDefinition` among the project's, and the reason to keep it that way is
 that the alternative — a `PlayerAppearance` beside an `NpcAppearance` — is a
 renderer multiplied by a bestiary.
+
+## CharacterCreationDefinition
+
+*Which initial choices a player is offered, which independent values are stored
+on that player, and how the screens are ordered.* Authored content, referenced
+once by the project (ADR-0042).
+
+```text
+CharacterCreationDefinition
+  baseCharacter
+  choices[]          ControlDefinition + binding(character | parameter)
+  characteristics[] ControlDefinition + nullable
+  screens[]
+    id, titleKey, textKey, transition
+    blocks[]         text | choice | characteristic | preview | summary
+
+definition + submitted values
+  ──> resolve() ──> { character, choices, parameters, characteristics }
+```
+
+The creation options and resource parameters are deliberately not identical.
+The first list is what a player may choose initially; the second is every value
+the character resolver can draw, including equipment and appearances unlocked
+later. Preview blocks can temporarily override parameters such as armour without
+adding them to creation.
+
+Characteristics use missing numeric bounds as infinities and may be nullable.
+They are not character parameters: appearance consumes `parameters`, while
+future player state and saves will consume `characteristics`. That runtime
+storage is not implemented yet, so neither collection currently enters
+`GameState`.
 
 ## SpriteDocument
 

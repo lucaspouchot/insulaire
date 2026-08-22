@@ -442,6 +442,14 @@ async function recordTranscript(page, baseUrl, scenario) {
     for (const entry of manifest.characters ?? []) {
       content.characters.push(parse(engine.loadCharacter(await text('/content/' + entry.path))));
     }
+    // Creation binds into those definitions, so it is loaded after them and
+    // before the manifest that requires it (ADR-0042).
+    content.characterCreation = null;
+    if (manifest.characterCreation) {
+      content.characterCreation = parse(
+        engine.loadCharacterCreation(await text('/content/' + manifest.characterCreation.path)),
+      );
+    }
     content.settings = null;
     if (manifest.settings) {
       content.settings = parse(

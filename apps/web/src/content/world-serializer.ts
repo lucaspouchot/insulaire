@@ -80,6 +80,9 @@ export function serializeProject(project: ProjectDefinition): string {
   if (project.characters !== undefined && project.characters.length > 0) {
     lines.push(...recordArray('characters', project.characters));
   }
+  if (project.characterCreation !== undefined) {
+    lines.push(`  "characterCreation": ${inlineObject(project.characterCreation)},`);
+  }
   if (project.titleScreen !== undefined) {
     lines.push(`  "titleScreen": ${inlineObject(project.titleScreen)},`);
   }

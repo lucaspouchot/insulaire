@@ -443,6 +443,8 @@ pub struct ContentSummary {
     pub templates: Vec<TemplateView>,
     /// Ids of the loaded character definitions.
     pub characters: Vec<String>,
+    /// Id of the loaded character-creation declaration, if any.
+    pub character_creation: Option<String>,
     /// The project manifest, when one has been loaded.
     pub project: Option<ProjectView>,
 }

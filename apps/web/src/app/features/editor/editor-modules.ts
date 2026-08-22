@@ -67,6 +67,12 @@ export const EDITOR_MODULES: readonly EditorModule[] = [
     status: 'available',
   },
   {
+    id: 'creation',
+    titleKey: 'ui.editor.modules.creation.title',
+    summaryKey: 'ui.editor.modules.creation.summary',
+    status: 'available',
+  },
+  {
     id: 'scenario',
     titleKey: 'ui.editor.modules.scenario.title',
     summaryKey: 'ui.editor.modules.scenario.summary',

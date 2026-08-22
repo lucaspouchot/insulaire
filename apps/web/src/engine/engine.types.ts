@@ -217,6 +217,8 @@ export interface ContentSummary {
   templates: TemplateView[];
   /** Ids of the loaded character definitions. */
   characters: string[];
+  /** Id of the loaded generic character-creation declaration. */
+  characterCreation: string | null;
   project: ProjectView | null;
 }
 
@@ -323,6 +325,15 @@ export interface RawInsulaireEngine {
   validateCharacter(json: string): string;
   character(id: string): string;
   characterIds(): string;
+  loadCharacterCreation(json: string): string;
+  validateCharacterCreation(json: string): string;
+  characterCreation(): string;
+  resolveCharacterCreation(choicesJson: string, characteristicsJson: string): string;
+  previewCharacterCreation(
+    creationJson: string,
+    choicesJson: string,
+    characteristicsJson: string,
+  ): string;
   resolveCharacter(
     id: string,
     valuesJson: string,

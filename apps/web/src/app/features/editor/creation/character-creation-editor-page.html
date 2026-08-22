@@ -1,0 +1,587 @@
+@let doc = document();
+
+<div class="creation-editor">
+  <div class="toolbar">
+    <span class="path">{{ path() }}</span>
+    @if (dirty()) {
+      <span class="dot" [title]="'ui.editor.creation.unsaved' | t"></span>
+    }
+    <span class="spacer"></span>
+    @if (errorCount(); as count) {
+      <span class="issues-count">{{ 'ui.editor.creation.issueCount' | t: { count } }}</span>
+    }
+    @if (!writable()) {
+      <span class="readonly">{{ 'ui.editor.workspace.readOnly' | t }}</span>
+    }
+    <button type="button" (click)="validate()">{{ 'ui.editor.map.actions.validate' | t }}</button>
+    <button type="button" class="primary" [disabled]="busy() || !writable()" (click)="save()">
+      {{ 'ui.editor.creation.save' | t }}
+    </button>
+  </div>
+
+  @if (error(); as failure) {
+    <div class="banner error">{{ failure }}</div>
+  }
+  @if (message(); as note) {
+    <div class="banner ok">{{ note }}</div>
+  }
+  @if (unlisted() && doc !== null) {
+    <div class="banner warn">{{ 'ui.editor.creation.unlisted' | t }}</div>
+  }
+
+  @if (doc === null) {
+    <p class="hint">{{ 'ui.common.loading' | t }}</p>
+  } @else {
+    <div class="columns">
+      <section class="authoring">
+        <div class="identity panel">
+          <label class="row">
+            <span>{{ 'ui.editor.creation.id' | t }}</span>
+            <input type="text" [value]="doc.id" (change)="setId($any($event.target).value)" />
+          </label>
+          <label class="row">
+            <span>{{ 'ui.editor.creation.baseCharacter' | t }}</span>
+            <select (change)="setBaseCharacter($any($event.target).value)">
+              <option value="">—</option>
+              @for (id of characterIds(); track id) {
+                <option [value]="id" [selected]="id === doc.baseCharacter">{{ id }}</option>
+              }
+            </select>
+          </label>
+          <p class="hint">{{ 'ui.editor.creation.genericHint' | t }}</p>
+        </div>
+
+        <nav class="subtabs">
+          <button type="button" [class.active]="tab() === 'choices'" (click)="tab.set('choices')">
+            {{ 'ui.editor.creation.choices' | t }}
+          </button>
+          <button
+            type="button"
+            [class.active]="tab() === 'characteristics'"
+            (click)="tab.set('characteristics')"
+          >
+            {{ 'ui.editor.creation.characteristics' | t }}
+          </button>
+          <button type="button" [class.active]="tab() === 'workflow'" (click)="tab.set('workflow')">
+            {{ 'ui.editor.creation.workflow' | t }}
+          </button>
+        </nav>
+
+        @switch (tab()) {
+          @case ('choices') {
+            <div class="split">
+              <div class="list panel">
+                @for (entry of choices(); track entry.id) {
+                  <button
+                    type="button"
+                    class="pick-row"
+                    [class.on]="entry.id === choice().id"
+                    (click)="selectChoice(entry.id)"
+                  >
+                    <span>{{ entry.id }}</span>
+                    <small>{{ entry.binding.kind }}</small>
+                  </button>
+                } @empty {
+                  <p class="hint">{{ 'ui.editor.creation.noChoice' | t }}</p>
+                }
+                <button type="button" class="add-wide" (click)="addChoice()">
+                  {{ 'ui.editor.creation.addChoice' | t }}
+                </button>
+              </div>
+
+              @if (choice(); as field) {
+                <div class="form panel">
+                  <div class="heading-actions">
+                    <strong>{{ field.id }}</strong>
+                    <button type="button" (click)="moveChoice(-1)">↑</button>
+                    <button type="button" (click)="moveChoice(1)">↓</button>
+                    <button type="button" class="remove" (click)="removeChoice()">×</button>
+                  </div>
+                  <label class="row">
+                    <span>{{ 'ui.editor.creation.id' | t }}</span>
+                    <input type="text" [value]="field.id" (change)="renameChoice($any($event.target).value)" />
+                  </label>
+                  <label class="row">
+                    <span>{{ 'ui.editor.creation.labelKey' | t }}</span>
+                    <input
+                      type="text"
+                      [value]="field.labelKey"
+                      (change)="patchChoice({ labelKey: $any($event.target).value })"
+                    />
+                  </label>
+                  <p class="resolved">{{ previewText(field.labelKey) }}</p>
+                  <label class="row">
+                    <span>{{ 'ui.editor.creation.helpKey' | t }}</span>
+                    <input
+                      type="text"
+                      [value]="field.helpKey ?? ''"
+                      (change)="patchChoice({ helpKey: $any($event.target).value })"
+                    />
+                  </label>
+                  <label class="row">
+                    <span>{{ 'ui.editor.creation.binding' | t }}</span>
+                    <select (change)="setBindingKind($any($event.target).value)">
+                      <option value="character" [selected]="field.binding.kind === 'character'">
+                        {{ 'ui.editor.creation.bindingCharacter' | t }}
+                      </option>
+                      <option value="parameter" [selected]="field.binding.kind === 'parameter'">
+                        {{ 'ui.editor.creation.bindingParameter' | t }}
+                      </option>
+                    </select>
+                  </label>
+                  @if (field.binding.kind === 'parameter') {
+                    <label class="row">
+                      <span>{{ 'ui.editor.creation.parameter' | t }}</span>
+                      <select (change)="setParameterBinding($any($event.target).value)">
+                        @for (parameter of characterParameters(); track parameter.id) {
+                          <option
+                            [value]="parameter.id"
+                            [selected]="parameter.id === field.binding.parameter"
+                          >
+                            {{ parameter.id }} · {{ previewText(parameter.labelKey) }}
+                          </option>
+                        }
+                      </select>
+                    </label>
+                  }
+                  <label class="row">
+                    <span>{{ 'ui.editor.creation.control' | t }}</span>
+                    <select (change)="setChoiceControl($any($event.target).value)">
+                      @for (kind of controlKinds; track kind) {
+                        <option [value]="kind" [selected]="kind === field.control">{{ kind }}</option>
+                      }
+                    </select>
+                  </label>
+                  <label class="row">
+                    <span>{{ 'ui.editor.creation.default' | t }}</span>
+                    <input
+                      type="text"
+                      [value]="shown(field.default)"
+                      (change)="setDefault('choice', $any($event.target).value)"
+                    />
+                  </label>
+                  @if (isNumeric(field.control)) {
+                    <div class="row">
+                      <span>{{ 'ui.editor.creation.range' | t }}</span>
+                      <div class="triple">
+                        <input
+                          type="number"
+                          [placeholder]="'ui.editor.creation.minusInfinity' | t"
+                          [value]="field.min ?? ''"
+                          (change)="setBound('choice', 'min', $any($event.target).value)"
+                        />
+                        <input
+                          type="number"
+                          [placeholder]="'ui.editor.creation.plusInfinity' | t"
+                          [value]="field.max ?? ''"
+                          (change)="setBound('choice', 'max', $any($event.target).value)"
+                        />
+                        <input
+                          type="number"
+                          [placeholder]="'ui.editor.creation.step' | t"
+                          [value]="field.step ?? ''"
+                          (change)="setBound('choice', 'step', $any($event.target).value)"
+                        />
+                      </div>
+                    </div>
+                  }
+                  @if (usesOptions(field.control)) {
+                    <div class="options">
+                      <span class="caption">{{ 'ui.editor.creation.restrictedOptions' | t }}</span>
+                      @for (option of field.options ?? []; track $index) {
+                        <div class="option">
+                          <input
+                            type="text"
+                            [value]="option.value"
+                            (change)="patchChoiceOption($index, { value: $any($event.target).value })"
+                          />
+                          <input
+                            type="text"
+                            [value]="option.labelKey"
+                            (change)="patchChoiceOption($index, { labelKey: $any($event.target).value })"
+                          />
+                          <button type="button" class="remove" (click)="removeChoiceOption($index)">×</button>
+                        </div>
+                      }
+                      <button type="button" (click)="addChoiceOption()">
+                        {{ 'ui.editor.creation.addOption' | t }}
+                      </button>
+                    </div>
+                  }
+                  <label class="row">
+                    <span>{{ 'ui.editor.creation.showIf' | t }}</span>
+                    <select (change)="setChoiceCondition($any($event.target).value)">
+                      <option value="">{{ 'ui.editor.creation.always' | t }}</option>
+                      @for (other of choices(); track other.id) {
+                        @if (other.id !== field.id) {
+                          <option [value]="other.id" [selected]="other.id === field.showIf?.field">
+                            {{ other.id }}
+                          </option>
+                        }
+                      }
+                    </select>
+                  </label>
+                  @if (field.showIf) {
+                    <label class="row">
+                      <span>{{ 'ui.editor.creation.equals' | t }}</span>
+                      <input
+                        type="text"
+                        [value]="shown(field.showIf.equals)"
+                        (change)="setChoiceConditionValue($any($event.target).value)"
+                      />
+                    </label>
+                  }
+                </div>
+              }
+            </div>
+          }
+
+          @case ('characteristics') {
+            <div class="split">
+              <div class="list panel">
+                @for (entry of characteristics(); track entry.id) {
+                  <button
+                    type="button"
+                    class="pick-row"
+                    [class.on]="entry.id === characteristic().id"
+                    (click)="selectCharacteristic(entry.id)"
+                  >
+                    <span>{{ entry.id }}</span><small>{{ entry.control }}</small>
+                  </button>
+                } @empty {
+                  <p class="hint">{{ 'ui.editor.creation.noCharacteristic' | t }}</p>
+                }
+                <button type="button" class="add-wide" (click)="addCharacteristic()">
+                  {{ 'ui.editor.creation.addCharacteristic' | t }}
+                </button>
+              </div>
+
+              @if (characteristic(); as field) {
+                <div class="form panel">
+                  <div class="heading-actions">
+                    <strong>{{ field.id }}</strong>
+                    <button type="button" (click)="moveCharacteristic(-1)">↑</button>
+                    <button type="button" (click)="moveCharacteristic(1)">↓</button>
+                    <button type="button" class="remove" (click)="removeCharacteristic()">×</button>
+                  </div>
+                  <label class="row">
+                    <span>{{ 'ui.editor.creation.id' | t }}</span>
+                    <input
+                      type="text"
+                      [value]="field.id"
+                      (change)="renameCharacteristic($any($event.target).value)"
+                    />
+                  </label>
+                  <label class="row">
+                    <span>{{ 'ui.editor.creation.labelKey' | t }}</span>
+                    <input
+                      type="text"
+                      [value]="field.labelKey"
+                      (change)="patchCharacteristic({ labelKey: $any($event.target).value })"
+                    />
+                  </label>
+                  <p class="resolved">{{ previewText(field.labelKey) }}</p>
+                  <label class="row">
+                    <span>{{ 'ui.editor.creation.control' | t }}</span>
+                    <select (change)="setCharacteristicControl($any($event.target).value)">
+                      @for (kind of controlKinds; track kind) {
+                        <option [value]="kind" [selected]="kind === field.control">{{ kind }}</option>
+                      }
+                    </select>
+                  </label>
+                  <label class="row checkbox">
+                    <span>{{ 'ui.editor.creation.nullable' | t }}</span>
+                    <input
+                      type="checkbox"
+                      [checked]="field.nullable === true"
+                      (change)="setNullable($any($event.target).checked)"
+                    />
+                  </label>
+                  <label class="row">
+                    <span>{{ 'ui.editor.creation.default' | t }}</span>
+                    <input
+                      type="text"
+                      [value]="shown(field.default)"
+                      (change)="setDefault('characteristic', $any($event.target).value)"
+                    />
+                  </label>
+                  @if (isNumeric(field.control)) {
+                    <div class="row">
+                      <span>{{ 'ui.editor.creation.range' | t }}</span>
+                      <div class="triple">
+                        <input
+                          type="number"
+                          [placeholder]="'ui.editor.creation.minusInfinity' | t"
+                          [value]="field.min ?? ''"
+                          (change)="setBound('characteristic', 'min', $any($event.target).value)"
+                        />
+                        <input
+                          type="number"
+                          [placeholder]="'ui.editor.creation.plusInfinity' | t"
+                          [value]="field.max ?? ''"
+                          (change)="setBound('characteristic', 'max', $any($event.target).value)"
+                        />
+                        <input
+                          type="number"
+                          [placeholder]="'ui.editor.creation.step' | t"
+                          [value]="field.step ?? ''"
+                          (change)="setBound('characteristic', 'step', $any($event.target).value)"
+                        />
+                      </div>
+                    </div>
+                  }
+                  @if (usesOptions(field.control)) {
+                    <div class="options">
+                      <span class="caption">{{ 'ui.editor.creation.enumValues' | t }}</span>
+                      @for (option of field.options ?? []; track $index) {
+                        <div class="option">
+                          <input
+                            type="text"
+                            [value]="option.value"
+                            (change)="patchCharacteristicOption($index, 'value', $any($event.target).value)"
+                          />
+                          <input
+                            type="text"
+                            [value]="option.labelKey"
+                            (change)="patchCharacteristicOption($index, 'labelKey', $any($event.target).value)"
+                          />
+                          <button type="button" class="remove" (click)="removeCharacteristicOption($index)">×</button>
+                        </div>
+                      }
+                      <button type="button" (click)="addCharacteristicOption()">
+                        {{ 'ui.editor.creation.addOption' | t }}
+                      </button>
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+          }
+
+          @case ('workflow') {
+            <div class="split workflow">
+              <div class="list panel">
+                @for (entry of screens(); track entry.id) {
+                  <button
+                    type="button"
+                    class="pick-row"
+                    [class.on]="entry.id === screen().id"
+                    (click)="selectScreen(entry.id)"
+                  >
+                    <span>{{ $index + 1 }} · {{ entry.id }}</span>
+                    <small>{{ entry.transition ?? 'none' }}</small>
+                  </button>
+                }
+                <button type="button" class="add-wide" (click)="addScreen()">
+                  {{ 'ui.editor.creation.addScreen' | t }}
+                </button>
+              </div>
+
+              @if (screen(); as current) {
+                <div class="form panel">
+                  <div class="heading-actions">
+                    <strong>{{ current.id }}</strong>
+                    <button type="button" (click)="moveScreen(-1)">↑</button>
+                    <button type="button" (click)="moveScreen(1)">↓</button>
+                    <button type="button" class="remove" (click)="removeScreen()">×</button>
+                  </div>
+                  <label class="row">
+                    <span>{{ 'ui.editor.creation.id' | t }}</span>
+                    <input type="text" [value]="current.id" (change)="renameScreen($any($event.target).value)" />
+                  </label>
+                  <label class="row">
+                    <span>{{ 'ui.editor.creation.titleKey' | t }}</span>
+                    <input
+                      type="text"
+                      [value]="current.titleKey"
+                      (change)="patchScreen({ titleKey: $any($event.target).value })"
+                    />
+                  </label>
+                  <label class="row">
+                    <span>{{ 'ui.editor.creation.textKey' | t }}</span>
+                    <input
+                      type="text"
+                      [value]="current.textKey ?? ''"
+                      (change)="patchScreen({ textKey: $any($event.target).value })"
+                    />
+                  </label>
+                  <label class="row">
+                    <span>{{ 'ui.editor.creation.transition' | t }}</span>
+                    <select (change)="patchScreen({ transition: $any($event.target).value })">
+                      @for (transition of transitions; track transition) {
+                        <option [value]="transition" [selected]="transition === (current.transition ?? 'none')">
+                          {{ transition }}
+                        </option>
+                      }
+                    </select>
+                  </label>
+
+                  <h3>{{ 'ui.editor.creation.blocks' | t }}</h3>
+                  @for (block of current.blocks ?? []; track $index) {
+                    <div class="block">
+                      <select (change)="setBlockType($index, $any($event.target).value)">
+                        @for (type of blockTypes; track type) {
+                          <option [value]="type" [selected]="type === block.type">{{ type }}</option>
+                        }
+                      </select>
+                      <div class="block-value">
+                        @switch (block.type) {
+                          @case ('text') {
+                            <input
+                              type="text"
+                              [value]="block.textKey"
+                              (change)="patchBlock($index, { textKey: $any($event.target).value })"
+                            />
+                          }
+                          @case ('choice') {
+                            <select (change)="patchBlock($index, { choice: $any($event.target).value })">
+                              @for (field of choices(); track field.id) {
+                                <option [value]="field.id" [selected]="field.id === block.choice">{{ field.id }}</option>
+                              }
+                            </select>
+                          }
+                          @case ('characteristic') {
+                            <select (change)="patchBlock($index, { characteristic: $any($event.target).value })">
+                              @for (field of characteristics(); track field.id) {
+                                <option [value]="field.id" [selected]="field.id === block.characteristic">{{ field.id }}</option>
+                              }
+                            </select>
+                          }
+                          @case ('preview') {
+                            <div class="preview-settings">
+                              <input
+                                type="text"
+                                [placeholder]="'ui.editor.creation.animation' | t"
+                                [value]="block.animation ?? ''"
+                                (change)="patchBlock($index, { animation: $any($event.target).value })"
+                              />
+                              <input
+                                type="text"
+                                [placeholder]="'ui.editor.creation.previewParameters' | t"
+                                [value]="previewParameters(block)"
+                                (change)="setPreviewParameters($index, $any($event.target).value)"
+                              />
+                            </div>
+                          }
+                          @case ('summary') {
+                            <span class="hint">{{ 'ui.editor.creation.summaryHint' | t }}</span>
+                          }
+                        }
+                      </div>
+                      <button type="button" (click)="moveBlock($index, -1)">↑</button>
+                      <button type="button" (click)="moveBlock($index, 1)">↓</button>
+                      <button type="button" class="remove" (click)="removeBlock($index)">×</button>
+                    </div>
+                  }
+                  <div class="block-adds">
+                    @for (type of blockTypes; track type) {
+                      <button type="button" (click)="addBlock(type)">+ {{ type }}</button>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+          }
+        }
+
+        @if (report(); as validation) {
+          <section class="panel issues">
+            <h3>{{ 'ui.editor.creation.validation' | t }}</h3>
+            @for (issue of validation.issues; track issue.code + issue.path) {
+              <p [class.error-text]="issue.severity === 'error'">
+                <code>{{ issue.path }}</code> · {{ issue.message }}
+              </p>
+            } @empty {
+              <p class="ok-text">{{ 'ui.editor.creation.valid' | t }}</p>
+            }
+          </section>
+        }
+      </section>
+
+      <aside class="player-preview">
+        <div class="preview-bar">
+          <strong>{{ 'ui.editor.creation.playerPreview' | t }}</strong>
+          <span class="spacer"></span>
+          <button type="button" [disabled]="previewIndex() === 0" (click)="setPreviewScreen(previewIndex() - 1)">
+            ←
+          </button>
+          <span>{{ previewIndex() + 1 }} / {{ screens().length }}</span>
+          <button
+            type="button"
+            [disabled]="previewIndex() >= screens().length - 1"
+            (click)="setPreviewScreen(previewIndex() + 1)"
+          >
+            →
+          </button>
+        </div>
+
+        @if (previewScreen(); as shownScreen) {
+          <div class="screen" [attr.data-transition]="shownScreen.transition ?? 'none'">
+            <h1>{{ previewText(shownScreen.titleKey) }}</h1>
+            @if (shownScreen.textKey) {
+              <p class="intro">{{ previewText(shownScreen.textKey) }}</p>
+            }
+            @for (block of shownScreen.blocks ?? []; track $index) {
+              @switch (block.type) {
+                @case ('text') {
+                  <p>{{ previewText(block.textKey) }}</p>
+                }
+                @case ('choice') {
+                  @if (choiceFor(block.choice); as field) {
+                    @if (choiceVisible(field)) {
+                      <app-control-field
+                        [field]="field"
+                        [value]="previewValue(field)"
+                        (changed)="setChoiceValue(field.id, $event)"
+                      />
+                    }
+                  }
+                }
+                @case ('characteristic') {
+                  @if (characteristicFor(block.characteristic); as field) {
+                    <div class="characteristic-preview">
+                      @if (field.nullable) {
+                        <label class="null-toggle">
+                          <input
+                            type="checkbox"
+                            [checked]="isCharacteristicNull(field.id)"
+                            (change)="setCharacteristicNull(field.id, $any($event.target).checked)"
+                          />
+                          {{ 'ui.editor.creation.noValue' | t }}
+                        </label>
+                      }
+                      <app-control-field
+                        [field]="controlFor(field)"
+                        [value]="characteristicValue(field)"
+                        [locked]="isCharacteristicNull(field.id)"
+                        (changed)="setCharacteristicValue(field.id, $event)"
+                      />
+                    </div>
+                  }
+                }
+                @case ('preview') {
+                  <canvas #previewCanvas class="character-canvas"></canvas>
+                  @if (creationResult(); as result) {
+                    <p class="resolved-result">
+                      {{ result.character }} · {{ block.animation || ('ui.common.none' | t) }}
+                    </p>
+                  }
+                }
+                @case ('summary') {
+                  @if (creationResult(); as result) {
+                    <div class="summary">
+                      <strong>{{ 'ui.editor.creation.summary' | t }}</strong>
+                      <pre>{{ shown(result) }}</pre>
+                    </div>
+                  }
+                }
+              }
+            }
+          </div>
+        } @else {
+          <p class="hint">{{ 'ui.editor.creation.noScreen' | t }}</p>
+        }
+      </aside>
+    </div>
+  }
+</div>

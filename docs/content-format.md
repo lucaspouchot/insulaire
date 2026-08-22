@@ -525,6 +525,7 @@ starts. It is what a delivered client build boots from (ADR-0018).
   "characters": [
     { "id": "human_player", "path": "characters/human_player.json" }
   ],
+  "characterCreation": { "id": "new_game", "path": "character-creation.json" },
   "titleScreen": { "id": "main", "path": "menu/title-screen.json" },
   "settings": { "id": "insulaire_game", "path": "settings.json" },
   "locales": {
@@ -547,6 +548,7 @@ starts. It is what a delivered client build boots from (ADR-0018).
 | `tileSets` | `{ id, path }[]` | no | Tile sets to load; `path` is relative to the content root. |
 | `worlds` | `{ id, path }[]` | yes | Worlds to load. Every world reachable through a link must be listed. |
 | `characters` | `{ id, path }[]` | no | Character definitions to load. See *CharacterDefinition* below. Absent means the project ships none. |
+| `characterCreation` | `{ id, path }` | no | Generic character-creation choices, characteristics and workflow. See *CharacterCreationDefinition* below. |
 | `locales` | `{ default, languages }` | no | Languages the game is available in. See *Locales* below. Absent means the application's own languages, and no content translations. |
 | `titleScreen` | `{ id, path }` | no | The screen a client opens on. See *TitleScreenDefinition* below. Absent means the game starts on a map. |
 | `settings` | `{ id, path }` | no | The settings this game offers. See *SettingsDefinition* below. The application's own settings are not content. |
@@ -699,6 +701,96 @@ fill the gaps, a value of the wrong type or an option nobody declared falls back
 to the default, a number outside its bounds is clamped, and a key the
 declaration does not know is dropped. The settings screen and `createGame` both
 resolve, so they cannot disagree.
+
+---
+
+## CharacterCreationDefinition
+
+`content/character-creation.json` defines the initial form and its ordered
+player-facing screens (ADR-0042). `CHARACTER_CREATION_SCHEMA_VERSION` is **1**.
+The engine reserves no semantic id: `race`, `gender`, `hairLength`, `hp` and
+every other name belong to the game.
+
+```json
+{
+  "id": "new_game",
+  "schemaVersion": 1,
+  "baseCharacter": "human_player",
+  "choices": [
+    {
+      "id": "hairStyle",
+      "labelKey": "game.character.hairStyle",
+      "control": "select",
+      "default": "short",
+      "options": [
+        { "value": "short", "labelKey": "game.character.hairShort" }
+      ],
+      "binding": { "kind": "parameter", "parameter": "hairStyle" }
+    }
+  ],
+  "characteristics": [
+    { "id": "hp", "labelKey": "game.creation.hp", "control": "number",
+      "default": 100, "min": 0, "max": 100, "nullable": false }
+  ],
+  "screens": [
+    { "id": "appearance", "titleKey": "game.creation.appearanceTitle",
+      "transition": "fade", "blocks": [
+        { "type": "choice", "choice": "hairStyle" },
+        { "type": "preview", "animation": "idle",
+          "parameters": { "armor": "plate" } },
+        { "type": "summary" }
+      ] }
+  ]
+}
+```
+
+`choices[]` are `ControlDefinition`s without a meaningful `scope`. A binding is
+either `{ "kind": "character" }`, whose selected string is a character id, or
+`{ "kind": "parameter", "parameter": "…" }`, which forwards the value to
+that parameter of the resolved character. A select authors its own `options`,
+so it may expose a strict subset of what the resource editor permits. A colour,
+number or slider forwards the dynamic value. Numeric creation ranges may narrow
+the resource range but may not widen it.
+
+`showIf: { field, equals }` may refer only to a choice declared **earlier**.
+Hidden choices do not contribute a parameter or replace the character.
+
+`characteristics[]` use the same controls but are stored independently of
+appearance. `nullable: true` permits JSON `null`, including as the default.
+For numeric controls, absent `min` is −∞ and absent `max` is +∞: omitting both
+is unbounded, naming only `min: 0` is `0..+∞`, and two authored bounds are a
+custom range. `select` is an enum, boolean controls are booleans, and `text` is
+free text.
+
+`screens[]` are traversed in order. Their `transition` is `none`, `fade`,
+`slideLeft` or `slideUp`. Blocks are:
+
+| `type` | Fields | Meaning |
+|---|---|---|
+| `text` | `textKey` | Localised paragraph. |
+| `choice` | `choice` | A declared creation choice. |
+| `characteristic` | `characteristic` | A declared player characteristic. |
+| `preview` | `animation?`, `parameters?` | Real character preview. Parameters are temporary overrides, useful for equipment previews without making equipment a creation choice. |
+| `summary` | — | Recap of the generic resolved result. |
+
+Resolution returns `{ character, choices, parameters, characteristics }`. The
+engine applies defaults, backwards conditions and declared bindings; it never
+interprets an id. This declaration is authored and resolved today, but the
+result is not yet carried by `GameState` or saves.
+
+Validation issue codes use the `characterCreation.` prefix: header and source
+errors (`missingId`, `unsupportedSchemaVersion`, `noCharacterSource`,
+`unknownCharacter`), choice and binding errors (`missingChoiceId`,
+`duplicateChoice`, `forwardCondition`, `characterBindingNeedsSelect`,
+`missingParameter`, `unknownParameter`, `incompatibleParameter`,
+`unknownParameterValue`), characteristic errors (`missingCharacteristicId`,
+`duplicateCharacteristic`, `nullDefault`), workflow reference errors
+(`noScreens`, `missingScreenId`, `duplicateScreen`, `unknownChoice`,
+`unknownCharacteristic`), and non-blocking visibility warnings
+(`unknownAnimation`, `unknownPreviewParameter`, `unusedChoice`,
+`unusedCharacteristic`). The shared control errors (`invalidDefault`,
+`defaultOutOfRange`, `emptyRange`, `invalidStep`, `noOptions`, …) carry the
+same prefix.
 
 ---
 

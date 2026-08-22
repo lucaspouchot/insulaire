@@ -62,6 +62,9 @@ fn engine_with_shipped_content() -> Engine {
         .load_character(&read("content/characters/human_player.json"))
         .expect("the shipped character must load");
     engine
+        .load_character_creation(&read("content/character-creation.json"))
+        .expect("the shipped character creation must load");
+    engine
         .load_title_screen(&read("content/menu/title-screen.json"))
         .expect("the shipped title screen must load");
     engine
@@ -122,6 +125,16 @@ fn the_shipped_content_loads_without_errors_or_warnings() {
         character.report.issues.is_empty(),
         "{:?}",
         character.report.issues
+    );
+
+    let creation = engine
+        .load_character_creation(&read("content/character-creation.json"))
+        .expect("character creation loads");
+    assert_eq!(creation.id, "new_game");
+    assert!(
+        creation.report.issues.is_empty(),
+        "{:?}",
+        creation.report.issues
     );
 
     let title_screen = engine

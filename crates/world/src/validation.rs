@@ -5,7 +5,7 @@
 //! exporting, so a world that the editor accepts is a world the runtime accepts
 //! (see `docs/adr/ADR-0015-shared-content-validation.md`).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -16,6 +16,10 @@ use crate::character::{
     CharacterDefinition, CharacterLayer, ColorSource, LayerVariant, CHARACTER_SCHEMA_VERSION,
     MAX_SPRITE_RESOLUTION,
 };
+use crate::character_creation::{
+    CharacterCreationDefinition, CharacteristicDefinition, CreationBinding, CreationBlock,
+    CHARACTER_CREATION_SCHEMA_VERSION,
+};
 use crate::definition::{
     HexOrientation, LinkTrigger, WorldDefinition, MAX_ELEVATION, MIN_ELEVATION,
     WORLD_SCHEMA_VERSION,
@@ -23,7 +27,9 @@ use crate::definition::{
 use crate::hex::OffsetCoord;
 use crate::locale::{missing_keys, LocaleBundle};
 use crate::project::{ProjectDefinition, PROJECT_SCHEMA_VERSION};
-use crate::settings::{ControlDefinition, SettingsDefinition, SETTINGS_SCHEMA_VERSION};
+use crate::settings::{
+    ControlDefinition, ControlKind, SettingsDefinition, SETTINGS_SCHEMA_VERSION,
+};
 use crate::template::{EntityKind, TemplateRegistry};
 use crate::tile_art::{
     ElevationRepeat, TileArt, TileArtGeometry, TileArtVariant, MAX_ELEVATION_LEVELS,
@@ -979,6 +985,8 @@ pub struct LoadedContent<'a> {
     pub tile_sets: &'a [String],
     /// Ids of the registered character definitions.
     pub characters: &'a [String],
+    /// Id of the registered character-creation declaration, if any.
+    pub character_creation: Option<&'a str>,
     /// Id of the registered title screen, if any.
     pub title_screen: Option<&'a str>,
     /// Id of the registered settings declaration, if any.
@@ -1088,6 +1096,19 @@ pub fn validate_project(
                 format!("characters[{index}].id"),
                 format!(
                     "character `{}` (`{}`) is listed by the project but not loaded",
+                    entry.id, entry.path
+                ),
+            ));
+        }
+    }
+
+    if let Some(entry) = &project.character_creation {
+        if loaded.character_creation != Some(entry.id.as_str()) {
+            issues.push(ValidationIssue::error(
+                "project.unloadedCharacterCreation",
+                "characterCreation.id",
+                format!(
+                    "character creation `{}` (`{}`) is listed by the project but not loaded",
                     entry.id, entry.path
                 ),
             ));
@@ -1520,6 +1541,15 @@ pub fn validate_settings(settings: &SettingsDefinition) -> ValidationReport {
 /// one implementation serves both vocabularies without either pretending to be
 /// the other (`docs/adr/ADR-0028-character-definitions.md`).
 fn field_issues(kind: &str, path: &str, field: &ControlDefinition) -> Vec<ValidationIssue> {
+    field_issues_with_nullable(kind, path, field, false)
+}
+
+fn field_issues_with_nullable(
+    kind: &str,
+    path: &str,
+    field: &ControlDefinition,
+    nullable: bool,
+) -> Vec<ValidationIssue> {
     let mut issues = Vec::new();
 
     if field.label_key.trim().is_empty() {
@@ -1588,7 +1618,7 @@ fn field_issues(kind: &str, path: &str, field: &ControlDefinition) -> Vec<Valida
 
     // The default is what a player gets before touching anything, so it has to
     // be a value this control would accept from them.
-    if !field.accepts(&field.default) {
+    if !(field.accepts(&field.default) || nullable && field.default.is_null()) {
         issues.push(ValidationIssue::error(
             format!("{kind}.invalidDefault"),
             format!("{path}.default"),
@@ -1611,6 +1641,368 @@ fn field_issues(kind: &str, path: &str, field: &ControlDefinition) -> Vec<Valida
     }
 
     issues
+}
+
+/// Validates a generic character-creation declaration against the character
+/// definitions currently loaded.
+///
+/// The validator checks references and value domains; it never branches on a
+/// choice id. `race`, `gender` and `hairLength` are indistinguishable here.
+#[must_use]
+pub fn validate_character_creation<'a>(
+    creation: &CharacterCreationDefinition,
+    characters: impl IntoIterator<Item = &'a CharacterDefinition>,
+) -> ValidationReport {
+    let characters: BTreeMap<&str, &CharacterDefinition> = characters
+        .into_iter()
+        .map(|character| (character.id.as_str(), character))
+        .collect();
+    let mut issues = Vec::new();
+
+    if creation.id.trim().is_empty() {
+        issues.push(ValidationIssue::error(
+            "characterCreation.missingId",
+            "id",
+            "character creation id must not be empty",
+        ));
+    }
+    if creation.schema_version == 0 || creation.schema_version > CHARACTER_CREATION_SCHEMA_VERSION {
+        issues.push(ValidationIssue::error(
+            "characterCreation.unsupportedSchemaVersion",
+            "schemaVersion",
+            format!(
+                "unsupported character creation schemaVersion {}; this build supports up to \
+                 {CHARACTER_CREATION_SCHEMA_VERSION}",
+                creation.schema_version
+            ),
+        ));
+    }
+
+    let candidate_ids = creation.character_ids();
+    if candidate_ids.is_empty() {
+        issues.push(ValidationIssue::error(
+            "characterCreation.noCharacterSource",
+            "baseCharacter/choices",
+            "a creation must name a baseCharacter or bind a choice to `character`",
+        ));
+    }
+    for id in &candidate_ids {
+        if !characters.contains_key(id) {
+            issues.push(ValidationIssue::error(
+                "characterCreation.unknownCharacter",
+                "baseCharacter/choices",
+                format!("character definition `{id}` is not loaded"),
+            ));
+        }
+    }
+
+    let mut choice_ids = BTreeSet::new();
+    for (index, choice) in creation.choices.iter().enumerate() {
+        let path = format!("choices[{index}]");
+        let id = choice.field.id.as_str();
+        if id.trim().is_empty() {
+            issues.push(ValidationIssue::error(
+                "characterCreation.missingChoiceId",
+                format!("{path}.id"),
+                "a creation choice id must not be empty",
+            ));
+        } else if !choice_ids.insert(id) {
+            issues.push(ValidationIssue::error(
+                "characterCreation.duplicateChoice",
+                format!("{path}.id"),
+                format!("choice `{id}` is declared twice"),
+            ));
+        }
+        issues.extend(field_issues("characterCreation", &path, &choice.field));
+
+        if let Some(condition) = &choice.field.show_if {
+            if !choice_ids.contains(condition.field.as_str()) {
+                issues.push(ValidationIssue::error(
+                    "characterCreation.forwardCondition",
+                    format!("{path}.showIf.field"),
+                    format!(
+                        "choice `{id}` depends on `{}`, which must be declared before it",
+                        condition.field
+                    ),
+                ));
+            }
+        }
+
+        match &choice.binding {
+            CreationBinding::Character => {
+                if !choice.field.control.uses_options() || choice.field.control.is_multiple() {
+                    issues.push(ValidationIssue::error(
+                        "characterCreation.characterBindingNeedsSelect",
+                        format!("{path}.binding"),
+                        "a character binding must be a single select with explicit options",
+                    ));
+                }
+            }
+            CreationBinding::Parameter { parameter } => {
+                if parameter.trim().is_empty() {
+                    issues.push(ValidationIssue::error(
+                        "characterCreation.missingParameter",
+                        format!("{path}.binding.parameter"),
+                        "a parameter binding must name a character parameter",
+                    ));
+                    continue;
+                }
+                let matching: Vec<&ControlDefinition> = candidate_ids
+                    .iter()
+                    .filter_map(|id| characters.get(id))
+                    .filter_map(|character| character.parameter(parameter))
+                    .collect();
+                if matching.is_empty() {
+                    issues.push(ValidationIssue::error(
+                        "characterCreation.unknownParameter",
+                        format!("{path}.binding.parameter"),
+                        format!(
+                            "parameter `{parameter}` is not declared by any candidate character"
+                        ),
+                    ));
+                    continue;
+                }
+                let allowed_somewhere = matching
+                    .iter()
+                    .any(|field| creation_control_fits(&choice.field, field));
+                if !allowed_somewhere {
+                    issues.push(ValidationIssue::error(
+                        "characterCreation.incompatibleParameter",
+                        format!("{path}.default"),
+                        format!(
+                            "choice `{id}` cannot feed parameter `{parameter}` on any candidate character"
+                        ),
+                    ));
+                }
+                for (option_index, option) in choice.field.options.iter().enumerate() {
+                    let value = Value::String(option.value.clone());
+                    if !matching.iter().any(|field| parameter_allows(field, &value)) {
+                        issues.push(ValidationIssue::error(
+                            "characterCreation.unknownParameterValue",
+                            format!("{path}.options[{option_index}].value"),
+                            format!(
+                                "`{}` is not available for parameter `{parameter}` on any candidate character",
+                                option.value
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    let mut characteristic_ids = BTreeSet::new();
+    for (index, characteristic) in creation.characteristics.iter().enumerate() {
+        let path = format!("characteristics[{index}]");
+        validate_characteristic(characteristic, &path, &mut characteristic_ids, &mut issues);
+    }
+
+    let mut screen_ids = BTreeSet::new();
+    let mut used_choices = BTreeSet::new();
+    let mut used_characteristics = BTreeSet::new();
+    if creation.screens.is_empty() {
+        issues.push(ValidationIssue::error(
+            "characterCreation.noScreens",
+            "screens",
+            "a character creation workflow must declare at least one screen",
+        ));
+    }
+    for (screen_index, screen) in creation.screens.iter().enumerate() {
+        let path = format!("screens[{screen_index}]");
+        if screen.id.trim().is_empty() {
+            issues.push(ValidationIssue::error(
+                "characterCreation.missingScreenId",
+                format!("{path}.id"),
+                "a workflow screen id must not be empty",
+            ));
+        } else if !screen_ids.insert(screen.id.as_str()) {
+            issues.push(ValidationIssue::error(
+                "characterCreation.duplicateScreen",
+                format!("{path}.id"),
+                format!("screen `{}` is declared twice", screen.id),
+            ));
+        }
+        if screen.title_key.trim().is_empty() {
+            issues.push(ValidationIssue::error(
+                "characterCreation.missingLabelKey",
+                format!("{path}.titleKey"),
+                format!("screen `{}` has no title key", screen.id),
+            ));
+        }
+        for (block_index, block) in screen.blocks.iter().enumerate() {
+            let block_path = format!("{path}.blocks[{block_index}]");
+            match block {
+                CreationBlock::Text { text_key } if text_key.trim().is_empty() => {
+                    issues.push(ValidationIssue::error(
+                        "characterCreation.missingLabelKey",
+                        format!("{block_path}.textKey"),
+                        "a text block must name a text key",
+                    ));
+                }
+                CreationBlock::Choice { choice } => {
+                    if creation.choice(choice).is_none() {
+                        issues.push(ValidationIssue::error(
+                            "characterCreation.unknownChoice",
+                            format!("{block_path}.choice"),
+                            format!("choice `{choice}` is not declared"),
+                        ));
+                    }
+                    used_choices.insert(choice.as_str());
+                }
+                CreationBlock::Characteristic { characteristic } => {
+                    if creation.characteristic(characteristic).is_none() {
+                        issues.push(ValidationIssue::error(
+                            "characterCreation.unknownCharacteristic",
+                            format!("{block_path}.characteristic"),
+                            format!("characteristic `{characteristic}` is not declared"),
+                        ));
+                    }
+                    used_characteristics.insert(characteristic.as_str());
+                }
+                CreationBlock::Preview {
+                    animation,
+                    parameters,
+                } => {
+                    validate_creation_preview(
+                        animation,
+                        parameters,
+                        &candidate_ids,
+                        &characters,
+                        &block_path,
+                        &mut issues,
+                    );
+                }
+                CreationBlock::Text { .. } | CreationBlock::Summary => {}
+            }
+        }
+    }
+
+    for choice in &creation.choices {
+        if !used_choices.contains(choice.field.id.as_str()) {
+            issues.push(ValidationIssue::warning(
+                "characterCreation.unusedChoice",
+                "screens",
+                format!("choice `{}` is never placed on a screen", choice.field.id),
+            ));
+        }
+    }
+    for characteristic in &creation.characteristics {
+        if !used_characteristics.contains(characteristic.field.id.as_str()) {
+            issues.push(ValidationIssue::warning(
+                "characterCreation.unusedCharacteristic",
+                "screens",
+                format!(
+                    "characteristic `{}` is never placed on a screen",
+                    characteristic.field.id
+                ),
+            ));
+        }
+    }
+
+    ValidationReport::from_issues(issues)
+}
+
+/// Whether every value the creation control can produce fits the resource
+/// parameter's domain.
+///
+/// This is the non-1:1 seam: a select may remove resource options and a numeric
+/// field may narrow its range, but creation may not advertise values the
+/// character resolver would immediately reject or clamp.
+fn creation_control_fits(choice: &ControlDefinition, parameter: &ControlDefinition) -> bool {
+    if !parameter.accepts(&choice.default) {
+        return false;
+    }
+    match parameter.control {
+        ControlKind::Toggle | ControlKind::Checkbox => choice.control.is_boolean(),
+        ControlKind::Slider | ControlKind::Number => {
+            choice.control.is_numeric()
+                && choice.min.unwrap_or(f64::NEG_INFINITY)
+                    >= parameter.min.unwrap_or(f64::NEG_INFINITY)
+                && choice.max.unwrap_or(f64::INFINITY) <= parameter.max.unwrap_or(f64::INFINITY)
+        }
+        ControlKind::Select => choice.control == ControlKind::Select,
+        ControlKind::MultiSelect => choice.control == ControlKind::MultiSelect,
+        ControlKind::Text | ControlKind::Color => matches!(
+            choice.control,
+            ControlKind::Text | ControlKind::Color | ControlKind::Select
+        ),
+    }
+}
+
+fn validate_characteristic<'a>(
+    characteristic: &'a CharacteristicDefinition,
+    path: &str,
+    ids: &mut BTreeSet<&'a str>,
+    issues: &mut Vec<ValidationIssue>,
+) {
+    let field = &characteristic.field;
+    if field.id.trim().is_empty() {
+        issues.push(ValidationIssue::error(
+            "characterCreation.missingCharacteristicId",
+            format!("{path}.id"),
+            "a characteristic id must not be empty",
+        ));
+    } else if !ids.insert(field.id.as_str()) {
+        issues.push(ValidationIssue::error(
+            "characterCreation.duplicateCharacteristic",
+            format!("{path}.id"),
+            format!("characteristic `{}` is declared twice", field.id),
+        ));
+    }
+    issues.extend(field_issues_with_nullable(
+        "characterCreation",
+        path,
+        field,
+        characteristic.nullable,
+    ));
+    if field.default.is_null() && !characteristic.nullable {
+        issues.push(ValidationIssue::error(
+            "characterCreation.nullDefault",
+            format!("{path}.default"),
+            format!("characteristic `{}` is not nullable", field.id),
+        ));
+    }
+}
+
+fn validate_creation_preview(
+    animation: &str,
+    parameters: &BTreeMap<String, Value>,
+    candidate_ids: &[&str],
+    characters: &BTreeMap<&str, &CharacterDefinition>,
+    path: &str,
+    issues: &mut Vec<ValidationIssue>,
+) {
+    let candidates: Vec<&CharacterDefinition> = candidate_ids
+        .iter()
+        .filter_map(|id| characters.get(id).copied())
+        .collect();
+    if !animation.is_empty()
+        && !candidates
+            .iter()
+            .any(|character| character.animation(animation).is_some())
+    {
+        issues.push(ValidationIssue::warning(
+            "characterCreation.unknownAnimation",
+            format!("{path}.animation"),
+            format!("no candidate character declares animation `{animation}`"),
+        ));
+    }
+    for (parameter, value) in parameters {
+        let allowed = candidates.iter().any(|character| {
+            character
+                .parameter(parameter)
+                .is_some_and(|field| parameter_allows(field, value))
+        });
+        if !allowed {
+            issues.push(ValidationIssue::warning(
+                "characterCreation.unknownPreviewParameter",
+                format!("{path}.parameters.{parameter}"),
+                format!(
+                    "preview value for `{parameter}` is not available on any candidate character"
+                ),
+            ));
+        }
+    }
 }
 
 /// Validates a character definition on its own.
@@ -2852,6 +3244,7 @@ mod tests {
                 },
             ],
             characters: Vec::new(),
+            character_creation: None,
             locales: crate::project::LocalesDefinition::default(),
             title_screen: None,
             settings: None,
@@ -2908,6 +3301,28 @@ mod tests {
             codes(&validate_project(&project, loaded(&worlds, &tile_sets)))
                 .contains(&"project.unloadedTileSet")
         );
+    }
+
+    #[test]
+    fn a_project_may_only_name_the_character_creation_that_is_loaded() {
+        let (worlds, tile_sets) = loaded_ids();
+        let mut project = project();
+        project.character_creation = Some(crate::project::ContentRef {
+            id: "new_game".to_owned(),
+            path: "character-creation.json".to_owned(),
+        });
+
+        let missing = validate_project(&project, loaded(&worlds, &tile_sets));
+        assert!(codes(&missing).contains(&"project.unloadedCharacterCreation"));
+
+        let present = validate_project(
+            &project,
+            LoadedContent {
+                character_creation: Some("new_game"),
+                ..loaded(&worlds, &tile_sets)
+            },
+        );
+        assert!(present.valid, "unexpected issues: {:?}", present.issues);
     }
 
     #[test]
@@ -3222,6 +3637,128 @@ mod tests {
                 ]
             }"##,
         )
+    }
+
+    fn creation(json: &str) -> CharacterCreationDefinition {
+        serde_json::from_str(json).expect("parse")
+    }
+
+    fn valid_character_creation() -> CharacterCreationDefinition {
+        creation(
+            r##"{
+                "id": "new_game", "schemaVersion": 1,
+                "baseCharacter": "human_player",
+                "choices": [
+                    { "id": "eye", "labelKey": "game.creation.eye",
+                      "control": "color", "default": "#4b3621",
+                      "binding": { "kind": "parameter", "parameter": "hairColor" } }
+                ],
+                "characteristics": [
+                    { "id": "age", "labelKey": "game.creation.age",
+                      "control": "number", "default": 18, "min": 0,
+                      "nullable": false }
+                ],
+                "screens": [
+                    { "id": "identity", "titleKey": "game.creation.identity",
+                      "blocks": [
+                        { "type": "choice", "choice": "eye" },
+                        { "type": "characteristic", "characteristic": "age" },
+                        { "type": "preview" }
+                      ] }
+                ]
+            }"##,
+        )
+    }
+
+    #[test]
+    fn a_well_formed_character_creation_has_nothing_to_report() {
+        let character = valid_character();
+        let report = validate_character_creation(&valid_character_creation(), [&character]);
+
+        assert!(report.valid, "unexpected issues: {:?}", report.issues);
+        assert!(report.issues.is_empty(), "{:?}", report.issues);
+    }
+
+    #[test]
+    fn character_creation_references_are_checked_without_reserved_choice_ids() {
+        let character = valid_character();
+        let declaration = creation(
+            r#"{
+                "id": "new_game", "schemaVersion": 1,
+                "baseCharacter": "human_player",
+                "choices": [
+                    { "id": "anything_the_author_wants", "labelKey": "game.choice",
+                      "control": "select", "default": "one",
+                      "options": [{ "value": "one", "labelKey": "game.one" }],
+                      "binding": { "kind": "parameter", "parameter": "absent" } },
+                    { "id": "later", "labelKey": "game.later",
+                      "control": "toggle", "default": false,
+                      "showIf": { "field": "future", "equals": true },
+                      "binding": { "kind": "parameter", "parameter": "hairColor" } }
+                ],
+                "screens": [{ "id": "s", "titleKey": "game.screen", "blocks": [
+                    { "type": "choice", "choice": "anything_the_author_wants" },
+                    { "type": "choice", "choice": "later" }
+                ] }]
+            }"#,
+        );
+        let report = validate_character_creation(&declaration, [&character]);
+        let found = codes(&report);
+
+        assert!(
+            found.contains(&"characterCreation.unknownParameter"),
+            "{found:?}"
+        );
+        assert!(
+            found.contains(&"characterCreation.forwardCondition"),
+            "{found:?}"
+        );
+        assert!(!found
+            .iter()
+            .any(|code| code.contains("Race") || code.contains("Gender")));
+    }
+
+    #[test]
+    fn only_nullable_characteristics_may_default_to_null() {
+        let character = valid_character();
+        let mut declaration = valid_character_creation();
+        declaration.characteristics[0].field.default = Value::Null;
+
+        let invalid = validate_character_creation(&declaration, [&character]);
+        assert!(codes(&invalid).contains(&"characterCreation.nullDefault"));
+
+        declaration.characteristics[0].nullable = true;
+        let valid = validate_character_creation(&declaration, [&character]);
+        assert!(valid.valid, "unexpected issues: {:?}", valid.issues);
+    }
+
+    #[test]
+    fn creation_may_narrow_but_not_widen_a_character_parameter() {
+        let mut character = valid_character();
+        character.parameters.push(
+            serde_json::from_value(serde_json::json!({
+                "id": "height", "labelKey": "game.height", "control": "slider",
+                "default": 170, "min": 140, "max": 210, "step": 1
+            }))
+            .expect("parameter"),
+        );
+        let mut declaration = valid_character_creation();
+        declaration.choices[0] = serde_json::from_value(serde_json::json!({
+            "id": "height", "labelKey": "game.height", "control": "slider",
+            "default": 170, "min": 150, "max": 190, "step": 1,
+            "binding": { "kind": "parameter", "parameter": "height" }
+        }))
+        .expect("choice");
+        if let CreationBlock::Choice { choice } = &mut declaration.screens[0].blocks[0] {
+            *choice = "height".to_owned();
+        }
+
+        let narrow = validate_character_creation(&declaration, [&character]);
+        assert!(narrow.valid, "unexpected issues: {:?}", narrow.issues);
+
+        declaration.choices[0].field.max = Some(240.0);
+        let wide = validate_character_creation(&declaration, [&character]);
+        assert!(codes(&wide).contains(&"characterCreation.incompatibleParameter"));
     }
 
     #[test]

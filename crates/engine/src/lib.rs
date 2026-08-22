@@ -62,9 +62,10 @@ use std::collections::BTreeMap;
 
 use insulaire_simulation::{rules, tick, GameState, PendingTransition, SimEvent};
 use insulaire_world::{
-    resolve_cell_art, resolve_tile_render, CharacterDefinition, Hex, PlacedTileArt, ProjectionMode,
-    ResolvedCharacter, ResolvedTile, ResolvedTileRender, SettingsDefinition, TileArtGeometry,
-    TitleScreenDefinition, WorldDefinition, WorldGrid,
+    resolve_cell_art, resolve_tile_render, CharacterCreationDefinition, CharacterCreationResult,
+    CharacterDefinition, Hex, PlacedTileArt, ProjectionMode, ResolvedCharacter, ResolvedTile,
+    ResolvedTileRender, SettingsDefinition, TileArtGeometry, TitleScreenDefinition,
+    WorldDefinition, WorldGrid,
 };
 
 pub use dto::{
@@ -414,6 +415,10 @@ impl Engine {
                 })
                 .collect(),
             characters: self.content.character_ids(),
+            character_creation: self
+                .content
+                .character_creation()
+                .map(|creation| creation.id.clone()),
             project: self.content.project().map(Into::into),
         }
     }
@@ -683,6 +688,94 @@ impl Engine {
     #[must_use]
     pub fn character_ids(&self) -> Vec<String> {
         self.content.character_ids()
+    }
+
+    /// Parses, validates and registers the character-creation declaration.
+    ///
+    /// # Errors
+    ///
+    /// See [`ContentRegistry::load_character_creation`].
+    pub fn load_character_creation(&mut self, json: &str) -> Result<LoadOutcome, EngineError> {
+        let (id, report) = self.content.load_character_creation(json)?;
+        Ok(LoadOutcome { id, report })
+    }
+
+    /// Validates a creation declaration without registering it.
+    pub fn validate_character_creation(
+        &self,
+        json: &str,
+    ) -> Result<insulaire_world::ValidationReport, EngineError> {
+        self.content.validate_character_creation_json(json)
+    }
+
+    /// The registered character-creation declaration.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::UnknownContent`] when the project declares none.
+    pub fn character_creation(&self) -> Result<CharacterCreationDefinition, EngineError> {
+        self.content
+            .character_creation()
+            .cloned()
+            .ok_or_else(|| EngineError::UnknownContent {
+                kind: "character creation".to_owned(),
+                id: "(none loaded)".to_owned(),
+            })
+    }
+
+    /// Resolves submitted creation values without giving their ids semantics.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Parse`] when either values payload is not JSON, or
+    /// [`EngineError::UnknownContent`] when no declaration is loaded.
+    pub fn resolved_character_creation(
+        &self,
+        choices_json: &str,
+        characteristics_json: &str,
+    ) -> Result<CharacterCreationResult, EngineError> {
+        let choices: serde_json::Value =
+            serde_json::from_str(choices_json).map_err(|source| EngineError::Parse {
+                what: "character creation choices".to_owned(),
+                message: source.to_string(),
+            })?;
+        let characteristics: serde_json::Value = serde_json::from_str(characteristics_json)
+            .map_err(|source| EngineError::Parse {
+                what: "character characteristics".to_owned(),
+                message: source.to_string(),
+            })?;
+        self.content
+            .resolve_character_creation(&choices, &characteristics)
+            .ok_or_else(|| EngineError::UnknownContent {
+                kind: "character creation".to_owned(),
+                id: "(none loaded)".to_owned(),
+            })
+    }
+
+    /// Resolves a creation definition passed in by the editor, including an
+    /// unfinished one that has not been registered.
+    pub fn preview_character_creation(
+        &self,
+        creation_json: &str,
+        choices_json: &str,
+        characteristics_json: &str,
+    ) -> Result<CharacterCreationResult, EngineError> {
+        let creation: CharacterCreationDefinition =
+            serde_json::from_str(creation_json).map_err(|source| EngineError::Parse {
+                what: "character creation".to_owned(),
+                message: source.to_string(),
+            })?;
+        let choices: serde_json::Value =
+            serde_json::from_str(choices_json).map_err(|source| EngineError::Parse {
+                what: "character creation choices".to_owned(),
+                message: source.to_string(),
+            })?;
+        let characteristics: serde_json::Value = serde_json::from_str(characteristics_json)
+            .map_err(|source| EngineError::Parse {
+                what: "character characteristics".to_owned(),
+                message: source.to_string(),
+            })?;
+        Ok(creation.resolve(&choices, &characteristics))
     }
 
     /// Resolves a definition **passed in** against a customisation, at a moment
