@@ -134,6 +134,23 @@ describe('serializeWorld', () => {
     );
   });
 
+  it('writes the authored grid appearance next to the map presentation', () => {
+    const json = serializeWorld({
+      id: 'w',
+      schemaVersion: 3,
+      width: 1,
+      height: 1,
+      projection: 'isometric',
+      grid: { lineWidth: 3, color: '#336699', alpha: 0.6 },
+      tileSetId: 't',
+      defaultTile: 'grass',
+    });
+
+    expect(json).toContain(
+      '  "projection": "isometric",\n  "grid": {"lineWidth":3,"color":"#336699","alpha":0.6},\n',
+    );
+  });
+
   it('handles an empty metadata block', () => {
     const json = serializeWorld({
       id: 'w',

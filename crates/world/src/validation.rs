@@ -22,7 +22,8 @@ use crate::character_creation::{
 };
 use crate::definition::{
     HexOrientation, LinkTrigger, WorldDefinition, MAX_CHARACTER_HEIGHT_TILES, MAX_ELEVATION,
-    MIN_CHARACTER_HEIGHT_TILES, MIN_ELEVATION, WORLD_SCHEMA_VERSION,
+    MAX_GRID_LINE_WIDTH, MIN_CHARACTER_HEIGHT_TILES, MIN_ELEVATION, MIN_GRID_LINE_WIDTH,
+    WORLD_SCHEMA_VERSION,
 };
 use crate::hex::OffsetCoord;
 use crate::locale::{missing_keys, LocaleBundle};
@@ -503,6 +504,35 @@ fn validate_world_header(world: &WorldDefinition, issues: &mut Vec<ValidationIss
             ),
         ));
     }
+    if !(MIN_GRID_LINE_WIDTH..=MAX_GRID_LINE_WIDTH).contains(&world.grid.line_width) {
+        issues.push(ValidationIssue::error(
+            "world.gridLineWidthOutOfRange",
+            "grid.lineWidth",
+            format!(
+                "grid lineWidth must be between {MIN_GRID_LINE_WIDTH} and {MAX_GRID_LINE_WIDTH}"
+            ),
+        ));
+    }
+    if !is_rgb_hex(&world.grid.color) {
+        issues.push(ValidationIssue::error(
+            "world.gridColorInvalid",
+            "grid.color",
+            "grid color must be a six-digit RGB colour such as `#336699`",
+        ));
+    }
+    if !world.grid.alpha.is_finite() || !(0.0..=1.0).contains(&world.grid.alpha) {
+        issues.push(ValidationIssue::error(
+            "world.gridAlphaOutOfRange",
+            "grid.alpha",
+            "grid alpha must be between 0 and 1",
+        ));
+    }
+}
+
+fn is_rgb_hex(value: &str) -> bool {
+    value.len() == 7
+        && value.starts_with('#')
+        && value.as_bytes()[1..].iter().all(u8::is_ascii_hexdigit)
 }
 
 fn validate_tiles(
@@ -2836,6 +2866,39 @@ mod tests {
             "the bound itself is legal: {:?}",
             report.issues
         );
+    }
+
+    #[test]
+    fn grid_style_must_be_drawable() {
+        let cases = [
+            (0, "#336699", 0.5, "world.gridLineWidthOutOfRange"),
+            (2, "blue", 0.5, "world.gridColorInvalid"),
+            (2, "#336699", 1.25, "world.gridAlphaOutOfRange"),
+        ];
+        for (line_width, color, alpha, expected) in cases {
+            let mut world = testing::sample_world();
+            world.grid.line_width = line_width;
+            world.grid.color = color.to_owned();
+            world.grid.alpha = alpha;
+            let report = validate_world(
+                &world,
+                Some(&testing::sample_tile_set()),
+                &TemplateRegistry::builtin(),
+            );
+            assert!(!report.valid);
+            assert!(codes(&report).contains(&expected), "{:?}", report.issues);
+        }
+
+        let mut world = testing::sample_world();
+        world.grid.line_width = MIN_GRID_LINE_WIDTH;
+        world.grid.color = "#A0b1C2".to_owned();
+        world.grid.alpha = 0.0;
+        let report = validate_world(
+            &world,
+            Some(&testing::sample_tile_set()),
+            &TemplateRegistry::builtin(),
+        );
+        assert!(report.valid, "the bounds are legal: {:?}", report.issues);
     }
 
     #[test]

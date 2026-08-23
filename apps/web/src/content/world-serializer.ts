@@ -30,6 +30,7 @@ const SCALAR_KEYS = [
   'orientation',
   'projection',
   'characterHeightTiles',
+  'grid',
   'tileSetId',
   'defaultTile',
 ] as const;

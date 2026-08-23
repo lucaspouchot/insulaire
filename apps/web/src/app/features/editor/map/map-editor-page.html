@@ -154,6 +154,10 @@
                     <span>{{ picked.entity?.templateId ?? dash }}</span>
                   </div>
                   <div class="row">
+                    <span>{{ 'ui.editor.map.selection.previewCharacter' | t }}</span>
+                    <span>{{ picked.previewCharacter ?? dash }}</span>
+                  </div>
+                  <div class="row">
                     <span>{{ 'ui.editor.map.selection.door' | t }}</span>
                     <span>{{ picked.link?.targetWorld ?? dash }}</span>
                   </div>
@@ -185,7 +189,8 @@
               } @else {
                 <div class="link-editor">
                   <div class="row">
-                    <span>{{ 'ui.editor.map.doors.id' | t }}</span><span>{{ link.id }}</span>
+                    <span>{{ 'ui.editor.map.doors.id' | t }}</span
+                    ><span>{{ link.id }}</span>
                   </div>
                   <div class="row">
                     <span>{{ 'ui.editor.map.doors.onHex' | t }}</span>
@@ -194,9 +199,14 @@
 
                   <label>
                     <span>{{ 'ui.editor.map.doors.leadsTo' | t }}</span>
-                    <select [value]="link.targetWorld" (change)="setLinkTarget($any($event.target).value)">
+                    <select
+                      [value]="link.targetWorld"
+                      (change)="setLinkTarget($any($event.target).value)"
+                    >
                       @for (map of maps(); track map.id) {
-                        <option [value]="map.id" [selected]="map.id === link.targetWorld">{{ map.id }}</option>
+                        <option [value]="map.id" [selected]="map.id === link.targetWorld">
+                          {{ map.id }}
+                        </option>
                       }
                     </select>
                   </label>
@@ -350,7 +360,9 @@
 
       <div class="viewport-tools">
         <button type="button" (click)="zoom(1.2)" [title]="'ui.viewport.zoomIn' | t">＋</button>
-        <button type="button" (click)="zoom(1 / 1.2)" [title]="'ui.viewport.zoomOut' | t">－</button>
+        <button type="button" (click)="zoom(1 / 1.2)" [title]="'ui.viewport.zoomOut' | t">
+          －
+        </button>
         <button type="button" (click)="fitView()" [title]="'ui.viewport.fitTooltip' | t">
           {{ 'ui.viewport.fit' | t }}
         </button>
@@ -362,6 +374,57 @@
         >
           {{ 'ui.viewport.grid' | t }}
         </button>
+        <div
+          class="grid-width"
+          [class.off]="!showGrid()"
+          role="group"
+          [attr.aria-label]="'ui.viewport.gridWidth' | t"
+        >
+          <span>{{ 'ui.viewport.gridWidthShort' | t }}</span>
+          @for (width of gridLineWidths; track width) {
+            <button
+              type="button"
+              [class.on]="gridLineWidth() === width"
+              [disabled]="!showGrid()"
+              [title]="'ui.viewport.gridWidthValue' | t: { width }"
+              (click)="selectGridLineWidth(width)"
+            >
+              {{ width }}
+            </button>
+          }
+        </div>
+        <label
+          class="grid-color"
+          [class.off]="!showGrid()"
+          [title]="'ui.viewport.gridColor' | t"
+        >
+          <span>{{ 'ui.viewport.gridColorShort' | t }}</span>
+          <input
+            type="color"
+            [value]="gridLineColor()"
+            [disabled]="!showGrid()"
+            [attr.aria-label]="'ui.viewport.gridColor' | t"
+            (input)="selectGridLineColor($any($event.target).value)"
+          />
+        </label>
+        <label
+          class="grid-alpha"
+          [class.off]="!showGrid()"
+          [title]="'ui.viewport.gridAlpha' | t"
+        >
+          <span>{{ 'ui.viewport.gridAlphaShort' | t }}</span>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            [value]="gridLineAlpha()"
+            [disabled]="!showGrid()"
+            [attr.aria-label]="'ui.viewport.gridAlpha' | t"
+            (input)="selectGridLineAlpha($any($event.target).value)"
+          />
+          <output>{{ gridLineAlphaPercent() }}%</output>
+        </label>
         <button
           type="button"
           (click)="toggleCoordinates()"
@@ -421,7 +484,10 @@
               </div>
               <ul class="issues">
                 @for (issue of validation.issues; track issue.code + issue.path) {
-                  <li [class.error]="issue.severity === 'error'" [class.warn]="issue.severity === 'warning'">
+                  <li
+                    [class.error]="issue.severity === 'error'"
+                    [class.warn]="issue.severity === 'warning'"
+                  >
                     <code>{{ issue.path }}</code>
                     <span>{{ issue.message }}</span>
                   </li>
@@ -437,13 +503,17 @@
           <div class="stats-card">
             <div class="row">
               <span>{{ 'ui.stats.cellsDrawn' | t }}</span>
-              <span>{{ 'ui.stats.drawnValue' | t: { drawn: frame.cellsDrawn, total: frame.cellsTotal } }}</span>
+              <span>{{
+                'ui.stats.drawnValue' | t: { drawn: frame.cellsDrawn, total: frame.cellsTotal }
+              }}</span>
             </div>
             <div class="row">
-              <span>{{ 'ui.stats.terrainFills' | t }}</span><span>{{ frame.terrainBatches }}</span>
+              <span>{{ 'ui.stats.terrainFills' | t }}</span
+              ><span>{{ frame.terrainBatches }}</span>
             </div>
             <div class="row">
-              <span>{{ 'ui.stats.tilePictures' | t }}</span><span>{{ frame.tilePictures }}</span>
+              <span>{{ 'ui.stats.tilePictures' | t }}</span
+              ><span>{{ frame.tilePictures }}</span>
             </div>
             <div class="row">
               <span>{{ 'ui.stats.lastFrame' | t }}</span>
@@ -488,7 +558,8 @@
                 [class.on]="selectedTile() === tile.id"
                 (click)="selectTile(tile.id)"
                 [title]="
-                  'ui.editor.map.palette.swatchTooltip' | t: { name: tile.name, cost: tile.movementCost }
+                  'ui.editor.map.palette.swatchTooltip'
+                    | t: { name: tile.name, cost: tile.movementCost }
                 "
               >
                 <span class="chip" [style.background]="tile.fallbackColor"></span>
@@ -498,6 +569,41 @@
             }
           </div>
           <p class="hint">{{ 'ui.editor.map.palette.hint' | t }}</p>
+        </section>
+      </aside>
+    }
+
+    @if (resourceDock() === 'characters') {
+      <aside class="dock right">
+        <section class="panel palette-panel character-palette">
+          <h2>{{ 'ui.editor.map.characters.heading' | t }}</h2>
+          <div class="palette">
+            <button
+              type="button"
+              class="swatch character-choice"
+              [class.on]="selectedPreviewCharacter() === null"
+              (click)="selectPreviewCharacter('')"
+            >
+              <span class="chip">{{ tool() === 'player' ? '@' : 'M' }}</span>
+              <span class="label">{{ 'ui.editor.map.characters.marker' | t }}</span>
+            </button>
+            @for (character of previewCharacters(); track character.id) {
+              <button
+                type="button"
+                class="swatch character-choice"
+                [class.on]="selectedPreviewCharacter() === character.id"
+                (click)="selectPreviewCharacter(character.id)"
+                [title]="'ui.editor.map.characters.choiceTooltip' | t: { id: character.id }"
+              >
+                <span class="chip">◇</span>
+                <span class="label">{{ character.name }}</span>
+                <span class="cost">{{ character.id }}</span>
+              </button>
+            } @empty {
+              <p class="hint">{{ 'ui.editor.map.characters.empty.' + tool() | t }}</p>
+            }
+          </div>
+          <p class="hint">{{ 'ui.editor.map.characters.hint.' + tool() | t }}</p>
         </section>
       </aside>
     }
@@ -522,10 +628,7 @@
               <span>{{ 'ui.editor.map.maps.zone' | t }}</span>
               <select #newZone [attr.aria-label]="'ui.editor.map.maps.newZoneAria' | t">
                 @for (zone of zones(); track zone.id) {
-                  <option
-                    [value]="zone.id"
-                    [selected]="zone.id === (zoneFilter() ?? openZoneId())"
-                  >
+                  <option [value]="zone.id" [selected]="zone.id === (zoneFilter() ?? openZoneId())">
                     {{ zone.label }}
                   </option>
                 }
@@ -585,7 +688,9 @@
                 class="map"
                 [class.on]="map.id === activeWorldId()"
                 (click)="switchMap(map.id)"
-                [title]="'ui.editor.map.maps.rowTooltip' | t: { id: map.id, zone: zoneLabel(map.zone) }"
+                [title]="
+                  'ui.editor.map.maps.rowTooltip' | t: { id: map.id, zone: zoneLabel(map.zone) }
+                "
               >
                 <span class="label">{{ map.name }}</span>
                 <!--
@@ -634,17 +739,22 @@
               <span>{{ doc.width }} × {{ doc.height }}</span>
             </div>
             <div class="row">
-              <span>{{ 'ui.editor.map.open.zone' | t }}</span><span>{{ zoneLabel(openZoneId()) }}</span>
+              <span>{{ 'ui.editor.map.open.zone' | t }}</span
+              ><span>{{ zoneLabel(openZoneId()) }}</span>
             </div>
             <div class="row">
-              <span>{{ 'ui.editor.map.open.tileSet' | t }}</span><span>{{ doc.tileSetId }}</span>
+              <span>{{ 'ui.editor.map.open.tileSet' | t }}</span
+              ><span>{{ doc.tileSetId }}</span>
             </div>
             <div class="row">
-              <span>{{ 'ui.editor.map.open.projection' | t }}</span><span>{{ projection() }}</span>
+              <span>{{ 'ui.editor.map.open.projection' | t }}</span
+              ><span>{{ projection() }}</span>
             </div>
             <div class="row">
               <span>{{ 'ui.editor.map.open.characterHeight' | t }}</span>
-              <span>{{ 'ui.editor.map.open.characterHeightValue' | t: { value: doc.characterHeightTiles } }}</span>
+              <span>{{
+                'ui.editor.map.open.characterHeightValue' | t: { value: doc.characterHeightTiles }
+              }}</span>
             </div>
             <div class="row">
               <span>{{ 'ui.editor.map.open.source' | t }}</span>
@@ -702,7 +812,14 @@
               <div class="button-row">
                 <button
                   type="button"
-                  (click)="applyMapSettings(mapId.value, mapName.value, mapZone.value, characterHeightTiles.value)"
+                  (click)="
+                    applyMapSettings(
+                      mapId.value,
+                      mapName.value,
+                      mapZone.value,
+                      characterHeightTiles.value
+                    )
+                  "
                 >
                   {{ 'ui.common.apply' | t }}
                 </button>

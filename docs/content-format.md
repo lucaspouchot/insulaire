@@ -313,7 +313,7 @@ since.
 ```json
 {
   "id": "demo_world",
-  "schemaVersion": 1,
+  "schemaVersion": 3,
   "name": "Demo Valley",
   "zone": "valley",
   "width": 20,
@@ -321,6 +321,7 @@ since.
   "orientation": "pointy",
   "projection": "isometric",
   "characterHeightTiles": 2,
+  "grid": { "lineWidth": 3, "color": "#336699", "alpha": 0.6 },
   "tileSetId": "mvp_terrain",
   "defaultTile": "grass",
   "tiles": [
@@ -349,13 +350,14 @@ since.
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `id` | string | yes | Stable id. Loading a world replaces any world with the same id. |
-| `schemaVersion` | integer | yes | `1`. |
+| `schemaVersion` | integer | yes | `3`. |
 | `name` | string | no | Display name. |
 | `zone` | string | no | Id of the `ZoneDefinition` this map belongs to. Absent means the project's default zone — never *no* zone; see below. |
 | `width`, `height` | integer | yes | Columns and rows. `1..2048`. |
 | `orientation` | `"pointy"` \| `"flat"` | no | Defaults to `"pointy"`. `"flat"` is reserved and currently rejected. |
 | `projection` | `"topDown"` \| `"isometric"` | no | Defaults to `"topDown"`. How the renderer draws this world; see below. |
 | `characterHeightTiles` | number | no | Defaults to `2`; must be `0.25..=8`. Projected tile-face heights occupied by a 128-pixel character canvas. |
+| `grid` | object | no | Grid appearance shared by editor and Play. Defaults to `{ "lineWidth": 1, "color": "#000000", "alpha": 0.25 }`. |
 | `tileSetId` | string | yes | The `TileSetDefinition` this world paints with. |
 | `defaultTile` | string | yes | Tile used for every cell not listed in `tiles`. |
 | `tiles` | PlacedTile[] | no | Only the cells that differ from `defaultTile`. |
@@ -395,7 +397,7 @@ world with a lake and a ridge is 82 lines rather than 400, and painting one hex
 changes one line of the diff. The runtime expands this into a dense buffer on
 load; the editor re-sparsifies on export.
 
-### Projection and elevation
+### Presentation: projection, character scale and grid
 
 `projection` is **presentation carried by content**. The simulation never reads
 it and no rule may depend on it; it decides how the renderer draws the map, and
@@ -410,9 +412,13 @@ twice as tall. The map editor exposes the ratio; the renderer receives it on
 `WorldView.characterHeightTiles`
 (`docs/adr/ADR-0044-map-entity-presentation.md`).
 
-The optional default made this an additive world field, so
-`WORLD_SCHEMA_VERSION` remains `2`; an older file loads at `2` and canonical
-serialisation omits that default.
+`grid` authors the stroke used whenever the grid is visible in the editor or in
+Play. `lineWidth` is an integer from `1` to `4`, expressed in **screen pixels**:
+camera zoom therefore never makes it look thicker or thinner. `color` is a
+six-digit RGB colour (`#rrggbb`) and `alpha` is its opacity from `0` to `1`.
+Visibility itself remains a local toggle, so a player can hide the grid without
+rewriting the map. An absent `grid` block receives the former renderer defaults
+and is omitted again by canonical serialisation.
 
 | Value | What it draws |
 |---|---|
@@ -478,7 +484,16 @@ only place it can be stored.
 | `templateId` | string | yes | `"player"` or `"monster"` (see below). |
 | `at` | `[col, row]` | yes | Position. Must be in bounds and on a passable tile. |
 | `tags` | string[] | no | Free-form tags, carried into the runtime. |
-| `properties` | object | no | Opaque to MVP rules; carried through. |
+| `properties` | object | no | Opaque to MVP rules; preserved by the editor and loader. `previewCharacter`, when present, is the character id drawn for this entity in the map editor only. |
+
+`properties.previewCharacter` is an authoring preview, not gameplay appearance.
+The map editor offers player-category definitions for a `player`, and enemy or
+monster definitions for a `monster`; a missing or unreadable id falls back to
+the `@` or `M` marker. Play deliberately ignores the player's value and resolves
+the character selected by the authored character-creation workflow. Each
+monster keeps its own preview value so distinct models can be placed once those
+definitions exist. This convention uses the already-open `properties` object,
+so it does not change `WORLD_SCHEMA_VERSION`.
 
 ### LocationDefinition
 
@@ -1267,6 +1282,9 @@ exposed across the boundary as `validateLinks()` and `loadProject()`.
 | `world.mapTooLarge` | A dimension exceeds 2048. |
 | `world.unsupportedOrientation` | Not `"pointy"`. |
 | `world.characterHeightTilesOutOfRange` | `characterHeightTiles` is not finite or outside `0.25..=8`. |
+| `world.gridLineWidthOutOfRange` | `grid.lineWidth` is outside `1..=4`. |
+| `world.gridColorInvalid` | `grid.color` is not a six-digit RGB colour. |
+| `world.gridAlphaOutOfRange` | `grid.alpha` is not finite or outside `0..=1`. |
 | `world.unknownTileSet` | `tileSetId` is not loaded. |
 | `world.unknownDefaultTile` | `defaultTile` is not in the tile set. |
 | `world.missingPlayer` / `world.multiplePlayers` | Not exactly one player entity. |
@@ -1457,15 +1475,16 @@ exactly the same pixels.
 `crates/world/src/definition.rs` and `tileset.rs`. A file with a higher version
 is rejected with a clear message rather than parsed optimistically.
 
-Adding an **optional** field is a backwards-compatible change and does not need
-a version bump: every optional field has a `serde` default. Renaming or removing
-a field, or changing the meaning of an existing one, requires bumping
-`WORLD_SCHEMA_VERSION` and adding an explicit migration.
+An optional field with a `serde` default is backwards-compatible to read, but a
+new authored capability still bumps the relevant schema constant so a file says
+which vocabulary it was written against. Renaming or removing a field, or
+changing the meaning of an existing one, likewise requires a bump and an
+explicit migration.
 
-`WORLD_SCHEMA_VERSION` is at **2**. Version 2 added `PlacedTile.art`, the
-per-cell art choice (ADR-0036). Every field of it is optional with a default, so
-a version-1 file still parses and rolls its art as it always did; the shipped
-files are written as `2`.
+`WORLD_SCHEMA_VERSION` is at **3**. Version 3 added the map-wide `grid`
+appearance used by both editor and Play; absent values keep the former 1 px,
+black-at-25% renderer style. Version 2 added `PlacedTile.art`, the per-cell art
+choice (ADR-0036). The shipped files are written as `3`.
 
 `TILE_SET_SCHEMA_VERSION` is at **2**. Version 2 added `art` — the set's pixel
 grid and each tile's images (ADR-0035). Everything it added is optional with a

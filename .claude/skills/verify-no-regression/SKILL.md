@@ -165,6 +165,11 @@ is a module this harness does not guard:
 ]
 ```
 
+A `press` may set a native input or select deterministically instead of clicking
+it by adding `"value": "..."`; it dispatches `input` by default, or the event
+named by `"event"`. This exercises colour and range controls without opening a
+browser-native picker.
+
 Rules for the scenario: it must stay deterministic (no wall-clock, no random),
 it must keep at least one rejected command (the rejection path is a rule too),
 and a new page or mode is not covered until it is listed in `pages`.

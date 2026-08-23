@@ -84,7 +84,7 @@ Build identity of the running binary.
   "version": "0.1.0",
   "targetArch": "wasm32",
   "pointerWidth": 32,
-  "worldSchemaVersion": 2,
+  "worldSchemaVersion": 3,
   "tileSetSchemaVersion": 3
 }
 ```
@@ -546,6 +546,7 @@ Everything the renderer needs about a world **except** the per-cell buffers.
   "orientation": "pointy",
   "projection": "isometric",
   "characterHeightTiles": 2,
+  "grid": { "lineWidth": 3, "color": "#336699", "alpha": 0.6 },
   "tileSetId": "mvp_terrain",
   "tileArt": { "width": 64, "surfaceHeight": 40, "elevationHeight": 26, "elevationStep": 8 },
   "palette": [
@@ -574,6 +575,12 @@ pixels (ADR-0014, ADR-0016).
 tile-face heights occupied by a 128-pixel character canvas, defaulting to `2`.
 The renderer combines it with the hex layout and projection; no game rule reads
 it (`docs/adr/ADR-0044-map-entity-presentation.md`).
+
+`grid` is the authored appearance used whenever the host's grid toggle is on:
+`lineWidth` in zoom-independent screen pixels, six-digit RGB `color`, and
+`alpha` from `0` to `1`. Like the projection and character scale, the engine
+only republishes it; editor and Play hand the same values to the shared canvas
+renderer.
 
 `tileArt` is the tile set's authored pixel grid — `width`, `flatHeight`,
 `surfaceHeight`, `elevationHeight`, `elevationStep` — transported the same way

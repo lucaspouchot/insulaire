@@ -569,11 +569,21 @@ async function capturePages(browser, baseUrl, scenario, viewport, outDir, log) {
           const el = document.querySelector(${JSON.stringify(press.selector)});
           if (!el) return null;
           el.scrollIntoView({ block: 'center' });
+          const value = ${JSON.stringify(press.value ?? null)};
+          if (value !== null) {
+            if (!(el instanceof HTMLInputElement || el instanceof HTMLSelectElement)) {
+              throw new Error('value may only target an input or select');
+            }
+            el.value = value;
+            el.dispatchEvent(new Event(${JSON.stringify(press.event ?? 'input')}, { bubbles: true }));
+          }
           const r = el.getBoundingClientRect();
           return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
         })()`);
         if (!box) throw new Error(`${spec.name}: no element matching ${press.selector}`);
-        await page.click(Math.round(box.x), Math.round(box.y));
+        if (press.value === undefined) {
+          await page.click(Math.round(box.x), Math.round(box.y));
+        }
         await settle(page, press.settleMs ?? 800);
         shots.push(await capture(page, press.name ?? `${spec.name}-press-${index + 1}`, outDir));
       }

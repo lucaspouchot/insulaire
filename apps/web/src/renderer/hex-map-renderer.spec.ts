@@ -320,8 +320,13 @@ describe('HexMapRenderer tile art', () => {
       {
         get(_target, property) {
           if (property === 'drawImage') {
-            return (image: { asset: string }, x: number, y: number, width: number, height: number) =>
-              blits.push({ asset: image.asset, x, y, width, height });
+            return (
+              image: { asset: string },
+              x: number,
+              y: number,
+              width: number,
+              height: number,
+            ) => blits.push({ asset: image.asset, x, y, width, height });
           }
           if (property === 'fill') {
             return () => {
@@ -732,6 +737,53 @@ describe('HexMapRenderer hover', () => {
     renderer.draw(400, 400);
 
     expect(canvas.strokes).toHaveLength(1);
+  });
+
+  it('draws the grid with the requested authored appearance', () => {
+    const widths: number[] = [];
+    let lineWidth = 0;
+    let strokeStyle = '';
+    let globalAlpha = 1;
+    const context = new Proxy(
+      {},
+      {
+        get(_target, property) {
+          if (property === 'stroke') {
+            return () => {
+              widths.push(lineWidth);
+              expect(strokeStyle).toBe('#336699');
+              expect(globalAlpha).toBe(0.6);
+            };
+          }
+          if (property === 'measureText') {
+            return () => ({ width: 0 });
+          }
+          return () => undefined;
+        },
+        set(_target, property, value) {
+          if (property === 'lineWidth') {
+            lineWidth = Number(value);
+          } else if (property === 'strokeStyle') {
+            strokeStyle = String(value);
+          } else if (property === 'globalAlpha') {
+            globalAlpha = Number(value);
+          }
+          return true;
+        },
+      },
+    ) as CanvasRenderingContext2D;
+    const renderer = new HexMapRenderer(context, LAYOUT, new Camera());
+    renderer.setModel({
+      ...flatModel(),
+      showGrid: true,
+      gridLineWidth: 3,
+      gridLineColor: '#336699',
+      gridLineAlpha: 0.6,
+    });
+
+    renderer.draw(400, 400);
+
+    expect(widths).toEqual([3]);
   });
 
   it('draws an entity character instead of its fallback glyph', () => {

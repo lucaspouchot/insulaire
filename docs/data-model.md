@@ -116,6 +116,13 @@ A placed entity contains:
 - behaviour reference — *supplied by the template*
 - asset reference — *supplied by the template*
 
+The map editor reserves one convention inside those otherwise opaque
+properties: `previewCharacter` names the `CharacterDefinition` it resolves for
+that entity's authoring preview. It is stored per entity so future monsters can
+show different models. It never becomes the player's runtime appearance: Play
+uses the character and values produced by character creation, independently of
+the `player` placement's preview.
+
 Templates currently live in a built-in registry
 (`crates/world/src/template.rs`) rather than in content files. The indirection
 is what matters: worlds reference an id, so templates can become content later
@@ -345,11 +352,18 @@ The editor owns a third model, `WorldDocument`
 world being *authored* has no tick, no RNG and no entity handles, and every
 cell is freely mutable. It holds a dense `Uint8Array` of palette indices and a
 dense `Int8Array` of elevations — the same layout the runtime and the renderer
-use — plus the authored `projection`, `characterHeightTiles` and `zone`, and
-re-sparsifies on export.
+use — plus the authored `projection`, `characterHeightTiles`, grid appearance
+and `zone`, the placed entities' opaque properties (including
+`previewCharacter`), and re-sparsifies on export.
 Its palette entries carry each tile's `art`, and the document carries the tile
 set's pixel grid, so the editor's renderer and the game's are handed the same
 model.
+
+Grid visibility remains view state, but `WorldDefinition.grid` authors its
+`lineWidth`, RGB `color` and `alpha`. `WorldDocument` carries the same block and
+`WorldView` republishes it, so the editor and Play build identical renderer
+models. Width is expressed in screen pixels and divided by camera zoom before
+the shared hex path is stroked, so it never grows or shrinks while zooming.
 
 Per-cell **art choices** are the exception to that density, here as in the grid:
 a `Map` keyed by cell index, holding the ids the file carries. Painting a cell

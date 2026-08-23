@@ -502,6 +502,7 @@ impl Engine {
             }
             .to_owned(),
             character_height_tiles: world.character_height_tiles,
+            grid: world.grid.clone(),
             tile_set_id: world.tile_set_id.clone(),
             tile_art,
             palette: grid
@@ -1037,6 +1038,7 @@ mod tests {
         assert_eq!(view.orientation, "pointy");
         assert_eq!(view.projection, "topDown");
         assert_eq!(view.character_height_tiles, 2.0);
+        assert_eq!(view.grid, insulaire_world::GridStyle::default());
         assert_eq!(view.palette.len(), 3);
         assert_eq!(view.locations.len(), 1);
 
@@ -1083,6 +1085,25 @@ mod tests {
                 .character_height_tiles,
             3.25
         );
+    }
+
+    #[test]
+    fn the_view_republishes_the_authored_grid_style() {
+        let mut world = testing::sample_world();
+        world.id = "styled_world".to_owned();
+        world.grid.line_width = 4;
+        world.grid.color = "#123456".to_owned();
+        world.grid.alpha = 0.7;
+
+        let mut engine = engine();
+        engine
+            .load_world(&serde_json::to_string(&world).expect("serialise"))
+            .expect("world loads");
+
+        let grid = &engine.world_view("styled_world").expect("view").grid;
+        assert_eq!(grid.line_width, 4);
+        assert_eq!(grid.color, "#123456");
+        assert_eq!(grid.alpha, 0.7);
     }
 
     #[test]

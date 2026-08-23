@@ -65,6 +65,13 @@ const EN: StringTree = {
       fitTooltip: 'Fit the map to the window',
       grid: 'Grid',
       gridTooltip: 'Toggle grid',
+      gridWidth: 'Grid line thickness',
+      gridWidthShort: 'line',
+      gridWidthValue: '{width} px grid lines',
+      gridColor: 'Grid line colour',
+      gridColorShort: 'colour',
+      gridAlpha: 'Grid line opacity',
+      gridAlphaShort: 'alpha',
       coordinates: 'col,row',
       coordinatesTooltip: 'Toggle coordinates',
       isometric: 'Isometric',
@@ -661,6 +668,7 @@ const EN: StringTree = {
           terrain: 'terrain',
           elevation: 'elevation',
           entity: 'entity',
+          previewCharacter: 'preview character',
           door: 'door',
           location: 'location',
           players: 'players',
@@ -698,6 +706,21 @@ const EN: StringTree = {
           heading: 'Terrain palette',
           hint: 'Movement cost 0 means impassable. Colours are placeholders resolved from visualId.',
           swatchTooltip: '{name} · movement cost {cost}',
+        },
+        characters: {
+          heading: 'Character preview',
+          marker: 'Fallback marker',
+          choiceTooltip: 'Preview with character {id}',
+          empty: {
+            player: 'This project has no character in the player category.',
+            monster: 'No enemy or monster character has been authored yet.',
+          },
+          hint: {
+            player:
+              'Editor preview only. In play, character creation remains the authority on the player’s appearance.',
+            monster:
+              'The chosen model is stored on each placed monster for preview; until one exists, monsters keep the M marker.',
+          },
         },
         maps: {
           newHeading: 'New map',
@@ -918,6 +941,13 @@ const FR: StringTree = {
       fitTooltip: 'Ajuster la carte à la fenêtre',
       grid: 'Grille',
       gridTooltip: 'Afficher ou masquer la grille',
+      gridWidth: 'Épaisseur des traits de la grille',
+      gridWidthShort: 'trait',
+      gridWidthValue: 'Traits de grille de {width} px',
+      gridColor: 'Couleur des traits de la grille',
+      gridColorShort: 'couleur',
+      gridAlpha: 'Opacité des traits de la grille',
+      gridAlphaShort: 'alpha',
       coordinates: 'col,lig',
       coordinatesTooltip: 'Afficher ou masquer les coordonnées',
       isometric: 'Isométrique',
@@ -1520,6 +1550,7 @@ const FR: StringTree = {
           terrain: 'terrain',
           elevation: 'relief',
           entity: 'entité',
+          previewCharacter: 'personnage d’aperçu',
           door: 'porte',
           location: 'lieu',
           players: 'joueurs',
@@ -1558,6 +1589,21 @@ const FR: StringTree = {
           heading: 'Palette de terrains',
           hint: 'Un coût de 0 signifie infranchissable. Les couleurs sont des repères résolus depuis visualId.',
           swatchTooltip: '{name} · coût de déplacement {cost}',
+        },
+        characters: {
+          heading: 'Aperçu du personnage',
+          marker: 'Repère par défaut',
+          choiceTooltip: 'Prévisualiser avec le personnage {id}',
+          empty: {
+            player: 'Ce projet n’a aucun personnage de la catégorie joueur.',
+            monster: 'Aucun personnage ennemi ou monstre n’a encore été créé.',
+          },
+          hint: {
+            player:
+              'Aperçu de l’éditeur uniquement. En jeu, la création de personnage reste la source de l’apparence du joueur.',
+            monster:
+              'Le modèle choisi est enregistré sur chaque monstre placé pour son aperçu ; tant qu’il n’en existe aucun, les monstres gardent le repère M.',
+          },
         },
         maps: {
           newHeading: 'Nouvelle carte',

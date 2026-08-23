@@ -10,7 +10,30 @@
 /** `[col, row]` in odd-r offset coordinates. */
 export type OffsetPair = [number, number];
 
-export const WORLD_SCHEMA_VERSION = 2;
+/** `3` adds authored grid appearance shared by editor and Play. */
+export const WORLD_SCHEMA_VERSION = 3;
+
+export const DEFAULT_GRID_LINE_WIDTH = 1;
+export const MIN_GRID_LINE_WIDTH = 1;
+export const MAX_GRID_LINE_WIDTH = 4;
+export const DEFAULT_GRID_COLOR = '#000000';
+export const DEFAULT_GRID_ALPHA = 0.25;
+
+/** Authored grid appearance. Visibility remains a per-view toggle. */
+export interface GridStyle {
+  /** Stroke width in screen pixels, independent of camera zoom. */
+  lineWidth: number;
+  /** Six-digit RGB colour; opacity is stored separately. */
+  color: string;
+  /** Stroke opacity from `0` (transparent) to `1` (opaque). */
+  alpha: number;
+}
+
+export const DEFAULT_GRID_STYLE: Readonly<GridStyle> = {
+  lineWidth: DEFAULT_GRID_LINE_WIDTH,
+  color: DEFAULT_GRID_COLOR,
+  alpha: DEFAULT_GRID_ALPHA,
+};
 
 /**
  * `2` added authored tile art
@@ -254,6 +277,11 @@ export interface EntityDefinition {
   templateId: string;
   at: OffsetPair;
   tags?: string[];
+  /**
+   * Opaque authored values. The map editor conventionally stores
+   * `previewCharacter` here; simulation ignores it and player creation remains
+   * authoritative in Play.
+   */
   properties?: Record<string, unknown>;
 }
 
@@ -312,6 +340,8 @@ export interface WorldDefinition {
   projection?: ProjectionMode;
   /** Tile-face heights occupied by a 128-pixel character; defaults to `2`. */
   characterHeightTiles?: number;
+  /** Appearance used whenever the grid is visible in the editor or Play. */
+  grid?: GridStyle;
   tileSetId: string;
   defaultTile: string;
   tiles?: PlacedTile[];
@@ -832,9 +862,7 @@ export type CharacterValues = Record<string, SettingValue>;
 export const CHARACTER_CREATION_SCHEMA_VERSION = 1;
 
 /** Where a creation choice sends its resolved value. */
-export type CreationBinding =
-  | { kind: 'character' }
-  | { kind: 'parameter'; parameter: string };
+export type CreationBinding = { kind: 'character' } | { kind: 'parameter'; parameter: string };
 
 /** A generic creation choice using the shared control vocabulary. */
 export interface CreationChoice extends ControlDefinition {
@@ -842,8 +870,7 @@ export interface CreationChoice extends ControlDefinition {
 }
 
 /** A value stored on the player independently of appearance. */
-export interface CharacteristicDefinition
-  extends Omit<ControlDefinition, 'default'> {
+export interface CharacteristicDefinition extends Omit<ControlDefinition, 'default'> {
   default: SettingValue | null;
   nullable?: boolean;
 }

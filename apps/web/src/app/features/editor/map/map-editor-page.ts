@@ -34,13 +34,25 @@ import {
 import { Offset } from '../../../../core/hex/hex-coords';
 import { HexLayout } from '../../../../core/hex/hex-layout';
 import {
+  DEFAULT_GRID_ALPHA,
+  DEFAULT_GRID_COLOR,
+  DEFAULT_GRID_LINE_WIDTH,
   MAX_CHARACTER_HEIGHT_TILES,
+  MAX_GRID_LINE_WIDTH,
   MIN_CHARACTER_HEIGHT_TILES,
+  MIN_GRID_LINE_WIDTH,
   ProjectionMode,
+  ResolvedCharacter,
   WorldDefinition,
 } from '../../../../content/content-types';
 import { TILE_ART_BUNDLE } from '../../../../content/sprite-bundle';
-import { DocumentLink, DocumentTile, WorldDocument } from '../../../../content/world-document';
+import {
+  DocumentEntity,
+  DocumentLink,
+  DocumentTile,
+  WorldDocument,
+  previewCharacterOf,
+} from '../../../../content/world-document';
 import { serializeWorld } from '../../../../content/world-serializer';
 import { ValidationReport } from '../../../../engine/engine.types';
 import { Camera } from '../../../../renderer/camera';
@@ -78,14 +90,7 @@ const ZONE_OPTION = 'zone:';
  * place here because the dock it opens is chosen by the tool like any other.
  */
 export type EditorTool =
-  | 'map'
-  | 'paint'
-  | 'raise'
-  | 'lower'
-  | 'player'
-  | 'monster'
-  | 'link'
-  | 'erase';
+  'map' | 'paint' | 'raise' | 'lower' | 'player' | 'monster' | 'link' | 'erase';
 
 @Component({
   selector: 'app-map-editor-page',
@@ -132,7 +137,11 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   protected readonly hover = signal<Offset | null>(null);
   protected readonly selected = signal<Offset | null>(null);
   protected readonly showGrid = signal(true);
+  protected readonly gridLineWidths = [1, 2, 3, 4] as const;
   protected readonly showCoordinates = signal(false);
+  /** Character brushes stay separate so switching tools does not lose either. */
+  private readonly playerPreviewCharacter = signal<string | null>(null);
+  private readonly monsterPreviewCharacter = signal<string | null>(null);
   /** Set while the map is waiting for the pictures it is painted from. */
   protected readonly loadingArt = signal(false);
   /** The renderer readout, floated over the canvas rather than docked. */
@@ -172,6 +181,32 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       players: entities.filter((entity) => entity.templateId === 'player').length,
       monsters: entities.filter((entity) => entity.templateId === 'monster').length,
     };
+  });
+
+  /** Character definitions relevant to the active placement tool. */
+  protected readonly previewCharacters = computed(() => {
+    const tool = this.tool();
+    if (tool === 'player') {
+      return this.characters.choices().filter((character) => character.category === 'player');
+    }
+    if (tool === 'monster') {
+      return this.characters
+        .choices()
+        .filter((character) => character.category === 'monster' || character.category === 'enemy');
+    }
+    return [];
+  });
+
+  /** Character held by the active entity brush; `null` keeps the fallback glyph. */
+  protected readonly selectedPreviewCharacter = computed(() => {
+    switch (this.tool()) {
+      case 'player':
+        return this.playerPreviewCharacter();
+      case 'monster':
+        return this.monsterPreviewCharacter();
+      default:
+        return null;
+    }
   });
 
   /** Every door on the open map, for the links panel. */
@@ -249,35 +284,40 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    * dock rather than greying it out gives the canvas the width back, which is
    * the point — the palette will only grow (`docs/adr/ADR-0009-assets-tilesets.md`).
    */
-  protected readonly resourceDock = computed<'terrain' | 'maps' | null>(() => {
+  protected readonly resourceDock = computed<'terrain' | 'maps' | 'characters' | null>(() => {
     switch (this.tool()) {
       case 'paint':
         return 'terrain';
       case 'map':
         return 'maps';
+      case 'player':
+      case 'monster':
+        return 'characters';
       default:
         return null;
     }
   });
 
   /** Which inspector the left dock shows below the tool picker, if any. */
-  protected readonly inspector = computed<'brush' | 'elevation' | 'placement' | 'doors' | 'none'>(() => {
-    switch (this.tool()) {
-      case 'map':
-        // The map tool's whole content — browser, settings, new map — is in the
-        // right dock; repeating any of it on the left would only split it.
-        return 'none';
-      case 'paint':
-        return 'brush';
-      case 'raise':
-      case 'lower':
-        return 'elevation';
-      case 'link':
-        return 'doors';
-      default:
-        return 'placement';
-    }
-  });
+  protected readonly inspector = computed<'brush' | 'elevation' | 'placement' | 'doors' | 'none'>(
+    () => {
+      switch (this.tool()) {
+        case 'map':
+          // The map tool's whole content — browser, settings, new map — is in the
+          // right dock; repeating any of it on the left would only split it.
+          return 'none';
+        case 'paint':
+          return 'brush';
+        case 'raise':
+        case 'lower':
+          return 'elevation';
+        case 'link':
+          return 'doors';
+        default:
+          return 'placement';
+      }
+    },
+  );
 
   /** The palette entry the paint tool is holding. */
   protected readonly brush = computed<DocumentTile | null>(() => {
@@ -335,11 +375,13 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     if (cell === null || document === null) {
       return null;
     }
+    const entity = document.entityAt(cell);
     return {
       at: cell,
       tile: document.tileAt(cell),
       elevation: document.elevationAt(cell),
-      entity: document.entityAt(cell),
+      entity,
+      previewCharacter: entity === null ? null : previewCharacterOf(entity),
       link: document.linkAt(cell),
       location:
         document.placedLocations.find(
@@ -367,10 +409,14 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     void this.i18n.ensureAdopted().catch(() => undefined);
     void this.workspace.ensureProbed().catch(() => undefined);
     void this.settings.ensureLoaded().catch(() => undefined);
-    void this.characters.ensureLoaded().catch(() => undefined);
+    void this.characters
+      .ensureLoaded()
+      .then(() => this.refresh())
+      .catch(() => undefined);
 
     const document = this.store.requireDocument();
     this.selectedTile.set(document.palette[0]?.id ?? null);
+    this.syncPreviewBrushes(document);
 
     const context = this.canvasRef().nativeElement.getContext('2d');
     if (context === null) {
@@ -452,6 +498,48 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   }
 
   /**
+   * Chooses the character preview held by an entity tool.
+   *
+   * The one player already on the map changes immediately. A monster changes
+   * when its cell is selected; otherwise the choice applies to the next
+   * placement, allowing several monsters to keep different models.
+   */
+  protected selectPreviewCharacter(character: string): void {
+    const tool = this.tool();
+    if (tool !== 'player' && tool !== 'monster') {
+      return;
+    }
+    const next = character.length === 0 ? null : character;
+    (tool === 'player' ? this.playerPreviewCharacter : this.monsterPreviewCharacter).set(next);
+
+    const document = this.store.document();
+    if (document === null) {
+      return;
+    }
+    const selected = this.selected();
+    const entity =
+      tool === 'player'
+        ? document.placedEntities.find((candidate) => candidate.templateId === 'player')
+        : selected === null
+          ? undefined
+          : (document.entityAt(selected) ?? undefined);
+    if (
+      entity !== undefined &&
+      entity.templateId === tool &&
+      document.setEntityPreviewCharacter(entity.id, next)
+    ) {
+      this.store.touch();
+      // Choosing the marker again is a real undo; unlike brush strokes this is
+      // rare enough that checking every map here is cheap and keeps `dirty`
+      // honest.
+      this.store.refreshDirty();
+      this.report.set(null);
+      this.message.set(null);
+    }
+    this.refresh();
+  }
+
+  /**
    * Applies the active tool to a cell.
    *
    * Every branch that changes something calls {@link ProjectStoreService.touch},
@@ -480,10 +568,12 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
         changed = document.raise(cell, -1);
         break;
       case 'player':
-        changed = document.placeEntity(cell, 'player', true) !== null;
+        changed =
+          document.placeEntity(cell, 'player', true, this.playerPreviewCharacter()) !== null;
         break;
       case 'monster':
-        changed = document.placeEntity(cell, 'monster', false) !== null;
+        changed =
+          document.placeEntity(cell, 'monster', false, this.monsterPreviewCharacter()) !== null;
         break;
       case 'link': {
         // A new door points at the first *other* map, which is the common case;
@@ -494,7 +584,9 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       }
       case 'erase':
         changed =
-          document.removeEntityAt(cell) || document.removeLinkAt(cell) || document.removeLocationAt(cell);
+          document.removeEntityAt(cell) ||
+          document.removeLinkAt(cell) ||
+          document.removeLocationAt(cell);
         break;
     }
 
@@ -708,6 +800,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     const document = this.store.document();
     if (document !== null) {
       this.selectedTile.set(document.palette[0]?.id ?? null);
+      this.syncPreviewBrushes(document);
     }
     this.selected.set(null);
     this.view?.clearHover();
@@ -738,6 +831,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       });
       this.store.addWorld(document);
       this.selectedTile.set(document.palette[0]?.id ?? null);
+      this.syncPreviewBrushes(document);
       if (this.zoneFilter() !== null) {
         // The map that was just opened has to be one the picker lists.
         this.zoneFilter.set(document.zone);
@@ -772,6 +866,10 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     }
     this.message.set(this.i18n.t('ui.editor.map.message.mapRemoved', { id: document.id }));
     this.selected.set(null);
+    const next = this.store.document();
+    if (next !== null) {
+      this.syncPreviewBrushes(next);
+    }
     this.rebuild();
     this.view?.fit();
   }
@@ -785,6 +883,10 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     }
     this.selected.set(null);
     this.selectedTile.set(this.store.document()?.palette[0]?.id ?? null);
+    const document = this.store.document();
+    if (document !== null) {
+      this.syncPreviewBrushes(document);
+    }
     this.report.set(null);
     this.message.set(this.i18n.t('ui.editor.map.message.reloaded'));
     this.rebuild();
@@ -1001,12 +1103,18 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       const definition = JSON.parse(await file.text()) as WorldDefinition;
       const document = this.store.importDefinition(definition);
       this.selectedTile.set(document.palette[0]?.id ?? null);
+      this.syncPreviewBrushes(document);
       this.report.set(null);
       this.message.set(this.i18n.t('ui.editor.map.message.imported', { file: file.name }));
       this.rebuild();
       this.view?.fit();
     } catch (cause) {
-      this.error.set(this.i18n.t('ui.editor.map.error.importFailed', { file: file.name, reason: describe(cause) }));
+      this.error.set(
+        this.i18n.t('ui.editor.map.error.importFailed', {
+          file: file.name,
+          reason: describe(cause),
+        }),
+      );
     } finally {
       input.value = '';
     }
@@ -1074,6 +1182,39 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     this.rebuild();
   }
 
+  /** Chooses a zoom-independent grid stroke width in screen pixels. */
+  protected selectGridLineWidth(width: number): void {
+    this.updateGridStyle({
+      lineWidth: Math.min(MAX_GRID_LINE_WIDTH, Math.max(MIN_GRID_LINE_WIDTH, Math.round(width))),
+    });
+  }
+
+  /** Chooses the authored six-digit RGB grid colour. */
+  protected selectGridLineColor(color: string): void {
+    this.updateGridStyle({ color });
+  }
+
+  /** Chooses the authored grid opacity from a native range input. */
+  protected selectGridLineAlpha(alpha: string): void {
+    const value = Number(alpha);
+    if (!Number.isFinite(value)) {
+      return;
+    }
+    this.updateGridStyle({ alpha: Math.min(1, Math.max(0, value)) });
+  }
+
+  private updateGridStyle(patch: { lineWidth?: number; color?: string; alpha?: number }): void {
+    const document = this.store.document();
+    if (document === null || !document.setGridStyle(patch)) {
+      return;
+    }
+    this.store.touch();
+    this.store.refreshDirty();
+    this.report.set(null);
+    this.message.set(null);
+    this.rebuild();
+  }
+
   protected toggleCoordinates(): void {
     this.showCoordinates.update((value) => !value);
     this.rebuild();
@@ -1113,6 +1254,25 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     return this.document()?.projection ?? 'topDown';
   });
 
+  protected readonly gridLineWidth = computed(() => {
+    this.revision();
+    return this.document()?.grid.lineWidth ?? DEFAULT_GRID_LINE_WIDTH;
+  });
+
+  protected readonly gridLineColor = computed(() => {
+    this.revision();
+    return this.document()?.grid.color ?? DEFAULT_GRID_COLOR;
+  });
+
+  protected readonly gridLineAlpha = computed(() => {
+    this.revision();
+    return this.document()?.grid.alpha ?? DEFAULT_GRID_ALPHA;
+  });
+
+  protected readonly gridLineAlphaPercent = computed(() =>
+    Math.round(this.gridLineAlpha() * 100),
+  );
+
   /** Elevation of the hovered cell, for the status bar. */
   protected readonly hoveredElevation = computed<number | null>(() => {
     this.revision();
@@ -1139,6 +1299,14 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     if (zone !== null && !this.zones().some((entry) => entry.id === zone)) {
       this.zoneFilter.set(null);
     }
+  }
+
+  /** Starts each entity brush from what the newly opened map already uses. */
+  private syncPreviewBrushes(document: WorldDocument): void {
+    const player = document.placedEntities.find((entity) => entity.templateId === 'player');
+    const monster = document.placedEntities.find((entity) => entity.templateId === 'monster');
+    this.playerPreviewCharacter.set(player === undefined ? null : previewCharacterOf(player));
+    this.monsterPreviewCharacter.set(monster === undefined ? null : previewCharacterOf(monster));
   }
 
   /** Rebuilds the render model from the document and redraws. */
@@ -1188,6 +1356,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   }
 
   private buildModel(document: WorldDocument): RenderModel {
+    const characterPreviews = new Map<string, ResolvedCharacter | null>();
     return {
       width: document.width,
       height: document.height,
@@ -1198,16 +1367,13 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       terrain: document.terrain,
       elevation: document.elevation,
       elevationRange: document.elevationRange,
-      artChoices: resolveCellArtChoices(
-        document.palette,
-        document.terrain,
-        document.artOverrides,
-      ),
+      artChoices: resolveCellArtChoices(document.palette, document.terrain, document.artOverrides),
       entities: document.placedEntities.map((entity) => ({
         id: entity.id,
         at: entity.at,
         visualId: `entity.${entity.templateId}`,
         fallbackColor: entity.templateId === 'player' ? '#f2c14e' : '#c0392b',
+        character: this.resolvePreviewCharacter(entity, characterPreviews),
         glyph: entity.templateId === 'player' ? '@' : 'M',
         emphasised: false,
       })),
@@ -1224,8 +1390,36 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       overlays: [],
       selected: this.selected(),
       showGrid: this.showGrid(),
+      gridLineWidth: document.grid.lineWidth,
+      gridLineColor: document.grid.color,
+      gridLineAlpha: document.grid.alpha,
       showCoordinates: this.showCoordinates(),
     };
+  }
+
+  /** Resolves a static idle pose for one editor-only entity appearance. */
+  private resolvePreviewCharacter(
+    entity: DocumentEntity,
+    cache: Map<string, ResolvedCharacter | null>,
+  ): ResolvedCharacter | null {
+    const id = previewCharacterOf(entity);
+    if (id === null || !this.engine.isReady) {
+      return null;
+    }
+    const cached = cache.get(id);
+    if (cached !== undefined || cache.has(id)) {
+      return cached ?? null;
+    }
+    try {
+      const resolved = this.engine.resolveCharacterRole(id, {}, 'idle', 0);
+      cache.set(id, resolved);
+      return resolved;
+    } catch {
+      // A removed or unreadable definition never makes the map disappear: its
+      // entity falls back to the marker, and the picker no longer offers it.
+      cache.set(id, null);
+      return null;
+    }
   }
 }
 

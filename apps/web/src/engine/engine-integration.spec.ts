@@ -395,6 +395,7 @@ describe.skipIf(!built)('engine boundary', () => {
 
     expect(view.projection).toBe('isometric');
     expect(view.characterHeightTiles).toBe(2);
+    expect(view.grid).toEqual({ lineWidth: 1, color: '#000000', alpha: 0.25 });
     expect(elevation).toBeInstanceOf(Int8Array);
     expect(elevation.length).toBe(view.cellCount);
     // The demo has relief, and it lines up with the terrain buffer cell for cell.

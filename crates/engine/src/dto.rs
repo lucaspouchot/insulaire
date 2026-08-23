@@ -13,8 +13,8 @@ use std::collections::BTreeMap;
 
 use insulaire_simulation::{EntityRuntime, Rng, SimEvent};
 use insulaire_world::{
-    CellArtChoice, EntityKind, Hex, LinkTrigger, MapLinkDefinition, OffsetCoord, ProjectDefinition,
-    ResolvedTile, TileArt, TileArtGeometry,
+    CellArtChoice, EntityKind, GridStyle, Hex, LinkTrigger, MapLinkDefinition, OffsetCoord,
+    ProjectDefinition, ResolvedTile, TileArt, TileArtGeometry,
 };
 use serde::{Deserialize, Serialize};
 
@@ -303,6 +303,8 @@ pub struct WorldView {
     /// Presentation transported from the world without becoming a game rule
     /// (`docs/adr/ADR-0044-map-entity-presentation.md`).
     pub character_height_tiles: f32,
+    /// Authored grid appearance, transported without becoming a game rule.
+    pub grid: GridStyle,
     /// Id of the tile set this world paints with.
     pub tile_set_id: String,
     /// The pixel grid the tile set's images are authored on.

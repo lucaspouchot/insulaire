@@ -1,6 +1,6 @@
 {
   "id": "demo_world",
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "name": "Demo Valley",
   "zone": "valley",
   "width": 20,

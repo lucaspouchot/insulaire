@@ -591,6 +591,9 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       ],
       selected: this.selected(),
       showGrid: this.showGrid(),
+      gridLineWidth: view.grid.lineWidth,
+      gridLineColor: view.grid.color,
+      gridLineAlpha: view.grid.alpha,
       showCoordinates: false,
     };
   }

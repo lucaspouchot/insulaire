@@ -867,6 +867,9 @@ mod tests {
         let view = json(&engine.world_view("w").expect("view"));
         assert_eq!(view["projection"], "isometric");
         assert_eq!(view["characterHeightTiles"], 2.0);
+        assert_eq!(view["grid"]["lineWidth"], 1);
+        assert_eq!(view["grid"]["color"], "#000000");
+        assert_eq!(view["grid"]["alpha"], 0.25);
 
         let elevations = engine.elevation_buffer("w").expect("buffer");
         assert_eq!(elevations.len(), 64);
@@ -902,6 +905,23 @@ mod tests {
             json(&engine.world_view("w").expect("view"))["characterHeightTiles"],
             3.5
         );
+    }
+
+    #[test]
+    fn an_authored_grid_style_crosses_the_json_boundary() {
+        let mut engine = JsonEngine::new();
+        engine.load_tile_set(TILE_SET).expect("tile set loads");
+        engine
+            .load_world(&WORLD.replace(
+                r#""width": 8"#,
+                r##""grid": { "lineWidth": 3, "color": "#abcdef", "alpha": 0.4 }, "width": 8"##,
+            ))
+            .expect("world loads");
+
+        let grid = &json(&engine.world_view("w").expect("view"))["grid"];
+        assert_eq!(grid["lineWidth"], 3);
+        assert_eq!(grid["color"], "#abcdef");
+        assert_eq!(grid["alpha"], 0.4);
     }
 
     #[test]
@@ -1120,7 +1140,7 @@ mod tests {
     fn engine_info_reports_the_build() {
         let info = json(&JsonEngine::new().engine_info().expect("info"));
         assert_eq!(info["name"], "insulaire-engine");
-        assert_eq!(info["worldSchemaVersion"], 2);
+        assert_eq!(info["worldSchemaVersion"], 3);
         assert!(info["version"].is_string());
     }
 

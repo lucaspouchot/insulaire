@@ -52,7 +52,9 @@ button {
   border-radius: var(--radius);
   padding: 6px 12px;
   cursor: pointer;
-  transition: border-color 120ms ease, background 120ms ease;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
 }
 
 button:hover:not(:disabled) {
@@ -233,6 +235,79 @@ router-outlet {
 .viewport-tools button.on {
   color: var(--accent);
   border-color: var(--accent-dim);
+}
+
+/* Compact grid-stroke picker beside the grid toggle. Values are screen pixels. */
+.viewport-tools .grid-width {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 3px 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(21, 27, 36, 0.9);
+}
+
+.viewport-tools .grid-width > span {
+  margin-right: 2px;
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.viewport-tools .grid-width button {
+  min-width: 23px;
+  padding: 2px 5px;
+}
+
+.viewport-tools .grid-width.off {
+  opacity: 0.55;
+}
+
+.viewport-tools .grid-color,
+.viewport-tools .grid-alpha {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 29px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(21, 27, 36, 0.9);
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.viewport-tools .grid-color input {
+  width: 24px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.viewport-tools .grid-alpha input {
+  width: 64px;
+  margin: 0;
+}
+
+.viewport-tools .grid-alpha output {
+  min-width: 29px;
+  color: var(--text);
+  font-family: var(--mono);
+  text-align: right;
+}
+
+.viewport-tools .grid-color.off,
+.viewport-tools .grid-alpha.off {
+  opacity: 0.55;
+}
+
+.character-choice .chip {
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  font-family: var(--mono);
 }
 
 .overlay-note {

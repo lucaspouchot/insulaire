@@ -10,6 +10,9 @@
 
 import {
   DEFAULT_CHARACTER_HEIGHT_TILES,
+  DEFAULT_GRID_ALPHA,
+  DEFAULT_GRID_COLOR,
+  DEFAULT_GRID_LINE_WIDTH,
   ResolvedCharacter,
   TileArt,
   TileArtGeometry,
@@ -162,6 +165,12 @@ export interface RenderModel {
    */
   readonly selected: Offset | null;
   readonly showGrid: boolean;
+  /** Grid stroke width in screen pixels, kept stable while the camera zooms. */
+  readonly gridLineWidth: number;
+  /** Grid stroke RGB colour. */
+  readonly gridLineColor: string;
+  /** Grid stroke opacity from transparent (`0`) to opaque (`1`). */
+  readonly gridLineAlpha: number;
   readonly showCoordinates: boolean;
 }
 
@@ -265,6 +274,9 @@ export function emptyRenderModel(): RenderModel {
     overlays: [],
     selected: null,
     showGrid: true,
+    gridLineWidth: DEFAULT_GRID_LINE_WIDTH,
+    gridLineColor: DEFAULT_GRID_COLOR,
+    gridLineAlpha: DEFAULT_GRID_ALPHA,
     showCoordinates: false,
   };
 }

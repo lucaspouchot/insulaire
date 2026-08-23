@@ -30,6 +30,7 @@
 import { Offset, indexIn } from '../core/hex/hex-coords';
 import {
   EntityDefinition,
+  GridStyle,
   LocationDefinition,
   MapLink,
   PlacedTile,
@@ -45,6 +46,7 @@ import {
   MAX_ELEVATION,
   MIN_ELEVATION,
   DEFAULT_CHARACTER_HEIGHT_TILES,
+  DEFAULT_GRID_STYLE,
   WORLD_SCHEMA_VERSION,
 } from './content-types';
 
@@ -92,6 +94,22 @@ export interface DocumentEntity {
   templateId: string;
   at: Offset;
   tags: string[];
+  properties: Record<string, unknown>;
+}
+
+/**
+ * Conventional presentation-only entity property used by the map editor.
+ *
+ * It deliberately lives in the existing opaque property bag: simulation does
+ * not read it, and Play resolves the player's appearance from character
+ * creation instead.
+ */
+export const PREVIEW_CHARACTER_PROPERTY = 'previewCharacter';
+
+/** Character definition selected for an entity's editor preview, if any. */
+export function previewCharacterOf(entity: DocumentEntity): string | null {
+  const value = entity.properties[PREVIEW_CHARACTER_PROPERTY];
+  return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
 /** A point of interest placed by the author. */
@@ -129,6 +147,7 @@ export interface WorldDocumentInit {
   defaultTile?: string;
   projection?: ProjectionMode;
   characterHeightTiles?: number;
+  grid?: GridStyle;
   /** Authoring zone; empty leaves the map unzoned. */
   zone?: string;
 }
@@ -160,6 +179,8 @@ export class WorldDocument {
     public projection: ProjectionMode,
     /** Projected tile-face heights occupied by a 128-pixel character. */
     public characterHeightTiles: number,
+    /** Authored grid appearance shared by editor preview and gameplay. */
+    public grid: GridStyle,
     /** Authoring zone; `''` means unzoned. Grouping only, never a rule. */
     public zone: string,
   ) {}
@@ -176,14 +197,18 @@ export class WorldDocument {
       throw new WorldDocumentError(`tile set "${init.tileSet.id}" defines no tiles`);
     }
     if (init.width <= 0 || init.height <= 0) {
-      throw new WorldDocumentError(`world dimensions must be positive, got ${init.width}x${init.height}`);
+      throw new WorldDocumentError(
+        `world dimensions must be positive, got ${init.width}x${init.height}`,
+      );
     }
 
     const first = palette[0] as DocumentTile;
     const defaultTile = init.defaultTile ?? first.id;
     const defaultIndex = palette.findIndex((tile) => tile.id === defaultTile);
     if (defaultIndex < 0) {
-      throw new WorldDocumentError(`default tile "${defaultTile}" is not in tile set "${init.tileSet.id}"`);
+      throw new WorldDocumentError(
+        `default tile "${defaultTile}" is not in tile set "${init.tileSet.id}"`,
+      );
     }
 
     const cells = new Uint8Array(init.width * init.height).fill(defaultIndex);
@@ -205,6 +230,7 @@ export class WorldDocument {
       {},
       init.projection ?? 'topDown',
       init.characterHeightTiles ?? DEFAULT_CHARACTER_HEIGHT_TILES,
+      { ...DEFAULT_GRID_STYLE, ...(init.grid ?? {}) },
       init.zone ?? '',
     );
   }
@@ -226,15 +252,22 @@ export class WorldDocument {
       defaultTile: definition.defaultTile,
       projection: definition.projection,
       characterHeightTiles: definition.characterHeightTiles,
+      grid: definition.grid,
       zone: definition.zone,
     });
 
     for (const placed of definition.tiles ?? []) {
       const index = document.paletteIndexOf(placed.tile);
       if (index < 0) {
-        throw new WorldDocumentError(`tile "${placed.tile}" is not defined by tile set "${tileSet.id}"`);
+        throw new WorldDocumentError(
+          `tile "${placed.tile}" is not defined by tile set "${tileSet.id}"`,
+        );
       }
-      const cell = indexIn({ col: placed.at[0], row: placed.at[1] }, document.width, document.height);
+      const cell = indexIn(
+        { col: placed.at[0], row: placed.at[1] },
+        document.width,
+        document.height,
+      );
       if (cell < 0) {
         throw new WorldDocumentError(
           `tile at [${placed.at[0]}, ${placed.at[1]}] is outside the ${definition.width}x${definition.height} map`,
@@ -254,6 +287,7 @@ export class WorldDocument {
       templateId: entity.templateId,
       at: { col: entity.at[0], row: entity.at[1] },
       tags: [...(entity.tags ?? [])],
+      properties: { ...(entity.properties ?? {}) },
     }));
     document.locations = (definition.locations ?? []).map((location) => ({
       id: location.id,
@@ -294,6 +328,20 @@ export class WorldDocument {
    */
   get elevationRange(): { min: number; max: number } {
     return { min: this.minElevation, max: this.maxElevation };
+  }
+
+  /** Changes how both editor preview and gameplay draw the grid. */
+  setGridStyle(patch: Partial<GridStyle>): boolean {
+    const next = { ...this.grid, ...patch };
+    if (
+      next.lineWidth === this.grid.lineWidth &&
+      next.color === this.grid.color &&
+      next.alpha === this.grid.alpha
+    ) {
+      return false;
+    }
+    this.grid = next;
+    return true;
   }
 
   /** Authored elevation at a cell, or `0` when out of bounds. */
@@ -391,8 +439,7 @@ export class WorldDocument {
     const before = this.artChoices.get(index) ?? ROLLED_ART;
     const after: DocumentCellArt = {
       surface: patch.surface === undefined ? before.surface : patch.surface,
-      elevationTile:
-        patch.elevationTile === undefined ? before.elevationTile : patch.elevationTile,
+      elevationTile: patch.elevationTile === undefined ? before.elevationTile : patch.elevationTile,
       elevation: patch.elevation === undefined ? before.elevation : patch.elevation,
     };
     if (
@@ -426,7 +473,10 @@ export class WorldDocument {
 
   /** The entity standing on a cell, if any. */
   entityAt(cell: Offset): DocumentEntity | null {
-    return this.entities.find((entity) => entity.at.col === cell.col && entity.at.row === cell.row) ?? null;
+    return (
+      this.entities.find((entity) => entity.at.col === cell.col && entity.at.row === cell.row) ??
+      null
+    );
   }
 
   /**
@@ -438,7 +488,12 @@ export class WorldDocument {
    *
    * @returns the placed entity, or `null` when the cell is out of bounds.
    */
-  placeEntity(cell: Offset, templateId: string, singleton: boolean): DocumentEntity | null {
+  placeEntity(
+    cell: Offset,
+    templateId: string,
+    singleton: boolean,
+    previewCharacter: string | null = null,
+  ): DocumentEntity | null {
     if (indexIn(cell, this.width, this.height) < 0) {
       return null;
     }
@@ -453,9 +508,26 @@ export class WorldDocument {
       templateId,
       at: { col: cell.col, row: cell.row },
       tags: [],
+      properties:
+        previewCharacter === null ? {} : { [PREVIEW_CHARACTER_PROPERTY]: previewCharacter },
     };
     this.entities.push(entity);
     return entity;
+  }
+
+  /** Chooses the character drawn for one entity in the map editor only. */
+  setEntityPreviewCharacter(id: string, character: string | null): boolean {
+    const entity = this.entities.find((candidate) => candidate.id === id);
+    if (entity === undefined || previewCharacterOf(entity) === character) {
+      return false;
+    }
+
+    if (character === null) {
+      delete entity.properties[PREVIEW_CHARACTER_PROPERTY];
+    } else {
+      entity.properties[PREVIEW_CHARACTER_PROPERTY] = character;
+    }
+    return true;
   }
 
   /** Removes whatever entity stands on `cell`. */
@@ -600,6 +672,9 @@ export class WorldDocument {
       templateId: entity.templateId,
       at: [entity.at.col, entity.at.row],
       ...(entity.tags.length > 0 ? { tags: [...entity.tags] } : {}),
+      ...(Object.keys(entity.properties).length > 0
+        ? { properties: { ...entity.properties } }
+        : {}),
     }));
 
     const locations: LocationDefinition[] = this.locations.map((location) => ({
@@ -632,6 +707,7 @@ export class WorldDocument {
       ...(this.characterHeightTiles === DEFAULT_CHARACTER_HEIGHT_TILES
         ? {}
         : { characterHeightTiles: this.characterHeightTiles }),
+      ...(sameGridStyle(this.grid, DEFAULT_GRID_STYLE) ? {} : { grid: { ...this.grid } }),
       tileSetId: this.tileSetId,
       defaultTile: this.defaultTile.id,
       tiles,
@@ -653,6 +729,12 @@ export class WorldDocument {
     }
     return counts;
   }
+}
+
+function sameGridStyle(left: GridStyle, right: Readonly<GridStyle>): boolean {
+  return (
+    left.lineWidth === right.lineWidth && left.color === right.color && left.alpha === right.alpha
+  );
 }
 
 /** A file's `art` block as the document holds it, or `null` when it chose nothing. */

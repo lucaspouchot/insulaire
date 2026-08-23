@@ -16,8 +16,9 @@ use crate::hex::OffsetCoord;
 /// Version 2 added [`PlacedTile::art`], the per-cell art choice
 /// (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`). Every field of it
 /// is defaulted, so a version 1 file parses unchanged and rolls its art as it
-/// always did; the shipped files say `2`.
-pub const WORLD_SCHEMA_VERSION: u32 = 2;
+/// always did. Version 3 adds the authored [`GridStyle`]; older files receive
+/// its defaults and keep the renderer's former appearance.
+pub const WORLD_SCHEMA_VERSION: u32 = 3;
 
 /// Hex orientation of an authored map.
 ///
@@ -64,6 +65,57 @@ pub const MIN_CHARACTER_HEIGHT_TILES: f32 = 0.25;
 /// Largest map-wide character scale accepted by content validation.
 pub const MAX_CHARACTER_HEIGHT_TILES: f32 = 8.0;
 
+/// Default grid stroke width in screen pixels.
+pub const DEFAULT_GRID_LINE_WIDTH: u8 = 1;
+
+/// Smallest authored grid stroke width.
+pub const MIN_GRID_LINE_WIDTH: u8 = 1;
+
+/// Largest authored grid stroke width.
+pub const MAX_GRID_LINE_WIDTH: u8 = 4;
+
+/// Default grid stroke colour. Opacity is authored separately.
+pub const DEFAULT_GRID_COLOR: &str = "#000000";
+
+/// Default grid stroke opacity.
+pub const DEFAULT_GRID_ALPHA: f32 = 0.25;
+
+/// Authored appearance of the hex grid in both the editor and Play.
+///
+/// Visibility remains a per-view toggle. These values define how the grid is
+/// drawn whenever it is visible; no simulation rule reads them.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GridStyle {
+    /// Stroke width in screen pixels, independent of camera zoom.
+    #[serde(default = "default_grid_line_width")]
+    pub line_width: u8,
+    /// Six-digit RGB colour. Alpha is kept separate for the editor control.
+    #[serde(default = "default_grid_color")]
+    pub color: String,
+    /// Stroke opacity from transparent (`0`) to opaque (`1`).
+    #[serde(default = "default_grid_alpha")]
+    pub alpha: f32,
+}
+
+impl Default for GridStyle {
+    fn default() -> Self {
+        Self {
+            line_width: DEFAULT_GRID_LINE_WIDTH,
+            color: DEFAULT_GRID_COLOR.to_owned(),
+            alpha: DEFAULT_GRID_ALPHA,
+        }
+    }
+}
+
+impl GridStyle {
+    /// `true` when the renderer's historical appearance is unchanged.
+    #[must_use]
+    pub fn is_default(&self) -> bool {
+        self == &Self::default()
+    }
+}
+
 /// An authored hexagonal world.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -105,6 +157,9 @@ pub struct WorldDefinition {
         skip_serializing_if = "is_default_character_height_tiles"
     )]
     pub character_height_tiles: f32,
+    /// Grid appearance shared by editor preview and gameplay rendering.
+    #[serde(default, skip_serializing_if = "GridStyle::is_default")]
+    pub grid: GridStyle,
     /// Id of the [`crate::TileSetDefinition`] this world paints with.
     pub tile_set_id: String,
     /// Tile id used for every cell not listed in [`tiles`](Self::tiles).
@@ -337,13 +392,25 @@ fn is_default_character_height_tiles(value: &f32) -> bool {
     *value == DEFAULT_CHARACTER_HEIGHT_TILES
 }
 
+const fn default_grid_line_width() -> u8 {
+    DEFAULT_GRID_LINE_WIDTH
+}
+
+fn default_grid_color() -> String {
+    DEFAULT_GRID_COLOR.to_owned()
+}
+
+const fn default_grid_alpha() -> f32 {
+    DEFAULT_GRID_ALPHA
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     const MINIMAL: &str = r#"{
         "id": "tiny",
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "width": 3,
         "height": 2,
         "tileSetId": "mvp_terrain",
@@ -360,6 +427,7 @@ mod tests {
         assert_eq!(world.orientation, HexOrientation::Pointy);
         assert_eq!(world.projection, ProjectionMode::TopDown);
         assert_eq!(world.character_height_tiles, DEFAULT_CHARACTER_HEIGHT_TILES);
+        assert_eq!(world.grid, GridStyle::default());
         assert_eq!(world.cell_count(), 6);
         assert!(world.locations.is_empty());
         assert_eq!(world.metadata, WorldMetadata::default());
@@ -382,6 +450,7 @@ mod tests {
         let serialised = serde_json::to_string(&world).expect("serialise");
         assert!(!serialised.contains("\"elevation\""));
         assert!(!serialised.contains("\"properties\""));
+        assert!(!serialised.contains("\"grid\""));
         // An unzoned map writes no zone, so files predating the field are
         // re-exported byte for byte.
         assert!(!serialised.contains("\"zone\""));
@@ -457,5 +526,25 @@ mod tests {
         assert!(serde_json::to_string(&custom)
             .expect("serialise")
             .contains(r#""characterHeightTiles":2.75"#));
+    }
+
+    #[test]
+    fn a_custom_grid_style_round_trips_and_the_default_is_omitted() {
+        let default: WorldDefinition = serde_json::from_str(MINIMAL).expect("parse");
+        assert!(!serde_json::to_string(&default)
+            .expect("serialise")
+            .contains("\"grid\""));
+
+        let custom: WorldDefinition = serde_json::from_str(&MINIMAL.replace(
+            r#""width": 3,"#,
+            r##""width": 3, "grid": { "lineWidth": 3, "color": "#336699", "alpha": 0.6 },"##,
+        ))
+        .expect("parse");
+        assert_eq!(custom.grid.line_width, 3);
+        assert_eq!(custom.grid.color, "#336699");
+        assert_eq!(custom.grid.alpha, 0.6);
+        assert!(serde_json::to_string(&custom)
+            .expect("serialise")
+            .contains(r##""grid":{"lineWidth":3,"color":"#336699","alpha":0.6}"##));
     }
 }

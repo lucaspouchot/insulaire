@@ -54,7 +54,6 @@ import { SpriteRegistry } from './sprite-registry';
 const CHROME = {
   background: '#11161d',
   outOfBounds: '#0b0e13',
-  grid: 'rgba(0, 0, 0, 0.25)',
   hover: 'rgba(255, 255, 255, 0.85)',
   selection: '#ffd166',
   locationFill: 'rgba(255, 255, 255, 0.85)',
@@ -792,9 +791,12 @@ export class HexMapRenderer {
         this.addHexTo(grid, cell, this.elevationOf(model, cell));
       }
     }
-    ctx.lineWidth = 1 / this.camera.zoom;
-    ctx.strokeStyle = CHROME.grid;
+    ctx.save();
+    ctx.lineWidth = model.gridLineWidth / this.camera.zoom;
+    ctx.strokeStyle = model.gridLineColor;
+    ctx.globalAlpha = model.gridLineAlpha;
     ctx.stroke(grid);
+    ctx.restore();
   }
 
   private drawOverlays(

@@ -37,7 +37,13 @@ const world: WorldDefinition = {
   defaultTile: 'grass',
   tiles: [{ at: [1, 1], tile: 'water' }],
   entities: [
-    { id: 'player_1', templateId: 'player', at: [0, 0], tags: ['hero'] },
+    {
+      id: 'player_1',
+      templateId: 'player',
+      at: [0, 0],
+      tags: ['hero'],
+      properties: { previewCharacter: 'human_player', quest: 'arrival' },
+    },
     { id: 'monster_1', templateId: 'monster', at: [3, 2] },
   ],
   locations: [{ id: 'loc_a', at: [2, 0], name: 'Somewhere' }],
@@ -65,6 +71,10 @@ describe('WorldDocument', () => {
     expect(document.placedEntities).toHaveLength(2);
     expect(document.entityAt(offset(0, 0))?.id).toBe('player_1');
     expect(document.entityAt(offset(0, 0))?.tags).toEqual(['hero']);
+    expect(document.entityAt(offset(0, 0))?.properties).toEqual({
+      previewCharacter: 'human_player',
+      quest: 'arrival',
+    });
     expect(document.placedLocations[0]?.name).toBe('Somewhere');
     expect(document.metadata['author']).toBe('tests');
   });
@@ -130,9 +140,26 @@ describe('WorldDocument', () => {
     expect(documentFor().characterHeightTiles).toBe(2);
     expect(documentFor().toDefinition()).not.toHaveProperty('characterHeightTiles');
 
-    const document = WorldDocument.fromDefinition({ ...world, characterHeightTiles: 3.25 }, tileSet);
+    const document = WorldDocument.fromDefinition(
+      { ...world, characterHeightTiles: 3.25 },
+      tileSet,
+    );
     expect(document.characterHeightTiles).toBe(3.25);
     expect(document.toDefinition().characterHeightTiles).toBe(3.25);
+  });
+
+  it('carries authored grid appearance and omits the default', () => {
+    expect(documentFor().grid).toEqual({ lineWidth: 1, color: '#000000', alpha: 0.25 });
+    expect(documentFor().toDefinition()).not.toHaveProperty('grid');
+
+    const grid = { lineWidth: 3, color: '#336699', alpha: 0.6 };
+    const document = WorldDocument.fromDefinition({ ...world, grid }, tileSet);
+    expect(document.grid).toEqual(grid);
+    expect(document.toDefinition().grid).toEqual(grid);
+
+    expect(document.setGridStyle({ alpha: 0.8 })).toBe(true);
+    expect(document.setGridStyle({ alpha: 0.8 })).toBe(false);
+    expect(document.toDefinition().grid).toEqual({ ...grid, alpha: 0.8 });
   });
 
   it('raises and lowers cells within the packed byte range', () => {
@@ -194,7 +221,9 @@ describe('WorldDocument', () => {
     // Placing on an occupied hex replaces the occupant.
     document.placeEntity(offset(2, 1), 'monster', false);
     expect(document.entityAt(offset(2, 1))?.templateId).toBe('monster');
-    expect(document.placedEntities.filter((entity) => entity.templateId === 'player')).toHaveLength(0);
+    expect(document.placedEntities.filter((entity) => entity.templateId === 'player')).toHaveLength(
+      0,
+    );
   });
 
   it('generates unique entity ids', () => {
@@ -206,6 +235,26 @@ describe('WorldDocument', () => {
     const ids = document.placedEntities.map((entity) => entity.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids).toEqual(['monster_1', 'monster_2', 'monster_3']);
+  });
+
+  it('stores an editor preview character without disturbing other properties', () => {
+    const document = documentFor();
+
+    expect(document.setEntityPreviewCharacter('player_1', 'forest_hero')).toBe(true);
+    expect(document.setEntityPreviewCharacter('player_1', 'forest_hero')).toBe(false);
+    expect(document.entityAt(offset(0, 0))?.properties).toEqual({
+      previewCharacter: 'forest_hero',
+      quest: 'arrival',
+    });
+
+    expect(document.setEntityPreviewCharacter('player_1', null)).toBe(true);
+    expect(document.entityAt(offset(0, 0))?.properties).toEqual({ quest: 'arrival' });
+
+    const monster = document.placeEntity(offset(2, 1), 'monster', false, 'bog_beast');
+    expect(monster?.properties).toEqual({ previewCharacter: 'bog_beast' });
+    expect(
+      document.toDefinition().entities?.find((entity) => entity.id === monster?.id)?.properties,
+    ).toEqual({ previewCharacter: 'bog_beast' });
   });
 
   it('refuses placements outside the map', () => {
@@ -246,7 +295,14 @@ describe('WorldDocument', () => {
     ).toThrow(WorldDocumentError);
 
     expect(() =>
-      WorldDocument.create({ id: 'x', name: 'X', width: 4, height: 4, tileSet, defaultTile: 'lava' }),
+      WorldDocument.create({
+        id: 'x',
+        name: 'X',
+        width: 4,
+        height: 4,
+        tileSet,
+        defaultTile: 'lava',
+      }),
     ).toThrow(WorldDocumentError);
 
     expect(() => WorldDocument.fromDefinition({ ...world, tileSetId: 'other' }, tileSet)).toThrow(
@@ -273,9 +329,7 @@ describe('WorldDocument', () => {
       const document = WorldDocument.fromDefinition(
         {
           ...world,
-          tiles: [
-            { at: [1, 1], tile: 'water', art: { surface: 'c', elevationTile: 'grass' } },
-          ],
+          tiles: [{ at: [1, 1], tile: 'water', art: { surface: 'c', elevationTile: 'grass' } }],
         },
         tileSet,
       );
@@ -368,7 +422,9 @@ describe('WorldDocument', () => {
     it('round-trips links through a definition', () => {
       const withLink: WorldDefinition = {
         ...world,
-        links: [{ id: 'door', at: [3, 0], targetWorld: 'inside', targetAt: [0, 1], tags: ['door'] }],
+        links: [
+          { id: 'door', at: [3, 0], targetWorld: 'inside', targetAt: [0, 1], tags: ['door'] },
+        ],
       };
       const document = WorldDocument.fromDefinition(withLink, tileSet);
 

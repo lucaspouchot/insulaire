@@ -9,7 +9,7 @@
  * Positions cross as offset pairs `[col, row]`.
  */
 
-import { SettingsValues, TileArt, TileArtGeometry } from '../content/content-types';
+import { GridStyle, SettingsValues, TileArt, TileArtGeometry } from '../content/content-types';
 
 /** `[col, row]` in odd-r offset coordinates. */
 export type OffsetWire = [number, number];
@@ -135,6 +135,8 @@ export interface WorldView {
   projection: string;
   /** Projected tile-face heights occupied by a 128-pixel character canvas. */
   characterHeightTiles: number;
+  /** Authored grid appearance shared by editor and Play. */
+  grid: GridStyle;
   tileSetId: string;
   /** The pixel grid the tile set's images are authored on. */
   tileArt: TileArtGeometry;
