@@ -328,6 +328,21 @@ const EN: StringTree = {
         animations: 'Animations',
         noAnimations: 'This character does not move yet.',
         addAnimation: 'New animation',
+        animationRole: 'Gameplay role',
+        animationRoleNone: 'None — preview only',
+        animationRoleHint:
+          'A precise hex direction overrides Move left/right. Without an override, east-facing directions use Move right and west-facing directions use Move left.',
+        animationRoles: {
+          idle: 'Idle',
+          moveLeft: 'Move left (three directions)',
+          moveRight: 'Move right (three directions)',
+          moveEast: 'Move east',
+          moveNorthEast: 'Move north-east',
+          moveNorthWest: 'Move north-west',
+          moveWest: 'Move west',
+          moveSouthWest: 'Move south-west',
+          moveSouthEast: 'Move south-east',
+        },
         mirrorOf: 'Mirror of',
         notAMirror: 'Nothing — its own animation',
         mirrorHint:
@@ -713,6 +728,8 @@ const EN: StringTree = {
           zone: 'zone',
           tileSet: 'tile set',
           projection: 'projection',
+          characterHeight: '128 px character height',
+          characterHeightValue: '{value} tiles',
           source: 'source',
           edited: ' · edited',
           entities: 'entities',
@@ -721,6 +738,9 @@ const EN: StringTree = {
           mapIdAria: 'Map id',
           mapNameAria: 'Map name',
           mapZoneAria: 'Map zone',
+          characterHeightAria: 'Height of a 128 pixel character in tiles',
+          characterHeightHint:
+            'A 128 px character spans this many projected tile faces; smaller and larger canvases keep their relative scale.',
           removeMap: 'Remove map',
         },
         message: {
@@ -1162,6 +1182,21 @@ const FR: StringTree = {
         animations: 'Animations',
         noAnimations: 'Ce personnage ne bouge pas encore.',
         addAnimation: 'Nouvelle animation',
+        animationRole: 'Rôle en jeu',
+        animationRoleNone: 'Aucun — aperçu uniquement',
+        animationRoleHint:
+          'Une direction hexagonale précise remplace Gauche/Droite. Sans remplacement, les directions orientées à l’est utilisent Droite et celles orientées à l’ouest utilisent Gauche.',
+        animationRoles: {
+          idle: 'Inactif',
+          moveLeft: 'Déplacement à gauche (trois directions)',
+          moveRight: 'Déplacement à droite (trois directions)',
+          moveEast: 'Déplacement vers l’est',
+          moveNorthEast: 'Déplacement vers le nord-est',
+          moveNorthWest: 'Déplacement vers le nord-ouest',
+          moveWest: 'Déplacement vers l’ouest',
+          moveSouthWest: 'Déplacement vers le sud-ouest',
+          moveSouthEast: 'Déplacement vers le sud-est',
+        },
         mirrorOf: 'Miroir de',
         notAMirror: 'Rien — sa propre animation',
         mirrorHint:
@@ -1553,6 +1588,8 @@ const FR: StringTree = {
           zone: 'zone',
           tileSet: 'tileset',
           projection: 'projection',
+          characterHeight: 'hauteur d’un personnage de 128 px',
+          characterHeightValue: '{value} tuiles',
           source: 'source',
           edited: ' · modifiée',
           entities: 'entités',
@@ -1561,6 +1598,9 @@ const FR: StringTree = {
           mapIdAria: 'Identifiant de la carte',
           mapNameAria: 'Nom de la carte',
           mapZoneAria: 'Zone de la carte',
+          characterHeightAria: 'Hauteur d’un personnage de 128 pixels en tuiles',
+          characterHeightHint:
+            'Un personnage de 128 px occupe ce nombre de faces de tuile projetées ; les autres canevas gardent leur échelle relative.',
           removeMap: 'Supprimer la carte',
         },
         message: {

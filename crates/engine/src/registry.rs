@@ -10,10 +10,10 @@ use std::collections::BTreeMap;
 use insulaire_world::{
     validate_character, validate_character_creation, validate_locales, validate_project,
     validate_project_links, validate_project_zones, validate_referenced_keys, validate_settings,
-    validate_tile_set, validate_title_screen, validate_world, CharacterCreationDefinition,
-    CharacterCreationResult, CharacterDefinition, LoadedContent, LocaleBundle, ProjectDefinition,
-    ResolvedCharacter, SettingsDefinition, TemplateRegistry, TileSetDefinition,
-    TitleScreenDefinition, ValidationReport, WorldDefinition,
+    validate_tile_set, validate_title_screen, validate_world, AnimationRole,
+    CharacterCreationDefinition, CharacterCreationResult, CharacterDefinition, LoadedContent,
+    LocaleBundle, ProjectDefinition, ResolvedCharacter, SettingsDefinition, TemplateRegistry,
+    TileSetDefinition, TitleScreenDefinition, ValidationReport, WorldDefinition,
 };
 
 use crate::error::EngineError;
@@ -560,6 +560,28 @@ impl ContentRegistry {
         self.characters
             .get(id)
             .map(|character| character.resolve_at(values, animation, time_ms))
+            .ok_or_else(|| EngineError::UnknownContent {
+                kind: "character".to_owned(),
+                id: id.to_owned(),
+            })
+    }
+
+    /// Resolves the animation assigned to a gameplay role, including the
+    /// direction-specific to left/right fallback.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::UnknownContent`] when no such definition is registered.
+    pub fn resolve_character_role(
+        &self,
+        id: &str,
+        values: &serde_json::Value,
+        role: AnimationRole,
+        time_ms: u32,
+    ) -> Result<ResolvedCharacter, EngineError> {
+        self.characters
+            .get(id)
+            .map(|character| character.resolve_role_at(values, role, time_ms))
             .ok_or_else(|| EngineError::UnknownContent {
                 kind: "character".to_owned(),
                 id: id.to_owned(),

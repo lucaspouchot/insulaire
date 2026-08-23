@@ -733,4 +733,119 @@ describe('HexMapRenderer hover', () => {
 
     expect(canvas.strokes).toHaveLength(1);
   });
+
+  it('draws an entity character instead of its fallback glyph', () => {
+    const drawn: string[] = [];
+    const text: string[] = [];
+    const scales: Array<readonly [number, number]> = [];
+    const context = new Proxy(
+      {},
+      {
+        get(_target, property) {
+          if (property === 'drawImage') {
+            return (image: { asset?: string }) => drawn.push(image.asset ?? '?');
+          }
+          if (property === 'fillText') {
+            return (value: string) => text.push(value);
+          }
+          if (property === 'scale') {
+            return (x: number, y: number) => scales.push([x, y]);
+          }
+          if (property === 'measureText') {
+            return () => ({ width: 0 });
+          }
+          return () => undefined;
+        },
+        set() {
+          return true;
+        },
+      },
+    ) as CanvasRenderingContext2D;
+    const source: SpriteSource = {
+      image: (asset) => ({ asset }) as unknown as CanvasImageSource,
+      preload: () => Promise.resolve(),
+    };
+    const renderer = new HexMapRenderer(context, LAYOUT, new Camera(), undefined, source);
+    renderer.setModel({
+      ...flatModel(),
+      entities: [
+        {
+          id: 'p',
+          at: offset(1, 1),
+          visualId: 'entity.player',
+          fallbackColor: '#fff',
+          glyph: '@',
+          emphasised: true,
+        },
+      ],
+    });
+    renderer.setEntityCharacter('p', {
+      character: 'hero',
+      category: 'player',
+      resolution: { width: 32, height: 64 },
+      values: {},
+      mirrored: false,
+      layers: [
+        {
+          layer: 'body',
+          variant: 'default',
+          rect: [8, 8, 16, 56],
+          origin: [0, 0],
+          offset: [0, 0],
+          asset: 'hero.png',
+          tint: '',
+        },
+      ],
+    });
+
+    renderer.draw(400, 400);
+
+    expect(drawn).toEqual(['hero.png']);
+    expect(text).not.toContain('@');
+    // The first scale is the camera. A 64px character is half the 128px
+    // reference, so at the default ratio it stands one 48px tile high.
+    expect(scales).toContainEqual([0.75, 0.75]);
+  });
+
+  it('interpolates fallback entities between their authoritative cells', () => {
+    const arcs: Array<readonly [number, number]> = [];
+    const context = new Proxy(
+      {},
+      {
+        get(_target, property) {
+          if (property === 'arc') {
+            return (x: number, y: number) => arcs.push([x, y]);
+          }
+          if (property === 'measureText') {
+            return () => ({ width: 0 });
+          }
+          return () => undefined;
+        },
+        set: () => true,
+      },
+    ) as CanvasRenderingContext2D;
+    const from = offset(0, 0);
+    const to = offset(1, 0);
+    const renderer = new HexMapRenderer(context, LAYOUT, new Camera());
+    renderer.setModel({
+      ...flatModel(),
+      entities: [
+        {
+          id: 'monster',
+          at: to,
+          motion: { from, progress: 0.5 },
+          visualId: 'entity.monster',
+          fallbackColor: '#c00',
+          glyph: 'M',
+          emphasised: false,
+        },
+      ],
+    });
+
+    renderer.draw(400, 400);
+
+    const start = LAYOUT.centerOf(from);
+    const end = LAYOUT.centerOf(to);
+    expect(arcs).toContainEqual([(start.x + end.x) / 2, (start.y + end.y) / 2]);
+  });
 });

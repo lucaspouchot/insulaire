@@ -515,6 +515,33 @@ impl JsonEngine {
         ok(&resolved)
     }
 
+    /// Resolves the animation assigned to a gameplay role; returns a
+    /// [`ResolvedCharacter`](insulaire_world::ResolvedCharacter).
+    ///
+    /// # Errors
+    ///
+    /// `parse` for an unknown role or malformed values, `unknownContent` when
+    /// no definition has that id.
+    pub fn resolve_character_role(
+        &self,
+        id: &str,
+        values_json: &str,
+        role: &str,
+        time_ms: u32,
+    ) -> JsonResult {
+        let role = role.parse().map_err(|message| {
+            err(&EngineError::Parse {
+                what: "character animation role".to_owned(),
+                message,
+            })
+        })?;
+        let resolved = self
+            .inner
+            .resolve_character_role(id, values_json, role, time_ms)
+            .map_err(|error| err(&error))?;
+        ok(&resolved)
+    }
+
     /// Returns the current [`GameSnapshot`](crate::GameSnapshot).
     ///
     /// # Errors
@@ -839,6 +866,7 @@ mod tests {
 
         let view = json(&engine.world_view("w").expect("view"));
         assert_eq!(view["projection"], "isometric");
+        assert_eq!(view["characterHeightTiles"], 2.0);
 
         let elevations = engine.elevation_buffer("w").expect("buffer");
         assert_eq!(elevations.len(), 64);
@@ -856,6 +884,23 @@ mod tests {
         assert_eq!(
             json(&loaded().world_view("w").expect("view"))["projection"],
             "topDown"
+        );
+    }
+
+    #[test]
+    fn an_authored_character_scale_crosses_the_json_boundary() {
+        let mut engine = JsonEngine::new();
+        engine.load_tile_set(TILE_SET).expect("tile set loads");
+        engine
+            .load_world(&WORLD.replace(
+                r#""width": 8"#,
+                r#""characterHeightTiles": 3.5, "width": 8"#,
+            ))
+            .expect("world loads");
+
+        assert_eq!(
+            json(&engine.world_view("w").expect("view"))["characterHeightTiles"],
+            3.5
         );
     }
 
@@ -1611,7 +1656,7 @@ mod tests {
                               "sprite": { "asset": "assets/characters/hair.png" } } ] }
         ],
         "animations": [
-            { "id": "idle", "name": "Idle", "frames": 4, "frameDurationMs": 120,
+            { "id": "idle", "name": "Idle", "role": "idle", "frames": 4, "frameDurationMs": 120,
               "looping": true, "tracks": [
                 { "node": "body", "keyframes": [
                     { "frame": 0, "offset": [0, 0] },
@@ -1647,6 +1692,7 @@ mod tests {
         assert_eq!(up["pose"]["animation"], "idle");
         assert_eq!(up["pose"]["frame"], 1);
         assert_eq!(up["pose"]["timeMs"], 120);
+        assert_eq!(up["pose"]["durationMs"], 480);
 
         // Only the body has a keyframe at frame 1; the head and the hair follow.
         for index in 0..3 {
@@ -1674,6 +1720,35 @@ mod tests {
                 .expect("later"),
         );
         assert_eq!(looped["layers"], down["layers"]);
+    }
+
+    #[test]
+    fn gameplay_resolves_a_character_by_validated_animation_role() {
+        let mut engine = loaded();
+        engine.load_character(ANIMATED).expect("loads");
+
+        let idle = json(
+            &engine
+                .resolve_character_role("knight", "{}", "idle", 120)
+                .expect("role"),
+        );
+        assert_eq!(idle["pose"]["animation"], "idle");
+        assert_eq!(idle["pose"]["frame"], 1);
+
+        let rest = json(
+            &engine
+                .resolve_character_role("knight", "{}", "moveNorthWest", 120)
+                .expect("unassigned role is rest"),
+        );
+        assert!(rest.get("pose").is_none());
+        assert_eq!(
+            code(
+                &engine
+                    .resolve_character_role("knight", "{}", "walk", 0)
+                    .expect_err("unknown role")
+            ),
+            "parse"
+        );
     }
 
     /// An id nobody declares is the rest pose, not an error: the editor deletes

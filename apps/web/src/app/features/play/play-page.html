@@ -109,7 +109,7 @@
       <section class="panel">
         <h2>{{ 'ui.play.controls.heading' | t }}</h2>
         <div class="button-row">
-          <button type="button" (click)="wait()" [disabled]="busy()">
+          <button type="button" (click)="wait()" [disabled]="busy() || moving()">
             {{ 'ui.play.controls.wait' | t }}
           </button>
         </div>

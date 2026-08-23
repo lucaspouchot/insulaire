@@ -55,6 +55,15 @@ pub const MIN_ELEVATION: i32 = i8::MIN as i32;
 /// Highest authored elevation. Elevation is packed as one signed byte per cell.
 pub const MAX_ELEVATION: i32 = i8::MAX as i32;
 
+/// Default height, in projected tile faces, of a 128-pixel character canvas.
+pub const DEFAULT_CHARACTER_HEIGHT_TILES: f32 = 2.0;
+
+/// Smallest map-wide character scale accepted by content validation.
+pub const MIN_CHARACTER_HEIGHT_TILES: f32 = 0.25;
+
+/// Largest map-wide character scale accepted by content validation.
+pub const MAX_CHARACTER_HEIGHT_TILES: f32 = 8.0;
+
 /// An authored hexagonal world.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -87,6 +96,15 @@ pub struct WorldDefinition {
     /// How the renderer projects this map. Never read by the simulation.
     #[serde(default)]
     pub projection: ProjectionMode,
+    /// Projected tile-face heights occupied by a 128-pixel character canvas.
+    ///
+    /// Presentation only. Rust transports and validates it; the map renderer
+    /// applies it (`docs/adr/ADR-0044-map-entity-presentation.md`).
+    #[serde(
+        default = "default_character_height_tiles",
+        skip_serializing_if = "is_default_character_height_tiles"
+    )]
+    pub character_height_tiles: f32,
     /// Id of the [`crate::TileSetDefinition`] this world paints with.
     pub tile_set_id: String,
     /// Tile id used for every cell not listed in [`tiles`](Self::tiles).
@@ -310,6 +328,15 @@ fn is_zero(value: &i32) -> bool {
     *value == 0
 }
 
+fn default_character_height_tiles() -> f32 {
+    DEFAULT_CHARACTER_HEIGHT_TILES
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)] // required shape for `skip_serializing_if`
+fn is_default_character_height_tiles(value: &f32) -> bool {
+    *value == DEFAULT_CHARACTER_HEIGHT_TILES
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -332,6 +359,7 @@ mod tests {
         let world: WorldDefinition = serde_json::from_str(MINIMAL).expect("parse");
         assert_eq!(world.orientation, HexOrientation::Pointy);
         assert_eq!(world.projection, ProjectionMode::TopDown);
+        assert_eq!(world.character_height_tiles, DEFAULT_CHARACTER_HEIGHT_TILES);
         assert_eq!(world.cell_count(), 6);
         assert!(world.locations.is_empty());
         assert_eq!(world.metadata, WorldMetadata::default());
@@ -411,5 +439,23 @@ mod tests {
 
         let serialised = serde_json::to_string(&world).expect("serialise");
         assert!(serialised.contains(r#""projection":"isometric""#));
+    }
+
+    #[test]
+    fn a_custom_character_height_round_trips_and_the_default_is_omitted() {
+        let default: WorldDefinition = serde_json::from_str(MINIMAL).expect("parse");
+        assert!(!serde_json::to_string(&default)
+            .expect("serialise")
+            .contains("characterHeightTiles"));
+
+        let custom: WorldDefinition = serde_json::from_str(&MINIMAL.replace(
+            r#""width": 3,"#,
+            r#""width": 3, "characterHeightTiles": 2.75,"#,
+        ))
+        .expect("parse");
+        assert_eq!(custom.character_height_tiles, 2.75);
+        assert!(serde_json::to_string(&custom)
+            .expect("serialise")
+            .contains(r#""characterHeightTiles":2.75"#));
     }
 }

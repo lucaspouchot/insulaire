@@ -59,6 +59,20 @@
             (change)="setName($any($event.target).value)"
           />
         </label>
+        <label class="row">
+          <span>{{ 'ui.editor.character.animationRole' | t }}</span>
+          <select [disabled]="!writable()" (change)="setRole($any($event.target).value)">
+            <option value="" [selected]="!open.role">
+              {{ 'ui.editor.character.animationRoleNone' | t }}
+            </option>
+            @for (role of animationRoles; track role.id) {
+              <option [value]="role.id" [selected]="role.id === open.role">
+                {{ role.labelKey | t }}
+              </option>
+            }
+          </select>
+        </label>
+        <p class="hint">{{ 'ui.editor.character.animationRoleHint' | t }}</p>
         <!--
         A mirror is another animation seen the other way round: it borrows its
         timing, its tracks and its sprites, so there is nothing else to set.

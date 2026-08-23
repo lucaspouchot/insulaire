@@ -31,7 +31,9 @@
 import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
 
 import {
+  ANIMATION_ROLES,
   Animation,
+  AnimationRole,
   AnimationTrack,
   CharacterDefinition,
   CharacterLayer,
@@ -141,6 +143,7 @@ export class CharacterAnimator {
 
   protected readonly speeds = PLAYBACK_SPEEDS;
   protected readonly maxFrames = MAX_ANIMATION_FRAMES;
+  protected readonly animationRoles = ANIMATION_ROLES;
 
   protected readonly animations = computed<readonly Animation[]>(
     () => this.document().animations ?? [],
@@ -380,6 +383,12 @@ export class CharacterAnimator {
   protected setName(name: string): void {
     this.patchAnimation((animation) => {
       animation.name = name;
+    });
+  }
+
+  protected setRole(raw: string): void {
+    this.patchAnimation((animation) => {
+      animation.role = raw.length === 0 ? undefined : (raw as AnimationRole);
     });
   }
 

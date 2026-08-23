@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use serde_json::Value;
 
-use crate::animation::{Animation, PixelOffset, MAX_ANIMATION_FRAMES};
+use crate::animation::{Animation, AnimationRole, PixelOffset, MAX_ANIMATION_FRAMES};
 use crate::character::{
     CharacterDefinition, CharacterLayer, ColorSource, LayerVariant, CHARACTER_SCHEMA_VERSION,
     MAX_SPRITE_RESOLUTION,
@@ -21,8 +21,8 @@ use crate::character_creation::{
     CHARACTER_CREATION_SCHEMA_VERSION,
 };
 use crate::definition::{
-    HexOrientation, LinkTrigger, WorldDefinition, MAX_ELEVATION, MIN_ELEVATION,
-    WORLD_SCHEMA_VERSION,
+    HexOrientation, LinkTrigger, WorldDefinition, MAX_CHARACTER_HEIGHT_TILES, MAX_ELEVATION,
+    MIN_CHARACTER_HEIGHT_TILES, MIN_ELEVATION, WORLD_SCHEMA_VERSION,
 };
 use crate::hex::OffsetCoord;
 use crate::locale::{missing_keys, LocaleBundle};
@@ -489,6 +489,18 @@ fn validate_world_header(world: &WorldDefinition, issues: &mut Vec<ValidationIss
             "world.unsupportedOrientation",
             "orientation",
             "only the `pointy` orientation is implemented",
+        ));
+    }
+    if !world.character_height_tiles.is_finite()
+        || !(MIN_CHARACTER_HEIGHT_TILES..=MAX_CHARACTER_HEIGHT_TILES)
+            .contains(&world.character_height_tiles)
+    {
+        issues.push(ValidationIssue::error(
+            "world.characterHeightTilesOutOfRange",
+            "characterHeightTiles",
+            format!(
+                "characterHeightTiles must be between {MIN_CHARACTER_HEIGHT_TILES} and {MAX_CHARACTER_HEIGHT_TILES}"
+            ),
         ));
     }
 }
@@ -2276,6 +2288,7 @@ fn ancestor_cycle(character: &CharacterDefinition, layer: &CharacterLayer) -> Op
 fn animation_issues(character: &CharacterDefinition) -> Vec<ValidationIssue> {
     let mut issues = Vec::new();
     let mut ids: BTreeSet<&str> = BTreeSet::new();
+    let mut roles: BTreeSet<AnimationRole> = BTreeSet::new();
 
     for (index, animation) in character.animations.iter().enumerate() {
         let path = format!("animations[{index}]");
@@ -2291,6 +2304,19 @@ fn animation_issues(character: &CharacterDefinition) -> Vec<ValidationIssue> {
                 format!("{path}.id"),
                 format!("animation `{}` is declared twice", animation.id),
             ));
+        }
+
+        if let Some(role) = animation.role {
+            if !roles.insert(role) {
+                issues.push(ValidationIssue::error(
+                    "character.duplicateAnimationRole",
+                    format!("{path}.role"),
+                    format!(
+                        "animation role `{}` is already assigned to another animation",
+                        role.as_str()
+                    ),
+                ));
+            }
         }
 
         if let Some(source_id) = animation.mirror_of.as_deref() {
@@ -2782,6 +2808,34 @@ mod tests {
         );
         assert!(report.valid, "unexpected issues: {:?}", report.issues);
         assert_eq!(report.summary(), "content is valid");
+    }
+
+    #[test]
+    fn character_height_tiles_must_stay_inside_the_authored_range() {
+        for value in [0.0, MAX_CHARACTER_HEIGHT_TILES + 0.25, f32::NAN] {
+            let mut world = testing::sample_world();
+            world.character_height_tiles = value;
+            let report = validate_world(
+                &world,
+                Some(&testing::sample_tile_set()),
+                &TemplateRegistry::builtin(),
+            );
+            assert!(!report.valid);
+            assert!(codes(&report).contains(&"world.characterHeightTilesOutOfRange"));
+        }
+
+        let mut world = testing::sample_world();
+        world.character_height_tiles = MIN_CHARACTER_HEIGHT_TILES;
+        let report = validate_world(
+            &world,
+            Some(&testing::sample_tile_set()),
+            &TemplateRegistry::builtin(),
+        );
+        assert!(
+            report.valid,
+            "the bound itself is legal: {:?}",
+            report.issues
+        );
     }
 
     #[test]
@@ -3926,6 +3980,19 @@ mod tests {
         let report = validate_character(&character);
         assert!(!report.valid);
         assert!(codes(&report).contains(&"character.duplicateAnimation"));
+    }
+
+    #[test]
+    fn two_animations_may_not_claim_the_same_gameplay_role() {
+        let mut character = animated_character();
+        character.animations[0].role = Some(AnimationRole::Idle);
+        let mut twin = character.animations[0].clone();
+        twin.id = "other_idle".to_owned();
+        character.animations.push(twin);
+
+        let report = validate_character(&character);
+        assert!(!report.valid);
+        assert!(codes(&report).contains(&"character.duplicateAnimationRole"));
     }
 
     #[test]

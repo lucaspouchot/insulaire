@@ -70,7 +70,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::animation::{Animation, PixelOffset, Transform};
+use crate::animation::{Animation, AnimationRole, PixelOffset, Transform};
 use crate::settings::{resolve_controls, ControlDefinition};
 
 /// Highest character schema version this build understands.
@@ -460,6 +460,41 @@ impl CharacterDefinition {
         self.animations.iter().find(|animation| animation.id == id)
     }
 
+    /// The animation gameplay assigned to `role`, including left/right
+    /// movement fallback for an exact hex direction.
+    ///
+    /// The exact role always wins. This lets a two-cycle character cover every
+    /// direction while another overrides any or all of the six
+    /// (`docs/adr/ADR-0043-gameplay-selects-character-animations-by-role.md`).
+    #[must_use]
+    pub fn animation_for_role(&self, role: AnimationRole) -> Option<&Animation> {
+        self.animations
+            .iter()
+            .find(|animation| animation.role == Some(role))
+            .or_else(|| {
+                role.fallback().and_then(|fallback| {
+                    self.animations
+                        .iter()
+                        .find(|animation| animation.role == Some(fallback))
+                })
+            })
+    }
+
+    /// Resolves the animation assigned to a gameplay role, or the rest pose
+    /// when the definition assigned none.
+    #[must_use]
+    pub fn resolve_role_at(
+        &self,
+        values: &Value,
+        role: AnimationRole,
+        time_ms: u32,
+    ) -> ResolvedCharacter {
+        let animation = self
+            .animation_for_role(role)
+            .map(|animation| animation.id.as_str());
+        self.resolve_at(values, animation, time_ms)
+    }
+
     /// Fills in defaults, drops what is not declared, and clamps what is.
     ///
     /// The same function the settings screen resolves through, so a
@@ -600,6 +635,7 @@ impl CharacterDefinition {
                 // The *source's* clock: a mirror has no timing of its own.
                 frame: playing.map_or(0, |source| source.frame_at(time_ms)),
                 time_ms,
+                duration_ms: playing.map_or(0, Animation::duration_ms),
                 values: pose,
             }),
         }
@@ -741,6 +777,11 @@ pub struct ResolvedPose {
     pub frame: u32,
     /// The time it was asked for, in milliseconds since the animation started.
     pub time_ms: u32,
+    /// One pass through the animation, using the source timing for a mirror.
+    ///
+    /// Gameplay uses this to return from a movement cycle to idle without
+    /// re-reading or reimplementing animation timing.
+    pub duration_ms: u32,
     /// The pose values in force at that moment, which is what chose the
     /// variants. Empty when the animation sets none.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -1465,7 +1506,7 @@ mod tests {
                   "sprite": { "asset": "a/legs_stand.png" } } ] }
         ],
         "animations": [
-            { "id": "walking_left", "name": "Walking left", "frames": 4,
+            { "id": "walking_left", "name": "Walking left", "role": "moveLeft", "frames": 4,
               "frameDurationMs": 120, "looping": true,
               "pose": { "view": "side" },
               "poses": [
@@ -1479,13 +1520,46 @@ mod tests {
                     { "frame": 1, "offset": [0, -1] },
                     { "frame": 2, "offset": [0, 0] },
                     { "frame": 3, "offset": [0, -1] } ] } ] },
-            { "id": "walking_right", "name": "Walking right",
+            { "id": "walking_right", "name": "Walking right", "role": "moveRight",
               "mirrorOf": "walking_left" }
         ]
     }"#;
 
     fn walker() -> CharacterDefinition {
         serde_json::from_str(WALKER).expect("parse")
+    }
+
+    #[test]
+    fn exact_movement_roles_override_the_left_right_fallback() {
+        let mut walker = walker();
+
+        let west =
+            walker.resolve_role_at(&serde_json::json!({}), AnimationRole::MoveNorthWest, 120);
+        assert_eq!(
+            west.pose.as_ref().map(|pose| pose.animation.as_str()),
+            Some("walking_left")
+        );
+        assert!(!west.mirrored);
+
+        let east =
+            walker.resolve_role_at(&serde_json::json!({}), AnimationRole::MoveSouthEast, 120);
+        assert_eq!(
+            east.pose.as_ref().map(|pose| pose.animation.as_str()),
+            Some("walking_right")
+        );
+        assert!(east.mirrored);
+        assert_eq!(east.pose.as_ref().map(|pose| pose.duration_ms), Some(480));
+
+        let mut north_west = walker.animations[0].clone();
+        north_west.id = "climb_north_west".to_owned();
+        north_west.role = Some(AnimationRole::MoveNorthWest);
+        walker.animations.push(north_west);
+        let exact =
+            walker.resolve_role_at(&serde_json::json!({}), AnimationRole::MoveNorthWest, 120);
+        assert_eq!(
+            exact.pose.as_ref().map(|pose| pose.animation.as_str()),
+            Some("climb_north_west")
+        );
     }
 
     /// The animation redraws the character, frame by frame, through the

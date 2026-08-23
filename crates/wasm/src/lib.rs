@@ -495,6 +495,26 @@ impl InsulaireEngine {
             .map_err(to_js)
     }
 
+    /// Resolves the animation assigned to a gameplay role such as `idle` or
+    /// `moveNorthWest`. Exact movement directions fall back to the authored
+    /// left/right roles when absent.
+    ///
+    /// # Errors
+    ///
+    /// `parse` or `unknownContent`.
+    #[wasm_bindgen(js_name = resolveCharacterRole)]
+    pub fn resolve_character_role(
+        &self,
+        id: &str,
+        values_json: &str,
+        role: &str,
+        time_ms: u32,
+    ) -> Result<String, JsValue> {
+        self.inner
+            .resolve_character_role(id, values_json, role, time_ms)
+            .map_err(to_js)
+    }
+
     /// Returns the current `GameSnapshot`.
     ///
     /// # Errors

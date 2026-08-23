@@ -16,6 +16,11 @@
  * drift is a seam between two layers that were drawn to touch
  * (`docs/adr/ADR-0029-characters-are-composed-sprites.md`).
  *
+ * The map renderer keeps this contract by drawing a native resolved canvas
+ * here, then applying one outer transform to the whole character. That
+ * map-only scale is measured in tile faces and may be fractional
+ * (`docs/adr/ADR-0044-map-entity-presentation.md`); layer coordinates never are.
+ *
  * # Mirroring
  *
  * The one decision this file makes is *where* to draw, and a mirrored

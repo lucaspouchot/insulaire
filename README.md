@@ -731,6 +731,8 @@ Read in order:
 40. **ADR-0040 — tile art travels as one bundle**
 41. **ADR-0041 — a cliff is stacked in bands**
 42. **ADR-0042 — character creation is a generic authored workflow**
+43. **ADR-0043 — gameplay selects character animations by role**
+44. **ADR-0044 — scale and move map entities in presentation space**
 
 `CLAUDE.md` contains project-level instructions for Claude Code and other coding
 agents.

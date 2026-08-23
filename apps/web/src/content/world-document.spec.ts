@@ -126,6 +126,15 @@ describe('WorldDocument', () => {
     expect(exported.tiles).toEqual(authored.tiles);
   });
 
+  it('carries a custom map character scale and omits the default', () => {
+    expect(documentFor().characterHeightTiles).toBe(2);
+    expect(documentFor().toDefinition()).not.toHaveProperty('characterHeightTiles');
+
+    const document = WorldDocument.fromDefinition({ ...world, characterHeightTiles: 3.25 }, tileSet);
+    expect(document.characterHeightTiles).toBe(3.25);
+    expect(document.toDefinition().characterHeightTiles).toBe(3.25);
+  });
+
   it('raises and lowers cells within the packed byte range', () => {
     const document = documentFor();
 

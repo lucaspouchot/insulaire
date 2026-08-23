@@ -54,10 +54,12 @@
 //! loop ask the same question of the same code. Frames are how an author
 //! *writes* an animation; milliseconds are how anything *plays* one.
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+use crate::HexDirection;
 
 /// Most frames an animation may declare.
 ///
@@ -72,6 +74,95 @@ pub const MAX_ANIMATION_FRAMES: u32 = 240;
 /// usually authored at, and slow enough that a four-frame idle reads as
 /// breathing rather than as a flicker.
 pub const DEFAULT_FRAME_DURATION_MS: u32 = 120;
+
+/// The gameplay situation an animation illustrates.
+///
+/// Ids stay author-owned: a cycle called `shuffle` can be the idle and one
+/// called `stride` can be movement to the west. This role is the validated seam
+/// gameplay uses instead of guessing from either name
+/// (`docs/adr/ADR-0043-gameplay-selects-character-animations-by-role.md`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AnimationRole {
+    /// The character is not moving.
+    Idle,
+    /// Generic movement facing left, the fallback for the three western directions.
+    MoveLeft,
+    /// Generic movement facing right, the fallback for the three eastern directions.
+    MoveRight,
+    /// Movement to the axial east neighbour.
+    MoveEast,
+    /// Movement to the axial north-east neighbour.
+    MoveNorthEast,
+    /// Movement to the axial north-west neighbour.
+    MoveNorthWest,
+    /// Movement to the axial west neighbour.
+    MoveWest,
+    /// Movement to the axial south-west neighbour.
+    MoveSouthWest,
+    /// Movement to the axial south-east neighbour.
+    MoveSouthEast,
+}
+
+impl AnimationRole {
+    /// The exact movement role for a hex direction.
+    #[must_use]
+    pub const fn for_direction(direction: HexDirection) -> Self {
+        match direction {
+            HexDirection::East => Self::MoveEast,
+            HexDirection::NorthEast => Self::MoveNorthEast,
+            HexDirection::NorthWest => Self::MoveNorthWest,
+            HexDirection::West => Self::MoveWest,
+            HexDirection::SouthWest => Self::MoveSouthWest,
+            HexDirection::SouthEast => Self::MoveSouthEast,
+        }
+    }
+
+    /// The two-direction role used when no exact movement animation exists.
+    #[must_use]
+    pub const fn fallback(self) -> Option<Self> {
+        match self {
+            Self::MoveEast | Self::MoveNorthEast | Self::MoveSouthEast => Some(Self::MoveRight),
+            Self::MoveWest | Self::MoveNorthWest | Self::MoveSouthWest => Some(Self::MoveLeft),
+            Self::Idle | Self::MoveLeft | Self::MoveRight => None,
+        }
+    }
+
+    /// The camel-case value written in character JSON and sent across WASM.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Idle => "idle",
+            Self::MoveLeft => "moveLeft",
+            Self::MoveRight => "moveRight",
+            Self::MoveEast => "moveEast",
+            Self::MoveNorthEast => "moveNorthEast",
+            Self::MoveNorthWest => "moveNorthWest",
+            Self::MoveWest => "moveWest",
+            Self::MoveSouthWest => "moveSouthWest",
+            Self::MoveSouthEast => "moveSouthEast",
+        }
+    }
+}
+
+impl FromStr for AnimationRole {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "idle" => Ok(Self::Idle),
+            "moveLeft" => Ok(Self::MoveLeft),
+            "moveRight" => Ok(Self::MoveRight),
+            "moveEast" => Ok(Self::MoveEast),
+            "moveNorthEast" => Ok(Self::MoveNorthEast),
+            "moveNorthWest" => Ok(Self::MoveNorthWest),
+            "moveWest" => Ok(Self::MoveWest),
+            "moveSouthWest" => Ok(Self::MoveSouthWest),
+            "moveSouthEast" => Ok(Self::MoveSouthEast),
+            _ => Err(format!("unknown character animation role `{value}`")),
+        }
+    }
+}
 
 /// A translation in whole canvas pixels: `[x, y]`.
 ///
@@ -333,6 +424,12 @@ pub struct Animation {
     /// Name shown in the editor. Not player-facing text, so not a key.
     #[serde(default)]
     pub name: String,
+    /// Gameplay situation this animation illustrates.
+    ///
+    /// Optional because animations may exist only for a portrait, cutscene or
+    /// editor preview. Gameplay selects this field and never interprets the id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<AnimationRole>,
     /// Id of the animation this one is the **mirror image** of.
     ///
     /// A character that walks left walks right the same way, seen the other way
@@ -391,6 +488,7 @@ impl Default for Animation {
         Self {
             id: String::new(),
             name: String::new(),
+            role: None,
             mirror_of: None,
             frames: 1,
             frame_duration_ms: DEFAULT_FRAME_DURATION_MS,
@@ -540,6 +638,30 @@ mod tests {
             serde_json::from_str(&serde_json::to_string(&animation).expect("serialise"))
                 .expect("reparse");
         assert_eq!(animation, reparsed);
+    }
+
+    #[test]
+    fn gameplay_roles_round_trip_and_group_hex_directions_left_or_right() {
+        let animation: Animation =
+            serde_json::from_str(r#"{ "id": "shuffle", "role": "moveLeft", "frames": 2 }"#)
+                .expect("parse");
+        assert_eq!(animation.role, Some(AnimationRole::MoveLeft));
+        assert_eq!(
+            AnimationRole::for_direction(HexDirection::NorthWest).fallback(),
+            Some(AnimationRole::MoveLeft)
+        );
+        assert_eq!(
+            AnimationRole::for_direction(HexDirection::SouthEast).fallback(),
+            Some(AnimationRole::MoveRight)
+        );
+        assert_eq!(
+            "moveNorthEast".parse::<AnimationRole>(),
+            Ok(AnimationRole::MoveNorthEast)
+        );
+        assert!("walk".parse::<AnimationRole>().is_err());
+
+        let json = serde_json::to_string(&animation).expect("serialise");
+        assert!(json.contains(r#""role":"moveLeft""#));
     }
 
     /// The transform is flattened, so a keyframe is one readable line.

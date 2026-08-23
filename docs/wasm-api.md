@@ -400,6 +400,9 @@ the engine wraps a looping animation and holds a finished one on its last frame
 (ADR-0031). The animation's offset is **already in each layer's `rect`**, so a
 renderer needs no animation code at all; the payload also carries the `offset`
 that was applied and a `pose` saying which frame it is.
+`pose.durationMs` is one complete pass (the source's timing for a mirror), so a
+host can return a transient movement animation to idle without duplicating the
+timing calculation.
 
 An animation may also set **pose values**, which join the customisation while it
 plays and are what a variant's `when` selects on, so `layers[].variant` and
@@ -415,6 +418,29 @@ not declare** — that is not an error, because an editor previewing a definitio
 mid-edit may still be asking for one it has just deleted.
 
 Errors: `parse`, `unknownContent`.
+
+### `resolveCharacterRole(id, valuesJson, role, timeMs): ResolvedCharacter`
+
+```ts
+resolveCharacterRole(
+  id: string,
+  valuesJson: string,
+  role: 'idle' | 'moveLeft' | 'moveRight' |
+    'moveEast' | 'moveNorthEast' | 'moveNorthWest' |
+    'moveWest' | 'moveSouthWest' | 'moveSouthEast',
+  timeMs: number,
+): ResolvedCharacter
+```
+
+The gameplay-facing form of character resolution (ADR-0043). It selects the
+animation that declared `role`; an exact hex-direction role falls back to
+`moveRight` on the eastern side and `moveLeft` on the western side. An
+unassigned role is the rest pose. The returned payload and all customisation,
+pose, mirror and timing rules are otherwise exactly those of
+`resolveCharacter`.
+
+Errors: `parse` for malformed values or an unknown role, `unknownContent` for
+an unknown character id.
 
 ### `previewCharacter(characterJson, valuesJson, animation?, timeMs): ResolvedCharacter`
 
@@ -519,6 +545,7 @@ Everything the renderer needs about a world **except** the per-cell buffers.
   "height": 20,
   "orientation": "pointy",
   "projection": "isometric",
+  "characterHeightTiles": 2,
   "tileSetId": "mvp_terrain",
   "tileArt": { "width": 64, "surfaceHeight": 40, "elevationHeight": 26, "elevationStep": 8 },
   "palette": [
@@ -542,6 +569,11 @@ Fetched **once per world**.
 `projection` is `"topDown"` or `"isometric"`, republished from the authored
 world. The engine transports it and never interprets it — it has no notion of
 pixels (ADR-0014, ADR-0016).
+
+`characterHeightTiles` is likewise transported presentation: the projected
+tile-face heights occupied by a 128-pixel character canvas, defaulting to `2`.
+The renderer combines it with the hex layout and projection; no game rule reads
+it (`docs/adr/ADR-0044-map-entity-presentation.md`).
 
 `tileArt` is the tile set's authored pixel grid — `width`, `flatHeight`,
 `surfaceHeight`, `elevationHeight`, `elevationStep` — transported the same way
@@ -666,6 +698,11 @@ Rejection codes: `noPlayer`, `sameHex`, `outOfBounds`, `notAdjacent`,
 Event types: `entityMoved`, `entityHeld` (a chaser had nowhere closer to go),
 `tickAdvanced`, `actionRejected`, plus the map-link events below. Events are
 ordered causally: the player's move, then the clock, then the monsters.
+
+The browser presents every `entityMoved` — player and monsters alike — as a
+linear glide from `from` to `to`. The returned `state` already holds `to` and
+remains authoritative throughout; interpolation is render state and never a
+second simulation snapshot (ADR-0044).
 
 #### Changing map
 

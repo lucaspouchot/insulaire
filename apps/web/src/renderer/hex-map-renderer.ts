@@ -36,7 +36,7 @@ import { bandLevels, shoulderLine } from '../content/content-types';
 import { Offset, fromIndex, indexIn, sameOffset } from '../core/hex/hex-coords';
 import { HexLayout, Point, Rect } from '../core/hex/hex-layout';
 import { Camera } from './camera';
-import { SpriteSource } from './character-renderer';
+import { SpriteSource, drawCharacter } from './character-renderer';
 import { Projection } from './projection';
 import { TileAppearance, TileAppearanceCache } from './tile-appearance';
 import { ResolvedTileRender, projectionRatiosOf } from './tile-art';
@@ -83,6 +83,9 @@ const CHROME = {
  * tall cell stops responding to the pointer.
  */
 const ROW_SEARCH_SLACK = 2;
+
+/** Canvas height the map-wide character ratio is defined against. */
+const REFERENCE_CHARACTER_HEIGHT_PX = 128;
 
 /** Statistics from the last frame, surfaced in the UI to make culling visible. */
 export interface FrameStats {
@@ -187,6 +190,28 @@ export class HexMapRenderer {
     this.model = model;
     this.projection = this.projectionFor(model);
     this.appearances.use(model);
+  }
+
+  /**
+   * Replaces one entity's resolved character without rebuilding the immutable
+   * terrain model.
+   *
+   * A gameplay animation changes at frame rate while tile art does not. Keeping
+   * this narrow update out of {@link setModel} avoids re-indexing the world's
+   * shared pictures for every pose
+   * (`docs/adr/ADR-0043-gameplay-selects-character-animations-by-role.md`).
+   */
+  setEntityCharacter(id: string, character: RenderEntity['character']): void {
+    this.setEntities(
+      this.model.entities.map((entity) =>
+        entity.id === id ? { ...entity, character } : entity,
+      ),
+    );
+  }
+
+  /** Replaces only entity presentation, leaving terrain picture caches alone. */
+  setEntities(entities: readonly RenderEntity[]): void {
+    this.model = { ...this.model, entities };
   }
 
   /**
@@ -523,7 +548,7 @@ export class HexMapRenderer {
     }));
     const locationsByRow = groupByRow(model.locations, (location) => location.at);
     const linksByRow = groupByRow(model.links, (link) => link.at);
-    const entitiesByRow = groupByRow(model.entities, (entity) => entity.at);
+    const entitiesByRow = groupByRow(model.entities, (entity) => this.entityDepthCell(entity));
 
     let cellsDrawn = 0;
     for (let row = range.minRow; row <= range.maxRow; row += 1) {
@@ -901,7 +926,7 @@ export class HexMapRenderer {
   }
 
   /**
-   * Draws entity tokens.
+   * Draws authored characters and fallback entity tokens.
    *
    * In isometric mode a token stands *on* its tile rather than lying flat: an
    * elliptical shadow marks the hex it occupies and the disc sits above it.
@@ -915,7 +940,38 @@ export class HexMapRenderer {
     ctx.textBaseline = 'middle';
 
     for (const entity of entities) {
-      const base = this.centerOf(model, entity.at);
+      const base = this.entityBaseOf(model, entity);
+
+      if (entity.character !== null && entity.character !== undefined) {
+        // Layer placement stays in authored whole pixels. The map applies one
+        // outer scale so a 128px canvas occupies the number of tile faces this
+        // world authored (`docs/adr/ADR-0044-map-entity-presentation.md`).
+        const { width, height } = entity.character.resolution;
+        const scale = this.characterScale(model);
+        ctx.beginPath();
+        ctx.ellipse(
+          base.x,
+          base.y,
+          radius * 0.9,
+          radius * 0.9 * (standing ? this.projection.tilt : 0.45),
+          0,
+          0,
+          Math.PI * 2,
+        );
+        ctx.fillStyle = CHROME.entityShadow;
+        ctx.fill();
+        if (entity.emphasised) {
+          ctx.lineWidth = 2 / this.camera.zoom;
+          ctx.strokeStyle = CHROME.selection;
+          ctx.stroke();
+        }
+        ctx.save();
+        ctx.translate(base.x, base.y);
+        ctx.scale(scale, scale);
+        drawCharacter(ctx, entity.character, { x: -width / 2, y: -height, width, height }, this.images ?? undefined);
+        ctx.restore();
+        continue;
+      }
 
       if (standing) {
         ctx.beginPath();
@@ -982,6 +1038,40 @@ export class HexMapRenderer {
   /** The projected centre of a cell, on top of whatever it is standing on. */
   private centerOf(model: RenderModel, cell: Offset): Point {
     return this.projection.project(this.layout.centerOf(cell), this.elevationOf(model, cell));
+  }
+
+  /** Projected ground point, interpolated while an entity is visually moving. */
+  private entityBaseOf(model: RenderModel, entity: RenderEntity): Point {
+    const destination = this.centerOf(model, entity.at);
+    if (entity.motion === undefined) {
+      return destination;
+    }
+    const origin = this.centerOf(model, entity.motion.from);
+    const progress = Math.max(0, Math.min(1, entity.motion.progress));
+    return {
+      x: origin.x + (destination.x - origin.x) * progress,
+      y: origin.y + (destination.y - origin.y) * progress,
+    };
+  }
+
+  /** Row band used for terrain occlusion during a diagonal transition. */
+  private entityDepthCell(entity: RenderEntity): Offset {
+    if (entity.motion === undefined) {
+      return entity.at;
+    }
+    return {
+      col: entity.at.col,
+      row: Math.round(
+        entity.motion.from.row +
+          (entity.at.row - entity.motion.from.row) * Math.max(0, Math.min(1, entity.motion.progress)),
+      ),
+    };
+  }
+
+  /** Fractional outer scale from authored character pixels to map units. */
+  private characterScale(model: RenderModel): number {
+    const tileFaceHeight = this.layout.hexHeight * this.projection.tilt;
+    return (tileFaceHeight * model.characterHeightTiles) / REFERENCE_CHARACTER_HEIGHT_PX;
   }
 
   /**

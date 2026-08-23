@@ -124,6 +124,26 @@
           "name": "editor-map-isometric-again",
           "selector": ".viewport-tools button:nth-of-type(6)",
           "settleMs": 1200
+        },
+        {
+          "name": "editor-map-settings",
+          "selector": ".tools button:nth-of-type(1)",
+          "settleMs": 700
+        },
+        {
+          "name": "editor-map-character-scale",
+          "selector": ".dock.right section.panel:last-child details.fold summary",
+          "settleMs": 700
+        },
+        {
+          "name": "editor-map-character-scale-input",
+          "selector": ".dock.right input[type=number][max=\"8\"]",
+          "settleMs": 500
+        },
+        {
+          "name": "editor-map-paint-again",
+          "selector": ".tools button:nth-of-type(2)",
+          "settleMs": 700
         }
       ]
     },
@@ -244,6 +264,13 @@
         [0.268, 0.511],
         [0.52, 0.52]
       ]
+    },
+    {
+      "name": "play-motion",
+      "path": "/play",
+      "settleMs": 2000,
+      "clickSettleMs": 200,
+      "clicks": [[0.268, 0.511]]
     }
   ]
 }

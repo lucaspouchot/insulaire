@@ -47,11 +47,17 @@ import { EntitySnapshot, GameSnapshot, SimEvent, WorldView } from '../../../engi
 import { Camera } from '../../../renderer/camera';
 import { CanvasView } from '../../../renderer/canvas-view';
 import { SpriteCache } from '../../../renderer/character-renderer';
+import { movementProgress, roleForMove } from '../../../renderer/character-animation';
 import { HexMapRenderer } from '../../../renderer/hex-map-renderer';
 import { toProjectionMode } from '../../../renderer/projection';
 import { RenderModel, cellArtChoicesOf, elevationRangeOf } from '../../../renderer/render-model';
 import { SpriteRegistry } from '../../../renderer/sprite-registry';
 import { TILE_ART_BUNDLE } from '../../../content/sprite-bundle';
+import {
+  AnimationRole,
+  CharacterValues,
+  ResolvedCharacter,
+} from '../../../content/content-types';
 import { serializeWorld } from '../../../content/world-serializer';
 import { I18nService } from '../../i18n/i18n.service';
 import { SettingsService } from '../../settings/settings.service';
@@ -64,6 +70,24 @@ import { TitleScreenService } from '../../services/title-screen.service';
 
 const HEX_SIZE = 28;
 const MAX_LOG_ENTRIES = 60;
+/** Character poses are sampled at 30 fps; authored sprite frames are slower. */
+const PRESENTATION_FRAME_MS = 1000 / 30;
+/** Glide used when no authored player movement cycle supplies a duration. */
+const DEFAULT_ENTITY_MOVE_MS = 400;
+
+interface PlayerAnimation {
+  readonly role: AnimationRole;
+  readonly startedAt: number;
+  /** `null` for idle; movement returns to idle after one pass. */
+  readonly endsAt: number | null;
+}
+
+/** Presentation-only interpolation of one authoritative movement event. */
+interface EntityMotion {
+  readonly from: readonly [number, number];
+  readonly startedAt: number;
+  readonly durationMs: number;
+}
 
 /**
  * One rendered line in the event log.
@@ -113,6 +137,12 @@ export class PlayPage implements AfterViewInit, OnDestroy {
   );
 
   private logCounter = 0;
+  private playerAnimation: PlayerAnimation | null = null;
+  private playerCharacter: ResolvedCharacter | null = null;
+  private presentationFrame = 0;
+  private presentationSampledAt = 0;
+  private readonly entityMotions = new Map<string, EntityMotion>();
+  private readonly warmedCharacterAssets = new Set<string>();
 
   protected readonly worldView = signal<WorldView | null>(null);
   protected readonly snapshot = signal<GameSnapshot | null>(null);
@@ -123,6 +153,8 @@ export class PlayPage implements AfterViewInit, OnDestroy {
   protected readonly lastRejection = signal<string | null>(null);
   protected readonly error = signal<string | null>(null);
   protected readonly busy = signal(true);
+  /** True while accepted entity movements are being presented between cells. */
+  protected readonly moving = signal(false);
   /** Set while the map is waiting for the pictures it is painted from. */
   protected readonly loadingArt = signal(false);
   protected readonly showGrid = signal(true);
@@ -204,6 +236,9 @@ export class PlayPage implements AfterViewInit, OnDestroy {
   ngOnDestroy(): void {
     // The canvas goes; the game does not. See the note at the top of the file.
     this.view?.dispose();
+    cancelAnimationFrame(this.presentationFrame);
+    this.presentationFrame = 0;
+    this.entityMotions.clear();
   }
 
   // ------------------------------------------------------------------- game
@@ -219,6 +254,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
     this.error.set(null);
     this.lastRejection.set(null);
     this.log.set([]);
+    this.resetPresentation();
 
     try {
       this.registerContent();
@@ -227,6 +263,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       const snapshot = this.engine.createGame(worldId, seed, this.settings.gameSettings());
 
       this.snapshot.set(snapshot);
+      this.startPlayerAnimation('idle');
       this.selected.set(null);
       const view = this.loadWorldIntoRenderer(worldId, true);
 
@@ -251,12 +288,14 @@ export class PlayPage implements AfterViewInit, OnDestroy {
     this.error.set(null);
     this.lastRejection.set(null);
     this.log.set([]);
+    this.resetPresentation();
 
     try {
       this.registerContent();
 
       const snapshot = this.engine.snapshot();
       this.snapshot.set(snapshot);
+      this.startPlayerAnimation('idle');
       this.seed.set(snapshot.seed);
       this.selected.set(null);
       const view = this.loadWorldIntoRenderer(snapshot.worldId, true);
@@ -375,23 +414,38 @@ export class PlayPage implements AfterViewInit, OnDestroy {
    * and a refusal comes back as `accepted: false` with the tick untouched.
    */
   private send(command: { type: 'moveTo'; to: [number, number] } | { type: 'wait' }): void {
-    if (this.busy() || !this.engine.isReady) {
+    if (this.busy() || this.moving() || !this.engine.isReady) {
       return;
     }
     try {
+      const playerId = this.player()?.contentId ?? null;
       const result = this.engine.dispatch(command);
       this.snapshot.set(result.state);
       this.lastRejection.set(result.accepted ? null : (result.rejection?.message ?? 'Refused.'));
       for (const event of result.events) {
         this.logEvent(result.state.tick, event);
       }
+      const movement = result.events.find(
+        (event) => event.type === 'entityMoved' && event.contentId === playerId,
+      );
+      const changedWorld = result.state.worldId !== this.worldView()?.worldId;
 
       // A door changed the map: the engine already swapped the session, the UI
       // just has to draw the world it now says it is on.
-      if (result.state.worldId !== this.worldView()?.worldId) {
+      if (changedWorld) {
+        this.entityMotions.clear();
+        this.moving.set(false);
+        this.startPlayerAnimation('idle');
         this.view?.clearHover();
         this.selected.set(null);
         this.loadWorldIntoRenderer(result.state.worldId, false);
+      } else {
+        const now = performance.now();
+        const duration =
+          movement?.type === 'entityMoved'
+            ? this.startPlayerAnimation(roleForMove(movement.from, movement.to), now)
+            : DEFAULT_ENTITY_MOVE_MS;
+        this.startEntityMotions(result.events, now, duration);
       }
       this.refresh();
     } catch (cause) {
@@ -432,6 +486,9 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       // `CanvasView` before this runs.
       onHover: (cell) => this.hover.set(cell),
       onClick: (cell) => {
+        if (this.moving()) {
+          return;
+        }
         this.selected.set(cell);
         this.moveTo(cell);
       },
@@ -439,6 +496,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       onFrameDrawn: () => this.frameTick.update((value) => value + 1),
     });
     this.view.fit();
+    this.ensurePresentationClock();
   }
 
   /**
@@ -505,20 +563,14 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       height: view.height,
       // Authored by the world, transported by the engine, applied here.
       projection: toProjectionMode(view.projection),
+      characterHeightTiles: view.characterHeightTiles,
       tileArt: view.tileArt,
       palette: view.palette,
       terrain,
       elevation,
       elevationRange,
       artChoices: cellArtChoicesOf(view.artChoices ?? []),
-      entities: (snapshot?.entities ?? []).map((entity) => ({
-        id: entity.contentId,
-        at: { col: entity.at[0], row: entity.at[1] },
-        visualId: entity.visualId,
-        fallbackColor: entity.fallbackColor,
-        glyph: entity.kind === 'player' ? '@' : 'M',
-        emphasised: entity.kind === 'player',
-      })),
+      entities: this.renderEntities(snapshot?.entities ?? []),
       locations: view.locations.map((location) => ({
         id: location.id,
         at: { col: location.at[0], row: location.at[1] },
@@ -541,6 +593,170 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       showGrid: this.showGrid(),
       showCoordinates: false,
     };
+  }
+
+  /**
+   * Starts one semantic animation and resolves its first pose immediately.
+   *
+   * Movement lasts one authored pass even when the source is marked looping;
+   * after that the player returns to idle. Time stays presentation-only and no
+   * tick is spent (`docs/adr/ADR-0043-gameplay-selects-character-animations-by-role.md`).
+   */
+  private startPlayerAnimation(role: AnimationRole, now = performance.now()): number {
+    const first = this.resolvePlayerCharacter(role, 0);
+    this.playerCharacter = first;
+    const duration = Math.max(first?.pose?.durationMs ?? 0, DEFAULT_ENTITY_MOVE_MS);
+    this.playerAnimation = {
+      role,
+      startedAt: now,
+      endsAt: role === 'idle' ? null : now + duration,
+    };
+    this.preloadCharacter(first);
+    this.ensurePresentationClock();
+    return duration;
+  }
+
+  /** Resolves the selected or base player appearance through Rust. */
+  private resolvePlayerCharacter(
+    role: AnimationRole,
+    timeMs: number,
+  ): ResolvedCharacter | null {
+    const creation = this.characterCreation.result();
+    const id =
+      creation?.character ||
+      this.characterCreation.definition()?.baseCharacter ||
+      this.characters.ids()[0];
+    if (id === undefined || id.length === 0) {
+      return null;
+    }
+    const values: CharacterValues = creation?.parameters ?? {};
+    return this.engine.resolveCharacterRole(id, values, role, timeMs);
+  }
+
+  /** Keeps an authored idle alive and samples linear tracks smoothly. */
+  private ensurePresentationClock(): void {
+    if (
+      this.presentationFrame !== 0 ||
+      (this.playerCharacter === null && this.entityMotions.size === 0)
+    ) {
+      return;
+    }
+    const tick = (now: number): void => {
+      this.presentationFrame = 0;
+      if (now - this.presentationSampledAt >= PRESENTATION_FRAME_MS) {
+        this.presentationSampledAt = now;
+        this.advancePresentation(now);
+      }
+      if (this.playerCharacter?.pose !== undefined || this.entityMotions.size > 0) {
+        this.presentationFrame = requestAnimationFrame(tick);
+      }
+    };
+    this.presentationFrame = requestAnimationFrame(tick);
+  }
+
+  private advancePresentation(now: number): void {
+    let state = this.playerAnimation;
+    if (state !== null) {
+      if (state.endsAt !== null && now >= state.endsAt) {
+        state = { role: 'idle', startedAt: now, endsAt: null };
+        this.playerAnimation = state;
+      }
+      const character = this.resolvePlayerCharacter(state.role, now - state.startedAt);
+      this.playerCharacter = character;
+      this.preloadCharacter(character);
+    }
+
+    for (const [id, motion] of this.entityMotions) {
+      if (movementProgress(motion.startedAt, motion.durationMs, now) >= 1) {
+        this.entityMotions.delete(id);
+      }
+    }
+    if (this.entityMotions.size === 0 && this.moving()) {
+      this.moving.set(false);
+    }
+    this.updateRenderedEntities(now);
+  }
+
+  private updateRenderedEntities(now = performance.now()): void {
+    const snapshot = this.snapshot();
+    if (snapshot === null || this.renderer === null) {
+      return;
+    }
+    this.renderer.setEntities(this.renderEntities(snapshot.entities, now));
+    this.view?.invalidate();
+  }
+
+  /** Starts every movement emitted by one tick on the same visual clock. */
+  private startEntityMotions(
+    events: readonly SimEvent[],
+    startedAt: number,
+    durationMs: number,
+  ): void {
+    this.entityMotions.clear();
+    for (const event of events) {
+      if (event.type === 'entityMoved') {
+        this.entityMotions.set(event.contentId, {
+          from: event.from,
+          startedAt,
+          durationMs,
+        });
+      }
+    }
+    this.moving.set(this.entityMotions.size > 0);
+    this.ensurePresentationClock();
+  }
+
+  /** Builds the entities at their authoritative cells plus visual transitions. */
+  private renderEntities(
+    entities: readonly EntitySnapshot[],
+    now = performance.now(),
+  ): RenderModel['entities'] {
+    return entities.map((entity) => {
+      const motion = this.entityMotions.get(entity.contentId);
+      return {
+        id: entity.contentId,
+        at: { col: entity.at[0], row: entity.at[1] },
+        visualId: entity.visualId,
+        fallbackColor: entity.fallbackColor,
+        character: entity.kind === 'player' ? this.playerCharacter : undefined,
+        ...(motion === undefined
+          ? {}
+          : {
+              motion: {
+                from: { col: motion.from[0], row: motion.from[1] },
+                progress: movementProgress(motion.startedAt, motion.durationMs, now),
+              },
+            }),
+        glyph: entity.kind === 'player' ? '@' : 'M',
+        emphasised: entity.kind === 'player',
+      };
+    });
+  }
+
+  /** Clears presentation without touching the engine-owned session. */
+  private resetPresentation(): void {
+    cancelAnimationFrame(this.presentationFrame);
+    this.presentationFrame = 0;
+    this.presentationSampledAt = 0;
+    this.entityMotions.clear();
+    this.moving.set(false);
+    this.playerAnimation = null;
+    this.playerCharacter = null;
+  }
+
+  private preloadCharacter(character: ResolvedCharacter | null): void {
+    if (character === null) {
+      return;
+    }
+    const fresh = character.layers
+      .map((layer) => layer.asset)
+      .filter((asset) => !this.warmedCharacterAssets.has(asset));
+    for (const asset of fresh) {
+      this.warmedCharacterAssets.add(asset);
+    }
+    if (fresh.length > 0) {
+      void this.tileImages.preload(fresh);
+    }
   }
 
   // -------------------------------------------------------------------- log

@@ -596,6 +596,7 @@ fn the_shipped_character_plays_its_idle_through_the_hierarchy() {
 
     let definition = engine.character("human_player").expect("the definition");
     let idle = definition.animation("idle").expect("an idle animation");
+    assert_eq!(idle.role, Some(insulaire_world::AnimationRole::Idle));
     assert!(idle.looping);
     assert_eq!(idle.frames, 4);
     // One track for the body, one correcting the hair: the other five layers
@@ -663,6 +664,7 @@ fn the_shipped_character_walks_left_and_mirrors_it_to_walk_right() {
         .expect("a walking_left animation");
     assert!(walk.looping);
     assert_eq!(walk.frames, 4);
+    assert_eq!(walk.role, Some(insulaire_world::AnimationRole::MoveLeft));
 
     let variant_of = |resolved: &insulaire_world::ResolvedCharacter, layer: &str| {
         resolved
@@ -782,5 +784,26 @@ fn the_shipped_character_walks_left_and_mirrors_it_to_walk_right() {
         .animation("walking_right")
         .expect("a walking_right animation");
     assert_eq!(mirror.mirror_of.as_deref(), Some("walking_left"));
+    assert_eq!(mirror.role, Some(insulaire_world::AnimationRole::MoveRight));
     assert!(mirror.tracks.is_empty());
+
+    let north_west = engine
+        .resolve_character_role(
+            "human_player",
+            "{}",
+            insulaire_world::AnimationRole::MoveNorthWest,
+            130,
+        )
+        .expect("north-west falls back left");
+    let south_east = engine
+        .resolve_character_role(
+            "human_player",
+            "{}",
+            insulaire_world::AnimationRole::MoveSouthEast,
+            130,
+        )
+        .expect("south-east falls back right");
+    assert_eq!(north_west.pose.expect("pose").animation, "walking_left");
+    assert!(south_east.mirrored);
+    assert_eq!(south_east.pose.expect("pose").animation, "walking_right");
 }

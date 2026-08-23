@@ -117,6 +117,23 @@ describe('serializeWorld', () => {
     expect(serializeWorld(base)).not.toContain('"zone"');
   });
 
+  it('writes the map character scale next to its projection', () => {
+    const json = serializeWorld({
+      id: 'w',
+      schemaVersion: 2,
+      width: 1,
+      height: 1,
+      projection: 'isometric',
+      characterHeightTiles: 2.5,
+      tileSetId: 't',
+      defaultTile: 'grass',
+    });
+
+    expect(json).toContain(
+      '  "projection": "isometric",\n  "characterHeightTiles": 2.5,\n',
+    );
+  });
+
   it('handles an empty metadata block', () => {
     const json = serializeWorld({
       id: 'w',

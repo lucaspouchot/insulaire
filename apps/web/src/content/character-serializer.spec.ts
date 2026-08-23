@@ -248,12 +248,18 @@ describe('serializeCharacter', () => {
       layers: [{ id: 'legs', variants: [] }],
       animations: [
         { id: 'walking_left', name: 'Walking left', frames: 2, looping: true, tracks: [] },
-        { id: 'walking_right', name: 'Walking right', mirrorOf: 'walking_left' },
+        {
+          id: 'walking_right',
+          name: 'Walking right',
+          role: 'moveRight',
+          mirrorOf: 'walking_left',
+        },
       ],
     });
 
     expect(json).toContain(
       '    {\n      "id": "walking_right",\n      "name": "Walking right",\n' +
+        '      "role": "moveRight",\n' +
         '      "mirrorOf": "walking_left"\n    }\n',
     );
     // Its timing belongs to its source, so none of it is written.

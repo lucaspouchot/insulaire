@@ -21,6 +21,7 @@
 
 import {
   Animation,
+  AnimationRole,
   AnimationTrack,
   CharacterCategory,
   CharacterLayer,
@@ -44,6 +45,7 @@ export {
 
 export type {
   Animation,
+  AnimationRole,
   AnimationTrack,
   AttachmentPoint,
   CharacterCategory,
@@ -65,6 +67,22 @@ export type {
   Sprite,
   SpriteResolution,
 } from '../../../../content/content-types';
+
+/** Gameplay animation roles, in the order the editor offers them. */
+export const ANIMATION_ROLES: readonly {
+  readonly id: AnimationRole;
+  readonly labelKey: string;
+}[] = [
+  { id: 'idle', labelKey: 'ui.editor.character.animationRoles.idle' },
+  { id: 'moveLeft', labelKey: 'ui.editor.character.animationRoles.moveLeft' },
+  { id: 'moveRight', labelKey: 'ui.editor.character.animationRoles.moveRight' },
+  { id: 'moveEast', labelKey: 'ui.editor.character.animationRoles.moveEast' },
+  { id: 'moveNorthEast', labelKey: 'ui.editor.character.animationRoles.moveNorthEast' },
+  { id: 'moveNorthWest', labelKey: 'ui.editor.character.animationRoles.moveNorthWest' },
+  { id: 'moveWest', labelKey: 'ui.editor.character.animationRoles.moveWest' },
+  { id: 'moveSouthWest', labelKey: 'ui.editor.character.animationRoles.moveSouthWest' },
+  { id: 'moveSouthEast', labelKey: 'ui.editor.character.animationRoles.moveSouthEast' },
+];
 
 /** Every category, in the order the picker offers them, with its label. */
 export const CATEGORIES: readonly { readonly id: CharacterCategory; readonly labelKey: string }[] =

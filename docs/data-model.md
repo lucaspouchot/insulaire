@@ -14,6 +14,8 @@ An authored world contains at minimum:
 - `height`
 - `orientation`
 - `projection` — presentation only; carried, never interpreted by the engine
+- `characterHeightTiles` — presentation-only map scale; a 128-pixel character
+  spans this many projected tile faces (default `2`, ADR-0044)
 - `tileSetId`
 - `defaultTile`
 - `tiles`
@@ -138,7 +140,7 @@ CharacterDefinition
       id, when{ key: value }, rect[x,y,w,h] from the joint,
       order (draw order override), sprite{ asset, tint? }
   animations[]
-    id, name, frames, frameDurationMs, looping
+    id, name, role, frames, frameDurationMs, looping
     mirrorOf                this animation is another one, flipped
     pose{ key: value }      what it draws, for its whole length
     poses[]                 frame, then the values that frame sets
@@ -171,6 +173,12 @@ view; four lines say which leg is forward. And `mirrorOf` makes a whole
 animation the reflection of another, so walking right is one line rather than a
 second cycle to keep in step.
 
+`role` gives an animation optional gameplay meaning without reserving its id
+(ADR-0043). `idle`, `moveLeft` and `moveRight` cover the ordinary runtime. Any
+of the six exact hex directions may override the corresponding left/right
+cycle, so direction-specific art is possible without making six cycles the
+minimum.
+
 A definition describes a *family*; a set of chosen values — a **customisation**
 — describes one member of it. Neither is runtime state: a customisation is a
 plain map of values, which is what lets it be authored, saved or chosen at
@@ -188,15 +196,22 @@ draws the player, a merchant and a dragon.
 The placement and the animation's offset are **already in each box**, which is
 why neither changed a renderer. The payload carries the `origin` each box was
 measured from, the offset that was applied, and the `pose` it came from —
-animation, frame and the pose values in force — for an *editor* to read; the
-renderer ignores all three,
+animation, frame, one-pass duration and the pose values in force — for an
+*editor* or gameplay presentation to read; the renderer ignores all three,
 and never learns that time exists. The one exception is `mirrored`: reflecting
 the boxes without reflecting the pixels inside them is a character taken apart
 and put back wrong, so the renderer flips the canvas as a whole.
 
+On the map, a movement event selects a transient animation role and its
+presentation clock; after one pass the player returns to `idle`. The same event
+creates a linear render transition from `from` to the authoritative snapshot
+cell for every entity kind, including monsters. Neither the role, the clock nor
+the interpolated position belongs to deterministic `GameState` (ADR-0044).
+
 A character's **size** is its canvas, not a scale factor: a rat is authored at
-32×32 and a dragon at 256×256, and a host zooms each by a whole number
-(ADR-0029).
+32×32 and a dragon at 256×256. Character previews zoom each by a whole number
+(ADR-0029); a map applies its one fractional outer transform so a 128-pixel
+canvas occupies `characterHeightTiles` projected tile faces (ADR-0044).
 
 **No type here is specific to the player.** The player's character is one
 `CharacterDefinition` among the project's, and the reason to keep it that way is
@@ -330,7 +345,8 @@ The editor owns a third model, `WorldDocument`
 world being *authored* has no tick, no RNG and no entity handles, and every
 cell is freely mutable. It holds a dense `Uint8Array` of palette indices and a
 dense `Int8Array` of elevations — the same layout the runtime and the renderer
-use — plus the authored `projection` and `zone`, and re-sparsifies on export.
+use — plus the authored `projection`, `characterHeightTiles` and `zone`, and
+re-sparsifies on export.
 Its palette entries carry each tile's `art`, and the document carries the tile
 set's pixel grid, so the editor's renderer and the game's are handed the same
 model.

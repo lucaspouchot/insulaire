@@ -36,8 +36,8 @@
  * `helpKey`, `unit`, `options`, `min`, `max`, `step`, `showIf`, `when` or
  * `tint`, an absent `parent`, `parentAnchor` or `anchors`, a zero variant
  * `order`, an empty `pose` or `poses`, a `step` interpolation, and the whole
- * `animations` list when a character has none. A `mirrorOf` animation writes nothing but its id, name
- * and source.
+ * `animations` list when a character has none. A `mirrorOf` animation writes
+ * nothing but its id, name, optional gameplay role and source.
  * `category` and `resolution` are always written — they are what the
  * file is *about*, and a reader should not have to know the defaults. `scope` is
  * never written: it belongs to the settings vocabulary and means nothing to a
@@ -205,10 +205,13 @@ function animationLines(animation: Animation, indent: number): string[] {
   if (animation.name) {
     lines.push(`${pad}  "name": ${JSON.stringify(animation.name)},`);
   }
+  if (animation.role) {
+    lines.push(`${pad}  "role": ${JSON.stringify(animation.role)},`);
+  }
 
-  // A mirror is three lines and no more: its timing, its tracks and its
-  // sprites all belong to the animation it reflects, and writing fields
-  // nothing reads is how a file starts lying about itself.
+  // A mirror carries identity plus its optional gameplay role and no more: its
+  // timing, its tracks and its sprites all belong to the animation it reflects,
+  // and writing fields nothing reads is how a file starts lying about itself.
   if (animation.mirrorOf) {
     lines.push(`${pad}  "mirrorOf": ${JSON.stringify(animation.mirrorOf)}`);
     lines.push(`${pad}}`);

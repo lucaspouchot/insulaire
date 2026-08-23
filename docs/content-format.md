@@ -320,6 +320,7 @@ since.
   "height": 20,
   "orientation": "pointy",
   "projection": "isometric",
+  "characterHeightTiles": 2,
   "tileSetId": "mvp_terrain",
   "defaultTile": "grass",
   "tiles": [
@@ -354,6 +355,7 @@ since.
 | `width`, `height` | integer | yes | Columns and rows. `1..2048`. |
 | `orientation` | `"pointy"` \| `"flat"` | no | Defaults to `"pointy"`. `"flat"` is reserved and currently rejected. |
 | `projection` | `"topDown"` \| `"isometric"` | no | Defaults to `"topDown"`. How the renderer draws this world; see below. |
+| `characterHeightTiles` | number | no | Defaults to `2`; must be `0.25..=8`. Projected tile-face heights occupied by a 128-pixel character canvas. |
 | `tileSetId` | string | yes | The `TileSetDefinition` this world paints with. |
 | `defaultTile` | string | yes | Tile used for every cell not listed in `tiles`. |
 | `tiles` | PlacedTile[] | no | Only the cells that differ from `defaultTile`. |
@@ -399,6 +401,18 @@ load; the editor re-sparsifies on export.
 it and no rule may depend on it; it decides how the renderer draws the map, and
 it travels to the UI on `WorldView.projection`
 (`docs/adr/ADR-0016-isometric-projection.md`).
+
+`characterHeightTiles` is presentation carried the same way. Its reference is a
+128-pixel character canvas: at the default `2`, the shipped 64×128 human stands
+about two projected tile faces high. Canvas sizes keep their authored relative
+scale, so a 32-pixel creature is one quarter as tall and a 256-pixel creature
+twice as tall. The map editor exposes the ratio; the renderer receives it on
+`WorldView.characterHeightTiles`
+(`docs/adr/ADR-0044-map-entity-presentation.md`).
+
+The optional default made this an additive world field, so
+`WORLD_SCHEMA_VERSION` remains `2`; an older file loads at `2` and canonical
+serialisation omits that default.
 
 | Value | What it draws |
 |---|---|
@@ -810,6 +824,8 @@ Its layers also form a **tree**: a layer hangs off a joint on another one and is
 **placed from there** (ADR-0034), and **animations** move nodes of that tree by
 whole pixels over time (ADR-0031). Both are optional — a definition of roots and
 no animation is a flat stack of sprites, which is how it started.
+An animation may also declare the gameplay **role** it serves, so the runtime
+never guesses meaning from an author-owned id (ADR-0043).
 
 ```json
 {
@@ -997,6 +1013,7 @@ join the customisation while it plays, so layers pick their sprites through the
   {
     "id": "idle",
     "name": "Idle",
+    "role": "idle",
     "frames": 4,
     "frameDurationMs": 140,
     "looping": true,
@@ -1019,6 +1036,7 @@ join the customisation while it plays, so layers pick their sprites through the
 |---|---|---|---|
 | `id` | string | yes | Stable id, unique in the definition — `idle`, `walk`, `attack`. |
 | `name` | string | no | Shown in the editor. Not player-facing, so not a key. |
+| `role` | see below | no | Gameplay situation this animation illustrates. A role may be assigned only once per character. |
 | `frames` | integer | yes | How long it is, `1..=240`. |
 | `frameDurationMs` | integer | no | How long each frame lasts. Default `120`. |
 | `looping` | boolean | no | Whether it starts again when it ends. Default `false`. |
@@ -1051,9 +1069,33 @@ pixels — it buys smoother timing, never a fractional position — and on a loo
 animation it travels from the last keyframe back to the first.
 
 Evaluation takes a **time in milliseconds**, not a frame: a looping animation
-wraps, and one that does not stops inside its last frame. There is **no
-rotation and no scale**, because either would resample the art ADR-0029 exists
-to keep sharp.
+wraps, and one that does not stops inside its last frame. There is **no rotation
+or scale inside an animation**, because either would resample the layer art
+ADR-0029 exists to keep sharp. A map may still apply the single outer character
+scale decided by ADR-0044 after resolution.
+
+### Gameplay animation roles
+
+Animation ids remain arbitrary. Gameplay selects the optional `role` instead
+(`docs/adr/ADR-0043-gameplay-selects-character-animations-by-role.md`):
+
+| Role | Meaning |
+|---|---|
+| `idle` | The character is not moving. |
+| `moveLeft` / `moveRight` | The two ordinary movement cycles. These are enough to cover all six hex directions. |
+| `moveEast`, `moveNorthEast`, `moveNorthWest`, `moveWest`, `moveSouthWest`, `moveSouthEast` | Optional exact-direction overrides. |
+
+For movement, an exact role wins. If none is authored, east, north-east and
+south-east use `moveRight`; west, north-west and south-west use `moveLeft`.
+When neither exists the character draws its rest pose. An absent `idle` also
+draws the rest pose, so gameplay roles are additive and still characters remain
+valid.
+
+Gameplay plays one pass of a movement animation and then returns to `idle`.
+During that pass the entity also interpolates from the movement event's `from`
+cell to its authoritative `to` cell. Monsters and fallback tokens use the same
+glide even when they have no character animation. This clock is presentation
+state: it neither advances a tick nor enters a save.
 
 ### Poses
 
@@ -1064,7 +1106,8 @@ variants' `when`, which is the same mechanism that answers "is a cape worn" or
 
 ```json
 {
-  "id": "walking_left", "frames": 4, "frameDurationMs": 130, "looping": true,
+  "id": "walking_left", "role": "moveLeft",
+  "frames": 4, "frameDurationMs": 130, "looping": true,
   "pose": { "view": "side" },
   "poses": [
     { "frame": 0, "step": "contact" },
@@ -1122,7 +1165,7 @@ Rather than author the second one, an animation may say it **is** the first one
 flipped:
 
 ```json
-{ "id": "walking_right", "name": "Walking right", "mirrorOf": "walking_left" }
+{ "id": "walking_right", "name": "Walking right", "role": "moveRight", "mirrorOf": "walking_left" }
 ```
 
 That is the whole file entry. A mirror takes its source's `frames`,
@@ -1156,9 +1199,13 @@ renderer needs — no lookup, no definition, no customisation:
       "asset": "assets/characters/hair_front.png", "tint": "#8b5a2b" }
   ],
   "mirrored": false,
-  "pose": { "animation": "idle", "frame": 1, "timeMs": 140 }
+  "pose": { "animation": "idle", "frame": 1, "timeMs": 140, "durationMs": 560 }
 }
 ```
+
+`pose.durationMs` is the duration of one complete pass, using the source's
+timing for a mirror. It lets presentation return from movement to idle without
+reimplementing animation timing.
 
 `tint` is **an empty string** when the sprite is drawn as authored — not `null`,
 not a colour.
@@ -1219,6 +1266,7 @@ exposed across the boundary as `validateLinks()` and `loadProject()`.
 | `world.emptyMap` | `width` or `height` is `0`. |
 | `world.mapTooLarge` | A dimension exceeds 2048. |
 | `world.unsupportedOrientation` | Not `"pointy"`. |
+| `world.characterHeightTilesOutOfRange` | `characterHeightTiles` is not finite or outside `0.25..=8`. |
 | `world.unknownTileSet` | `tileSetId` is not loaded. |
 | `world.unknownDefaultTile` | `defaultTile` is not in the tile set. |
 | `world.missingPlayer` / `world.multiplePlayers` | Not exactly one player entity. |
@@ -1301,6 +1349,7 @@ exposed across the boundary as `validateLinks()` and `loadProject()`.
 | `character.unknownAnchor` | A `parentAnchor` names an attachment point the parent does not declare. |
 | `character.missingAnchorId` / `character.duplicateAnchor` | An attachment point has no id, or a layer declares one twice. |
 | `character.missingAnimationId` / `character.duplicateAnimation` | An animation has no id, or two share one. |
+| `character.duplicateAnimationRole` | Two animations claim the same gameplay role, so selection would be ambiguous. |
 | `character.invalidFrameCount` | An animation is `0` frames long, or longer than `240`. |
 | `character.invalidFrameDuration` | An animation gives each frame no time at all. |
 | `character.unknownTrackNode` | A track drives a layer this character does not declare. |

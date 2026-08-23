@@ -298,6 +298,11 @@ pub struct WorldView {
     /// Transported, never interpreted: the engine has no notion of pixels
     /// (`docs/adr/ADR-0016-isometric-projection.md`).
     pub projection: String,
+    /// Projected tile-face heights occupied by a 128-pixel character canvas.
+    ///
+    /// Presentation transported from the world without becoming a game rule
+    /// (`docs/adr/ADR-0044-map-entity-presentation.md`).
+    pub character_height_tiles: f32,
     /// Id of the tile set this world paints with.
     pub tile_set_id: String,
     /// The pixel grid the tile set's images are authored on.

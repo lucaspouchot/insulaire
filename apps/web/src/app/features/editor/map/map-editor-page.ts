@@ -33,7 +33,12 @@ import {
 
 import { Offset } from '../../../../core/hex/hex-coords';
 import { HexLayout } from '../../../../core/hex/hex-layout';
-import { ProjectionMode, WorldDefinition } from '../../../../content/content-types';
+import {
+  MAX_CHARACTER_HEIGHT_TILES,
+  MIN_CHARACTER_HEIGHT_TILES,
+  ProjectionMode,
+  WorldDefinition,
+} from '../../../../content/content-types';
 import { TILE_ART_BUNDLE } from '../../../../content/sprite-bundle';
 import { DocumentLink, DocumentTile, WorldDocument } from '../../../../content/world-document';
 import { serializeWorld } from '../../../../content/world-serializer';
@@ -630,12 +635,17 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   }
 
   /**
-   * Applies the open map's id, name and zone in one go.
+   * Applies the open map's id, name, zone and character scale in one go.
    *
    * The zone is set first: renaming may be refused for a duplicate id, and the
    * move it was bundled with should not be lost with it.
    */
-  protected applyMapSettings(id: string, name: string, zone: string): void {
+  protected applyMapSettings(
+    id: string,
+    name: string,
+    zone: string,
+    characterHeightTiles: string,
+  ): void {
     if (this.store.setZone(zone)) {
       // Follow the map into its new zone rather than letting the picker filter
       // out the map it is meant to be showing.
@@ -643,6 +653,19 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
         this.zoneFilter.set(zone);
       }
       this.message.set(this.i18n.t('ui.editor.map.message.movedToZone', { zone }));
+    }
+    const document = this.store.document();
+    const parsedHeight = Number(characterHeightTiles);
+    if (document !== null && Number.isFinite(parsedHeight)) {
+      const nextHeight = Math.min(
+        MAX_CHARACTER_HEIGHT_TILES,
+        Math.max(MIN_CHARACTER_HEIGHT_TILES, parsedHeight),
+      );
+      if (document.characterHeightTiles !== nextHeight) {
+        document.characterHeightTiles = nextHeight;
+        this.store.touch();
+        this.report.set(null);
+      }
     }
     this.renameWorld(id, name);
   }
@@ -1169,6 +1192,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       width: document.width,
       height: document.height,
       projection: document.projection,
+      characterHeightTiles: document.characterHeightTiles,
       tileArt: document.tileArt,
       palette: document.palette,
       terrain: document.terrain,

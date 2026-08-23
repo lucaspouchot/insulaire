@@ -206,6 +206,12 @@ export function bandLevels(geometry: TileArtGeometry): number {
 /** How the renderer projects a world; mirrors the engine's `ProjectionMode`. */
 export type ProjectionMode = 'topDown' | 'isometric';
 
+/** Projected tile-face heights occupied by a 128-pixel character by default. */
+export const DEFAULT_CHARACTER_HEIGHT_TILES = 2;
+/** Editor and Rust validation bounds for the map-wide character scale. */
+export const MIN_CHARACTER_HEIGHT_TILES = 0.25;
+export const MAX_CHARACTER_HEIGHT_TILES = 8;
+
 /** Authored elevation is packed as one signed byte per cell for the renderer. */
 export const MIN_ELEVATION = -128;
 export const MAX_ELEVATION = 127;
@@ -304,6 +310,8 @@ export interface WorldDefinition {
   orientation?: 'pointy' | 'flat';
   /** Presentation only; defaults to `topDown` when absent. */
   projection?: ProjectionMode;
+  /** Tile-face heights occupied by a 128-pixel character; defaults to `2`. */
+  characterHeightTiles?: number;
   tileSetId: string;
   defaultTile: string;
   tiles?: PlacedTile[];
@@ -721,6 +729,24 @@ export interface AnimationTrack {
 }
 
 /**
+ * The gameplay situation an authored animation illustrates.
+ *
+ * Exact hex directions override the corresponding left/right role. The latter
+ * two are therefore enough for a complete character, while all six remain
+ * authorable (`docs/adr/ADR-0043-gameplay-selects-character-animations-by-role.md`).
+ */
+export type AnimationRole =
+  | 'idle'
+  | 'moveLeft'
+  | 'moveRight'
+  | 'moveEast'
+  | 'moveNorthEast'
+  | 'moveNorthWest'
+  | 'moveWest'
+  | 'moveSouthWest'
+  | 'moveSouthEast';
+
+/**
  * A named movement a character can play.
  *
  * Two halves, and they answer different questions. {@link tracks} say what
@@ -736,6 +762,8 @@ export interface Animation {
   id: string;
   /** Shown in the editor. Not player-facing, so not a key. */
   name?: string;
+  /** Optional gameplay meaning; ids stay arbitrary and author-owned. */
+  role?: AnimationRole | null;
   /**
    * Id of the animation this one is the **mirror image** of.
    *
@@ -892,6 +920,8 @@ export interface ResolvedPose {
   frame: number;
   /** The time it was asked for, in milliseconds since the animation started. */
   timeMs: number;
+  /** Duration of one pass, using the source timing for a mirror. */
+  durationMs: number;
   /**
    * The pose values in force at that moment, which is what chose the variants.
    * Absent when the animation sets none.

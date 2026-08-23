@@ -394,6 +394,7 @@ describe.skipIf(!built)('engine boundary', () => {
     const elevation = instance.elevationBuffer('demo_world');
 
     expect(view.projection).toBe('isometric');
+    expect(view.characterHeightTiles).toBe(2);
     expect(elevation).toBeInstanceOf(Int8Array);
     expect(elevation.length).toBe(view.cellCount);
     // The demo has relief, and it lines up with the terrain buffer cell for cell.
@@ -833,6 +834,7 @@ describe.skipIf(!built)('engine boundary', () => {
     const idle = definition.animations?.find((animation) => animation.id === 'idle');
     expect(idle?.looping).toBe(true);
     expect(idle?.frames).toBe(4);
+    expect(idle?.role).toBe('idle');
     // Two tracks for seven layers: the rest move because of the tree.
     expect(idle?.tracks).toHaveLength(2);
 
@@ -844,7 +846,7 @@ describe.skipIf(!built)('engine boundary', () => {
       resolved.layers.find((drawn) => drawn.layer === layer)?.offset[1] ?? Number.NaN;
 
     const rest = at(0);
-    expect(rest.pose).toEqual({ animation: 'idle', frame: 0, timeMs: 0 });
+    expect(rest.pose).toEqual({ animation: 'idle', frame: 0, timeMs: 0, durationMs: 560 });
     expect(rest.layers.every((layer) => layer.offset[0] === 0 && layer.offset[1] === 0)).toBe(true);
 
     // Frame 1: the top of the breath.
@@ -950,6 +952,21 @@ describe.skipIf(!built)('engine boundary', () => {
       expect(right.pose?.animation).toBe('walking_right');
       expect(right.pose?.frame).toBe(left.pose?.frame);
     }
+
+    // Gameplay names the exact hex direction. With no six-way override in the
+    // shipped art, west-facing directions share the left cycle and east-facing
+    // ones share its mirror.
+    const northWest = JSON.parse(
+      instance.resolveCharacterRole('human_player', '{}', 'moveNorthWest', 130),
+    ) as ResolvedCharacter;
+    const southEast = JSON.parse(
+      instance.resolveCharacterRole('human_player', '{}', 'moveSouthEast', 130),
+    ) as ResolvedCharacter;
+    expect(northWest.pose?.animation).toBe('walking_left');
+    expect(northWest.mirrored).toBe(false);
+    expect(southEast.pose?.animation).toBe('walking_right');
+    expect(southEast.mirrored).toBe(true);
+    expect(southEast.pose?.durationMs).toBe(520);
   });
 
   /** What the editor previews with: a definition in hand, not registered. */

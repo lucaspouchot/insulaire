@@ -1,7 +1,9 @@
 # ADR-0029 — Characters Are Composed Sprites on a Declared Pixel Canvas
 
 ## Status
-Accepted. Replaces the *rendering* half of
+Accepted. Its whole-number host zoom rule is superseded for map entities by
+`docs/adr/ADR-0044-map-entity-presentation.md`; every other decision here
+stands. Replaces the *rendering* half of
 `docs/adr/ADR-0028-character-definitions.md`; everything else that ADR decided —
 definitions, parameters, layers, variants, one resolver, one editor, no player
 branch — stands unchanged.

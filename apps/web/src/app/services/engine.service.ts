@@ -14,6 +14,7 @@
 import { Injectable, signal } from '@angular/core';
 
 import {
+  AnimationRole,
   CharacterCreationDefinition,
   CharacterCreationResult,
   CharacterDefinition,
@@ -320,6 +321,23 @@ export class EngineService {
         JSON.stringify(values),
         pose?.animation ?? undefined,
         Math.max(0, Math.round(pose?.timeMs ?? 0)),
+      ),
+    );
+  }
+
+  /** Resolves the animation assigned to a gameplay role. */
+  resolveCharacterRole(
+    id: string,
+    values: CharacterValues,
+    role: AnimationRole,
+    timeMs: number,
+  ): ResolvedCharacter {
+    return this.parse<ResolvedCharacter>(() =>
+      this.engine().resolveCharacterRole(
+        id,
+        JSON.stringify(values),
+        role,
+        Math.max(0, Math.round(timeMs)),
       ),
     );
   }

@@ -160,6 +160,7 @@
     {
       "id": "idle",
       "name": "Idle",
+      "role": "idle",
       "frames": 4,
       "frameDurationMs": 140,
       "looping": true,
@@ -185,6 +186,7 @@
     {
       "id": "walking_left",
       "name": "Walking left",
+      "role": "moveLeft",
       "frames": 4,
       "frameDurationMs": 130,
       "looping": true,
@@ -219,6 +221,7 @@
     {
       "id": "walking_right",
       "name": "Walking right",
+      "role": "moveRight",
       "mirrorOf": "walking_left"
     }
   ]

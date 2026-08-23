@@ -643,6 +643,10 @@
               <span>{{ 'ui.editor.map.open.projection' | t }}</span><span>{{ projection() }}</span>
             </div>
             <div class="row">
+              <span>{{ 'ui.editor.map.open.characterHeight' | t }}</span>
+              <span>{{ 'ui.editor.map.open.characterHeightValue' | t: { value: doc.characterHeightTiles } }}</span>
+            </div>
+            <div class="row">
               <span>{{ 'ui.editor.map.open.source' | t }}</span>
               <span>{{ source() }}{{ dirty() ? ('ui.editor.map.open.edited' | t) : '' }}</span>
             </div>
@@ -682,8 +686,24 @@
                   }
                 </select>
               </label>
+              <label class="field">
+                <span>{{ 'ui.editor.map.open.characterHeight' | t }}</span>
+                <input
+                  #characterHeightTiles
+                  type="number"
+                  min="0.25"
+                  max="8"
+                  step="0.25"
+                  [value]="doc.characterHeightTiles"
+                  [attr.aria-label]="'ui.editor.map.open.characterHeightAria' | t"
+                />
+                <small>{{ 'ui.editor.map.open.characterHeightHint' | t }}</small>
+              </label>
               <div class="button-row">
-                <button type="button" (click)="applyMapSettings(mapId.value, mapName.value, mapZone.value)">
+                <button
+                  type="button"
+                  (click)="applyMapSettings(mapId.value, mapName.value, mapZone.value, characterHeightTiles.value)"
+                >
                   {{ 'ui.common.apply' | t }}
                 </button>
                 <button type="button" (click)="removeWorld()">

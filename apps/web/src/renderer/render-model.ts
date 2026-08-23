@@ -8,7 +8,13 @@
  * renderer serves both.
  */
 
-import { TileArt, TileArtGeometry, tileArtGeometry } from '../content/content-types';
+import {
+  DEFAULT_CHARACTER_HEIGHT_TILES,
+  ResolvedCharacter,
+  TileArt,
+  TileArtGeometry,
+  tileArtGeometry,
+} from '../content/content-types';
 import { Offset } from '../core/hex/hex-coords';
 import { ProjectionMode } from './projection';
 
@@ -39,6 +45,14 @@ export interface RenderEntity {
   readonly at: Offset;
   readonly visualId: string;
   readonly fallbackColor: string;
+  /** Authored character to draw instead of the fallback marker and glyph. */
+  readonly character?: ResolvedCharacter | null;
+  /** Presentation-only glide from an accepted movement event. */
+  readonly motion?: {
+    readonly from: Offset;
+    /** Linear `0..1` progress from {@link from} to {@link at}. */
+    readonly progress: number;
+  };
   /** One or two characters drawn inside the marker. */
   readonly glyph: string;
   /** Drawn with a heavier outline. */
@@ -96,6 +110,8 @@ export interface RenderModel {
   readonly height: number;
   /** How the hex plane is projected; authored per world. */
   readonly projection: ProjectionMode;
+  /** Tile-face heights occupied by a 128-pixel character canvas. */
+  readonly characterHeightTiles: number;
   /**
    * The pixel grid the tile set's images are authored on.
    *
@@ -236,6 +252,7 @@ export function emptyRenderModel(): RenderModel {
     width: 0,
     height: 0,
     projection: 'topDown',
+    characterHeightTiles: DEFAULT_CHARACTER_HEIGHT_TILES,
     tileArt: tileArtGeometry({}),
     palette: [],
     terrain: new Uint8Array(0),

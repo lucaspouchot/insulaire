@@ -57,7 +57,7 @@ pub mod testing;
 mod testing;
 
 pub use animation::{
-    Animation, AnimationTrack, Interpolation, Keyframe, PixelOffset, Transform,
+    Animation, AnimationRole, AnimationTrack, Interpolation, Keyframe, PixelOffset, Transform,
     DEFAULT_FRAME_DURATION_MS, MAX_ANIMATION_FRAMES,
 };
 pub use character::{
@@ -72,8 +72,9 @@ pub use character_creation::{
 };
 pub use definition::{
     EntityDefinition, HexOrientation, LinkTrigger, LocationDefinition, MapLinkDefinition,
-    PlacedTile, PlacedTileArt, ProjectionMode, WorldDefinition, WorldMetadata, MAX_ELEVATION,
-    MIN_ELEVATION, WORLD_SCHEMA_VERSION,
+    PlacedTile, PlacedTileArt, ProjectionMode, WorldDefinition, WorldMetadata,
+    DEFAULT_CHARACTER_HEIGHT_TILES, MAX_CHARACTER_HEIGHT_TILES, MAX_ELEVATION,
+    MIN_CHARACTER_HEIGHT_TILES, MIN_ELEVATION, WORLD_SCHEMA_VERSION,
 };
 pub use grid::{resolve_cell_art, CellArtChoice, GridError, ResolvedTile, WorldGrid};
 pub use hex::{Hex, HexDirection, OffsetCoord, DIRECTIONS};

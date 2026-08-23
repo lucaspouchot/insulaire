@@ -133,6 +133,8 @@ export interface WorldView {
   orientation: string;
   /** `"topDown"` or `"isometric"`; presentation carried by the content. */
   projection: string;
+  /** Projected tile-face heights occupied by a 128-pixel character canvas. */
+  characterHeightTiles: number;
   tileSetId: string;
   /** The pixel grid the tile set's images are authored on. */
   tileArt: TileArtGeometry;
@@ -338,6 +340,12 @@ export interface RawInsulaireEngine {
     id: string,
     valuesJson: string,
     animation: string | undefined,
+    timeMs: number,
+  ): string;
+  resolveCharacterRole(
+    id: string,
+    valuesJson: string,
+    role: string,
     timeMs: number,
   ): string;
   previewCharacter(

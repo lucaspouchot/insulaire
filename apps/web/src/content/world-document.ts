@@ -44,6 +44,7 @@ import {
   WorldMetadata,
   MAX_ELEVATION,
   MIN_ELEVATION,
+  DEFAULT_CHARACTER_HEIGHT_TILES,
   WORLD_SCHEMA_VERSION,
 } from './content-types';
 
@@ -127,6 +128,7 @@ export interface WorldDocumentInit {
   tileSet: TileSetDefinition;
   defaultTile?: string;
   projection?: ProjectionMode;
+  characterHeightTiles?: number;
   /** Authoring zone; empty leaves the map unzoned. */
   zone?: string;
 }
@@ -156,6 +158,8 @@ export class WorldDocument {
     public metadata: WorldMetadata,
     /** How the runtime and the editor render this world. */
     public projection: ProjectionMode,
+    /** Projected tile-face heights occupied by a 128-pixel character. */
+    public characterHeightTiles: number,
     /** Authoring zone; `''` means unzoned. Grouping only, never a rule. */
     public zone: string,
   ) {}
@@ -200,6 +204,7 @@ export class WorldDocument {
       [],
       {},
       init.projection ?? 'topDown',
+      init.characterHeightTiles ?? DEFAULT_CHARACTER_HEIGHT_TILES,
       init.zone ?? '',
     );
   }
@@ -220,6 +225,7 @@ export class WorldDocument {
       tileSet,
       defaultTile: definition.defaultTile,
       projection: definition.projection,
+      characterHeightTiles: definition.characterHeightTiles,
       zone: definition.zone,
     });
 
@@ -623,6 +629,9 @@ export class WorldDocument {
       height: this.height,
       orientation: 'pointy',
       projection: this.projection,
+      ...(this.characterHeightTiles === DEFAULT_CHARACTER_HEIGHT_TILES
+        ? {}
+        : { characterHeightTiles: this.characterHeightTiles }),
       tileSetId: this.tileSetId,
       defaultTile: this.defaultTile.id,
       tiles,

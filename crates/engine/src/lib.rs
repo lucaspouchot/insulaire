@@ -62,10 +62,10 @@ use std::collections::BTreeMap;
 
 use insulaire_simulation::{rules, tick, GameState, PendingTransition, SimEvent};
 use insulaire_world::{
-    resolve_cell_art, resolve_tile_render, CharacterCreationDefinition, CharacterCreationResult,
-    CharacterDefinition, Hex, PlacedTileArt, ProjectionMode, ResolvedCharacter, ResolvedTile,
-    ResolvedTileRender, SettingsDefinition, TileArtGeometry, TitleScreenDefinition,
-    WorldDefinition, WorldGrid,
+    resolve_cell_art, resolve_tile_render, AnimationRole, CharacterCreationDefinition,
+    CharacterCreationResult, CharacterDefinition, Hex, PlacedTileArt, ProjectionMode,
+    ResolvedCharacter, ResolvedTile, ResolvedTileRender, SettingsDefinition, TileArtGeometry,
+    TitleScreenDefinition, WorldDefinition, WorldGrid,
 };
 
 pub use dto::{
@@ -501,6 +501,7 @@ impl Engine {
                 ProjectionMode::Isometric => "isometric",
             }
             .to_owned(),
+            character_height_tiles: world.character_height_tiles,
             tile_set_id: world.tile_set_id.clone(),
             tile_art,
             palette: grid
@@ -842,6 +843,32 @@ impl Engine {
             .resolve_character(id, &values, animation, time_ms)
     }
 
+    /// Turns a gameplay animation role into a drawable character.
+    ///
+    /// Direction-specific movement roles fall back to `moveLeft` or
+    /// `moveRight` inside the shared character resolver. An unassigned role is
+    /// the rest pose (`docs/adr/ADR-0043-gameplay-selects-character-animations-by-role.md`).
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Parse`] when the values are not JSON, or
+    /// [`EngineError::UnknownContent`] when no definition has that id.
+    pub fn resolve_character_role(
+        &self,
+        id: &str,
+        values_json: &str,
+        role: AnimationRole,
+        time_ms: u32,
+    ) -> Result<ResolvedCharacter, EngineError> {
+        let values: serde_json::Value =
+            serde_json::from_str(values_json).map_err(|source| EngineError::Parse {
+                what: "character values".to_owned(),
+                message: source.to_string(),
+            })?;
+        self.content
+            .resolve_character_role(id, &values, role, time_ms)
+    }
+
     /// Discards the running game, if any.
     pub fn end_game(&mut self) {
         self.game = None;
@@ -1009,6 +1036,7 @@ mod tests {
         assert_eq!(view.cell_count, 100);
         assert_eq!(view.orientation, "pointy");
         assert_eq!(view.projection, "topDown");
+        assert_eq!(view.character_height_tiles, 2.0);
         assert_eq!(view.palette.len(), 3);
         assert_eq!(view.locations.len(), 1);
 
@@ -1034,6 +1062,26 @@ mod tests {
         assert_eq!(
             engine.world_view("iso_world").expect("view").projection,
             "isometric"
+        );
+    }
+
+    #[test]
+    fn the_view_republishes_the_authored_character_scale() {
+        let mut world = testing::sample_world();
+        world.id = "scaled_world".to_owned();
+        world.character_height_tiles = 3.25;
+
+        let mut engine = engine();
+        engine
+            .load_world(&serde_json::to_string(&world).expect("serialise"))
+            .expect("world loads");
+
+        assert_eq!(
+            engine
+                .world_view("scaled_world")
+                .expect("view")
+                .character_height_tiles,
+            3.25
         );
     }
 
