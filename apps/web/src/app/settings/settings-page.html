@@ -22,17 +22,48 @@
   @if (section(); as active) {
     <div class="panels">
       @for (group of active.groups; track group.id) {
-        <section class="panel">
+        <section
+          class="panel"
+          [class.movement-panel]="isMovementKeypad(active.id, group.id)"
+        >
           <h2>{{ group.labelKey | t }}</h2>
-          @for (field of group.fields; track field.id) {
-            @if (isVisible(field)) {
-              <app-control-field
-                [field]="field"
-                [value]="value(field)"
-                [locked]="isLocked(field)"
-                (changed)="change(field, $event)"
-                (committed)="commit(field, $event)"
-              />
+          @if (isMovementKeypad(active.id, group.id)) {
+            <p class="movement-instruction">{{ 'ui.settings.keyBindingHelp' | t }}</p>
+            <div class="movement-keypad">
+              @for (field of group.fields; track field.id) {
+                @if (isVisible(field)) {
+                  <div class="movement-direction" [attr.data-direction]="movementSlot(field.id)">
+                    <app-control-field
+                      [field]="field"
+                      [value]="value(field)"
+                      [locked]="isLocked(field)"
+                      [directional]="true"
+                      (changed)="change(field, $event)"
+                      (committed)="commit(field, $event)"
+                    />
+                  </div>
+                }
+              }
+
+              <div class="movement-hex" aria-hidden="true">
+                <svg viewBox="0 0 100 116" focusable="false">
+                  <polygon points="50,2 98,29 98,87 50,114 2,87 2,29" />
+                  <path d="M50 2v112M2 29l96 58M98 29L2 87" />
+                  <circle cx="50" cy="58" r="7" />
+                </svg>
+              </div>
+            </div>
+          } @else {
+            @for (field of group.fields; track field.id) {
+              @if (isVisible(field)) {
+                <app-control-field
+                  [field]="field"
+                  [value]="value(field)"
+                  [locked]="isLocked(field)"
+                  (changed)="change(field, $event)"
+                  (committed)="commit(field, $event)"
+                />
+              }
             }
           }
         </section>

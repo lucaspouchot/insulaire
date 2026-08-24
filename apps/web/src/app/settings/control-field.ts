@@ -33,6 +33,8 @@ export class ControlField {
   readonly value = input.required<SettingValue>();
   /** `true` when it may not be changed right now — a `newGame` setting in play. */
   readonly locked = input(false);
+  /** Compact direction card used around the engine movement hexagon. */
+  readonly directional = input(false);
 
   /** Emitted with the new value whenever the player changes it. */
   readonly changed = output<SettingValue>();

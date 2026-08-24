@@ -25,7 +25,17 @@ import { ControlDefinition, SettingValue } from '../../content/content-types';
 import { TranslatePipe } from '../i18n/translate.pipe';
 import { EngineService } from '../services/engine.service';
 import { ControlField } from './control-field';
+import { ENGINE_SHORTCUT } from './engine-settings.schema';
 import { SettingsService } from './settings.service';
+
+const MOVEMENT_SLOT: Readonly<Record<string, string>> = {
+  [ENGINE_SHORTCUT.moveNorthWest]: 'north-west',
+  [ENGINE_SHORTCUT.moveNorthEast]: 'north-east',
+  [ENGINE_SHORTCUT.moveWest]: 'west',
+  [ENGINE_SHORTCUT.moveEast]: 'east',
+  [ENGINE_SHORTCUT.moveSouthWest]: 'south-west',
+  [ENGINE_SHORTCUT.moveSouthEast]: 'south-east',
+};
 
 @Component({
   selector: 'app-settings-page',
@@ -91,6 +101,16 @@ export class SettingsPage {
 
   protected isLocked(field: ControlDefinition): boolean {
     return field.scope === 'newGame' && this.inGame();
+  }
+
+  /** The engine's six spatial controls get a map-like presentation of their own. */
+  protected isMovementKeypad(sectionId: string, groupId: string): boolean {
+    return sectionId === 'application-controls' && groupId === 'movement';
+  }
+
+  /** CSS grid slot occupied by one universal movement action. */
+  protected movementSlot(fieldId: string): string {
+    return MOVEMENT_SLOT[fieldId] ?? '';
   }
 
   protected change(field: ControlDefinition, value: SettingValue): void {

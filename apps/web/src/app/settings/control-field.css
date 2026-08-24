@@ -94,6 +94,96 @@ label {
   font-weight: 700;
 }
 
+.field.directional {
+  grid-template-columns: 1fr;
+  justify-items: center;
+  gap: 7px;
+  padding: 0;
+  border: none;
+}
+
+.field.directional label {
+  order: 2;
+  align-items: center;
+  text-align: center;
+}
+
+.field.directional .label {
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.field.directional .help {
+  display: none;
+}
+
+.field.directional .control {
+  order: 1;
+  justify-content: center;
+  width: 100%;
+}
+
+.field.directional .key-binding {
+  width: 96px;
+  min-width: 0;
+  height: 52px;
+  padding: 5px 10px;
+  border-color: color-mix(in srgb, var(--border) 72%, var(--text-dim));
+  border-radius: 10px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg-raised) 82%, white), var(--bg-raised));
+  box-shadow:
+    0 5px 0 color-mix(in srgb, var(--bg) 70%, black),
+    0 8px 18px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transition: border-color 120ms ease, color 120ms ease, transform 120ms ease, box-shadow 120ms ease;
+}
+
+.field.directional .key-binding:hover:not(:disabled),
+.field.directional .key-binding:focus-visible {
+  border-color: var(--accent-dim);
+  color: var(--accent);
+}
+
+.field.directional .key-binding:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow:
+    0 2px 0 color-mix(in srgb, var(--bg) 70%, black),
+    0 4px 10px rgba(0, 0, 0, 0.2);
+}
+
+.field.directional .key-binding.capturing {
+  border-color: var(--accent);
+  box-shadow:
+    0 5px 0 var(--accent-dim),
+    0 0 24px rgba(255, 204, 92, 0.16);
+}
+
+.field.directional .key-binding kbd {
+  font-size: 20px;
+}
+
+.capture-mark {
+  font-family: var(--mono);
+  font-size: 20px;
+  letter-spacing: 0.12em;
+}
+
+@media (max-width: 640px) {
+  .field.directional .key-binding {
+    width: 76px;
+    height: 46px;
+  }
+
+  .field.directional .label {
+    max-width: 92px;
+    font-size: 9px;
+  }
+}
+
 /* A switch rather than a checkbox: a toggle is a state, and it should look
    like one at a glance across a long settings list. */
 .switch {

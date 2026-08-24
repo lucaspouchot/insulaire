@@ -65,6 +65,138 @@ h1 {
   color: var(--text-dim);
 }
 
+.movement-panel {
+  padding: 16px 24px 24px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 48%, rgba(255, 204, 92, 0.07), transparent 34%),
+    var(--bg-panel);
+}
+
+.movement-panel h2 {
+  text-align: center;
+}
+
+.movement-instruction {
+  margin: 0 0 18px;
+  color: var(--text-dim);
+  font-size: 12px;
+  text-align: center;
+}
+
+.movement-keypad {
+  display: grid;
+  grid-template-areas:
+    'north-west empty-north north-east'
+    'west center east'
+    'south-west empty-south south-east';
+  grid-template-columns: minmax(132px, 1fr) 180px minmax(132px, 1fr);
+  grid-template-rows: auto 188px auto;
+  align-items: center;
+  gap: 8px 24px;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.movement-direction {
+  z-index: 1;
+  width: 100%;
+  max-width: 168px;
+}
+
+.movement-direction[data-direction='north-west'] {
+  grid-area: north-west;
+  justify-self: end;
+  transform: translateX(18px);
+}
+
+.movement-direction[data-direction='north-east'] {
+  grid-area: north-east;
+  justify-self: start;
+  transform: translateX(-18px);
+}
+
+.movement-direction[data-direction='west'] {
+  grid-area: west;
+  justify-self: end;
+}
+
+.movement-direction[data-direction='east'] {
+  grid-area: east;
+  justify-self: start;
+}
+
+.movement-direction[data-direction='south-west'] {
+  grid-area: south-west;
+  justify-self: end;
+  transform: translateX(18px);
+}
+
+.movement-direction[data-direction='south-east'] {
+  grid-area: south-east;
+  justify-self: start;
+  transform: translateX(-18px);
+}
+
+.movement-hex {
+  grid-area: center;
+  justify-self: center;
+  width: 170px;
+  filter: drop-shadow(0 12px 22px rgba(0, 0, 0, 0.3));
+}
+
+.movement-hex svg {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+
+.movement-hex polygon {
+  fill: var(--bg-raised);
+  stroke: var(--accent-dim);
+  stroke-width: 2;
+}
+
+.movement-hex path {
+  fill: none;
+  stroke: var(--accent-dim);
+  stroke-width: 1;
+  stroke-linecap: round;
+  opacity: 0.55;
+}
+
+.movement-hex circle {
+  fill: var(--accent);
+  stroke: var(--bg-panel);
+  stroke-width: 4;
+}
+
+@media (max-width: 640px) {
+  .movement-panel {
+    padding-inline: 12px;
+  }
+
+  .movement-keypad {
+    grid-template-columns: minmax(88px, 1fr) 116px minmax(88px, 1fr);
+    grid-template-rows: auto 132px auto;
+    gap: 10px 4px;
+  }
+
+  .movement-hex {
+    width: 112px;
+  }
+
+  .movement-direction[data-direction='north-west'],
+  .movement-direction[data-direction='south-west'] {
+    transform: translateX(6px);
+  }
+
+  .movement-direction[data-direction='north-east'],
+  .movement-direction[data-direction='south-east'] {
+    transform: translateX(-6px);
+  }
+}
+
 /* The last field of a panel has nothing under it to separate from. */
 .panel app-control-field:last-of-type .field {
   border-bottom: none;

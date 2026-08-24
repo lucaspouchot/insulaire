@@ -1,6 +1,6 @@
 @let control = field();
 
-<div class="field" [class.locked]="locked()">
+<div class="field" [class.locked]="locked()" [class.directional]="directional()">
   <label [for]="control.id">
     <span class="label">{{ control.labelKey | t }}</span>
     @if (control.helpKey) {
@@ -118,7 +118,11 @@
           (blur)="stopCapture()"
         >
           @if (capturing()) {
-            {{ 'ui.settings.pressKey' | t }}
+            @if (directional()) {
+              <span class="capture-mark" aria-hidden="true">•••</span>
+            } @else {
+              {{ 'ui.settings.pressKey' | t }}
+            }
           } @else {
             <kbd>{{ keyLabel() }}</kbd>
           }
