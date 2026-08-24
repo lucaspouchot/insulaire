@@ -170,6 +170,16 @@ it by adding `"value": "..."`; it dispatches `input` by default, or the event
 named by `"event"`. This exercises colour and range controls without opening a
 browser-native picker.
 
+`keys` sends physical keyboard events and captures after each one. `code` is
+the persisted physical position and `key` is the layout label, so an AZERTY
+case can deliberately state both:
+
+```jsonc
+"keys": [
+  { "name": "play-north-west", "code": "KeyW", "key": "z" }
+]
+```
+
 Rules for the scenario: it must stay deterministic (no wall-clock, no random),
 it must keep at least one rejected command (the rejection path is a rule too),
 and a new page or mode is not covered until it is listed in `pages`.

@@ -292,7 +292,9 @@ references, resolved against the loaded languages. Registers nothing.
 
 ### `settings(): SettingsDefinition`
 
-The registered declaration, defaults filled in.
+The registered declaration, defaults filled in. Settings schema version 2 adds
+the `keyBinding` control; its default and resolved value are a modifier-free
+physical `KeyboardEvent.code` string (ADR-0045).
 
 Errors: `unknownContent` when the project declares none — a legitimate state.
 

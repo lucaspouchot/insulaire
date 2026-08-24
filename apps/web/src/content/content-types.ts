@@ -510,7 +510,8 @@ export interface TitleScreenDefinition {
   buttons: TitleButton[];
 }
 
-export const SETTINGS_SCHEMA_VERSION = 1;
+/** Version 2 adds the physical-key `keyBinding` control. */
+export const SETTINGS_SCHEMA_VERSION = 2;
 
 /**
  * How a setting is presented, and therefore what values it accepts.
@@ -520,7 +521,15 @@ export const SETTINGS_SCHEMA_VERSION = 1;
  * (`docs/adr/ADR-0025-settings.md`).
  */
 export type ControlKind =
-  'toggle' | 'checkbox' | 'select' | 'multiSelect' | 'slider' | 'number' | 'text' | 'color';
+  | 'toggle'
+  | 'checkbox'
+  | 'select'
+  | 'multiSelect'
+  | 'slider'
+  | 'number'
+  | 'text'
+  | 'color'
+  | 'keyBinding';
 
 /** When a setting may be changed. */
 export type SettingScope = 'session' | 'newGame';

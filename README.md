@@ -733,6 +733,7 @@ Read in order:
 42. **ADR-0042 — character creation is a generic authored workflow**
 43. **ADR-0043 — gameplay selects character animations by role**
 44. **ADR-0044 — scale and move map entities in presentation space**
+45. **ADR-0045 — shortcuts use physical keys**
 
 `CLAUDE.md` contains project-level instructions for Claude Code and other coding
 agents.

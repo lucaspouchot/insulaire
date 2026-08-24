@@ -32,6 +32,9 @@ export interface Axial {
   readonly r: number;
 }
 
+/** The six axial directions of the pointy-top grid. */
+export type HexDirection = 'east' | 'northEast' | 'northWest' | 'west' | 'southWest' | 'southEast';
+
 /** Creates an offset coordinate. */
 export function offset(col: number, row: number): Offset {
   return { col, row };
@@ -75,6 +78,22 @@ export function offsetToAxial(value: Offset): Axial {
 export function axialToOffset(value: Axial): Offset {
   return { col: value.q + (value.r - mod2(value.r)) / 2, row: value.r };
 }
+
+/** The adjacent offset coordinate in one axial direction. Geometry, not legality. */
+export function offsetNeighbor(value: Offset, direction: HexDirection): Offset {
+  const current = offsetToAxial(value);
+  const [dq, dr] = AXIAL_DELTAS[direction];
+  return axialToOffset({ q: current.q + dq, r: current.r + dr });
+}
+
+const AXIAL_DELTAS: Readonly<Record<HexDirection, readonly [number, number]>> = {
+  east: [1, 0],
+  northEast: [1, -1],
+  northWest: [0, -1],
+  west: [-1, 0],
+  southWest: [-1, 1],
+  southEast: [0, 1],
+};
 
 /** The implicit third cube axis. */
 export function cubeS(value: Axial): number {

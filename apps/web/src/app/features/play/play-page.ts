@@ -32,6 +32,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   ElementRef,
+  HostListener,
   OnDestroy,
   computed,
   inject,
@@ -41,7 +42,7 @@ import {
 
 import { ActivatedRoute } from '@angular/router';
 
-import { Offset, hexDistance, offsetToAxial } from '../../../core/hex/hex-coords';
+import { Offset, hexDistance, offsetNeighbor, offsetToAxial } from '../../../core/hex/hex-coords';
 import { HexLayout } from '../../../core/hex/hex-layout';
 import { EntitySnapshot, GameSnapshot, SimEvent, WorldView } from '../../../engine/engine.types';
 import { Camera } from '../../../renderer/camera';
@@ -61,6 +62,8 @@ import {
 import { serializeWorld } from '../../../content/world-serializer';
 import { I18nService } from '../../i18n/i18n.service';
 import { SettingsService } from '../../settings/settings.service';
+import { MOVEMENT_SHORTCUTS } from '../../settings/engine-settings.schema';
+import { ignoresGameplayShortcut } from '../../settings/keyboard-shortcuts';
 import { TranslatePipe } from '../../i18n/translate.pipe';
 import { EngineService } from '../../services/engine.service';
 import { ProjectStoreService, contentUrl } from '../../services/project-store.service';
@@ -405,6 +408,25 @@ export class PlayPage implements AfterViewInit, OnDestroy {
   /** Spends a tick without moving. */
   protected wait(): void {
     this.send({ type: 'wait' });
+  }
+
+  /** Moves from the physical six-key cluster, independent of printed layout. */
+  @HostListener('window:keydown', ['$event'])
+  protected useKeyboardShortcut(event: KeyboardEvent): void {
+    if (ignoresGameplayShortcut(event)) {
+      return;
+    }
+    const shortcut = MOVEMENT_SHORTCUTS.find(
+      (candidate) => this.settings.keyBinding(candidate.setting) === event.code,
+    );
+    const player = this.player();
+    if (shortcut === undefined || player === null) {
+      return;
+    }
+    event.preventDefault();
+    this.moveTo(
+      offsetNeighbor({ col: player.at[0], row: player.at[1] }, shortcut.direction),
+    );
   }
 
   /**

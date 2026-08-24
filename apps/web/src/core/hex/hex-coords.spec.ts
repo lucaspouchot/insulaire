@@ -10,6 +10,7 @@ import {
   indexIn,
   isWithin,
   offset,
+  offsetNeighbor,
   offsetToAxial,
   roundAxial,
   sameOffset,
@@ -53,6 +54,26 @@ describe('hex coordinates', () => {
     expect(offsetToAxial(offset(0, 0))).toEqual(axial(0, 0));
     expect(offsetToAxial(offset(0, 1))).toEqual(axial(0, 1));
     expect(offsetToAxial(offset(0, 2))).toEqual(axial(-1, 2));
+  });
+
+  it('finds all six visual neighbours on even and odd rows', () => {
+    expect([
+      offsetNeighbor(offset(2, 2), 'northWest'),
+      offsetNeighbor(offset(2, 2), 'northEast'),
+      offsetNeighbor(offset(2, 2), 'west'),
+      offsetNeighbor(offset(2, 2), 'east'),
+      offsetNeighbor(offset(2, 2), 'southWest'),
+      offsetNeighbor(offset(2, 2), 'southEast'),
+    ]).toEqual([
+      offset(1, 1),
+      offset(2, 1),
+      offset(1, 2),
+      offset(3, 2),
+      offset(1, 3),
+      offset(2, 3),
+    ]);
+    expect(offsetNeighbor(offset(2, 3), 'northWest')).toEqual(offset(2, 2));
+    expect(offsetNeighbor(offset(2, 3), 'northEast')).toEqual(offset(3, 2));
   });
 
   it('measures hex distance the same way the engine does', () => {

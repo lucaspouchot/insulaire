@@ -2657,6 +2657,11 @@ function defaultFor(control: ControlKind, options: readonly string[] = []): Sett
       return [];
     case 'text':
       return '';
+    case 'keyBinding':
+      // The character editor never offers this settings-only control. Keeping
+      // the shared union exhaustive makes an imported invalid document fail in
+      // Rust instead of leaving this helper with an undefined value.
+      return 'KeyQ';
   }
 }
 

@@ -690,7 +690,7 @@ the same control vocabulary, so one screen renders them together.
 ```json
 {
   "id": "insulaire_game",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "sections": [{
     "id": "gameplay", "labelKey": "game.settings.gameplay",
     "groups": [{
@@ -714,10 +714,10 @@ Sections are tabs, groups are panels, fields are settings.
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `id` | string | yes | Stable id; must match the manifest's `settings.id`. |
-| `schemaVersion` | integer | yes | `1`. |
+| `schemaVersion` | integer | yes | `2`. Version 2 adds `keyBinding`. |
 | `sections[].id` / `groups[].id` / `fields[].id` | string | yes | Stable ids. A **field** id is the key its value is stored under, and must be unique across the whole file. |
 | `*.labelKey`, `fields[].helpKey` | string | `labelKey` | Keys, not text. |
-| `fields[].control` | `toggle` \| `checkbox` \| `select` \| `multiSelect` \| `slider` \| `number` \| `text` \| `color` | yes | How it is presented, and therefore what it accepts. |
+| `fields[].control` | `toggle` \| `checkbox` \| `select` \| `multiSelect` \| `slider` \| `number` \| `text` \| `color` \| `keyBinding` | yes | How it is presented, and therefore what it accepts. `keyBinding` is settings-only. |
 | `fields[].default` | any | yes | Must be a value its own control accepts, and within its bounds. |
 | `fields[].options[]` | `{ value, labelKey }[]` | for `select`/`multiSelect` | The choices. |
 | `fields[].min` / `max` / `step` | number | no | For `slider` and `number`. `step` must be positive. |
@@ -730,6 +730,14 @@ fill the gaps, a value of the wrong type or an option nobody declared falls back
 to the default, a number outside its bounds is clamped, and a key the
 declaration does not know is dropped. The settings screen and `createGame` both
 resolve, so they cannot disagree.
+
+A `keyBinding` value is one modifier-free browser `KeyboardEvent.code`, such as
+`"KeyW"`, `"Digit1"` or `"Quote"`. It identifies the physical key position,
+not the printed character: `KeyW` is the key labelled `Z` on French AZERTY and
+`W` on QWERTY. The settings UI captures that code and uses the active keyboard
+layout only for its label (ADR-0045). Character parameters and character
+creation controls cannot use `keyBinding`; Escape is reserved to cancel capture
+and its `scope` must be `session` so it can be rebound during play.
 
 ---
 
@@ -1348,10 +1356,12 @@ exposed across the boundary as `validateLinks()` and `loadProject()`.
 | `settings.emptyRange` / `settings.invalidStep` | `min` above `max`, or a step that is not positive. |
 | `settings.invalidDefault` / `settings.defaultOutOfRange` | The default is not a value the control accepts, or is outside the bounds. |
 | `settings.unknownCondition` | A `showIf` points at a field nobody declares. |
+| `settings.keyBindingScope` | A `keyBinding` is not session-scoped. |
 | `project.unloadedCharacter` / `project.duplicateCharacter` | The manifest names a character that is not loaded, or lists one twice. |
 | `character.missingId` / `character.unsupportedSchemaVersion` | Character header problems. |
 | `character.missingParameterId` / `character.duplicateParameter` | A parameter has no id, or two share one. |
 | `character.missingLabelKey` / `character.noOptions` / `character.duplicateOption` / `character.emptyRange` / `character.invalidStep` / `character.invalidDefault` / `character.defaultOutOfRange` | A parameter breaks a control rule. Same checks as the `settings.*` codes above, under this file's namespace. |
+| `character.unsupportedControl` / `characterCreation.unsupportedControl` | A character value tries to use the settings-only `keyBinding` control. |
 | `character.unknownCondition` | A parameter's `showIf` points at a parameter nobody declares. |
 | `character.invalidResolution` | A canvas side is `0` or above `256`. |
 | `character.missingLayerId` / `character.duplicateLayer` | A layer has no id, or two share one. |

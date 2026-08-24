@@ -54,7 +54,9 @@ The manifest also names the game's **settings** declaration
 (`content/settings.json`): sections, groups and fields described with the same
 control vocabulary the application's own settings use. The engine validates and
 resolves them; it never interprets one, and a resolved set travels with the game
-it created (ADR-0025).
+it created (ADR-0025). A `keyBinding` field holds one physical keyboard code:
+the application owns its universal action ids, while a game may author
+additional ids in that declaration (ADR-0045).
 
 The manifest also declares the game's **languages**: `locales.default` and
 `locales.languages[]`, each `{ id, name, files }` where a file's `id` is the
@@ -137,7 +139,7 @@ content, one file per definition, listed by the project (ADR-0028).
 CharacterDefinition
   id, name, category
   resolution     the pixel canvas its sprites are authored on
-  parameters[]   ControlDefinition — the same vocabulary as settings
+  parameters[]   ControlDefinition — the value-control subset of settings
   layers[]
     id
     parent, parentAnchor    which layer it hangs off, and the joint it

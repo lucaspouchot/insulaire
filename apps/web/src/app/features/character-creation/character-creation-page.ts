@@ -338,5 +338,8 @@ function fallbackFor(field: CharacteristicDefinition): SettingValue {
       return [];
     case 'text':
       return '';
+    case 'keyBinding':
+      // Validation rejects settings-only key bindings in character content.
+      return 'KeyQ';
   }
 }

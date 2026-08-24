@@ -24,7 +24,7 @@ export type {
   ShowIf,
 } from '../../../../content/content-types';
 
-/** Every control kind, in the order the picker offers them. */
+/** Value controls that may also describe characters and creation answers. */
 export const CONTROL_KINDS: readonly ControlKind[] = [
   'toggle',
   'checkbox',
@@ -35,6 +35,9 @@ export const CONTROL_KINDS: readonly ControlKind[] = [
   'text',
   'color',
 ];
+
+/** Every settings control kind, in the order the picker offers them. */
+export const SETTINGS_CONTROL_KINDS: readonly ControlKind[] = [...CONTROL_KINDS, 'keyBinding'];
 
 /** Every scope, in the order the picker offers them, with the label it shows. */
 export const SCOPES: readonly { readonly id: SettingScope; readonly labelKey: string }[] = [
@@ -77,5 +80,7 @@ export function defaultFor(control: ControlKind, options: readonly string[] = []
       return [];
     case 'text':
       return '';
+    case 'keyBinding':
+      return 'KeyQ';
   }
 }

@@ -33,6 +33,7 @@ import {
   engineSettingsDefaults,
   engineSettingsSections,
 } from './engine-settings.schema';
+import { isKeyboardCode } from './keyboard-shortcuts';
 
 const STORAGE_KEY = 'insulaire.settings.v1';
 
@@ -188,6 +189,9 @@ export class SettingsService {
     if (value === undefined) {
       return false;
     }
+    if (field.control === 'keyBinding') {
+      return typeof value === 'string' && isKeyboardCode(value);
+    }
     if (field.control !== 'select' || field.options === undefined) {
       return true;
     }
@@ -196,8 +200,38 @@ export class SettingsService {
 
   /** Sets one value and persists every one of them. */
   set(field: ControlDefinition, value: SettingValue): void {
-    this.valuesSignal.update((values) => ({ ...values, [field.id]: value }));
+    this.valuesSignal.update((values) => {
+      const next = { ...values };
+      if (field.control === 'keyBinding' && typeof value === 'string') {
+        const stored = values[field.id];
+        const previous = this.accepts(field, stored) ? (stored as SettingValue) : field.default;
+        // Rebinding onto an occupied physical key swaps the two commands. This
+        // preserves a one-key/one-action map without making the player repair a
+        // command that was silently unbound (ADR-0045).
+        for (const other of fieldsOf(this.sections())) {
+          if (
+            other.id !== field.id &&
+            other.control === 'keyBinding' &&
+            (this.accepts(other, values[other.id]) ? values[other.id] : other.default) === value
+          ) {
+            next[other.id] = previous;
+          }
+        }
+      }
+      next[field.id] = value;
+      return next;
+    });
     this.persist();
+  }
+
+  /** The physical code currently assigned to one application or game action. */
+  keyBinding(id: string): string | null {
+    const binding = this.field(id);
+    if (binding?.control !== 'keyBinding') {
+      return null;
+    }
+    const value = this.value(binding);
+    return typeof value === 'string' ? value : null;
   }
 
   /**

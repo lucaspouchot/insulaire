@@ -29,7 +29,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 
 import {
-  CONTROL_KINDS,
+  SETTINGS_CONTROL_KINDS,
   ControlDefinition,
   ControlKind,
   SCOPES,
@@ -85,7 +85,7 @@ export class SettingsEditorPage {
   private readonly sectionId = signal<string | null>(null);
   private readonly groupId = signal<string | null>(null);
 
-  protected readonly controlKinds = CONTROL_KINDS;
+  protected readonly controlKinds = SETTINGS_CONTROL_KINDS;
   protected readonly scopes = SCOPES;
   protected readonly usesOptions = usesOptions;
   protected readonly isNumeric = isNumeric;
@@ -356,6 +356,9 @@ export class SettingsEditorPage {
         return;
       }
       field.control = control;
+      if (control === 'keyBinding') {
+        field.scope = 'session';
+      }
       field.default = defaultFor(
         control,
         (field.options ?? []).map((option) => option.value),

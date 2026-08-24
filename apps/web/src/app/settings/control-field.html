@@ -105,6 +105,26 @@
         />
       }
 
+      @case ('keyBinding') {
+        <button
+          type="button"
+          class="key-binding"
+          [class.capturing]="capturing()"
+          [id]="control.id"
+          [disabled]="locked()"
+          [attr.aria-label]="control.labelKey | t"
+          (click)="capture()"
+          (keydown)="bind($event)"
+          (blur)="stopCapture()"
+        >
+          @if (capturing()) {
+            {{ 'ui.settings.pressKey' | t }}
+          } @else {
+            <kbd>{{ keyLabel() }}</kbd>
+          }
+        </button>
+      }
+
       @default {
         <input
           type="text"

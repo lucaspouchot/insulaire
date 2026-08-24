@@ -138,7 +138,17 @@ async function waitForServer(url, timeoutMs, isAlive) {
 async function startServer(options, log) {
   const child = spawn(
     'npm',
-    ['run', 'start', '--workspace', 'web', '--', '--port', String(options.port)],
+    [
+      'run',
+      'start',
+      '--workspace',
+      'web',
+      '--',
+      '--host',
+      '127.0.0.1',
+      '--port',
+      String(options.port),
+    ],
     {
       cwd: REPO,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -348,6 +358,11 @@ async function openPage(browser, viewport) {
       await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...base, buttons: 0 }, sessionId);
       await browser.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...base }, sessionId);
       await browser.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...base, buttons: 0 }, sessionId);
+    },
+    key: async (code, key) => {
+      const event = { code, key, text: '', unmodifiedText: '' };
+      await browser.send('Input.dispatchKeyEvent', { type: 'keyDown', ...event }, sessionId);
+      await browser.send('Input.dispatchKeyEvent', { type: 'keyUp', ...event }, sessionId);
     },
     screenshot: async () => {
       const shot = await browser.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, sessionId);
@@ -586,6 +601,15 @@ async function capturePages(browser, baseUrl, scenario, viewport, outDir, log) {
         }
         await settle(page, press.settleMs ?? 800);
         shots.push(await capture(page, press.name ?? `${spec.name}-press-${index + 1}`, outDir));
+      }
+
+      // Physical keyboard input can carry a printed key that differs from its
+      // code (`KeyW` / `z` on AZERTY). Keep both in the scenario so the harness
+      // proves the application listens to the physical position.
+      for (const [index, key] of (spec.keys ?? []).entries()) {
+        await page.key(key.code, key.key ?? key.code);
+        await settle(page, key.settleMs ?? 800);
+        shots.push(await capture(page, key.name ?? `${spec.name}-key-${index + 1}`, outDir));
       }
 
       for (const [index, [fx, fy]] of (spec.clicks ?? []).entries()) {

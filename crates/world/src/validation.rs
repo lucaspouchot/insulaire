@@ -29,7 +29,7 @@ use crate::hex::OffsetCoord;
 use crate::locale::{missing_keys, LocaleBundle};
 use crate::project::{ProjectDefinition, PROJECT_SCHEMA_VERSION};
 use crate::settings::{
-    ControlDefinition, ControlKind, SettingsDefinition, SETTINGS_SCHEMA_VERSION,
+    ControlDefinition, ControlKind, SettingScope, SettingsDefinition, SETTINGS_SCHEMA_VERSION,
 };
 use crate::template::{EntityKind, TemplateRegistry};
 use crate::tile_art::{
@@ -1594,6 +1594,28 @@ fn field_issues_with_nullable(
 ) -> Vec<ValidationIssue> {
     let mut issues = Vec::new();
 
+    // A shortcut configures input; it is not a value that can describe a
+    // character or a character-creation answer. The Rust type stays shared so
+    // settings keep the one ControlDefinition vocabulary of ADR-0025, while
+    // validation keeps the new presentation control in its meaningful domain.
+    if kind != "settings" && field.control == ControlKind::KeyBinding {
+        issues.push(ValidationIssue::error(
+            format!("{kind}.unsupportedControl"),
+            format!("{path}.control"),
+            "a keyBinding control may only declare a setting",
+        ));
+    }
+    if kind == "settings"
+        && field.control == ControlKind::KeyBinding
+        && field.scope != SettingScope::Session
+    {
+        issues.push(ValidationIssue::error(
+            "settings.keyBindingScope",
+            format!("{path}.scope"),
+            "a keyBinding must have session scope so the player can rebind it in play",
+        ));
+    }
+
     if field.label_key.trim().is_empty() {
         issues.push(ValidationIssue::error(
             format!("{kind}.missingLabelKey"),
@@ -1968,6 +1990,7 @@ fn creation_control_fits(choice: &ControlDefinition, parameter: &ControlDefiniti
             choice.control,
             ControlKind::Text | ControlKind::Color | ControlKind::Select
         ),
+        ControlKind::KeyBinding => false,
     }
 }
 
@@ -3896,6 +3919,18 @@ mod tests {
         let found = codes(&report);
         assert!(found.contains(&"character.invalidDefault"), "{found:?}");
         assert!(!found.iter().any(|code| code.starts_with("settings.")));
+    }
+
+    #[test]
+    fn key_bindings_are_settings_controls_not_character_values() {
+        let mut character = valid_character();
+        character.parameters[0].control = ControlKind::KeyBinding;
+        character.parameters[0].default = serde_json::json!("KeyQ");
+
+        let report = validate_character(&character);
+        let found = codes(&report);
+
+        assert!(found.contains(&"character.unsupportedControl"), "{found:?}");
     }
 
     /// A character with a hierarchy and a working idle: a definition that has

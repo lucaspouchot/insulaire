@@ -71,6 +71,13 @@ class FakeEngine {
                   scope: 'newGame' as const,
                   showIf: { field: 'difficulty', equals: 'harsh' },
                 },
+                {
+                  id: 'openChronicle',
+                  labelKey: 'game.openChronicle',
+                  control: 'keyBinding' as const,
+                  default: 'Digit1',
+                  scope: 'session' as const,
+                },
               ],
             },
           ],
@@ -80,7 +87,7 @@ class FakeEngine {
   }
 
   resolveSettings(values: SettingsValues): SettingsValues {
-    return { difficulty: 'normal', harshWinters: true, ...values };
+    return { difficulty: 'normal', harshWinters: true, openChronicle: 'Digit1', ...values };
   }
 
   get isReady(): boolean {
@@ -216,8 +223,40 @@ describe('SettingsService', () => {
     settings.set(field(settings, 'difficulty'), 'harsh');
 
     const game = settings.gameSettings();
-    expect(game).toEqual({ difficulty: 'harsh', harshWinters: true });
+    expect(game).toEqual({ difficulty: 'harsh', harshWinters: true, openChronicle: 'Digit1' });
     expect(game[ENGINE_SETTING.music]).toBeUndefined();
+  });
+
+  it('offers spatial movement defaults as physical key positions', () => {
+    const { settings } = setup();
+
+    expect(settings.keyBinding('input.moveNorthWest')).toBe('KeyW');
+    expect(settings.keyBinding('input.moveNorthEast')).toBe('KeyE');
+    expect(settings.keyBinding('input.moveWest')).toBe('KeyA');
+    expect(settings.keyBinding('input.moveEast')).toBe('KeyD');
+    expect(settings.keyBinding('input.moveSouthWest')).toBe('KeyZ');
+    expect(settings.keyBinding('input.moveSouthEast')).toBe('KeyX');
+  });
+
+  it('swaps two actions when a binding is already occupied', () => {
+    const { settings } = setup();
+    const northWest = field(settings, 'input.moveNorthWest');
+
+    settings.set(northWest, 'KeyE');
+
+    expect(settings.keyBinding('input.moveNorthWest')).toBe('KeyE');
+    expect(settings.keyBinding('input.moveNorthEast')).toBe('KeyW');
+  });
+
+  it('loads and persists a game-authored key binding', async () => {
+    const { settings } = setup();
+    await settings.ensureLoaded();
+    const chronicle = field(settings, 'openChronicle');
+
+    settings.set(chronicle, 'Digit2');
+
+    expect(settings.gameSettings()['openChronicle']).toBe('Digit2');
+    expect(localStorage.getItem('insulaire.settings.v1')).toContain('Digit2');
   });
 
   /**

@@ -150,7 +150,9 @@ browser. `cargo test` runs the entire simulation without WASM.
   ADR-0030.
 - **Application ↔ game settings** — the shell's settings are declared in code,
   the game's are content; both use one control vocabulary and one resolver, and
-  only the game's cross `createGame`. See ADR-0025.
+  only the game's cross `createGame`. Physical-key bindings follow the same
+  ownership split: universal action ids live in the shell and game-specific ids
+  are authored content. See ADR-0025 and ADR-0045.
 - **Session ↔ route** — the engine owns the game, so leaving `/play` does not
   end it and returning resumes it; a game ends only where a player asks. Anything
   calling `resetContent()` re-registers the languages, the title screen and the

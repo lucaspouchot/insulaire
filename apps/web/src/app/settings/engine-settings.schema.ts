@@ -15,6 +15,7 @@
  */
 
 import { ControlDefinition, SettingsSection, SettingValue } from '../../content/content-types';
+import { HexDirection } from '../../core/hex/hex-coords';
 
 /** Ids of the settings the application implements, for callers that read them. */
 export const ENGINE_SETTING = {
@@ -29,6 +30,61 @@ export const ENGINE_SETTING = {
   seedMode: 'game.seedMode',
   seed: 'game.seed',
 } as const;
+
+/** Universal shortcut ids implemented by the application. */
+export const ENGINE_SHORTCUT = {
+  moveNorthWest: 'input.moveNorthWest',
+  moveNorthEast: 'input.moveNorthEast',
+  moveWest: 'input.moveWest',
+  moveEast: 'input.moveEast',
+  moveSouthWest: 'input.moveSouthWest',
+  moveSouthEast: 'input.moveSouthEast',
+} as const;
+
+/** Movement actions and their physical defaults, in visual reading order. */
+export const MOVEMENT_SHORTCUTS: readonly {
+  readonly setting: (typeof ENGINE_SHORTCUT)[keyof typeof ENGINE_SHORTCUT];
+  readonly labelKey: string;
+  readonly direction: HexDirection;
+  readonly defaultCode: string;
+}[] = [
+  {
+    setting: ENGINE_SHORTCUT.moveNorthWest,
+    labelKey: 'ui.settings.moveNorthWest',
+    direction: 'northWest',
+    defaultCode: 'KeyW',
+  },
+  {
+    setting: ENGINE_SHORTCUT.moveNorthEast,
+    labelKey: 'ui.settings.moveNorthEast',
+    direction: 'northEast',
+    defaultCode: 'KeyE',
+  },
+  {
+    setting: ENGINE_SHORTCUT.moveWest,
+    labelKey: 'ui.settings.moveWest',
+    direction: 'west',
+    defaultCode: 'KeyA',
+  },
+  {
+    setting: ENGINE_SHORTCUT.moveEast,
+    labelKey: 'ui.settings.moveEast',
+    direction: 'east',
+    defaultCode: 'KeyD',
+  },
+  {
+    setting: ENGINE_SHORTCUT.moveSouthWest,
+    labelKey: 'ui.settings.moveSouthWest',
+    direction: 'southWest',
+    defaultCode: 'KeyZ',
+  },
+  {
+    setting: ENGINE_SHORTCUT.moveSouthEast,
+    labelKey: 'ui.settings.moveSouthEast',
+    direction: 'southEast',
+    defaultCode: 'KeyX',
+  },
+];
 
 /**
  * Window sizes offered when the game runs in the desktop shell.
@@ -183,6 +239,24 @@ export function engineSettingsSections(
               showIf: { field: ENGINE_SETTING.seedMode, equals: 'fixed' },
             },
           ],
+        },
+      ],
+    },
+    {
+      id: 'application-controls',
+      labelKey: 'ui.settings.controls',
+      groups: [
+        {
+          id: 'movement',
+          labelKey: 'ui.settings.movement',
+          fields: MOVEMENT_SHORTCUTS.map((shortcut) => ({
+            id: shortcut.setting,
+            labelKey: shortcut.labelKey,
+            helpKey: 'ui.settings.keyBindingHelp',
+            control: 'keyBinding',
+            default: shortcut.defaultCode,
+            scope: 'session',
+          })),
         },
       ],
     },

@@ -10,10 +10,12 @@
  * ends up — only how a `ControlDefinition` becomes an input and back.
  */
 
-import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
 
 import { ControlDefinition, SettingValue } from '../../content/content-types';
 import { TranslatePipe } from '../i18n/translate.pipe';
+import { KeyboardLayoutService } from './keyboard-layout.service';
+import { capturedKeyboardCode } from './keyboard-shortcuts';
 
 @Component({
   selector: 'app-control-field',
@@ -23,6 +25,8 @@ import { TranslatePipe } from '../i18n/translate.pipe';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ControlField {
+  private readonly keyboardLayout = inject(KeyboardLayoutService);
+
   /** The setting to render. */
   readonly field = input.required<ControlDefinition>();
   /** Its current value. */
@@ -42,6 +46,9 @@ export class ControlField {
    * hand to come off (`settings.service.ts`).
    */
   readonly committed = output<SettingValue>();
+
+  /** True between clicking a key binding and pressing its replacement. */
+  protected readonly capturing = signal(false);
 
   protected readonly asBoolean = computed(() => this.value() === true);
   protected readonly asNumber = computed(() =>
@@ -71,6 +78,42 @@ export class ControlField {
 
   protected setText(raw: string): void {
     this.emit(raw);
+  }
+
+  /** Starts listening on the already-focused binding button. */
+  protected capture(): void {
+    if (!this.locked()) {
+      this.capturing.set(true);
+    }
+  }
+
+  /** Captures one physical key; Escape leaves the existing value untouched. */
+  protected bind(event: KeyboardEvent): void {
+    if (!this.capturing()) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.code === 'Escape') {
+      this.capturing.set(false);
+      return;
+    }
+    const code = capturedKeyboardCode(event);
+    if (code === null) {
+      return;
+    }
+    this.keyboardLayout.remember(code, event.key);
+    this.capturing.set(false);
+    this.emit(code);
+  }
+
+  protected stopCapture(): void {
+    this.capturing.set(false);
+  }
+
+  /** Printed label for the physical code, e.g. `Z` for `KeyW` on AZERTY. */
+  protected keyLabel(): string {
+    return this.keyboardLayout.label(this.asText());
   }
 
   /** Adds or removes one option of a `multiSelect`, keeping author order. */

@@ -24,7 +24,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Highest settings schema version this build understands.
-pub const SETTINGS_SCHEMA_VERSION: u32 = 1;
+///
+/// Version 2 adds the physical-key [`ControlKind::KeyBinding`] control
+/// (`docs/adr/ADR-0045-shortcuts-use-physical-keys.md`).
+pub const SETTINGS_SCHEMA_VERSION: u32 = 2;
 
 /// How a setting is presented, and therefore what values it accepts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -46,6 +49,8 @@ pub enum ControlKind {
     Text,
     /// A CSS colour. String.
     Color,
+    /// One modifier-free `KeyboardEvent.code`. String.
+    KeyBinding,
 }
 
 impl ControlKind {
@@ -151,6 +156,7 @@ impl ControlDefinition {
             ControlKind::Toggle | ControlKind::Checkbox => value.is_boolean(),
             ControlKind::Slider | ControlKind::Number => value.is_number(),
             ControlKind::Text | ControlKind::Color => value.is_string(),
+            ControlKind::KeyBinding => value.as_str().is_some_and(is_keyboard_code),
             ControlKind::Select => value
                 .as_str()
                 .is_some_and(|text| self.options.iter().any(|option| option.value == text)),
@@ -188,6 +194,33 @@ impl ControlDefinition {
         number >= self.min.unwrap_or(f64::NEG_INFINITY)
             && number <= self.max.unwrap_or(f64::INFINITY)
     }
+}
+
+/// Whether a string can be a modifier-free `KeyboardEvent.code`.
+///
+/// The platform owns the growing list of codes, so validation deliberately
+/// checks the stable shape instead of copying that list. Whitespace,
+/// `Unidentified`, and modifier-only codes are the values that cannot describe
+/// the single physical action ADR-0045 defines.
+fn is_keyboard_code(code: &str) -> bool {
+    !code.is_empty()
+        && code != "Unidentified"
+        && code != "Escape"
+        && code.as_bytes().first().is_some_and(u8::is_ascii_uppercase)
+        && code
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric())
+        && !matches!(
+            code,
+            "AltLeft"
+                | "AltRight"
+                | "ControlLeft"
+                | "ControlRight"
+                | "MetaLeft"
+                | "MetaRight"
+                | "ShiftLeft"
+                | "ShiftRight"
+        )
 }
 
 /// A group of related settings inside a section.
@@ -436,6 +469,54 @@ mod tests {
         assert!(field.accepts(&serde_json::json!([])));
         assert!(!field.accepts(&serde_json::json!(["north", "east"])));
         assert!(!field.accepts(&serde_json::json!("north")));
+    }
+
+    #[test]
+    fn key_bindings_accept_physical_codes_but_not_characters_or_modifiers() {
+        let field: ControlDefinition = serde_json::from_value(serde_json::json!({
+            "id": "northWest",
+            "labelKey": "game.northWest",
+            "control": "keyBinding",
+            "default": "KeyW"
+        }))
+        .expect("key binding");
+
+        assert!(field.accepts(&serde_json::json!("KeyW")));
+        assert!(field.accepts(&serde_json::json!("Digit1")));
+        assert!(!field.accepts(&serde_json::json!("z")));
+        assert!(!field.accepts(&serde_json::json!("ShiftLeft")));
+        assert!(!field.accepts(&serde_json::json!("Unidentified")));
+    }
+
+    #[test]
+    fn key_bindings_must_remain_rebindable_during_a_session() {
+        let settings: SettingsDefinition = serde_json::from_value(serde_json::json!({
+            "id": "game",
+            "schemaVersion": 2,
+            "sections": [{
+                "id": "controls",
+                "labelKey": "game.controls",
+                "groups": [{
+                    "id": "actions",
+                    "labelKey": "game.actions",
+                    "fields": [{
+                        "id": "journal",
+                        "labelKey": "game.journal",
+                        "control": "keyBinding",
+                        "default": "Digit1",
+                        "scope": "newGame"
+                    }]
+                }]
+            }]
+        }))
+        .expect("settings");
+
+        let report = crate::validation::validate_settings(&settings);
+
+        assert!(report
+            .issues
+            .iter()
+            .any(|issue| issue.code == "settings.keyBindingScope"));
     }
 
     #[test]

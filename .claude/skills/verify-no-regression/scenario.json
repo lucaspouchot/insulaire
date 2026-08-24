@@ -314,6 +314,14 @@
       "name": "play",
       "path": "/play",
       "settleMs": 2000,
+      "keys": [
+        {
+          "name": "play-keyboard-north-west",
+          "code": "KeyW",
+          "key": "z",
+          "settleMs": 700
+        }
+      ],
       "clicks": [
         [0.268, 0.511],
         [0.52, 0.52]
@@ -325,6 +333,27 @@
       "settleMs": 2000,
       "clickSettleMs": 200,
       "clicks": [[0.268, 0.511]]
+    },
+    {
+      "name": "settings-controls",
+      "path": "/settings?section=application-controls",
+      "settleMs": 2000,
+      "canvas": false,
+      "press": [
+        {
+          "name": "settings-controls-capturing-north-west",
+          "selector": "[id=\"input.moveNorthWest\"]",
+          "settleMs": 500
+        }
+      ],
+      "keys": [
+        {
+          "name": "settings-controls-rebound-north-west",
+          "code": "KeyQ",
+          "key": "a",
+          "settleMs": 700
+        }
+      ]
     }
   ]
 }
