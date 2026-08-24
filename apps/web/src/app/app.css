@@ -48,8 +48,10 @@
 }
 
 .brand .mark {
-  color: var(--accent);
-  font-size: 18px;
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+  image-rendering: pixelated;
 }
 
 .tag {

@@ -1,7 +1,13 @@
 @if (showChrome()) {
   <header class="topbar">
     <div class="brand">
-      <span class="mark">⬢</span>
+      <img
+        class="mark"
+        src="insulaire-logo.png"
+        alt=""
+        width="26"
+        height="26"
+      />
       <span>{{ projectName() }}</span>
       @if (features.label) {
         <span class="tag">{{ features.label }}</span>
