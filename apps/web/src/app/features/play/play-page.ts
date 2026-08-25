@@ -373,13 +373,14 @@ export class PlayPage implements AfterViewInit, OnDestroy {
     const view = this.engine.worldView(worldId);
     const terrain = this.engine.terrainBuffer(worldId);
     const elevation = this.engine.elevationBuffer(worldId);
+    const presence = this.engine.presenceBuffer(worldId);
     this.worldView.set(view);
 
     if (attach || this.renderer === null) {
-      this.attachRenderer(view, terrain, elevation);
+      this.attachRenderer(view, terrain, presence, elevation);
     } else {
       this.renderer.setModel(
-        this.buildModel(view, terrain, elevation, elevationRangeOf(elevation)),
+        this.buildModel(view, terrain, presence, elevation, elevationRangeOf(elevation)),
       );
       // A door may lead onto a map drawn from another tile set, so the new
       // world waits for its own pictures exactly as the first one did.
@@ -477,7 +478,12 @@ export class PlayPage implements AfterViewInit, OnDestroy {
 
   // -------------------------------------------------------------- rendering
 
-  private attachRenderer(view: WorldView, terrain: Uint8Array, elevation: Int8Array): void {
+  private attachRenderer(
+    view: WorldView,
+    terrain: Uint8Array,
+    presence: Uint8Array,
+    elevation: Int8Array,
+  ): void {
     this.view?.dispose();
 
     const context = this.canvasRef().nativeElement.getContext('2d');
@@ -500,7 +506,9 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       contentUrl(TILE_ART_BUNDLE),
     );
     // The elevation range is scanned once per loaded world, never per frame.
-    this.renderer.setModel(this.buildModel(view, terrain, elevation, elevationRangeOf(elevation)));
+    this.renderer.setModel(
+      this.buildModel(view, terrain, presence, elevation, elevationRangeOf(elevation)),
+    );
     this.warmTileArt();
 
     this.view = new CanvasView(this.canvasRef().nativeElement, this.renderer, {
@@ -564,7 +572,13 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       // existing buffers are reused instead of crossing the boundary again.
       const current = this.renderer.currentModel;
       this.renderer.setModel(
-        this.buildModel(view, current.terrain, current.elevation, current.elevationRange),
+        this.buildModel(
+          view,
+          current.terrain,
+          current.presence,
+          current.elevation,
+          current.elevationRange,
+        ),
       );
     }
     this.revision.update((value) => value + 1);
@@ -574,6 +588,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
   private buildModel(
     view: WorldView,
     terrain: Uint8Array,
+    presence: Uint8Array,
     elevation: Int8Array,
     elevationRange: { min: number; max: number },
   ): RenderModel {
@@ -581,14 +596,18 @@ export class PlayPage implements AfterViewInit, OnDestroy {
     const legal: Offset[] = (snapshot?.legalMoves ?? []).map(([col, row]) => ({ col, row }));
 
     return {
-      width: view.width,
-      height: view.height,
+      bounds: {
+        origin: { col: view.bounds.origin[0], row: view.bounds.origin[1] },
+        width: view.bounds.width,
+        height: view.bounds.height,
+      },
       // Authored by the world, transported by the engine, applied here.
       projection: toProjectionMode(view.projection),
       characterHeightTiles: view.characterHeightTiles,
       tileArt: view.tileArt,
       palette: view.palette,
       terrain,
+      presence,
       elevation,
       elevationRange,
       artChoices: cellArtChoicesOf(view.artChoices ?? []),
@@ -612,6 +631,9 @@ export class PlayPage implements AfterViewInit, OnDestroy {
         },
       ],
       selected: this.selected(),
+      // Play draws no canvas: a hole is simply not part of the world
+      // (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+      showExtent: false,
       showGrid: this.showGrid(),
       gridLineWidth: view.grid.lineWidth,
       gridLineColor: view.grid.color,

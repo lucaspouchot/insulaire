@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { TileArt, faceHeight, shoulderDepth, shoulderLine } from '../content/content-types';
-import { offset } from '../core/hex/hex-coords';
+import { mapBounds, offset } from '../core/hex/hex-coords';
 import { SpriteSource } from './character-renderer';
 import { RenderModel, emptyRenderModel } from './render-model';
 import { Composition, CompositionFactory, TileAppearanceCache } from './tile-appearance';
@@ -57,8 +57,8 @@ describe('TileAppearanceCache', () => {
   ): RenderModel {
     return {
       ...emptyRenderModel(),
-      width: 16,
-      height: 16,
+      bounds: mapBounds(16, 16),
+      presence: new Uint8Array(16 * 16).fill(1),
       projection,
       tileArt,
       palette: [

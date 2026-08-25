@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { TileArt, shoulderDepth, shoulderLine } from '../content/content-types';
-import { offset } from '../core/hex/hex-coords';
+import { mapBounds, offset } from '../core/hex/hex-coords';
 import { HexLayout } from '../core/hex/hex-layout';
 import { Camera } from './camera';
 import { SpriteSource } from './character-renderer';
@@ -61,10 +61,10 @@ describe('HexMapRenderer hit-testing', () => {
     }
     return {
       ...emptyRenderModel(),
-      width,
-      height,
+      bounds: mapBounds(width, height),
       projection,
       terrain: new Uint8Array(width * height),
+      presence: new Uint8Array(width * height).fill(1),
       elevation,
       elevationRange: { min: 0, max: raised ? ELEVATION : 0 },
     };
@@ -79,8 +79,8 @@ describe('HexMapRenderer hit-testing', () => {
   it('resolves every cell to itself in top-down mode', () => {
     const flat = model('topDown');
     const renderer = rendererFor(flat);
-    for (let row = 0; row < flat.height; row += 1) {
-      for (let col = 0; col < flat.width; col += 1) {
+    for (let row = 0; row < flat.bounds.height; row += 1) {
+      for (let col = 0; col < flat.bounds.width; col += 1) {
         const cell = offset(col, row);
         expect(renderer.cellAtScreen(renderer.layout.centerOf(cell))).toEqual(cell);
       }
@@ -91,8 +91,8 @@ describe('HexMapRenderer hit-testing', () => {
     const flat = model('isometric');
     const renderer = rendererFor(flat);
 
-    for (let row = 0; row < flat.height; row += 1) {
-      for (let col = 0; col < flat.width; col += 1) {
+    for (let row = 0; row < flat.bounds.height; row += 1) {
+      for (let col = 0; col < flat.bounds.width; col += 1) {
         const cell = offset(col, row);
         const screen = ISOMETRIC.project(renderer.layout.centerOf(cell));
         expect(renderer.cellAtScreen(screen)).toEqual(cell);
@@ -144,10 +144,10 @@ describe('HexMapRenderer hit-testing', () => {
 
     const renderer = rendererFor({
       ...emptyRenderModel(),
-      width,
-      height,
+      bounds: mapBounds(width, height),
       projection: 'isometric',
       terrain: new Uint8Array(width * height),
+      presence: new Uint8Array(width * height).fill(1),
       elevation,
       elevationRange: { min: -depth, max: 0 },
     });
@@ -197,10 +197,10 @@ describe('HexMapRenderer content bounds', () => {
     }
     return {
       ...emptyRenderModel(),
-      width,
-      height,
+      bounds: mapBounds(width, height),
       projection,
       terrain: new Uint8Array(width * height),
+      presence: new Uint8Array(width * height).fill(1),
       elevation,
       elevationRange: { min: 0, max: raised ? ELEVATION : 0 },
     };
@@ -209,13 +209,13 @@ describe('HexMapRenderer content bounds', () => {
   it('is the plain hex plane in top-down mode', () => {
     const flat = model('topDown');
     expect(rendererFor(flat).contentBounds()).toEqual(
-      new HexLayout(HEX_SIZE).boundsOf(flat.width, flat.height),
+      new HexLayout(HEX_SIZE).boundsOf(flat.bounds),
     );
   });
 
   it('is the flattened plane when an isometric map has no relief', () => {
     const flat = model('isometric');
-    const plane = new HexLayout(HEX_SIZE).boundsOf(flat.width, flat.height);
+    const plane = new HexLayout(HEX_SIZE).boundsOf(flat.bounds);
     const projection = isometricFor(HEX_SIZE);
 
     expect(rendererFor(flat).contentBounds()).toEqual(projection.projectRect(plane));
@@ -229,7 +229,7 @@ describe('HexMapRenderer content bounds', () => {
     const relief = model('isometric', true);
     const layout = new HexLayout(HEX_SIZE);
     const projection = isometricFor(HEX_SIZE);
-    const plane = layout.boundsOf(relief.width, relief.height);
+    const plane = layout.boundsOf(relief.bounds);
     const bounds = rendererFor(relief).contentBounds();
 
     // Row 6 carries the hill, and even lifted it does not reach above row 0.
@@ -249,7 +249,7 @@ describe('HexMapRenderer content bounds', () => {
     const projection = isometricFor(HEX_SIZE);
     const bounds = rendererFor(relief).contentBounds();
 
-    const plane = layout.boundsOf(relief.width, relief.height);
+    const plane = layout.boundsOf(relief.bounds);
     expect(bounds.maxY).toBeCloseTo(plane.maxY * projection.tilt);
   });
 
@@ -264,16 +264,16 @@ describe('HexMapRenderer content bounds', () => {
 
     const bounds = rendererFor({
       ...emptyRenderModel(),
-      width,
-      height,
+      bounds: mapBounds(width, height),
       projection: 'isometric',
       terrain: new Uint8Array(width * height),
+      presence: new Uint8Array(width * height).fill(1),
       elevation,
       elevationRange: { min: -depth, max: 0 },
     }).contentBounds();
 
     expect(bounds.maxY).toBeCloseTo(
-      layout.boundsOf(width, height).maxY * projection.tilt + projection.liftOf(depth),
+      layout.boundsOf(mapBounds(width, height)).maxY * projection.tilt + projection.liftOf(depth),
     );
   });
 });
@@ -377,8 +377,8 @@ describe('HexMapRenderer tile art', () => {
     const base = emptyRenderModel();
     return {
       ...base,
-      width,
-      height,
+      bounds: mapBounds(width, height),
+      presence: new Uint8Array(width * height).fill(1),
       projection: 'isometric',
       showGrid: false,
       palette: [
@@ -699,9 +699,9 @@ describe('HexMapRenderer hover', () => {
     const height = 4;
     return {
       ...emptyRenderModel(),
-      width,
-      height,
+      bounds: mapBounds(width, height),
       terrain: new Uint8Array(width * height),
+      presence: new Uint8Array(width * height).fill(1),
       elevation: new Int8Array(width * height),
       // The grid strokes too, and nothing here is about the grid.
       showGrid: false,
@@ -784,6 +784,64 @@ describe('HexMapRenderer hover', () => {
     renderer.draw(400, 400);
 
     expect(widths).toEqual([3]);
+  });
+
+  it('strokes the extent fainter than the map, and only where it is shown', () => {
+    const alphas: number[] = [];
+    let globalAlpha = 1;
+    const context = new Proxy(
+      {},
+      {
+        get(_target, property) {
+          if (property === 'stroke') {
+            return () => alphas.push(globalAlpha);
+          }
+          if (property === 'measureText') {
+            return () => ({ width: 0 });
+          }
+          return () => undefined;
+        },
+        set(_target, property, value) {
+          if (property === 'globalAlpha') {
+            globalAlpha = Number(value);
+          }
+          return true;
+        },
+      },
+    ) as CanvasRenderingContext2D;
+
+    const base = flatModel();
+    const shaped = new Uint8Array(base.presence);
+    shaped[0] = 0;
+
+    // The editor shows the canvas an author may draw into: two strokes, the
+    // ghost first and fainter (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+    const editor = new HexMapRenderer(context, LAYOUT, new Camera());
+    editor.setModel({ ...base, presence: shaped, showGrid: true, showExtent: true });
+    editor.draw(400, 400);
+    expect(alphas).toEqual([base.gridLineAlpha * 0.4, base.gridLineAlpha]);
+
+    // Play does not: a hole is simply not part of the world.
+    alphas.length = 0;
+    const play = new HexMapRenderer(context, LAYOUT, new Camera());
+    play.setModel({ ...base, presence: shaped, showGrid: true, showExtent: false });
+    play.draw(400, 400);
+    expect(alphas).toEqual([base.gridLineAlpha]);
+  });
+
+  it('resolves a hole only where the extent is shown', () => {
+    const base = flatModel();
+    const shaped = new Uint8Array(base.presence);
+    shaped[0] = 0;
+    const hole = offset(0, 0);
+
+    const editor = new HexMapRenderer({} as CanvasRenderingContext2D, LAYOUT, new Camera());
+    editor.setModel({ ...base, presence: shaped, showExtent: true });
+    expect(editor.cellAtScreen(LAYOUT.centerOf(hole))).toEqual(hole);
+
+    const play = new HexMapRenderer({} as CanvasRenderingContext2D, LAYOUT, new Camera());
+    play.setModel({ ...base, presence: shaped, showExtent: false });
+    expect(play.cellAtScreen(LAYOUT.centerOf(hole))).toBeNull();
   });
 
   it('draws an entity character instead of its fallback glyph', () => {

@@ -242,33 +242,13 @@ impl OffsetCoord {
         Self { col, row }
     }
 
-    /// Returns `true` when the coordinate lies inside a `width x height` map.
+    /// `true` when this is the coordinate a map's extent defaults to.
+    ///
+    /// The shape `skip_serializing_if` wants, so a map anchored where maps have
+    /// always been anchored writes no `origin`.
     #[must_use]
-    pub const fn is_within(self, width: u32, height: u32) -> bool {
-        self.col >= 0
-            && self.row >= 0
-            && (self.col as i64) < width as i64
-            && (self.row as i64) < height as i64
-    }
-
-    /// Returns the row-major index of this coordinate inside a map of `width`
-    /// columns, or `None` when the coordinate is out of bounds.
-    #[must_use]
-    pub fn index_in(self, width: u32, height: u32) -> Option<usize> {
-        if !self.is_within(width, height) {
-            return None;
-        }
-        Some(self.row as usize * width as usize + self.col as usize)
-    }
-
-    /// Rebuilds an offset coordinate from a row-major index.
-    #[must_use]
-    pub fn from_index(index: usize, width: u32) -> Self {
-        let width = width.max(1) as usize;
-        Self {
-            col: (index % width) as i32,
-            row: (index / width) as i32,
-        }
+    pub const fn is_origin(&self) -> bool {
+        self.col == 0 && self.row == 0
     }
 }
 
@@ -281,6 +261,134 @@ impl fmt::Display for OffsetCoord {
 impl From<Hex> for OffsetCoord {
     fn from(value: Hex) -> Self {
         value.to_offset()
+    }
+}
+
+/// The rectangle of offset coordinates a map's dense buffers cover.
+///
+/// A map is a *set of hexes*, not a rectangle
+/// (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`); this is the box those
+/// hexes are stored in, and the only thing that turns a coordinate into a
+/// buffer index.
+///
+/// The `origin` is what makes extending a map cheap and safe. Growing
+/// northwards or westwards moves the origin instead of renumbering the cells,
+/// so an authored `[col, row]` means the same hex forever — which matters twice
+/// over: odd-r is not translation-invariant, so shifting rows by an odd amount
+/// would mirror the shape, and another map's door names a coordinate in this
+/// one (`docs/adr/ADR-0017-map-links.md`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MapBounds {
+    /// The north-west corner: the coordinate stored at index `0`.
+    pub origin: OffsetCoord,
+    /// Number of columns covered.
+    pub width: u32,
+    /// Number of rows covered.
+    pub height: u32,
+}
+
+impl MapBounds {
+    /// Creates an extent anchored at `origin`.
+    #[must_use]
+    pub const fn new(origin: OffsetCoord, width: u32, height: u32) -> Self {
+        Self {
+            origin,
+            width,
+            height,
+        }
+    }
+
+    /// Creates an extent anchored at `[0, 0]`, where every map used to be.
+    #[must_use]
+    pub const fn of_size(width: u32, height: u32) -> Self {
+        Self::new(OffsetCoord::new(0, 0), width, height)
+    }
+
+    /// Number of cells the buffers hold, present or not.
+    #[must_use]
+    pub const fn cell_count(&self) -> usize {
+        self.width as usize * self.height as usize
+    }
+
+    /// `true` when the extent covers no cell at all.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.width == 0 || self.height == 0
+    }
+
+    /// First column covered.
+    #[must_use]
+    pub const fn min_col(&self) -> i32 {
+        self.origin.col
+    }
+
+    /// First row covered.
+    #[must_use]
+    pub const fn min_row(&self) -> i32 {
+        self.origin.row
+    }
+
+    /// Last column covered; meaningless on an empty extent.
+    #[must_use]
+    pub const fn max_col(&self) -> i32 {
+        self.origin.col + self.width as i32 - 1
+    }
+
+    /// Last row covered; meaningless on an empty extent.
+    #[must_use]
+    pub const fn max_row(&self) -> i32 {
+        self.origin.row + self.height as i32 - 1
+    }
+
+    /// `true` when `at` has a slot in the buffers.
+    ///
+    /// This answers where a *buffer index* lives. Whether the world actually has
+    /// that hex is [`crate::WorldGrid::contains`], and only that one is a rule
+    /// (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+    #[must_use]
+    pub const fn contains(&self, at: OffsetCoord) -> bool {
+        let col = at.col as i64 - self.origin.col as i64;
+        let row = at.row as i64 - self.origin.row as i64;
+        col >= 0 && row >= 0 && col < self.width as i64 && row < self.height as i64
+    }
+
+    /// The row-major index of `at`, or `None` when it is outside the extent.
+    #[must_use]
+    pub fn index_of(&self, at: OffsetCoord) -> Option<usize> {
+        if !self.contains(at) {
+            return None;
+        }
+        let col = (at.col - self.origin.col) as usize;
+        let row = (at.row - self.origin.row) as usize;
+        Some(row * self.width as usize + col)
+    }
+
+    /// The coordinate stored at a row-major index.
+    #[must_use]
+    pub fn coord_at(&self, index: usize) -> OffsetCoord {
+        let width = (self.width as usize).max(1);
+        OffsetCoord::new(
+            self.origin.col + (index % width) as i32,
+            self.origin.row + (index / width) as i32,
+        )
+    }
+
+    /// Every coordinate the extent covers, row-major.
+    pub fn coords(&self) -> impl Iterator<Item = OffsetCoord> + '_ {
+        (0..self.cell_count()).map(|index| self.coord_at(index))
+    }
+}
+
+impl Default for MapBounds {
+    fn default() -> Self {
+        Self::of_size(0, 0)
+    }
+}
+
+impl fmt::Display for MapBounds {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}x{} at {}", self.width, self.height, self.origin)
     }
 }
 
@@ -447,29 +555,69 @@ mod tests {
     }
 
     #[test]
-    fn bounds_checking_rejects_coordinates_outside_the_map() {
-        assert!(OffsetCoord::new(0, 0).is_within(20, 20));
-        assert!(OffsetCoord::new(19, 19).is_within(20, 20));
-        assert!(!OffsetCoord::new(20, 0).is_within(20, 20));
-        assert!(!OffsetCoord::new(0, 20).is_within(20, 20));
-        assert!(!OffsetCoord::new(-1, 0).is_within(20, 20));
-        assert!(!OffsetCoord::new(0, -1).is_within(20, 20));
+    fn bounds_checking_rejects_coordinates_outside_the_extent() {
+        let bounds = MapBounds::of_size(20, 20);
+        assert!(bounds.contains(OffsetCoord::new(0, 0)));
+        assert!(bounds.contains(OffsetCoord::new(19, 19)));
+        assert!(!bounds.contains(OffsetCoord::new(20, 0)));
+        assert!(!bounds.contains(OffsetCoord::new(0, 20)));
+        assert!(!bounds.contains(OffsetCoord::new(-1, 0)));
+        assert!(!bounds.contains(OffsetCoord::new(0, -1)));
+    }
+
+    #[test]
+    fn an_extent_with_an_origin_covers_negative_coordinates() {
+        let bounds = MapBounds::new(OffsetCoord::new(-3, -5), 6, 8);
+        assert!(bounds.contains(OffsetCoord::new(-3, -5)));
+        assert!(bounds.contains(OffsetCoord::new(2, 2)));
+        assert!(!bounds.contains(OffsetCoord::new(-4, -5)));
+        assert!(!bounds.contains(OffsetCoord::new(3, 2)));
+
+        assert_eq!(bounds.index_of(OffsetCoord::new(-3, -5)), Some(0));
+        assert_eq!(bounds.index_of(OffsetCoord::new(-2, -5)), Some(1));
+        assert_eq!(bounds.index_of(OffsetCoord::new(-3, -4)), Some(6));
+        assert_eq!(bounds.min_col(), -3);
+        assert_eq!(bounds.max_col(), 2);
+        assert_eq!(bounds.min_row(), -5);
+        assert_eq!(bounds.max_row(), 2);
     }
 
     #[test]
     fn row_major_index_round_trips() {
-        let width = 20;
-        let height = 12;
-        assert_eq!(OffsetCoord::new(0, 0).index_in(width, height), Some(0));
-        assert_eq!(OffsetCoord::new(19, 0).index_in(width, height), Some(19));
-        assert_eq!(OffsetCoord::new(0, 1).index_in(width, height), Some(20));
-        assert_eq!(OffsetCoord::new(20, 0).index_in(width, height), None);
-        assert_eq!(OffsetCoord::new(0, 12).index_in(width, height), None);
+        let bounds = MapBounds::of_size(20, 12);
+        assert_eq!(bounds.index_of(OffsetCoord::new(0, 0)), Some(0));
+        assert_eq!(bounds.index_of(OffsetCoord::new(19, 0)), Some(19));
+        assert_eq!(bounds.index_of(OffsetCoord::new(0, 1)), Some(20));
+        assert_eq!(bounds.index_of(OffsetCoord::new(20, 0)), None);
+        assert_eq!(bounds.index_of(OffsetCoord::new(0, 12)), None);
 
-        for index in 0..(width as usize * height as usize) {
-            let offset = OffsetCoord::from_index(index, width);
-            assert_eq!(offset.index_in(width, height), Some(index));
+        for bounds in [
+            MapBounds::of_size(20, 12),
+            MapBounds::new(OffsetCoord::new(-7, -3), 20, 12),
+        ] {
+            for index in 0..bounds.cell_count() {
+                assert_eq!(bounds.index_of(bounds.coord_at(index)), Some(index));
+            }
         }
+    }
+
+    #[test]
+    fn moving_the_origin_keeps_every_cell_on_its_own_row_parity() {
+        // Odd-r is not translation-invariant, which is the whole reason the
+        // extent has an origin rather than the cells being renumbered: the same
+        // authored coordinate must keep the same neighbours whatever box holds
+        // it (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+        let cell = OffsetCoord::new(4, 3);
+        let neighbours = Hex::from_offset(cell).neighbors().map(Hex::to_offset);
+
+        let narrow = MapBounds::of_size(8, 8);
+        let widened = MapBounds::new(OffsetCoord::new(-5, -5), 20, 20);
+        assert!(narrow.contains(cell) && widened.contains(cell));
+        assert_ne!(narrow.index_of(cell), widened.index_of(cell));
+        assert_eq!(
+            neighbours,
+            Hex::from_offset(cell).neighbors().map(Hex::to_offset)
+        );
     }
 
     #[test]

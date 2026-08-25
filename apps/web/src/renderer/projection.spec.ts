@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { offset } from '../core/hex/hex-coords';
+import { mapBounds, offset } from '../core/hex/hex-coords';
 import { HexLayout } from '../core/hex/hex-layout';
 import { ISOMETRIC_TILT, Projection, toProjectionMode } from './projection';
 
@@ -54,7 +54,7 @@ describe('Projection', () => {
   });
 
   it('projects a whole map so that its highest and lowest cells still fit', () => {
-    const plane = layout.boundsOf(20, 20);
+    const plane = layout.boundsOf(mapBounds(20, 20));
     const bounds = isometric.projectRect(plane, -2, 6);
 
     expect(bounds.minX).toBe(plane.minX);

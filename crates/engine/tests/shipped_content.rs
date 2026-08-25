@@ -283,10 +283,13 @@ fn the_demo_world_matches_its_documented_shape() {
     let engine = engine_with_shipped_content();
     let view = engine.world_view("demo_world").expect("view");
 
-    assert_eq!((view.width, view.height), (20, 20));
+    assert_eq!((view.bounds.width, view.bounds.height), (20, 20));
     assert_eq!(view.orientation, "pointy");
     assert_eq!(view.tile_set_id, "mvp_terrain");
     assert_eq!(view.cell_count, 400);
+    // The shipped demo is still a full rectangle, so its shape costs nothing
+    // (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+    assert_eq!(view.present_cell_count, 400);
     assert_eq!(view.palette.len(), 7);
     assert_eq!(view.locations.len(), 3);
 

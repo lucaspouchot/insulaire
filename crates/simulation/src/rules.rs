@@ -174,6 +174,26 @@ mod tests {
     }
 
     #[test]
+    fn a_hole_in_the_map_is_outside_it() {
+        // The whole payoff of `WorldGrid::contains` meaning "the map has this
+        // hex": no rule here learned anything about shapes
+        // (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+        let hole = OffsetCoord::new(3, 2);
+        let mut world = testing::sample_world();
+        world.entities[0].at = OffsetCoord::new(2, 2);
+        world.entities[1].at = OffsetCoord::new(7, 7);
+        world.shape.exceptions = vec![hole];
+        let state = game(world, testing::sample_tile_set());
+
+        let hex = Hex::from_offset(hole);
+        assert!(matches!(
+            validate(&state, Action::MoveTo(hex)),
+            Err(ActionError::OutOfBounds { .. })
+        ));
+        assert!(!legal_moves(&state).contains(&hex));
+    }
+
+    #[test]
     fn legal_moves_agree_with_validate_on_every_neighbour() {
         let mut world = testing::sample_world();
         world.entities[0].at = OffsetCoord::new(4, 5); // next to water

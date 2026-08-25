@@ -10,8 +10,10 @@ An authored world contains at minimum:
 
 - `id`
 - `schemaVersion`
-- `width`
-- `height`
+- `origin`, `width`, `height` — the **extent**: the rectangle the dense buffers
+  cover, anchored anywhere (ADR-0046)
+- `shape` — which of the extent's cells the map has; absent is the full
+  rectangle
 - `orientation`
 - `projection` — presentation only; carried, never interpreted by the engine
 - `characterHeightTiles` — presentation-only map scale; a 128-pixel character
@@ -322,17 +324,24 @@ playable (ADR-0017).
 
 The flattened runtime view of a world:
 
-- `width`, `height`
+- `bounds: MapBounds` — the extent the buffers cover: `origin`, `width`, `height`
 - `palette: Vec<ResolvedTile>` — the tile set, flattened
 - `cells: Vec<u8>` — one palette index per cell, row-major in offset
   coordinates
 - `elevations: Vec<i8>` — one elevation per cell, in the same layout
+- `presence: Vec<u8>` — `1` where the map has a hex, `0` where it has a hole,
+  in the same layout again
 - `art_choices: Vec<CellArtChoice>` — the cells that chose their picture,
   sorted by cell index
 
-`cells` and `elevations` are exactly the buffers handed to JavaScript as a
-`Uint8Array` and an `Int8Array`, so the file coordinate, the buffer index and the
-rendered position all agree.
+`cells`, `elevations` and `presence` are exactly the buffers handed to
+JavaScript as a `Uint8Array`, an `Int8Array` and a `Uint8Array`, so the file
+coordinate, the buffer index and the rendered position all agree.
+
+`bounds` answers where a *buffer index* lives; `WorldGrid::contains` answers
+whether the **world has** that hex, and only the second one is a rule. A hole
+makes `tile_at` return `None`, which makes it impassable and costless to every
+rule downstream without any of them learning about shapes (ADR-0046).
 
 `art_choices` is the one **sparse** structure, and normally empty: choosing is an
 authored exception, so three more dense buffers would be three megabytes of
@@ -352,11 +361,20 @@ stably.
 The editor owns a third model, `WorldDocument`
 (`apps/web/src/content/world-document.ts`), and it is neither of the above: a
 world being *authored* has no tick, no RNG and no entity handles, and every
-cell is freely mutable. It holds a dense `Uint8Array` of palette indices and a
-dense `Int8Array` of elevations — the same layout the runtime and the renderer
-use — plus the authored `projection`, `characterHeightTiles`, grid appearance
-and `zone`, the placed entities' opaque properties (including
-`previewCharacter`), and re-sparsifies on export.
+cell is freely mutable. It holds a dense `Uint8Array` of palette indices, a
+dense `Int8Array` of elevations and a dense `Uint8Array` of presence flags — the
+same three buffers the runtime and the renderer use — plus its `MapBounds`, the
+authored `projection`, `characterHeightTiles`, grid appearance and `zone`, the
+placed entities' opaque properties (including `previewCharacter`), and
+re-sparsifies on export.
+
+`setPresent` carves a hex out or puts one back, and `resize` moves the extent —
+growing north or west by moving the origin, never by renumbering cells. Both
+refuse rather than destroy: carving is refused while anything authored stands on
+the cell, and trimming while the discarded region still holds hexes or authored
+records (`occupantsAt`, `occupantsOutside`, `presentOutside` are what name what
+is in the way). Paint, elevation and art choices deliberately survive under a
+hole, so restoring a hex restores what was on it (ADR-0046).
 Its palette entries carry each tile's `art`, and the document carries the tile
 set's pixel grid, so the editor's renderer and the game's are handed the same
 model.

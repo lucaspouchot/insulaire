@@ -110,19 +110,90 @@ export function hexDistance(a: Axial, b: Axial): number {
   return (Math.abs(a.q - b.q) + Math.abs(a.r - b.r) + Math.abs(cubeS(a) - cubeS(b))) / 2;
 }
 
-/** `true` when the coordinate lies inside a `width x height` map. */
-export function isWithin(value: Offset, width: number, height: number): boolean {
-  return value.col >= 0 && value.row >= 0 && value.col < width && value.row < height;
+/**
+ * The rectangle a map's dense buffers cover; mirrors Rust's `MapBounds`.
+ *
+ * A map is a *set of hexes*, not a rectangle
+ * (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`). This is only the box those
+ * hexes are stored in, and the `origin` is what lets the box grow northwards or
+ * westwards without renumbering a single authored cell — odd-r is not
+ * translation-invariant, so a shape shifted by an odd number of rows would be a
+ * different shape.
+ */
+export interface MapBounds {
+  readonly origin: Offset;
+  readonly width: number;
+  readonly height: number;
 }
 
-/** Row-major index of a cell, or `-1` when out of bounds. */
-export function indexIn(value: Offset, width: number, height: number): number {
-  return isWithin(value, width, height) ? value.row * width + value.col : -1;
+/** Creates an extent; `origin` defaults to `[0, 0]`, where maps used to start. */
+export function mapBounds(width: number, height: number, origin: Offset = ORIGIN): MapBounds {
+  return { origin, width, height };
 }
 
-/** Rebuilds an offset coordinate from a row-major index. */
-export function fromIndex(index: number, width: number): Offset {
-  return { col: index % width, row: Math.floor(index / width) };
+const ORIGIN: Offset = { col: 0, row: 0 };
+
+/** An extent covering nothing, for a view with no world loaded. */
+export const EMPTY_BOUNDS: MapBounds = mapBounds(0, 0);
+
+/** Number of cells the extent covers, present or not. */
+export function cellCount(bounds: MapBounds): number {
+  return bounds.width * bounds.height;
+}
+
+/** First column covered. */
+export function minCol(bounds: MapBounds): number {
+  return bounds.origin.col;
+}
+
+/** First row covered. */
+export function minRow(bounds: MapBounds): number {
+  return bounds.origin.row;
+}
+
+/** Last column covered; meaningless on an empty extent. */
+export function maxCol(bounds: MapBounds): number {
+  return bounds.origin.col + bounds.width - 1;
+}
+
+/** Last row covered; meaningless on an empty extent. */
+export function maxRow(bounds: MapBounds): number {
+  return bounds.origin.row + bounds.height - 1;
+}
+
+/**
+ * `true` when the coordinate has a slot in the buffers.
+ *
+ * This answers where a *buffer index* lives, never whether the map has that
+ * hex — that is the presence buffer's answer, and only that one is a rule.
+ */
+export function isWithin(value: Offset, bounds: MapBounds): boolean {
+  const col = value.col - bounds.origin.col;
+  const row = value.row - bounds.origin.row;
+  return col >= 0 && row >= 0 && col < bounds.width && row < bounds.height;
+}
+
+/** Row-major index of a cell, or `-1` when outside the extent. */
+export function indexIn(value: Offset, bounds: MapBounds): number {
+  return isWithin(value, bounds)
+    ? (value.row - bounds.origin.row) * bounds.width + (value.col - bounds.origin.col)
+    : -1;
+}
+
+/** The coordinate stored at a row-major index. */
+export function fromIndex(index: number, bounds: MapBounds): Offset {
+  const width = Math.max(1, bounds.width);
+  return {
+    col: bounds.origin.col + (index % width),
+    row: bounds.origin.row + Math.floor(index / width),
+  };
+}
+
+/** `true` when two extents cover exactly the same cells. */
+export function sameBounds(a: MapBounds, b: MapBounds): boolean {
+  return (
+    a.width === b.width && a.height === b.height && a.origin.col === b.origin.col && a.origin.row === b.origin.row
+  );
 }
 
 /**

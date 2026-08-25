@@ -4,11 +4,13 @@ import {
   axial,
   axialToOffset,
   cubeS,
+  cellCount,
   fromIndex,
   fromWire,
   hexDistance,
   indexIn,
   isWithin,
+  mapBounds,
   offset,
   offsetNeighbor,
   offsetToAxial,
@@ -94,25 +96,41 @@ describe('hex coordinates', () => {
     expect(hexDistance(a, c)).toBeLessThanOrEqual(hexDistance(a, b) + hexDistance(b, c));
   });
 
-  it('checks bounds inclusively from zero', () => {
-    expect(isWithin(offset(0, 0), 20, 20)).toBe(true);
-    expect(isWithin(offset(19, 19), 20, 20)).toBe(true);
-    expect(isWithin(offset(20, 0), 20, 20)).toBe(false);
-    expect(isWithin(offset(0, 20), 20, 20)).toBe(false);
-    expect(isWithin(offset(-1, 0), 20, 20)).toBe(false);
-    expect(isWithin(offset(0, -1), 20, 20)).toBe(false);
+  it('checks bounds inclusively from the extent\'s origin', () => {
+    const bounds = mapBounds(20, 20);
+    expect(isWithin(offset(0, 0), bounds)).toBe(true);
+    expect(isWithin(offset(19, 19), bounds)).toBe(true);
+    expect(isWithin(offset(20, 0), bounds)).toBe(false);
+    expect(isWithin(offset(0, 20), bounds)).toBe(false);
+    expect(isWithin(offset(-1, 0), bounds)).toBe(false);
+    expect(isWithin(offset(0, -1), bounds)).toBe(false);
+  });
+
+  it('covers negative coordinates once the extent has an origin', () => {
+    // A map extended northwards and westwards; mirrors the Rust assertions
+    // (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+    const bounds = mapBounds(6, 8, offset(-3, -5));
+    expect(isWithin(offset(-3, -5), bounds)).toBe(true);
+    expect(isWithin(offset(2, 2), bounds)).toBe(true);
+    expect(isWithin(offset(-4, -5), bounds)).toBe(false);
+    expect(isWithin(offset(3, 2), bounds)).toBe(false);
+
+    expect(indexIn(offset(-3, -5), bounds)).toBe(0);
+    expect(indexIn(offset(-2, -5), bounds)).toBe(1);
+    expect(indexIn(offset(-3, -4), bounds)).toBe(6);
   });
 
   it('round-trips row-major indices and rejects out-of-bounds cells', () => {
-    const width = 20;
-    const height = 12;
-    expect(indexIn(offset(0, 0), width, height)).toBe(0);
-    expect(indexIn(offset(19, 0), width, height)).toBe(19);
-    expect(indexIn(offset(0, 1), width, height)).toBe(20);
-    expect(indexIn(offset(20, 0), width, height)).toBe(-1);
+    const bounds = mapBounds(20, 12);
+    expect(indexIn(offset(0, 0), bounds)).toBe(0);
+    expect(indexIn(offset(19, 0), bounds)).toBe(19);
+    expect(indexIn(offset(0, 1), bounds)).toBe(20);
+    expect(indexIn(offset(20, 0), bounds)).toBe(-1);
 
-    for (let index = 0; index < width * height; index += 1) {
-      expect(indexIn(fromIndex(index, width), width, height)).toBe(index);
+    for (const extent of [bounds, mapBounds(20, 12, offset(-7, -3))]) {
+      for (let index = 0; index < cellCount(extent); index += 1) {
+        expect(indexIn(fromIndex(index, extent), extent)).toBe(index);
+      }
     }
   });
 

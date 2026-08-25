@@ -620,6 +620,8 @@ const EN: StringTree = {
           paint: 'Paint',
           raise: 'Raise',
           lower: 'Lower',
+          addCell: 'Add hex',
+          removeCell: 'Remove hex',
           player: 'Player',
           monster: 'Monster',
           link: 'Door',
@@ -629,6 +631,10 @@ const EN: StringTree = {
             paint: 'Click or drag to paint the selected terrain.',
             raise: 'Click or drag to raise cells by one step. Visible in isometric.',
             lower: 'Click or drag to lower cells by one step. Visible in isometric.',
+            addCell:
+              'Click or drag the faint cells to give the map a hex there. Islands need not touch.',
+            removeCell:
+              'Click or drag to take a hex off the map. Its terrain is kept, so putting it back restores it.',
             player: 'Click a hex to move the player start. A world has exactly one.',
             monster: 'Click hexes to add hunters.',
             link: 'Click a hex to put a door on it, then set where it leads below.',
@@ -640,6 +646,23 @@ const EN: StringTree = {
           empty: 'Pick a terrain in the palette on the right.',
           movementCost: 'Movement cost {cost}',
           impassable: 'Impassable',
+        },
+        shape: {
+          heading: 'Shape',
+          hexes: 'hexes',
+          extent: 'extent',
+          origin: 'origin',
+          extend: 'Extend the canvas',
+          side: {
+            north: 'north',
+            south: 'south',
+            west: 'west',
+            east: 'east',
+          },
+          growTooltip: 'Adds four rows or columns of empty canvas on this side.',
+          shrinkTooltip:
+            'Removes four rows or columns on this side. Refused while the map still has hexes there.',
+          hint: 'A map is a set of hexes, not a rectangle. The extent is only what is stored; carve it into any shape, and leave islands apart if you want.',
         },
         elevation: {
           heading: 'Elevation',
@@ -747,7 +770,8 @@ const EN: StringTree = {
         },
         open: {
           heading: 'Open map',
-          size: 'size',
+          size: 'extent',
+          hexes: 'hexes',
           zone: 'zone',
           tileSet: 'tile set',
           projection: 'projection',
@@ -792,6 +816,17 @@ const EN: StringTree = {
           notWritten: 'The content is invalid; nothing was written.',
           reloadFailed: 'Could not reload content/: {reason}',
           importFailed: 'Could not import {file}: {reason}',
+          carveBlocked: {
+            entity: 'Move the entity "{id}" first: a hex is never removed from under one.',
+            location: 'Move the location "{id}" first: a hex is never removed from under one.',
+            link: 'Move the door "{id}" first: a hex is never removed from under one.',
+          },
+          trimBlocked: {
+            entity: 'Shrinking would leave the entity "{id}" outside the map.',
+            location: 'Shrinking would leave the location "{id}" outside the map.',
+            link: 'Shrinking would leave the door "{id}" outside the map.',
+            cells: 'Shrinking would discard {count} hexes the map still has. Remove them first.',
+          },
         },
       },
     },
@@ -1511,6 +1546,8 @@ const FR: StringTree = {
           paint: 'Peindre',
           raise: 'Élever',
           lower: 'Abaisser',
+          addCell: 'Ajouter un hexagone',
+          removeCell: 'Retirer un hexagone',
           player: 'Joueur',
           monster: 'Monstre',
           link: 'Porte',
@@ -1521,6 +1558,10 @@ const FR: StringTree = {
             raise: 'Cliquez ou glissez pour élever les cellules d’un cran. Visible en isométrique.',
             lower:
               'Cliquez ou glissez pour abaisser les cellules d’un cran. Visible en isométrique.',
+            addCell:
+              'Cliquez ou glissez sur les cellules pâles pour donner un hexagone à la carte. Les îlots n’ont pas à se toucher.',
+            removeCell:
+              'Cliquez ou glissez pour retirer un hexagone de la carte. Son terrain est conservé : le remettre le restaure.',
             player: 'Cliquez un hexagone pour déplacer le départ du joueur. Un monde n’en a qu’un.',
             monster: 'Cliquez des hexagones pour ajouter des chasseurs.',
             link: 'Cliquez un hexagone pour y poser une porte, puis réglez sa destination ci-dessous.',
@@ -1532,6 +1573,23 @@ const FR: StringTree = {
           empty: 'Choisissez un terrain dans la palette de droite.',
           movementCost: 'Coût de déplacement {cost}',
           impassable: 'Infranchissable',
+        },
+        shape: {
+          heading: 'Forme',
+          hexes: 'hexagones',
+          extent: 'étendue',
+          origin: 'origine',
+          extend: 'Agrandir la toile',
+          side: {
+            north: 'nord',
+            south: 'sud',
+            west: 'ouest',
+            east: 'est',
+          },
+          growTooltip: 'Ajoute quatre rangées ou colonnes de toile vide de ce côté.',
+          shrinkTooltip:
+            'Retire quatre rangées ou colonnes de ce côté. Refusé tant que la carte y garde des hexagones.',
+          hint: 'Une carte est un ensemble d’hexagones, pas un rectangle. L’étendue n’est que le stockage : creusez la forme que vous voulez, et laissez les îlots détachés si ça vous chante.',
         },
         elevation: {
           heading: 'Relief',
@@ -1640,7 +1698,8 @@ const FR: StringTree = {
         },
         open: {
           heading: 'Carte ouverte',
-          size: 'taille',
+          size: 'étendue',
+          hexes: 'hexagones',
           zone: 'zone',
           tileSet: 'tileset',
           projection: 'projection',
@@ -1686,6 +1745,18 @@ const FR: StringTree = {
           notWritten: 'Le contenu est invalide ; rien n’a été écrit.',
           reloadFailed: 'Impossible de recharger content/ : {reason}',
           importFailed: 'Impossible d’importer {file} : {reason}',
+          carveBlocked: {
+            entity: 'Déplacez d’abord l’entité « {id} » : on ne retire jamais un hexagone sous elle.',
+            location: 'Déplacez d’abord le lieu « {id} » : on ne retire jamais un hexagone sous lui.',
+            link: 'Déplacez d’abord la porte « {id} » : on ne retire jamais un hexagone sous elle.',
+          },
+          trimBlocked: {
+            entity: 'Réduire laisserait l’entité « {id} » hors de la carte.',
+            location: 'Réduire laisserait le lieu « {id} » hors de la carte.',
+            link: 'Réduire laisserait la porte « {id} » hors de la carte.',
+            cells:
+              'Réduire jetterait {count} hexagones que la carte possède encore. Retirez-les d’abord.',
+          },
         },
       },
     },

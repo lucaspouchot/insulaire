@@ -128,8 +128,14 @@ export interface LinkView {
 export interface WorldView {
   worldId: string;
   name: string;
-  width: number;
-  height: number;
+  /**
+   * The rectangle the packed buffers cover: `{ origin, width, height }`.
+   *
+   * Storage, not the shape of the world — which of those cells the map has
+   * arrives in `presenceBuffer`
+   * (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+   */
+  bounds: WorldBounds;
   orientation: string;
   /** `"topDown"` or `"isometric"`; presentation carried by the content. */
   projection: string;
@@ -151,7 +157,18 @@ export interface WorldView {
    * (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
    */
   artChoices?: WorldCellArt[];
+  /** Length of every packed buffer: `bounds.width * bounds.height`. */
   cellCount: number;
+  /** How many of those cells the map actually has. */
+  presentCellCount: number;
+}
+
+/** A map's extent as the engine reports it; mirrors Rust's `MapBounds`. */
+export interface WorldBounds {
+  /** North-west corner, `[col, row]`; the coordinate at buffer index `0`. */
+  origin: [number, number];
+  width: number;
+  height: number;
 }
 
 /** One cell's art choice, resolved to indices; mirrors `CellArtChoice`. */
@@ -368,6 +385,7 @@ export interface RawInsulaireEngine {
   worldView(worldId: string): string;
   terrainBuffer(worldId: string): Uint8Array;
   elevationBuffer(worldId: string): Int8Array;
+  presenceBuffer(worldId: string): Uint8Array;
   createGame(worldId: string, seed: number, settingsJson: string): string;
   snapshot(): string;
   dispatch(commandJson: string): string;

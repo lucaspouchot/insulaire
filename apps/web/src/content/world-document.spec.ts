@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { offset } from '../core/hex/hex-coords';
+import { mapBounds, offset } from '../core/hex/hex-coords';
 import { TileSetDefinition, WorldDefinition } from './content-types';
 import { WorldDocument, WorldDocumentError } from './world-document';
 
@@ -322,6 +322,120 @@ describe('WorldDocument', () => {
     const histogram = documentFor().tileHistogram();
     expect(histogram.get('water')).toBe(1);
     expect(histogram.get('grass')).toBe(11);
+  });
+
+  describe('shape', () => {
+    it('starts as a full rectangle and says so by writing no shape', () => {
+      const document = documentFor();
+      expect(document.presentCellCount).toBe(12);
+      expect(document.isPresent(offset(0, 0))).toBe(true);
+      expect(document.toDefinition().shape).toBeUndefined();
+      expect(document.toDefinition().origin).toBeUndefined();
+    });
+
+    it('carves a hex out and puts it back with its paint intact', () => {
+      const document = documentFor();
+      const water = offset(1, 1);
+      expect(document.tileAt(water)?.id).toBe('water');
+
+      expect(document.setPresent(water, false)).toBe(true);
+      expect(document.isPresent(water)).toBe(false);
+      expect(document.presentCellCount).toBe(11);
+      // Paint deliberately outlives the hole
+      // (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+      expect(document.tileAt(water)?.id).toBe('water');
+
+      expect(document.setPresent(water, true)).toBe(true);
+      expect(document.tileAt(water)?.id).toBe('water');
+    });
+
+    it('refuses to carve a hex out from under something authored', () => {
+      const document = documentFor();
+      const player = offset(0, 0);
+      expect(document.occupantsAt(player)).toEqual([{ kind: 'entity', id: 'player_1' }]);
+      expect(document.setPresent(player, false)).toBe(false);
+      expect(document.isPresent(player)).toBe(true);
+    });
+
+    it('writes whichever list is shorter', () => {
+      const carved = documentFor();
+      carved.setPresent(offset(3, 0), false);
+      expect(carved.toDefinition().shape).toEqual({ exceptions: [[3, 0]] });
+
+      // Now the other way round: two hexes left out of twelve.
+      const drawn = documentFor();
+      for (let row = 0; row < 3; row += 1) {
+        for (let col = 0; col < 4; col += 1) {
+          if (drawn.occupantsAt(offset(col, row)).length === 0) {
+            drawn.setPresent(offset(col, row), false);
+          }
+        }
+      }
+      const shape = drawn.toDefinition().shape;
+      expect(shape?.default).toBe('absent');
+      // The three cells that still carry authored content stayed present.
+      expect(shape?.exceptions).toEqual([
+        [0, 0],
+        [2, 0],
+        [3, 2],
+      ]);
+    });
+
+    it('round-trips a shape and an origin through a definition', () => {
+      const document = documentFor();
+      document.setPresent(offset(2, 1), false);
+      document.resize(mapBounds(6, 5, offset(-2, -2)));
+
+      const reloaded = WorldDocument.fromDefinition(document.toDefinition(), tileSet);
+      expect(reloaded.bounds).toEqual(mapBounds(6, 5, offset(-2, -2)));
+      expect(reloaded.isPresent(offset(2, 1))).toBe(false);
+      expect(reloaded.isPresent(offset(0, 0))).toBe(true);
+      expect(reloaded.presentCellCount).toBe(document.presentCellCount);
+    });
+
+    it('extends northwards by moving the origin, not the cells', () => {
+      const document = documentFor();
+      const before = document.tileAt(offset(1, 1))?.id;
+
+      expect(document.resize(mapBounds(4, 6, offset(0, -3)))).toBe(true);
+      // The authored coordinate still names the hex its author meant, which is
+      // what keeps another map's door pointing at it
+      // (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+      expect(document.tileAt(offset(1, 1))?.id).toBe(before);
+      expect(document.isPresent(offset(1, 1))).toBe(true);
+      // New canvas arrives empty rather than as a slab of terrain.
+      expect(document.isPresent(offset(1, -1))).toBe(false);
+      expect(document.presentCellCount).toBe(12);
+    });
+
+    it('refuses a trim that would discard hexes the map still has', () => {
+      const document = documentFor();
+      expect(document.presentOutside(mapBounds(4, 2))).toBe(4);
+      expect(document.resize(mapBounds(4, 2))).toBe(false);
+      expect(document.bounds).toEqual(mapBounds(4, 3));
+
+      // Carve the row away first, and the same trim goes through — except that
+      // the monster is standing on it.
+      for (const col of [0, 1, 2]) {
+        expect(document.setPresent(offset(col, 2), false)).toBe(true);
+      }
+      expect(document.occupantsOutside(mapBounds(4, 2))).toEqual([
+        { kind: 'entity', id: 'monster_1' },
+      ]);
+      expect(document.resize(mapBounds(4, 2))).toBe(false);
+
+      document.removeEntityAt(offset(3, 2));
+      expect(document.setPresent(offset(3, 2), false)).toBe(true);
+      expect(document.resize(mapBounds(4, 2))).toBe(true);
+      expect(document.presentCellCount).toBe(8);
+    });
+
+    it('counts only the hexes the map has in its histogram', () => {
+      const document = documentFor();
+      expect(document.tileHistogram().get('water')).toBe(1);
+      document.setPresent(offset(1, 1), false);
+      expect(document.tileHistogram().get('water')).toBeUndefined();
+    });
   });
 
   describe('cell art', () => {

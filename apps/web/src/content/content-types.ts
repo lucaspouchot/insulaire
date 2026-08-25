@@ -11,7 +11,7 @@
 export type OffsetPair = [number, number];
 
 /** `3` adds authored grid appearance shared by editor and Play. */
-export const WORLD_SCHEMA_VERSION = 3;
+export const WORLD_SCHEMA_VERSION = 4;
 
 export const DEFAULT_GRID_LINE_WIDTH = 1;
 export const MIN_GRID_LINE_WIDTH = 1;
@@ -320,6 +320,25 @@ export interface WorldMetadata {
   [key: string]: unknown;
 }
 
+/** Whether a cell is part of the map or a hole in it. */
+export type CellPresence = 'present' | 'absent';
+
+/**
+ * The authored shape of a map: a default plus the cells that differ.
+ *
+ * The same idiom as `defaultTile` plus `tiles`, and for the same reason — the
+ * two ways an author reaches a custom shape are opposites. Carving a coastline
+ * out of a full canvas lists holes; drawing an archipelago on an empty one lists
+ * hexes. The editor writes whichever list is shorter
+ * (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+ */
+export interface MapShape {
+  /** What a cell is when {@link exceptions} does not name it. */
+  default?: CellPresence;
+  /** The cells that are the opposite of {@link default}. */
+  exceptions?: [number, number][];
+}
+
 export interface WorldDefinition {
   id: string;
   schemaVersion: number;
@@ -333,8 +352,25 @@ export interface WorldDefinition {
    * (`docs/adr/ADR-0021-map-zones.md`).
    */
   zone?: string;
+  /**
+   * North-west corner of the extent; the coordinate stored at buffer index `0`.
+   *
+   * Absent means `[0, 0]`, where every map was anchored before extents could
+   * move. Extending a map northwards or westwards moves this rather than
+   * renumbering its cells, so an authored coordinate keeps its hex — and its
+   * odd-r row parity — forever
+   * (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+   */
+  origin?: [number, number];
   width: number;
   height: number;
+  /**
+   * Which of the extent's cells the map actually has.
+   *
+   * Absent is the full rectangle, which is what every map authored before
+   * schema version 4 means.
+   */
+  shape?: MapShape;
   orientation?: 'pointy' | 'flat';
   /** Presentation only; defaults to `topDown` when absent. */
   projection?: ProjectionMode;

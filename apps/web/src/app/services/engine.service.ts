@@ -463,6 +463,18 @@ export class EngineService {
     return this.call(() => this.engine().elevationBuffer(worldId));
   }
 
+  /**
+   * The packed presence buffer: `1` per hex the map has, `0` per hole, same
+   * layout as {@link terrainBuffer}.
+   *
+   * A map is a set of hexes rather than a rectangle, and `worldView().bounds`
+   * is only the box those hexes are stored in
+   * (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+   */
+  presenceBuffer(worldId: string): Uint8Array {
+    return this.call(() => this.engine().presenceBuffer(worldId));
+  }
+
   // ------------------------------------------------------------------- game
 
   /**

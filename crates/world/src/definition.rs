@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::hex::OffsetCoord;
+use crate::hex::{MapBounds, OffsetCoord};
 
 /// Highest world schema version this build understands.
 ///
@@ -17,8 +17,12 @@ use crate::hex::OffsetCoord;
 /// (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`). Every field of it
 /// is defaulted, so a version 1 file parses unchanged and rolls its art as it
 /// always did. Version 3 adds the authored [`GridStyle`]; older files receive
-/// its defaults and keep the renderer's former appearance.
-pub const WORLD_SCHEMA_VERSION: u32 = 3;
+/// its defaults and keep the renderer's former appearance. Version 4 adds
+/// [`WorldDefinition::origin`] and [`WorldDefinition::shape`]: a map is a set of
+/// hexes rather than a rectangle
+/// (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`). Both default to what every
+/// earlier file meant — anchored at `[0, 0]`, every cell present.
+pub const WORLD_SCHEMA_VERSION: u32 = 4;
 
 /// Hex orientation of an authored map.
 ///
@@ -116,6 +120,78 @@ impl GridStyle {
     }
 }
 
+/// Whether a cell is part of the map or a hole in it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CellPresence {
+    /// The map has this hex.
+    #[default]
+    Present,
+    /// The map does not: nothing stands here, nothing walks here, nothing is
+    /// drawn here.
+    Absent,
+}
+
+impl CellPresence {
+    /// The opposite presence, which is what an exception encodes.
+    #[must_use]
+    pub const fn inverted(self) -> Self {
+        match self {
+            Self::Present => Self::Absent,
+            Self::Absent => Self::Present,
+        }
+    }
+
+    /// `true` for [`CellPresence::Present`].
+    #[must_use]
+    pub const fn is_present(self) -> bool {
+        matches!(self, Self::Present)
+    }
+}
+
+/// Which of the extent's cells the map actually has.
+///
+/// Authored the way tiles are — a default plus the cells that differ — because
+/// the two ways an author reaches a custom shape are opposites of each other:
+/// carving a coastline out of a full canvas lists holes, drawing an archipelago
+/// on an empty one lists hexes. Whichever list is shorter is the one written
+/// (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MapShape {
+    /// What a cell is when the exception list does not name it.
+    #[serde(default)]
+    pub default: CellPresence,
+    /// The cells that are the opposite of [`default`](Self::default).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exceptions: Vec<OffsetCoord>,
+}
+
+impl MapShape {
+    /// `true` when the map is the full rectangle every map used to be.
+    ///
+    /// The value a file may leave out, and the one every world authored before
+    /// schema version 4 means.
+    #[must_use]
+    pub fn is_full(&self) -> bool {
+        self.default.is_present() && self.exceptions.is_empty()
+    }
+
+    /// Whether the map has `at`, ignoring the extent.
+    ///
+    /// Linear in the exception list, so this is for the handful of authored
+    /// records a validator checks — never for a per-cell loop. Flattening the
+    /// shape into a buffer is [`crate::WorldGrid`]'s job.
+    #[must_use]
+    pub fn presence_at(&self, at: OffsetCoord) -> CellPresence {
+        if self.exceptions.contains(&at) {
+            self.default.inverted()
+        } else {
+            self.default
+        }
+    }
+}
+
 /// An authored hexagonal world.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -138,10 +214,26 @@ pub struct WorldDefinition {
     /// (`docs/adr/ADR-0021-map-zones.md`).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub zone: String,
-    /// Number of columns.
+    /// North-west corner of the extent; the coordinate stored at buffer index
+    /// `0`.
+    ///
+    /// Defaults to `[0, 0]`, which is where every map was anchored before
+    /// extents could move. Extending a map northwards or westwards moves this
+    /// rather than renumbering the cells, so an authored coordinate keeps its
+    /// hex — and its row parity — forever
+    /// (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+    #[serde(default, skip_serializing_if = "OffsetCoord::is_origin")]
+    pub origin: OffsetCoord,
+    /// Number of columns the extent covers.
     pub width: u32,
-    /// Number of rows.
+    /// Number of rows the extent covers.
     pub height: u32,
+    /// Which of those cells the map actually has.
+    ///
+    /// Omitted — the usual case, and what every pre-version-4 file means — is
+    /// the full rectangle.
+    #[serde(default, skip_serializing_if = "MapShape::is_full")]
+    pub shape: MapShape,
     /// Hex orientation.
     #[serde(default)]
     pub orientation: HexOrientation,
@@ -186,10 +278,29 @@ pub struct WorldDefinition {
 }
 
 impl WorldDefinition {
-    /// Number of cells in the map.
+    /// The rectangle this map's dense buffers cover.
     #[must_use]
-    pub fn cell_count(&self) -> usize {
-        self.width as usize * self.height as usize
+    pub const fn bounds(&self) -> MapBounds {
+        MapBounds::new(self.origin, self.width, self.height)
+    }
+
+    /// Number of cells the extent covers, present or not.
+    ///
+    /// This is the length of the packed buffers, not the size of the world:
+    /// what the map *has* is [`WorldGrid::present_cell_count`](crate::WorldGrid::present_cell_count).
+    #[must_use]
+    pub const fn cell_count(&self) -> usize {
+        self.bounds().cell_count()
+    }
+
+    /// Whether the map has the hex at `at`.
+    ///
+    /// A coordinate outside the extent is absent like any other hole: the
+    /// extent is storage, and no authored record may lean on it
+    /// (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+    #[must_use]
+    pub fn has_cell(&self, at: OffsetCoord) -> bool {
+        self.bounds().contains(at) && self.shape.presence_at(at).is_present()
     }
 
     /// The link triggered by entering `at`, if any.

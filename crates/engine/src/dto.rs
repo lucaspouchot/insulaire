@@ -13,8 +13,8 @@ use std::collections::BTreeMap;
 
 use insulaire_simulation::{EntityRuntime, Rng, SimEvent};
 use insulaire_world::{
-    CellArtChoice, EntityKind, GridStyle, Hex, LinkTrigger, MapLinkDefinition, OffsetCoord,
-    ProjectDefinition, ResolvedTile, TileArt, TileArtGeometry,
+    CellArtChoice, EntityKind, GridStyle, Hex, LinkTrigger, MapBounds, MapLinkDefinition,
+    OffsetCoord, ProjectDefinition, ResolvedTile, TileArt, TileArtGeometry,
 };
 use serde::{Deserialize, Serialize};
 
@@ -287,10 +287,12 @@ pub struct WorldView {
     pub world_id: String,
     /// Display name.
     pub name: String,
-    /// Columns.
-    pub width: u32,
-    /// Rows.
-    pub height: u32,
+    /// The rectangle the packed buffers cover: `{ origin, width, height }`.
+    ///
+    /// Storage, not the shape of the world. Which of those cells the map
+    /// actually has travels in `presenceBuffer`
+    /// (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+    pub bounds: MapBounds,
     /// Hex orientation, currently always `"pointy"`.
     pub orientation: String,
     /// Authored render projection: `"topDown"` or `"isometric"`.
@@ -326,8 +328,12 @@ pub struct WorldView {
     /// buffers of zeroes (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub art_choices: Vec<CellArtChoice>,
-    /// Length of the packed terrain and elevation buffers, i.e. `width * height`.
+    /// Length of every packed buffer, i.e. `bounds.width * bounds.height`.
     pub cell_count: u32,
+    /// How many of those cells the map actually has.
+    ///
+    /// Equal to `cellCount` on an unshaped map, smaller on every other.
+    pub present_cell_count: u32,
 }
 
 /// An entity template, for the editor's placement palette.

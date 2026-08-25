@@ -19,7 +19,18 @@
  * ```
  */
 
-import { Axial, Offset, axialToOffset, offsetToAxial, roundAxial } from './hex-coords';
+import {
+  Axial,
+  MapBounds,
+  Offset,
+  axialToOffset,
+  maxCol,
+  maxRow,
+  minCol,
+  minRow,
+  offsetToAxial,
+  roundAxial,
+} from './hex-coords';
 
 const SQRT3 = Math.sqrt(3);
 
@@ -106,16 +117,35 @@ export class HexLayout {
     return points;
   }
 
-  /** World-space bounds of a whole `width x height` map, including hex edges. */
-  boundsOf(width: number, height: number): Rect {
-    // The widest row is an odd one, which is shifted half a hex to the right.
+  /**
+   * World-space bounds of every cell an extent covers, including hex edges.
+   *
+   * Derived from the corner cells rather than from `width x height` alone,
+   * because an extent may be anchored anywhere — a map extended northwards has
+   * a negative origin (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+   */
+  boundsOf(bounds: MapBounds): Rect {
+    if (bounds.width === 0 || bounds.height === 0) {
+      return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+    }
     const halfWidth = this.hexWidth / 2;
-    const lastRowShift = height > 1 ? halfWidth : 0;
+    // Every row of an odd-r grid is either flush or shifted half a hex right,
+    // so the extremes are the leftmost cell of some row and the rightmost of
+    // another — and which rows those are depends on the origin's parity.
+    let minX = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    for (const row of [minRow(bounds), maxRow(bounds), minRow(bounds) + 1]) {
+      if (row > maxRow(bounds)) {
+        continue;
+      }
+      minX = Math.min(minX, this.centerOf({ col: minCol(bounds), row }).x - halfWidth);
+      maxX = Math.max(maxX, this.centerOf({ col: maxCol(bounds), row }).x + halfWidth);
+    }
     return {
-      minX: -halfWidth,
-      minY: -this.size,
-      maxX: this.hexWidth * width + lastRowShift - halfWidth,
-      maxY: this.rowStep * (height - 1) + this.size,
+      minX,
+      minY: this.centerOf({ col: minCol(bounds), row: minRow(bounds) }).y - this.size,
+      maxX,
+      maxY: this.centerOf({ col: minCol(bounds), row: maxRow(bounds) }).y + this.size,
     };
   }
 
@@ -127,7 +157,10 @@ export class HexLayout {
    * The range is padded by one cell because a hex's centre may sit just outside
    * the rectangle while part of the hex is still visible.
    */
-  visibleRange(view: Rect, width: number, height: number): {
+  visibleRange(
+    view: Rect,
+    bounds: MapBounds,
+  ): {
     minCol: number;
     maxCol: number;
     minRow: number;
@@ -140,24 +173,24 @@ export class HexLayout {
       { x: view.maxX, y: view.maxY },
     ];
 
-    let minCol = Number.POSITIVE_INFINITY;
-    let maxCol = Number.NEGATIVE_INFINITY;
-    let minRow = Number.POSITIVE_INFINITY;
-    let maxRow = Number.NEGATIVE_INFINITY;
+    let firstCol = Number.POSITIVE_INFINITY;
+    let lastCol = Number.NEGATIVE_INFINITY;
+    let firstRow = Number.POSITIVE_INFINITY;
+    let lastRow = Number.NEGATIVE_INFINITY;
 
     for (const corner of corners) {
       const cell = this.cellAt(corner);
-      minCol = Math.min(minCol, cell.col);
-      maxCol = Math.max(maxCol, cell.col);
-      minRow = Math.min(minRow, cell.row);
-      maxRow = Math.max(maxRow, cell.row);
+      firstCol = Math.min(firstCol, cell.col);
+      lastCol = Math.max(lastCol, cell.col);
+      firstRow = Math.min(firstRow, cell.row);
+      lastRow = Math.max(lastRow, cell.row);
     }
 
     return {
-      minCol: Math.max(0, minCol - 1),
-      maxCol: Math.min(width - 1, maxCol + 1),
-      minRow: Math.max(0, minRow - 1),
-      maxRow: Math.min(height - 1, maxRow + 1),
+      minCol: Math.max(minCol(bounds), firstCol - 1),
+      maxCol: Math.min(maxCol(bounds), lastCol + 1),
+      minRow: Math.max(minRow(bounds), firstRow - 1),
+      maxRow: Math.min(maxRow(bounds), lastRow + 1),
     };
   }
 }

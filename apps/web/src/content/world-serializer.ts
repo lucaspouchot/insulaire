@@ -25,6 +25,7 @@ const SCALAR_KEYS = [
   'schemaVersion',
   'name',
   'zone',
+  'origin',
   'width',
   'height',
   'orientation',
@@ -42,10 +43,14 @@ export function serializeWorld(world: WorldDefinition): string {
   for (const key of SCALAR_KEYS) {
     const value = world[key];
     if (value !== undefined) {
-      lines.push(`  ${JSON.stringify(key)}: ${JSON.stringify(value)},`);
+      // `origin` is a coordinate, and coordinates read as `[0, -2]` in these
+      // files rather than `[0,-2]`. Nothing else here is an array.
+      const rendered = Array.isArray(value) ? formatValue(value) : JSON.stringify(value);
+      lines.push(`  ${JSON.stringify(key)}: ${rendered},`);
     }
   }
 
+  lines.push(...shapeBlock(world.shape));
   lines.push(...recordArray('tiles', world.tiles ?? []));
   lines.push(...recordArray('entities', world.entities ?? []));
   lines.push(...recordArray('locations', world.locations ?? []));
@@ -54,6 +59,34 @@ export function serializeWorld(world: WorldDefinition): string {
 
   lines.push('}');
   return `${lines.join('\n')}\n`;
+}
+
+/**
+ * The `shape` block: one carved — or drawn — cell per line.
+ *
+ * Written the same way `tiles` is, and for the same reason: a coastline is
+ * edited hex by hex, so a diff should show which hexes moved rather than one
+ * reflowed line (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`). Omitted
+ * entirely when the map is the full rectangle it used to be.
+ */
+function shapeBlock(shape: WorldDefinition['shape']): string[] {
+  const exceptions = shape?.exceptions ?? [];
+  if (shape === undefined || exceptions.length === 0) {
+    return [];
+  }
+
+  const lines = ['  "shape": {'];
+  if (shape.default !== undefined) {
+    lines.push(`    "default": ${JSON.stringify(shape.default)},`);
+  }
+  lines.push('    "exceptions": [');
+  exceptions.forEach((cell, index) => {
+    const comma = index < exceptions.length - 1 ? ',' : '';
+    lines.push(`      ${formatValue(cell)}${comma}`);
+  });
+  lines.push('    ]');
+  lines.push('  },');
+  return lines;
 }
 
 /**

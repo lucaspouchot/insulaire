@@ -47,8 +47,8 @@ states the contract by hand instead, which is also what this document specifies.
 **Structured payloads** cross as JSON strings. Payloads are a few hundred bytes,
 so parse cost is irrelevant and the boundary stays inspectable from devtools.
 
-**Bulk data** does not use JSON: `terrainBuffer` returns a `Uint8Array` and
-`elevationBuffer` an `Int8Array`.
+**Bulk data** does not use JSON: `terrainBuffer` and `presenceBuffer` return a
+`Uint8Array`, `elevationBuffer` an `Int8Array`.
 
 **Failures** throw a JSON string:
 
@@ -543,8 +543,7 @@ Everything the renderer needs about a world **except** the per-cell buffers.
 {
   "worldId": "demo_world",
   "name": "Demo Valley",
-  "width": 20,
-  "height": 20,
+  "bounds": { "origin": [0, 0], "width": 20, "height": 20 },
   "orientation": "pointy",
   "projection": "isometric",
   "characterHeightTiles": 2,
@@ -563,11 +562,24 @@ Everything the renderer needs about a world **except** the per-cell buffers.
       "targetWorld": "demo_refuge", "targetAt": [3, 4], "trigger": "enter", "tags": ["door"] }
   ],
   "artChoices": [ { "cell": 47, "surface": 5, "elevationTile": 4 } ],
-  "cellCount": 400
+  "cellCount": 400,
+  "presentCellCount": 397
 }
 ```
 
 Fetched **once per world**.
+
+`bounds` is the map's **extent**: the rectangle the packed buffers cover, and
+the only thing that turns a coordinate into a buffer index. It is storage, not
+the shape of the world — cell `[col, row]` lives at
+`(row - origin[1]) * width + (col - origin[0])`, and `origin` may be negative on
+a map that was extended northwards or westwards. Which of those cells the map
+actually has arrives in `presenceBuffer`
+(`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+
+`cellCount` is the length of every packed buffer, `bounds.width *
+bounds.height`. `presentCellCount` is how many hexes the map has — equal to
+`cellCount` on an unshaped map, smaller on every other.
 
 `projection` is `"topDown"` or `"isometric"`, republished from the authored
 world. The engine transports it and never interprets it — it has no notion of
@@ -612,9 +624,10 @@ because choosing is an authored exception.
 ### `terrainBuffer(worldId: string): Uint8Array`
 
 One byte per cell — an index into `worldView().palette` — row-major in offset
-coordinates, so cell `[col, row]` is at `row * width + col`.
+coordinates, so cell `[col, row]` is at
+`(row - origin[1]) * width + (col - origin[0])`.
 
-This is one of the two bulk transfers in the API and the reason the renderer
+This is one of the three bulk transfers in the API and the reason the renderer
 never calls into WASM per tile. A 2048x2048 world costs one 4 MiB copy instead of
 four million calls. Fetched **once per world**; terrain is authored and immutable
 during play.
@@ -622,10 +635,25 @@ during play.
 ### `elevationBuffer(worldId: string): Int8Array`
 
 One **signed** byte per cell, in exactly the same layout and of exactly the same
-length as `terrainBuffer` — cell `[col, row]` is at `row * width + col`.
+length as `terrainBuffer`.
 
 Presentation only: the renderer lifts cells by this much in isometric mode and
 draws their side faces (ADR-0016). No rule reads it. Fetched **once per world**.
+
+It answers for a hole too: carving a hex out of a map does not clear what was
+authored under it (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+
+### `presenceBuffer(worldId: string): Uint8Array`
+
+One byte per cell in the same layout and of the same length as `terrainBuffer`:
+`1` where the map has a hex, `0` where it has a hole. An unshaped map sends all
+ones.
+
+This is what makes `bounds` storage rather than shape. A cell the map does not
+have is outside the map in every sense: the renderer skips it, and a move onto
+it is rejected with the same `outOfBounds` a coordinate beyond the extent gets.
+Fetched **once per world**, like the two buffers beside it
+(`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
 
 ### `createGame(worldId: string, seed: number, settingsJson: string): GameSnapshot`
 
@@ -733,7 +761,8 @@ already set to the new map (ADR-0017):
 ```
 
 A host that sees `state.worldId` change must fetch `worldView`,
-`terrainBuffer` and `elevationBuffer` for the new map; the snapshot never
+`terrainBuffer`, `presenceBuffer` and `elevationBuffer` for the new map; the
+snapshot never
 carries a map.
 
 If the target cannot be reached — it was never loaded, or it fails setup — the

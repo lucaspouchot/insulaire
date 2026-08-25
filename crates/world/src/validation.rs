@@ -485,6 +485,7 @@ fn validate_world_header(world: &WorldDefinition, issues: &mut Vec<ValidationIss
             format!("world dimensions must not exceed {MAX_MAP_DIMENSION}"),
         ));
     }
+    validate_shape(world, issues);
     if world.orientation != HexOrientation::Pointy {
         issues.push(ValidationIssue::error(
             "world.unsupportedOrientation",
@@ -529,6 +530,56 @@ fn validate_world_header(world: &WorldDefinition, issues: &mut Vec<ValidationIss
     }
 }
 
+/// Checks the authored shape: exceptions inside the extent, named once, and at
+/// least one hex left over.
+///
+/// Connectivity is deliberately not checked — an archipelago is a legitimate
+/// map (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+fn validate_shape(world: &WorldDefinition, issues: &mut Vec<ValidationIssue>) {
+    let bounds = world.bounds();
+    let mut named: BTreeSet<(i32, i32)> = BTreeSet::new();
+    // Only the exceptions that name a real slot count towards the shape; the
+    // ones that do not are reported and then ignored, exactly as `WorldGrid`
+    // ignores them when it flattens the map.
+    let mut effective = 0_usize;
+
+    for (index, at) in world.shape.exceptions.iter().enumerate() {
+        let path = format!("shape.exceptions[{index}]");
+        let inside = bounds.contains(*at);
+        if !inside {
+            issues.push(ValidationIssue::error(
+                "shape.outOfBounds",
+                path.clone(),
+                format!("shape names {at}, which is outside the map's {bounds} extent"),
+            ));
+        }
+        if !named.insert((at.col, at.row)) {
+            issues.push(ValidationIssue::error(
+                "shape.duplicateCell",
+                path,
+                format!("shape names {at} more than once"),
+            ));
+        } else if inside {
+            effective += 1;
+        }
+    }
+
+    // A map whose every cell was carved away has nothing to author on, and
+    // nowhere to put the player validation is about to ask for.
+    let present = if world.shape.default.is_present() {
+        bounds.cell_count() - effective
+    } else {
+        effective
+    };
+    if !bounds.is_empty() && present == 0 {
+        issues.push(ValidationIssue::error(
+            "world.emptyShape",
+            "shape",
+            "the map has no hex left: every cell of the extent is absent",
+        ));
+    }
+}
+
 fn is_rgb_hex(value: &str) -> bool {
     value.len() == 7
         && value.starts_with('#')
@@ -554,13 +605,26 @@ fn validate_tiles(
     let mut occupied: BTreeSet<(i32, i32)> = BTreeSet::new();
     for (index, placed) in world.tiles.iter().enumerate() {
         let path = format!("tiles[{index}]");
-        if !placed.at.is_within(world.width, world.height) {
+        if !world.bounds().contains(placed.at) {
             issues.push(ValidationIssue::error(
                 "tile.outOfBounds",
                 format!("{path}.at"),
                 format!(
-                    "tile position {} is outside the {}x{} map",
-                    placed.at, world.width, world.height
+                    "tile position {} is outside the map's {} extent",
+                    placed.at,
+                    world.bounds()
+                ),
+            ));
+        } else if !world.has_cell(placed.at) {
+            // A warning, not an error: paint deliberately outlives a hole, so
+            // that carving a coastline and changing your mind costs nothing
+            // (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+            issues.push(ValidationIssue::warning(
+                "tile.absentCell",
+                format!("{path}.at"),
+                format!(
+                    "tile position {} is painted but the map has no hex there",
+                    placed.at
                 ),
             ));
         }
@@ -715,12 +779,21 @@ fn validate_entities(
             ));
         }
 
-        if !entity.at.is_within(world.width, world.height) {
+        if !world.bounds().contains(entity.at) {
             issues.push(ValidationIssue::error(
                 "entity.outOfBounds",
                 format!("{path}.at"),
                 format!(
                     "entity `{}` is placed outside the map at {}",
+                    entity.id, entity.at
+                ),
+            ));
+        } else if !world.has_cell(entity.at) {
+            issues.push(ValidationIssue::error(
+                "entity.absentCell",
+                format!("{path}.at"),
+                format!(
+                    "entity `{}` stands at {}, where the map has no hex",
                     entity.id, entity.at
                 ),
             ));
@@ -797,12 +870,21 @@ fn validate_locations(world: &WorldDefinition, issues: &mut Vec<ValidationIssue>
                 format!("duplicate location id `{}`", location.id),
             ));
         }
-        if !location.at.is_within(world.width, world.height) {
+        if !world.bounds().contains(location.at) {
             issues.push(ValidationIssue::error(
                 "location.outOfBounds",
                 format!("{path}.at"),
                 format!(
                     "location `{}` is outside the map at {}",
+                    location.id, location.at
+                ),
+            ));
+        } else if !world.has_cell(location.at) {
+            issues.push(ValidationIssue::error(
+                "location.absentCell",
+                format!("{path}.at"),
+                format!(
+                    "location `{}` sits at {}, where the map has no hex",
                     location.id, location.at
                 ),
             ));
@@ -841,11 +923,20 @@ fn validate_links(
             ));
         }
 
-        if !link.at.is_within(world.width, world.height) {
+        if !world.bounds().contains(link.at) {
             issues.push(ValidationIssue::error(
                 "link.outOfBounds",
                 format!("{path}.at"),
                 format!("link `{}` is outside the map at {}", link.id, link.at),
+            ));
+        } else if !world.has_cell(link.at) {
+            issues.push(ValidationIssue::error(
+                "link.absentCell",
+                format!("{path}.at"),
+                format!(
+                    "link `{}` sits at {}, where the map has no hex, so it can never be entered",
+                    link.id, link.at
+                ),
             ));
         } else {
             if !positions.insert((link.at.col, link.at.row)) {
@@ -875,17 +966,26 @@ fn validate_links(
                 format!("{path}.targetWorld"),
                 format!("link `{}` names no target world", link.id),
             ));
-        } else if link.target_world == world.id
-            && !link.target_at.is_within(world.width, world.height)
-        {
+        } else if link.target_world == world.id && !world.bounds().contains(link.target_at) {
             // Only a self-link can be resolved here; cross-world targets wait
             // for `validate_project_links`.
             issues.push(ValidationIssue::error(
                 "link.targetOutOfBounds",
                 format!("{path}.targetAt"),
                 format!(
-                    "link `{}` arrives at {}, outside its own {}x{} map",
-                    link.id, link.target_at, world.width, world.height
+                    "link `{}` arrives at {}, outside its own {} extent",
+                    link.id,
+                    link.target_at,
+                    world.bounds()
+                ),
+            ));
+        } else if link.target_world == world.id && !world.has_cell(link.target_at) {
+            issues.push(ValidationIssue::error(
+                "link.absentTargetCell",
+                format!("{path}.targetAt"),
+                format!(
+                    "link `{}` arrives at {}, where its own map has no hex",
+                    link.id, link.target_at
                 ),
             ));
         }
@@ -937,13 +1037,28 @@ pub fn validate_project_links<'a>(
                 continue;
             };
 
-            if !link.target_at.is_within(target.width, target.height) {
+            if !target.bounds().contains(link.target_at) {
                 issues.push(ValidationIssue::error(
                     "link.targetOutOfBounds",
                     format!("{path}.targetAt"),
                     format!(
-                        "link `{}` arrives at {}, outside the {}x{} map `{}`",
-                        link.id, link.target_at, target.width, target.height, target.id
+                        "link `{}` arrives at {}, outside the {} extent of map `{}`",
+                        link.id,
+                        link.target_at,
+                        target.bounds(),
+                        target.id
+                    ),
+                ));
+                continue;
+            }
+
+            if !target.has_cell(link.target_at) {
+                issues.push(ValidationIssue::error(
+                    "link.absentTargetCell",
+                    format!("{path}.targetAt"),
+                    format!(
+                        "link `{}` arrives at {}, where map `{}` has no hex",
+                        link.id, link.target_at, target.id
                     ),
                 ));
                 continue;
@@ -3023,6 +3138,100 @@ mod tests {
         assert!(!report.valid);
         assert!(codes(&report).contains(&"tile.outOfBounds"));
         assert!(codes(&report).contains(&"entity.outOfBounds"));
+    }
+
+    #[test]
+    fn a_shaped_map_is_valid_and_disconnected_islands_are_fine() {
+        let mut world = testing::sample_world();
+        // Carve a bay, then drop a rock away from the shore. Neither is an
+        // error: connectivity is never checked
+        // (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+        world.shape.exceptions = vec![
+            OffsetCoord::new(0, 0),
+            OffsetCoord::new(1, 0),
+            OffsetCoord::new(0, 1),
+            OffsetCoord::new(9, 9),
+        ];
+        let report = validate_world(
+            &world,
+            Some(&testing::sample_tile_set()),
+            &TemplateRegistry::builtin(),
+        );
+        assert!(report.valid, "{:?}", report.issues);
+    }
+
+    #[test]
+    fn a_shape_may_not_name_a_cell_twice_or_a_cell_outside_the_extent() {
+        let mut world = testing::sample_world();
+        world.shape.exceptions = vec![
+            OffsetCoord::new(0, 0),
+            OffsetCoord::new(0, 0),
+            OffsetCoord::new(99, 0),
+        ];
+        let report = validate_world(
+            &world,
+            Some(&testing::sample_tile_set()),
+            &TemplateRegistry::builtin(),
+        );
+        assert!(!report.valid);
+        assert!(codes(&report).contains(&"shape.duplicateCell"));
+        assert!(codes(&report).contains(&"shape.outOfBounds"));
+    }
+
+    #[test]
+    fn a_map_with_no_hex_left_is_an_error() {
+        let mut world = testing::sample_world();
+        world.shape.default = crate::definition::CellPresence::Absent;
+        let report = validate_world(
+            &world,
+            Some(&testing::sample_tile_set()),
+            &TemplateRegistry::builtin(),
+        );
+        assert!(!report.valid);
+        assert!(codes(&report).contains(&"world.emptyShape"));
+    }
+
+    #[test]
+    fn nothing_may_stand_on_a_hole_but_paint_may_lie_under_one() {
+        let mut world = testing::linked_world();
+        world.shape.exceptions = vec![
+            world.entities[0].at,
+            world.locations[0].at,
+            world.links[0].at,
+            // The painted water cell: a warning, not an error.
+            testing::WATER_CELL,
+        ];
+        let report = validate_world(
+            &world,
+            Some(&testing::sample_tile_set()),
+            &TemplateRegistry::builtin(),
+        );
+        assert!(!report.valid);
+        assert!(codes(&report).contains(&"entity.absentCell"));
+        assert!(codes(&report).contains(&"location.absentCell"));
+        assert!(codes(&report).contains(&"link.absentCell"));
+
+        let paint = report
+            .issues
+            .iter()
+            .find(|issue| issue.code == "tile.absentCell")
+            .expect("a painted hole is reported");
+        assert_eq!(paint.severity, Severity::Warning);
+    }
+
+    #[test]
+    fn a_door_may_not_arrive_on_a_hole_in_the_map_it_targets() {
+        let mut world = testing::linked_world();
+        let arrival = world.links[0].target_at;
+        world.links[0].target_world = world.id.clone();
+        world.shape.exceptions = vec![arrival];
+        let report = validate_world(
+            &world,
+            Some(&testing::sample_tile_set()),
+            &TemplateRegistry::builtin(),
+        );
+        assert!(!report.valid);
+        assert!(codes(&report).contains(&"link.absentTargetCell"));
     }
 
     #[test]

@@ -134,6 +134,33 @@ describe('serializeWorld', () => {
     );
   });
 
+  it('writes a custom shape one carved hex per line, and omits a full one', () => {
+    const base = {
+      id: 'w',
+      schemaVersion: 4,
+      name: 'W',
+      width: 6,
+      height: 6,
+      tileSetId: 't',
+      defaultTile: 'grass',
+    } as const;
+
+    const full = serializeWorld(base);
+    expect(full).not.toContain('"shape"');
+    expect(full).not.toContain('"origin"');
+
+    const shaped = serializeWorld({
+      ...base,
+      origin: [0, -2],
+      shape: { default: 'absent', exceptions: [[3, 0], [4, 0]] },
+    });
+    // A coordinate reads the way every other coordinate in these files does.
+    expect(shaped).toContain('  "origin": [0, -2],\n');
+    expect(shaped).toContain(
+      '  "shape": {\n    "default": "absent",\n    "exceptions": [\n      [3, 0],\n      [4, 0]\n    ]\n  },\n',
+    );
+  });
+
   it('writes the authored grid appearance next to the map presentation', () => {
     const json = serializeWorld({
       id: 'w',

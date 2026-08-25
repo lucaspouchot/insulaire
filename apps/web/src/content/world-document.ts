@@ -20,6 +20,12 @@
  * one array write and rendering needs no conversion. Export re-sparsifies:
  * only cells differing from `defaultTile` are written out.
  *
+ * A map is a *set of hexes*, not a rectangle: the `width x height` extent is
+ * what the buffers cover, and a third dense buffer says which of those cells
+ * the map actually has (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+ * Carving a hex deliberately leaves its paint, its elevation and its art choice
+ * alone, so restoring it restores what was there.
+ *
  * Per-cell **art choices** are the exception to that density: a cell that picks
  * its own surface or borrows another tile's cliff is an authored oddity, so
  * they live in a `Map` keyed by cell index rather than in three more buffers
@@ -27,12 +33,26 @@
  * (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
  */
 
-import { Offset, indexIn } from '../core/hex/hex-coords';
+import {
+  MapBounds,
+  Offset,
+  cellCount,
+  fromIndex,
+  indexIn,
+  isWithin,
+  mapBounds,
+  maxCol,
+  maxRow,
+  minCol,
+  minRow,
+} from '../core/hex/hex-coords';
 import {
   EntityDefinition,
   GridStyle,
   LocationDefinition,
+  CellPresence,
   MapLink,
+  MapShape,
   PlacedTile,
   PlacedTileArt,
   ProjectionMode,
@@ -138,11 +158,28 @@ export interface DocumentLink {
   tags: string[];
 }
 
+/**
+ * Something authored that stands on a hex.
+ *
+ * Carving a cell out from under an entity, a point of interest or a door would
+ * destroy authored content or leave it dangling in the void, so the document
+ * refuses and hands back what is in the way for the editor to name
+ * (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+ */
+export interface CellOccupant {
+  readonly kind: 'entity' | 'location' | 'link';
+  readonly id: string;
+}
+
 export interface WorldDocumentInit {
   id: string;
   name: string;
   width: number;
   height: number;
+  /** North-west corner of the extent; defaults to `[0, 0]`. */
+  origin?: Offset;
+  /** `absent` starts the map as an empty canvas to draw an island on. */
+  presence?: CellPresence;
   tileSet: TileSetDefinition;
   defaultTile?: string;
   projection?: ProjectionMode;
@@ -159,18 +196,24 @@ export class WorldDocument {
   private constructor(
     public id: string,
     public name: string,
-    readonly width: number,
-    readonly height: number,
+    private extent: MapBounds,
     readonly tileSetId: string,
     /** The pixel grid the tile set's images are authored on. */
     readonly tileArt: TileArtGeometry,
     readonly palette: readonly DocumentTile[],
     private defaultTileIndex: number,
-    private readonly cells: Uint8Array,
+    private cells: Uint8Array,
     /** One elevation per cell, in the same layout as {@link cells}. */
-    private readonly elevations: Int8Array,
+    private elevations: Int8Array,
+    /**
+     * `1` where the map has a hex, `0` where it has a hole, same layout again.
+     *
+     * The buffer that makes the extent storage rather than shape
+     * (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+     */
+    private presenceFlags: Uint8Array,
     /** The cells that chose their art, keyed by their index in {@link cells}. */
-    private readonly artChoices: Map<number, DocumentCellArt>,
+    private artChoices: Map<number, DocumentCellArt>,
     private entities: DocumentEntity[],
     private locations: DocumentLocation[],
     private links: DocumentLink[],
@@ -211,18 +254,20 @@ export class WorldDocument {
       );
     }
 
-    const cells = new Uint8Array(init.width * init.height).fill(defaultIndex);
+    const extent = mapBounds(init.width, init.height, init.origin ?? { col: 0, row: 0 });
+    const size = cellCount(extent);
+    const cells = new Uint8Array(size).fill(defaultIndex);
     return new WorldDocument(
       init.id,
       init.name,
-      init.width,
-      init.height,
+      extent,
       init.tileSet.id,
       tileArtGeometry(init.tileSet),
       palette,
       defaultIndex,
       cells,
-      new Int8Array(init.width * init.height),
+      new Int8Array(size),
+      new Uint8Array(size).fill(init.presence === 'absent' ? 0 : 1),
       new Map(),
       [],
       [],
@@ -243,11 +288,17 @@ export class WorldDocument {
       );
     }
 
+    const shape = definition.shape ?? {};
     const document = WorldDocument.create({
       id: definition.id,
       name: definition.name ?? definition.id,
       width: definition.width,
       height: definition.height,
+      origin:
+        definition.origin === undefined
+          ? { col: 0, row: 0 }
+          : { col: definition.origin[0], row: definition.origin[1] },
+      presence: shape.default ?? 'present',
       tileSet,
       defaultTile: definition.defaultTile,
       projection: definition.projection,
@@ -256,6 +307,16 @@ export class WorldDocument {
       zone: definition.zone,
     });
 
+    // The exceptions flip whatever the default filled in, exactly as
+    // `WorldGrid::build` does on the Rust side. One outside the extent names no
+    // cell; the validator is what reports it.
+    for (const [col, row] of shape.exceptions ?? []) {
+      const cell = indexIn({ col, row }, document.extent);
+      if (cell >= 0) {
+        document.presenceFlags[cell] = shape.default === 'absent' ? 1 : 0;
+      }
+    }
+
     for (const placed of definition.tiles ?? []) {
       const index = document.paletteIndexOf(placed.tile);
       if (index < 0) {
@@ -263,14 +324,10 @@ export class WorldDocument {
           `tile "${placed.tile}" is not defined by tile set "${tileSet.id}"`,
         );
       }
-      const cell = indexIn(
-        { col: placed.at[0], row: placed.at[1] },
-        document.width,
-        document.height,
-      );
+      const cell = indexIn({ col: placed.at[0], row: placed.at[1] }, document.extent);
       if (cell < 0) {
         throw new WorldDocumentError(
-          `tile at [${placed.at[0]}, ${placed.at[1]}] is outside the ${definition.width}x${definition.height} map`,
+          `tile at [${placed.at[0]}, ${placed.at[1]}] is outside the ${definition.width}x${definition.height} extent`,
         );
       }
       document.cells[cell] = index;
@@ -306,6 +363,167 @@ export class WorldDocument {
     document.metadata = { ...(definition.metadata ?? {}) };
 
     return document;
+  }
+
+  // ------------------------------------------------------------------ shape
+
+  /** The rectangle the packed buffers cover. Storage, not the world's shape. */
+  get bounds(): MapBounds {
+    return this.extent;
+  }
+
+  /** Extent width in columns. */
+  get width(): number {
+    return this.extent.width;
+  }
+
+  /** Extent height in rows. */
+  get height(): number {
+    return this.extent.height;
+  }
+
+  /** The packed presence flags; the renderer reads this directly. */
+  get presence(): Uint8Array {
+    return this.presenceFlags;
+  }
+
+  /** How many hexes the map actually has, as opposed to how many it stores. */
+  get presentCellCount(): number {
+    let count = 0;
+    for (const flag of this.presenceFlags) {
+      count += flag;
+    }
+    return count;
+  }
+
+  /** Whether the map has the hex at `cell`. */
+  isPresent(cell: Offset): boolean {
+    const index = indexIn(cell, this.bounds);
+    return index >= 0 && this.presenceFlags[index] === 1;
+  }
+
+  /** Everything authored that stands on `cell`. */
+  occupantsAt(cell: Offset): CellOccupant[] {
+    const here = (at: Offset): boolean => at.col === cell.col && at.row === cell.row;
+    return [
+      ...this.entities.filter((entity) => here(entity.at)).map(entityOccupant),
+      ...this.locations.filter((location) => here(location.at)).map(locationOccupant),
+      ...this.links.filter((link) => here(link.at)).map(linkOccupant),
+    ];
+  }
+
+  /**
+   * Adds a hex to the map, or carves one out of it.
+   *
+   * Carving refuses while anything stands on the cell: the author moves the
+   * entity, the door or the point of interest first, rather than losing it
+   * (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`). Paint, elevation and art
+   * choices are deliberately left alone, so putting the hex back puts back what
+   * was on it.
+   *
+   * @returns `true` when the map changed.
+   */
+  setPresent(cell: Offset, present: boolean): boolean {
+    const index = indexIn(cell, this.bounds);
+    if (index < 0 || this.presenceFlags[index] === (present ? 1 : 0)) {
+      return false;
+    }
+    if (!present && this.occupantsAt(cell).length > 0) {
+      return false;
+    }
+    this.presenceFlags[index] = present ? 1 : 0;
+    return true;
+  }
+
+  /**
+   * Everything authored that a new extent would leave outside the map.
+   *
+   * Empty means the trim is safe. Growing an extent never returns anything.
+   */
+  occupantsOutside(next: MapBounds): CellOccupant[] {
+    const lost = (at: Offset): boolean => !isWithin(at, next);
+    return [
+      ...this.entities.filter((entity) => lost(entity.at)).map(entityOccupant),
+      ...this.locations.filter((location) => lost(location.at)).map(locationOccupant),
+      ...this.links.filter((link) => lost(link.at)).map(linkOccupant),
+    ];
+  }
+
+  /**
+   * How many hexes the map has that a new extent would leave outside it.
+   *
+   * `0` means the trim only discards empty canvas. Growing never returns
+   * anything.
+   */
+  presentOutside(next: MapBounds): number {
+    let lost = 0;
+    for (let index = 0; index < this.presenceFlags.length; index += 1) {
+      if (this.presenceFlags[index] === 1 && !isWithin(fromIndex(index, this.bounds), next)) {
+        lost += 1;
+      }
+    }
+    return lost;
+  }
+
+  /**
+   * Moves and resizes the extent, keeping every cell that both extents cover.
+   *
+   * Cells the new extent adds arrive absent, so extending a map gives an author
+   * blank canvas to draw on rather than a slab of terrain nobody asked for.
+   * Refuses a trim that would strand authored content — {@link occupantsOutside}
+   * is what names it.
+   *
+   * @returns `true` when the extent changed.
+   */
+  resize(next: MapBounds): boolean {
+    if (next.width <= 0 || next.height <= 0) {
+      return false;
+    }
+    const previous = this.extent;
+    if (
+      next.width === previous.width &&
+      next.height === previous.height &&
+      next.origin.col === previous.origin.col &&
+      next.origin.row === previous.origin.row
+    ) {
+      return false;
+    }
+    // Trimming discards buffer, and a hex the map has is not buffer: an author
+    // carves it first, so the extent never quietly eats the island
+    // (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+    if (this.occupantsOutside(next).length > 0 || this.presentOutside(next) > 0) {
+      return false;
+    }
+
+    const size = cellCount(next);
+    const cells = new Uint8Array(size).fill(this.defaultTileIndex);
+    const elevations = new Int8Array(size);
+    const presence = new Uint8Array(size);
+    const artChoices = new Map<number, DocumentCellArt>();
+
+    // Copied cell by cell over the overlap rather than row-slice by row-slice:
+    // the two extents may differ in both origin and width, so no run of the old
+    // buffer lines up with a run of the new one.
+    for (let row = Math.max(minRow(previous), minRow(next)); row <= Math.min(maxRow(previous), maxRow(next)); row += 1) {
+      for (let col = Math.max(minCol(previous), minCol(next)); col <= Math.min(maxCol(previous), maxCol(next)); col += 1) {
+        const from = indexIn({ col, row }, previous);
+        const to = indexIn({ col, row }, next);
+        cells[to] = this.cells[from] as number;
+        elevations[to] = this.elevations[from] as number;
+        presence[to] = this.presenceFlags[from] as number;
+        const art = this.artChoices.get(from);
+        if (art !== undefined) {
+          artChoices.set(to, art);
+        }
+      }
+    }
+
+    this.extent = next;
+    this.cells = cells;
+    this.elevations = elevations;
+    this.presenceFlags = presence;
+    this.artChoices = artChoices;
+    return true;
   }
 
   // ------------------------------------------------------------------ tiles
@@ -346,7 +564,7 @@ export class WorldDocument {
 
   /** Authored elevation at a cell, or `0` when out of bounds. */
   elevationAt(cell: Offset): number {
-    const index = indexIn(cell, this.width, this.height);
+    const index = indexIn(cell, this.bounds);
     return index < 0 ? 0 : (this.elevations[index] ?? 0);
   }
 
@@ -356,7 +574,7 @@ export class WorldDocument {
    * @returns `true` when the cell changed.
    */
   raise(cell: Offset, delta: number): boolean {
-    const index = indexIn(cell, this.width, this.height);
+    const index = indexIn(cell, this.bounds);
     if (index < 0) {
       return false;
     }
@@ -382,7 +600,7 @@ export class WorldDocument {
 
   /** The tile at a cell, or `null` when out of bounds. */
   tileAt(cell: Offset): DocumentTile | null {
-    const index = indexIn(cell, this.width, this.height);
+    const index = indexIn(cell, this.bounds);
     if (index < 0) {
       return null;
     }
@@ -395,7 +613,7 @@ export class WorldDocument {
    * @returns `true` when the cell changed, so callers can skip redundant work.
    */
   paint(cell: Offset, tileId: string): boolean {
-    const index = indexIn(cell, this.width, this.height);
+    const index = indexIn(cell, this.bounds);
     const paletteIndex = this.paletteIndexOf(tileId);
     if (index < 0 || paletteIndex < 0 || this.cells[index] === paletteIndex) {
       return false;
@@ -418,7 +636,7 @@ export class WorldDocument {
 
   /** What a cell chose, or {@link ROLLED_ART} when it chose nothing. */
   artAt(cell: Offset): DocumentCellArt {
-    const index = indexIn(cell, this.width, this.height);
+    const index = indexIn(cell, this.bounds);
     return (index < 0 ? undefined : this.artChoices.get(index)) ?? ROLLED_ART;
   }
 
@@ -432,7 +650,7 @@ export class WorldDocument {
    * @returns `true` when the cell changed.
    */
   setArt(cell: Offset, patch: Partial<DocumentCellArt>): boolean {
-    const index = indexIn(cell, this.width, this.height);
+    const index = indexIn(cell, this.bounds);
     if (index < 0) {
       return false;
     }
@@ -494,7 +712,7 @@ export class WorldDocument {
     singleton: boolean,
     previewCharacter: string | null = null,
   ): DocumentEntity | null {
-    if (indexIn(cell, this.width, this.height) < 0) {
+    if (indexIn(cell, this.bounds) < 0) {
       return null;
     }
 
@@ -571,7 +789,7 @@ export class WorldDocument {
    * @returns the link, or `null` when the cell is out of bounds.
    */
   placeLink(cell: Offset, targetWorld: string): DocumentLink | null {
-    if (indexIn(cell, this.width, this.height) < 0) {
+    if (indexIn(cell, this.bounds) < 0) {
       return null;
     }
     const existing = this.linkAt(cell);
@@ -659,8 +877,9 @@ export class WorldDocument {
       if (tile === undefined) {
         continue;
       }
+      const at = fromIndex(index, this.bounds);
       tiles.push({
-        at: [index % this.width, Math.floor(index / this.width)],
+        at: [at.col, at.row],
         tile: tile.id,
         ...(elevation === 0 ? {} : { elevation }),
         ...(art === null ? {} : { art }),
@@ -693,6 +912,8 @@ export class WorldDocument {
       ...(link.tags.length > 0 ? { tags: [...link.tags] } : {}),
     }));
 
+    const shape = this.writeShape();
+
     return {
       id: this.id,
       schemaVersion: WORLD_SCHEMA_VERSION,
@@ -700,8 +921,14 @@ export class WorldDocument {
       // Omitted when unzoned, so a map that never had a zone is re-exported
       // exactly as it was authored.
       ...(this.zone.length > 0 ? { zone: this.zone } : {}),
+      // Omitted at [0, 0], so a map that was never extended is re-exported
+      // exactly as it was authored.
+      ...(this.extent.origin.col === 0 && this.extent.origin.row === 0
+        ? {}
+        : { origin: [this.extent.origin.col, this.extent.origin.row] as [number, number] }),
       width: this.width,
       height: this.height,
+      ...(shape === null ? {} : { shape }),
       orientation: 'pointy',
       projection: this.projection,
       ...(this.characterHeightTiles === DEFAULT_CHARACTER_HEIGHT_TILES
@@ -718,11 +945,43 @@ export class WorldDocument {
     };
   }
 
-  /** A count of each tile currently painted, for the editor's status bar. */
+  /**
+   * The shape block, written whichever way round is shorter — or `null` when
+   * the map is the full rectangle and the file may leave it out.
+   *
+   * A carved coastline lists its holes; an archipelago drawn on an empty canvas
+   * lists its hexes. Picking the shorter list is what keeps both cheap
+   * (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+   */
+  private writeShape(): MapShape | null {
+    const present: [number, number][] = [];
+    const absent: [number, number][] = [];
+    for (let index = 0; index < this.presenceFlags.length; index += 1) {
+      const at = fromIndex(index, this.bounds);
+      (this.presenceFlags[index] === 1 ? present : absent).push([at.col, at.row]);
+    }
+
+    if (absent.length === 0) {
+      return null;
+    }
+    return absent.length <= present.length
+      ? { exceptions: absent }
+      : { default: 'absent', exceptions: present };
+  }
+
+  /**
+   * A count of each tile currently painted, for the editor's status bar.
+   *
+   * Holes are skipped: paint under a hole is kept, but it is not part of the
+   * map an author is looking at.
+   */
   tileHistogram(): Map<string, number> {
     const counts = new Map<string, number>();
-    for (const index of this.cells) {
-      const tile = this.palette[index];
+    for (let index = 0; index < this.cells.length; index += 1) {
+      if (this.presenceFlags[index] !== 1) {
+        continue;
+      }
+      const tile = this.palette[this.cells[index] as number];
       if (tile !== undefined) {
         counts.set(tile.id, (counts.get(tile.id) ?? 0) + 1);
       }
@@ -730,6 +989,16 @@ export class WorldDocument {
     return counts;
   }
 }
+
+const entityOccupant = (entity: DocumentEntity): CellOccupant => ({
+  kind: 'entity',
+  id: entity.id,
+});
+const locationOccupant = (location: DocumentLocation): CellOccupant => ({
+  kind: 'location',
+  id: location.id,
+});
+const linkOccupant = (link: DocumentLink): CellOccupant => ({ kind: 'link', id: link.id });
 
 function sameGridStyle(left: GridStyle, right: Readonly<GridStyle>): boolean {
   return (

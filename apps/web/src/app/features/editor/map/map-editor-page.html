@@ -63,6 +63,16 @@
             <button type="button" [class.on]="tool() === 'lower'" (click)="selectTool('lower')">
               {{ 'ui.editor.map.tool.lower' | t }}
             </button>
+            <button type="button" [class.on]="tool() === 'addCell'" (click)="selectTool('addCell')">
+              {{ 'ui.editor.map.tool.addCell' | t }}
+            </button>
+            <button
+              type="button"
+              [class.on]="tool() === 'removeCell'"
+              (click)="selectTool('removeCell')"
+            >
+              {{ 'ui.editor.map.tool.removeCell' | t }}
+            </button>
             <button type="button" [class.on]="tool() === 'player'" (click)="selectTool('player')">
               {{ 'ui.editor.map.tool.player' | t }}
             </button>
@@ -125,6 +135,61 @@
                 </div>
               </div>
               <p class="hint">{{ 'ui.editor.map.elevation.hint' | t }}</p>
+            </section>
+          }
+
+          @case ('shape') {
+            <section class="panel">
+              <h2>{{ 'ui.editor.map.shape.heading' | t }}</h2>
+              @let shape = shapeStats();
+              @if (shape !== null) {
+                <div class="rows">
+                  <div class="row">
+                    <span>{{ 'ui.editor.map.shape.hexes' | t }}</span>
+                    <span>{{ shape.present }} / {{ shape.total }}</span>
+                  </div>
+                  <div class="row">
+                    <span>{{ 'ui.editor.map.shape.extent' | t }}</span>
+                    <span>{{ shape.width }} × {{ shape.height }}</span>
+                  </div>
+                  <div class="row">
+                    <span>{{ 'ui.editor.map.shape.origin' | t }}</span>
+                    <span>{{ shape.col }}, {{ shape.row }}</span>
+                  </div>
+                </div>
+
+                <!--
+                  Growing north or west moves the origin instead of renumbering
+                  the cells, so an authored coordinate — and every door in
+                  another map pointing at it — survives
+                  (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+                -->
+                <h3>{{ 'ui.editor.map.shape.extend' | t }}</h3>
+                <div class="extent">
+                  @for (side of extentSides; track side) {
+                    <div class="row">
+                      <span>{{ 'ui.editor.map.shape.side.' + side | t }}</span>
+                      <span class="button-row">
+                        <button
+                          type="button"
+                          [title]="'ui.editor.map.shape.shrinkTooltip' | t"
+                          (click)="shrink(side)"
+                        >
+                          −
+                        </button>
+                        <button
+                          type="button"
+                          [title]="'ui.editor.map.shape.growTooltip' | t"
+                          (click)="grow(side)"
+                        >
+                          +
+                        </button>
+                      </span>
+                    </div>
+                  }
+                </div>
+              }
+              <p class="hint">{{ 'ui.editor.map.shape.hint' | t }}</p>
             </section>
           }
 
@@ -735,8 +800,16 @@
           <h2>{{ 'ui.editor.map.open.heading' | t }}</h2>
           <div class="rows">
             <div class="row">
+              <!--
+                The extent is what the buffers cover; the hex count is the size
+                of the world (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+              -->
               <span>{{ 'ui.editor.map.open.size' | t }}</span>
               <span>{{ doc.width }} × {{ doc.height }}</span>
+            </div>
+            <div class="row">
+              <span>{{ 'ui.editor.map.open.hexes' | t }}</span>
+              <span>{{ shapeStats()?.present ?? 0 }}</span>
             </div>
             <div class="row">
               <span>{{ 'ui.editor.map.open.zone' | t }}</span

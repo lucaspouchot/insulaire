@@ -166,6 +166,32 @@
   background: var(--bg-raised);
 }
 
+/* The extent controls: one row per side, a minus and a plus on the right. */
+.extent {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.extent h3,
+.panel h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  margin: 10px 0 6px;
+}
+
+.extent .button-row {
+  gap: 4px;
+}
+
+.extent .button-row button {
+  min-width: 26px;
+  padding: 1px 6px;
+  font-family: var(--mono);
+}
+
 .palette {
   display: flex;
   flex-direction: column;

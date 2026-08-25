@@ -33,7 +33,16 @@
  */
 
 import { bandLevels, shoulderLine } from '../content/content-types';
-import { Offset, fromIndex, indexIn, sameOffset } from '../core/hex/hex-coords';
+import {
+  MapBounds,
+  Offset,
+  fromIndex,
+  indexIn,
+  mapBounds,
+  maxRow,
+  minRow,
+  sameOffset,
+} from '../core/hex/hex-coords';
 import { HexLayout, Point, Rect } from '../core/hex/hex-layout';
 import { Camera } from './camera';
 import { SpriteSource, drawCharacter } from './character-renderer';
@@ -82,6 +91,14 @@ const CHROME = {
  * tall cell stops responding to the pointer.
  */
 const ROW_SEARCH_SLACK = 2;
+
+/**
+ * How much fainter the extent's empty cells are drawn than the grid itself.
+ *
+ * Enough to read as "you may draw here", not enough to be mistaken for a hex
+ * the map has (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+ */
+const EXTENT_GHOST_ALPHA = 0.4;
 
 /** Canvas height the map-wide character ratio is defined against. */
 const REFERENCE_CHARACTER_HEIGHT_PX = 128;
@@ -355,14 +372,18 @@ export class HexMapRenderer {
 
     if (projection.isIdentity) {
       const cell = this.layout.cellAt(drawing);
-      return indexIn(cell, model.width, model.height) >= 0 ? cell : null;
+      return this.hittable(model, cell) ? cell : null;
     }
 
     const { min, max } = model.elevationRange;
     const frontRow = this.layout.cellAt(projection.unproject(drawing, max)).row + ROW_SEARCH_SLACK;
     const backRow = this.layout.cellAt(projection.unproject(drawing, min)).row - ROW_SEARCH_SLACK;
 
-    for (let row = Math.min(frontRow, model.height - 1); row >= Math.max(backRow, 0); row -= 1) {
+    for (
+      let row = Math.min(frontRow, maxRow(model.bounds));
+      row >= Math.max(backRow, minRow(model.bounds));
+      row -= 1
+    ) {
       // Which columns can reach `drawing.x` on this row: odd rows are shifted
       // half a hex right, so the centre of `col` sits at `hexWidth * col`.
       const shift = row % 2 === 0 ? 0 : 0.5;
@@ -370,7 +391,7 @@ export class HexMapRenderer {
 
       for (const col of [approximate, approximate - 1, approximate + 1]) {
         const cell = { col, row };
-        if (indexIn(cell, model.width, model.height) < 0) {
+        if (!this.hittable(model, cell)) {
           continue;
         }
         if (this.cellCovers(model, projection, cell, drawing)) {
@@ -379,6 +400,52 @@ export class HexMapRenderer {
       }
     }
     return null;
+  }
+
+  /**
+   * Whether a click on `cell` resolves to anything.
+   *
+   * A hole is only clickable where the extent is shown — the editor, so that
+   * "put a hex back here" has something to aim at. Play resolves present cells
+   * alone (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+   */
+  private hittable(model: RenderModel, cell: Offset): boolean {
+    const index = indexIn(cell, model.bounds);
+    return index >= 0 && (model.showExtent || model.presence[index] === 1);
+  }
+
+  /**
+   * The tightest extent covering the hexes the map actually has.
+   *
+   * What the camera frames, so an island drawn in the corner of a large canvas
+   * fills the viewport instead of sitting in a sea of nothing. Falls back to the
+   * whole extent while the map has no hex at all, which is what an author sees
+   * on a blank canvas before drawing the first one.
+   */
+  private presentExtent(model: RenderModel): MapBounds {
+    let firstCol = Number.POSITIVE_INFINITY;
+    let lastCol = Number.NEGATIVE_INFINITY;
+    let firstRow = Number.POSITIVE_INFINITY;
+    let lastRow = Number.NEGATIVE_INFINITY;
+
+    for (let index = 0; index < model.presence.length; index += 1) {
+      if (model.presence[index] !== 1) {
+        continue;
+      }
+      const cell = fromIndex(index, model.bounds);
+      firstCol = Math.min(firstCol, cell.col);
+      lastCol = Math.max(lastCol, cell.col);
+      firstRow = Math.min(firstRow, cell.row);
+      lastRow = Math.max(lastRow, cell.row);
+    }
+
+    if (firstRow > lastRow) {
+      return model.bounds;
+    }
+    return mapBounds(lastCol - firstCol + 1, lastRow - firstRow + 1, {
+      col: firstCol,
+      row: firstRow,
+    });
   }
 
   /**
@@ -396,19 +463,26 @@ export class HexMapRenderer {
    * faces stop at the row in front of it, which already reaches lower.
    */
   contentBounds(model: RenderModel = this.model): Rect {
-    const plane = this.layout.boundsOf(model.width, model.height);
+    // Framed on the hexes the map has, not on the box they are stored in
+    // (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+    const drawn = model.showExtent ? model.bounds : this.presentExtent(model);
+    const plane = this.layout.boundsOf(drawn);
     const projection = model === this.model ? this.projection : this.projectionFor(model);
-    if (projection.isIdentity || model.width === 0 || model.height === 0) {
+    if (projection.isIdentity || drawn.width === 0 || drawn.height === 0) {
       return projection.projectRect(plane);
     }
 
     let minY = Number.POSITIVE_INFINITY;
     let maxY = Number.NEGATIVE_INFINITY;
-    for (let row = 0; row < model.height; row += 1) {
+    for (let row = minRow(drawn); row <= maxRow(drawn); row += 1) {
       let peak = 0;
       let floor = 0;
-      for (let col = 0; col < model.width; col += 1) {
-        const elevation = this.elevationAt(model, row * model.width + col);
+      for (let col = drawn.origin.col; col < drawn.origin.col + drawn.width; col += 1) {
+        const index = indexIn({ col, row }, model.bounds);
+        if (index < 0 || model.presence[index] !== 1) {
+          continue;
+        }
+        const elevation = this.elevationAt(model, index);
         peak = Math.max(peak, elevation);
         floor = Math.min(floor, elevation);
       }
@@ -428,7 +502,7 @@ export class HexMapRenderer {
 
   /** Frames the whole map in a `width x height` viewport. */
   fitToViewport(width: number, height: number): void {
-    if (this.model.width === 0 || this.model.height === 0) {
+    if (this.model.bounds.width === 0 || this.model.bounds.height === 0) {
       return;
     }
     this.camera.fit(this.contentBounds(), width, height);
@@ -452,7 +526,7 @@ export class HexMapRenderer {
     // A map with no cells, and a map whose pictures are still on the wire, are
     // the same frame: the background, and nothing drawn on it
     // (`docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`).
-    if (model.width === 0 || model.height === 0 || this.warming) {
+    if (model.bounds.width === 0 || model.bounds.height === 0 || this.warming) {
       ctx.restore();
       this.recordFrame(startedAt, model, 0, 0);
       return;
@@ -468,8 +542,7 @@ export class HexMapRenderer {
     const { min, max } = model.elevationRange;
     const range = this.layout.visibleRange(
       this.projection.unprojectRect(view, min, max),
-      model.width,
-      model.height,
+      model.bounds,
     );
 
     this.batchCount = 0;
@@ -498,7 +571,7 @@ export class HexMapRenderer {
     this.peakFrameMs = Math.max(this.peakFrameMs, lastFrameMs);
     this.stats = {
       cellsDrawn,
-      cellsTotal: model.width * model.height,
+      cellsTotal: model.bounds.width * model.bounds.height,
       terrainBatches,
       tilePictures: this.appearances.size,
       lastFrameMs,
@@ -604,14 +677,17 @@ export class HexMapRenderer {
 
     for (let row = minRow; row <= maxRow; row += 1) {
       for (let col = range.minCol; col <= range.maxCol; col += 1) {
-        const index = row * model.width + col;
+        const cell = { col, row };
+        const index = indexIn(cell, model.bounds);
         const paletteIndex = model.terrain[index];
-        if (paletteIndex === undefined) {
+        // A hole is not drawn at all — no top, no faces, no colour. Its paint
+        // is still in the buffer, waiting for the hex to come back
+        // (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+        if (paletteIndex === undefined || model.presence[index] !== 1) {
           continue;
         }
         visited += 1;
 
-        const cell = { col, row };
         const elevation = this.elevationAt(model, index);
         const base = this.wallBaseOf(model, cell);
 
@@ -785,15 +861,35 @@ export class HexMapRenderer {
   ): void {
     const ctx = this.context;
     const grid = new Path2D();
+    // The cells the extent covers but the map lacks: drawn fainter, and only
+    // where an author can act on them, so the shape's outline is what the grid
+    // shows (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+    const ghost = new Path2D();
+    // `Path2D` cannot be asked whether it is empty, and an unshaped map must
+    // not pay a second `stroke()` for a path with nothing in it.
+    let ghosted = 0;
     for (let row = minRow; row <= maxRow; row += 1) {
       for (let col = range.minCol; col <= range.maxCol; col += 1) {
         const cell = { col, row };
-        this.addHexTo(grid, cell, this.elevationOf(model, cell));
+        const index = indexIn(cell, model.bounds);
+        if (index < 0) {
+          continue;
+        }
+        if (model.presence[index] === 1) {
+          this.addHexTo(grid, cell, this.elevationOf(model, cell));
+        } else if (model.showExtent) {
+          this.addHexTo(ghost, cell, 0);
+          ghosted += 1;
+        }
       }
     }
     ctx.save();
     ctx.lineWidth = model.gridLineWidth / this.camera.zoom;
     ctx.strokeStyle = model.gridLineColor;
+    if (ghosted > 0) {
+      ctx.globalAlpha = model.gridLineAlpha * EXTENT_GHOST_ALPHA;
+      ctx.stroke(ghost);
+    }
     ctx.globalAlpha = model.gridLineAlpha;
     ctx.stroke(grid);
     ctx.restore();
@@ -1015,7 +1111,8 @@ export class HexMapRenderer {
     for (let row = minRow; row <= maxRow; row += 1) {
       for (let col = range.minCol; col <= range.maxCol; col += 1) {
         const cell = { col, row };
-        if (indexIn(cell, model.width, model.height) < 0) {
+        const index = indexIn(cell, model.bounds);
+        if (index < 0 || model.presence[index] !== 1) {
           continue;
         }
         const center = this.centerOf(model, cell);
@@ -1033,7 +1130,7 @@ export class HexMapRenderer {
 
   /** The authored elevation of a cell, or `0` when out of bounds. */
   private elevationOf(model: RenderModel, cell: Offset): number {
-    const index = indexIn(cell, model.width, model.height);
+    const index = indexIn(cell, model.bounds);
     return index < 0 ? 0 : this.elevationAt(model, index);
   }
 

@@ -160,8 +160,18 @@
           "settleMs": 700
         },
         {
-          "name": "editor-map-player-tool",
+          "name": "editor-map-add-cell-tool",
           "selector": ".tools button:nth-of-type(5)",
+          "settleMs": 700
+        },
+        {
+          "name": "editor-map-remove-cell-tool",
+          "selector": ".tools button:nth-of-type(6)",
+          "settleMs": 700
+        },
+        {
+          "name": "editor-map-player-tool",
+          "selector": ".tools button:nth-of-type(7)",
           "settleMs": 700
         },
         {
@@ -176,7 +186,7 @@
         },
         {
           "name": "editor-map-monster-tool",
-          "selector": ".tools button:nth-of-type(6)",
+          "selector": ".tools button:nth-of-type(8)",
           "settleMs": 700
         },
         {

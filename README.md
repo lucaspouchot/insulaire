@@ -19,6 +19,8 @@ stack to prove the architecture works end to end, and nothing more.
 - Load an authored hex world from a JSON file.
 - Render it to a Canvas with pan, zoom, hover, selection and viewport culling.
 - Paint terrain, place a player and monsters, validate, save to disk and import.
+- Give a map **any shape**: remove and add hexes anywhere, extend the canvas in
+  any direction, leave islands detached from each other (ADR-0046).
 - Author a **project of several maps** and link them: a door on a hex sends the
   player to another map, and the engine follows it during play.
 - Start a playable test game **from the maps the editor is holding**.
@@ -123,13 +125,21 @@ five maps at a time, so a project of forty stays navigable.
 2. Pick a terrain in the palette (movement cost `0` means impassable).
 3. Click or **drag** on the map to paint. Right-drag or middle-drag pans, the
    wheel zooms, `Fit` re-frames.
-4. Switch the tool to **Player** or **Monster** and click a hex to place one. A
+4. **Add hex** and **Remove hex** shape the map. A map is a set of hexes, not a
+   rectangle: carve a coastline, leave a rock off the shore, put a hex back
+   where you took one from — its terrain was kept, so it comes back with it.
+   Removing is refused while an entity, a door or a location stands on the hex,
+   and the message says which. The pale cells around the map are canvas you may
+   draw into; the **Shape** panel extends or trims that canvas on any side, and
+   growing north or west moves the map's origin rather than renumbering its
+   cells, so doors in other maps keep pointing where you put them (ADR-0046).
+5. Switch the tool to **Player** or **Monster** and click a hex to place one. A
    world has exactly one player; placing a new one moves it.
-5. **Erase** removes whatever entity, door or location stands on a hex.
-6. Press **Validate**. The report comes from Rust — the same validator the
+6. **Erase** removes whatever entity, door or location stands on a hex.
+7. Press **Validate**. The report comes from Rust — the same validator the
    runtime runs at load time — and points at the exact field, e.g.
    `entities[3].at · entity 'monster_3' stands on an impassable tile at [5, 5]`.
-7. **Save map** writes the open map into the content directory, as
+8. **Save map** writes the open map into the content directory, as
    `worlds/<id>.json`, through the authoring server `npm run dev` starts
    (ADR-0022). **Save project** does the same for every map. Both validate
    first, and **nothing is written when the report is not clean**: the files on
@@ -734,6 +744,7 @@ Read in order:
 43. **ADR-0043 — gameplay selects character animations by role**
 44. **ADR-0044 — scale and move map entities in presentation space**
 45. **ADR-0045 — shortcuts use physical keys**
+46. **ADR-0046 — a map is a set of hexes, not a rectangle**
 
 `CLAUDE.md` contains project-level instructions for Claude Code and other coding
 agents.

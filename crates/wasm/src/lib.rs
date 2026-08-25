@@ -281,7 +281,7 @@ impl InsulaireEngine {
     /// Returns the packed terrain buffer as a `Uint8Array`: one palette index
     /// per cell, row-major in offset coordinates.
     ///
-    /// This is one of the two bulk transfers in the API, and the reason the
+    /// This is one of the three bulk transfers in the API, and the reason the
     /// renderer never calls into WASM per tile.
     ///
     /// # Errors
@@ -304,6 +304,22 @@ impl InsulaireEngine {
     #[wasm_bindgen(js_name = elevationBuffer)]
     pub fn elevation_buffer(&self, world_id: &str) -> Result<Vec<i8>, JsValue> {
         self.inner.elevation_buffer(world_id).map_err(to_js)
+    }
+
+    /// Returns the packed presence buffer as a `Uint8Array`: `1` where the map
+    /// has a hex, `0` where it has a hole, in the same layout as
+    /// `terrainBuffer`.
+    ///
+    /// A map is a set of hexes, not a rectangle; the extent in
+    /// `worldView().bounds` is only what the buffers cover
+    /// (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+    ///
+    /// # Errors
+    ///
+    /// `unknownContent`.
+    #[wasm_bindgen(js_name = presenceBuffer)]
+    pub fn presence_buffer(&self, world_id: &str) -> Result<Vec<u8>, JsValue> {
+        self.inner.presence_buffer(world_id).map_err(to_js)
     }
 
     /// Starts a game on a registered world. Returns the initial `GameSnapshot`.

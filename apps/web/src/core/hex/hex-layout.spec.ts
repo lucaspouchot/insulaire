@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { offset } from './hex-coords';
+import { mapBounds, offset } from './hex-coords';
 import { HexLayout } from './hex-layout';
 
 /**
@@ -71,7 +71,7 @@ describe('HexLayout', () => {
   });
 
   it('bounds a map tightly enough to frame it', () => {
-    const bounds = layout.boundsOf(20, 20);
+    const bounds = layout.boundsOf(mapBounds(20, 20));
     for (const cell of [offset(0, 0), offset(19, 0), offset(0, 19), offset(19, 19)]) {
       const center = layout.centerOf(cell);
       expect(center.x).toBeGreaterThanOrEqual(bounds.minX);
@@ -85,7 +85,7 @@ describe('HexLayout', () => {
     // A window around the centre of a 40x40 map should return far fewer than
     // 1600 cells, but must include every cell whose centre is inside it.
     const view = { minX: 300, minY: 300, maxX: 600, maxY: 600 };
-    const range = layout.visibleRange(view, 40, 40);
+    const range = layout.visibleRange(view, mapBounds(40, 40));
 
     const cellCount = (range.maxCol - range.minCol + 1) * (range.maxRow - range.minRow + 1);
     expect(cellCount).toBeLessThan(200);
@@ -106,7 +106,10 @@ describe('HexLayout', () => {
   });
 
   it('clamps the culling range to the map', () => {
-    const range = layout.visibleRange({ minX: -9999, minY: -9999, maxX: 9999, maxY: 9999 }, 20, 20);
+    const range = layout.visibleRange(
+      { minX: -9999, minY: -9999, maxX: 9999, maxY: 9999 },
+      mapBounds(20, 20),
+    );
     expect(range).toEqual({ minCol: 0, maxCol: 19, minRow: 0, maxRow: 19 });
   });
 });

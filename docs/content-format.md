@@ -33,8 +33,19 @@ Positions are **odd-r offset** pairs written as a two-element array:
 meaning column 4, row 10. Rows run horizontally, `row` increases downwards, and
 odd rows are shifted half a hex to the right. Full rationale in ADR-0014.
 
-A `width x height` world addresses `col` in `0..width` and `row` in
-`0..height`. Anything outside is a validation error.
+A world's **extent** is the rectangle its dense buffers cover: `width` columns
+and `height` rows, anchored at `origin` (default `[0, 0]`). It addresses `col`
+in `origin.col .. origin.col + width` and `row` in `origin.row .. origin.row +
+height`; anything outside is a validation error. Coordinates may be negative,
+which is what a map extended northwards or westwards produces.
+
+The extent is **storage, not shape**. Which of its cells the map actually has is
+authored in `shape`, and a map is a *set of hexes*: it may be carved into any
+outline, and its islands need not touch
+(`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`). Extending a map moves the
+origin rather than renumbering its cells, so an authored coordinate names the
+same hex forever — which matters because odd-r is not translation-invariant, and
+because a door in another map names a coordinate in this one.
 
 ---
 
@@ -313,11 +324,13 @@ since.
 ```json
 {
   "id": "demo_world",
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "name": "Demo Valley",
   "zone": "valley",
+  "origin": [0, 0],
   "width": 20,
   "height": 20,
+  "shape": { "default": "present", "exceptions": [[0, 0], [1, 0]] },
   "orientation": "pointy",
   "projection": "isometric",
   "characterHeightTiles": 2,
@@ -350,10 +363,12 @@ since.
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `id` | string | yes | Stable id. Loading a world replaces any world with the same id. |
-| `schemaVersion` | integer | yes | `3`. |
+| `schemaVersion` | integer | yes | `4`. |
 | `name` | string | no | Display name. |
 | `zone` | string | no | Id of the `ZoneDefinition` this map belongs to. Absent means the project's default zone — never *no* zone; see below. |
-| `width`, `height` | integer | yes | Columns and rows. `1..2048`. |
+| `origin` | `[col, row]` | no | North-west corner of the extent; the coordinate stored at buffer index `0`. Defaults to `[0, 0]`. May be negative. |
+| `width`, `height` | integer | yes | Columns and rows **of the extent**. `1..2048`. Not the size of the world; see `shape`. |
+| `shape` | MapShape | no | Which of the extent's cells the map has. Absent is the full rectangle. |
 | `orientation` | `"pointy"` \| `"flat"` | no | Defaults to `"pointy"`. `"flat"` is reserved and currently rejected. |
 | `projection` | `"topDown"` \| `"isometric"` | no | Defaults to `"topDown"`. How the renderer draws this world; see below. |
 | `characterHeightTiles` | number | no | Defaults to `2`; must be `0.25..=8`. Projected tile-face heights occupied by a 128-pixel character canvas. |
@@ -396,6 +411,41 @@ where map links are: `world.unknownZone` comes from the project-wide validation,
 world with a lake and a ridge is 82 lines rather than 400, and painting one hex
 changes one line of the diff. The runtime expands this into a dense buffer on
 load; the editor re-sparsifies on export.
+
+### MapShape
+
+`shape` says which cells of the extent the map has, the same way `defaultTile`
+and `tiles` say what they are painted with: a default plus the cells that differ.
+
+```json
+"shape": { "default": "absent", "exceptions": [[3, 0], [4, 0], [4, 1]] }
+```
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `default` | `"present"` \| `"absent"` | no | What a cell is when `exceptions` does not name it. Defaults to `"present"`. |
+| `exceptions` | `[col, row][]` | no | The cells that are the opposite of `default`. Must lie inside the extent, and none may appear twice. |
+
+The two forms are opposites, and an author reaches a shape by whichever is
+shorter: carving a coastline out of a full canvas lists holes
+(`"default": "present"`), drawing an archipelago on an empty one lists hexes
+(`"default": "absent"`). The editor writes whichever list is shorter, one cell
+per line. **Omitting `shape` entirely is the full rectangle**, which is what
+every world authored before schema version 4 means.
+
+A cell the map does not have is outside the map in every sense that matters: it
+is not drawn, not walkable, and a move onto it is rejected with the same
+`outOfBounds` a coordinate beyond the extent gets. Nothing authored may stand on
+one — `entity.absentCell`, `location.absentCell`, `link.absentCell`,
+`link.absentTargetCell` — and a map with no hex left is `world.emptyShape`.
+
+**Paint survives under a hole.** Carving a cell out does not clear its `tiles`
+entry, its elevation or its art choice, so restoring the hex restores what was
+there. A painted absent cell is reported as the *warning* `tile.absentCell`,
+never an error.
+
+**Connectivity is never checked.** Three rocks off the western shore are a
+legitimate map (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
 
 ### Presentation: projection, character scale and grid
 
@@ -1287,6 +1337,9 @@ exposed across the boundary as `validateLinks()` and `loadProject()`.
 | `world.missingId` | `id` is empty. |
 | `world.unsupportedSchemaVersion` | Newer than this build understands. |
 | `world.emptyMap` | `width` or `height` is `0`. |
+| `world.emptyShape` | Every cell of the extent is absent, so the map has no hex. |
+| `shape.outOfBounds` | A shape exception names a cell outside the extent. |
+| `shape.duplicateCell` | A shape exception names the same cell twice. |
 | `world.mapTooLarge` | A dimension exceeds 2048. |
 | `world.unsupportedOrientation` | Not `"pointy"`. |
 | `world.characterHeightTilesOutOfRange` | `characterHeightTiles` is not finite or outside `0.25..=8`. |
@@ -1296,7 +1349,8 @@ exposed across the boundary as `validateLinks()` and `loadProject()`.
 | `world.unknownTileSet` | `tileSetId` is not loaded. |
 | `world.unknownDefaultTile` | `defaultTile` is not in the tile set. |
 | `world.missingPlayer` / `world.multiplePlayers` | Not exactly one player entity. |
-| `tile.outOfBounds` | A placed tile is outside the map. |
+| `tile.outOfBounds` | A placed tile is outside the extent. |
+| `tile.absentCell` | **Warning.** A cell is painted but the map has no hex there. Paint deliberately outlives a hole. |
 | `tile.duplicatePosition` | Two tiles painted on one cell. |
 | `tile.unknownReference` | A placed tile references an unknown tile id. |
 | `tile.elevationOutOfRange` | A placed tile's `elevation` is outside `-128..=127`. |
@@ -1315,13 +1369,16 @@ exposed across the boundary as `validateLinks()` and `loadProject()`.
 | `tile.emptyRepeatPattern` | A `pattern` rule names no level. |
 | `tile.repeatWithoutLevels` | A repeat rule with no explicit level to repeat. |
 | `entity.missingId` / `entity.duplicateId` | Ids must exist and be unique. |
-| `entity.outOfBounds` | Entity placed outside the map. |
+| `entity.outOfBounds` | Entity placed outside the extent. |
+| `entity.absentCell` | Entity placed where the map has no hex. |
 | `entity.onImpassableTile` | Entity standing on `movementCost: 0`. |
 | `entity.unknownTemplate` | `templateId` is not in the registry. |
 | `entity.overlappingPlacement` | Two blocking entities on one hex. |
-| `location.missingId` / `location.duplicateId` / `location.outOfBounds` | As above, for locations. |
+| `location.missingId` / `location.duplicateId` / `location.outOfBounds` / `location.absentCell` | As above, for locations. |
 | `link.missingId` / `link.duplicateId` | Link ids must exist and be unique within the world. |
-| `link.outOfBounds` | A link is outside the map. |
+| `link.outOfBounds` | A link is outside the extent. |
+| `link.absentCell` | A link sits where the map has no hex, so it can never be entered. |
+| `link.absentTargetCell` | A link arrives where the target map has no hex. |
 | `link.duplicatePosition` | Two links on one cell. |
 | `link.onImpassableTile` | A link sits on `movementCost: 0`, so it can never be entered. |
 | `link.missingTarget` | `targetWorld` is empty. |
@@ -1491,10 +1548,13 @@ which vocabulary it was written against. Renaming or removing a field, or
 changing the meaning of an existing one, likewise requires a bump and an
 explicit migration.
 
-`WORLD_SCHEMA_VERSION` is at **3**. Version 3 added the map-wide `grid`
-appearance used by both editor and Play; absent values keep the former 1 px,
-black-at-25% renderer style. Version 2 added `PlacedTile.art`, the per-cell art
-choice (ADR-0036). The shipped files are written as `3`.
+`WORLD_SCHEMA_VERSION` is at **4**. Version 4 added `origin` and `shape`: a map
+is a set of hexes rather than a rectangle (ADR-0046). Both default to what every
+earlier file meant — anchored at `[0, 0]`, every cell present — so a version-3
+file loads unchanged. Version 3 added the map-wide `grid` appearance used by
+both editor and Play; absent values keep the former 1 px, black-at-25% renderer
+style. Version 2 added `PlacedTile.art`, the per-cell art choice (ADR-0036). The
+shipped files are written as `4`.
 
 `TILE_SET_SCHEMA_VERSION` is at **2**. Version 2 added `art` — the set's pixel
 grid and each tile's images (ADR-0035). Everything it added is optional with a

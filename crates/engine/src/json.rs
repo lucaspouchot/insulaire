@@ -306,6 +306,18 @@ impl JsonEngine {
             .map_err(|error| err(&error))
     }
 
+    /// Returns the packed presence buffer: `1` per hex the map has, `0` per
+    /// hole (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+    ///
+    /// # Errors
+    ///
+    /// `unknownContent` when the world is not registered.
+    pub fn presence_buffer(&self, world_id: &str) -> JsonResult<Vec<u8>> {
+        self.inner
+            .presence_buffer(world_id)
+            .map_err(|error| err(&error))
+    }
+
     /// Starts a game; returns the initial [`GameSnapshot`](crate::GameSnapshot).
     ///
     /// # Errors
@@ -625,11 +637,18 @@ mod tests {
         let mut engine = loaded();
 
         let view = json(&engine.world_view("w").expect("view"));
-        assert_eq!(view["width"], 8);
+        assert_eq!(view["bounds"]["width"], 8);
+        assert_eq!(view["bounds"]["origin"], serde_json::json!([0, 0]));
         assert_eq!(view["cellCount"], 64);
+        assert_eq!(view["presentCellCount"], 64);
         assert_eq!(view["palette"].as_array().expect("palette").len(), 2);
 
         assert_eq!(engine.terrain_buffer("w").expect("buffer").len(), 64);
+        // The third bulk transfer: all ones on a map nobody shaped
+        // (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+        let presence = engine.presence_buffer("w").expect("buffer");
+        assert_eq!(presence.len(), 64);
+        assert!(presence.iter().all(|flag| *flag == 1));
 
         let snapshot = json(&engine.create_game("w", 7, "{}").expect("game"));
         assert_eq!(snapshot["tick"], 0);
@@ -1140,7 +1159,7 @@ mod tests {
     fn engine_info_reports_the_build() {
         let info = json(&JsonEngine::new().engine_info().expect("info"));
         assert_eq!(info["name"], "insulaire-engine");
-        assert_eq!(info["worldSchemaVersion"], 3);
+        assert_eq!(info["worldSchemaVersion"], 4);
         assert!(info["version"].is_string());
     }
 

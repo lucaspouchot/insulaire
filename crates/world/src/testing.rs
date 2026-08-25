@@ -6,7 +6,7 @@
 
 use crate::definition::{
     EntityDefinition, GridStyle, HexOrientation, LinkTrigger, LocationDefinition,
-    MapLinkDefinition, PlacedTile, ProjectionMode, WorldDefinition, WorldMetadata,
+    MapLinkDefinition, MapShape, PlacedTile, ProjectionMode, WorldDefinition, WorldMetadata,
     DEFAULT_CHARACTER_HEIGHT_TILES, WORLD_SCHEMA_VERSION,
 };
 use crate::hex::OffsetCoord;
@@ -115,8 +115,10 @@ pub fn sample_world() -> WorldDefinition {
         schema_version: WORLD_SCHEMA_VERSION,
         name: "Sample World".to_owned(),
         zone: String::new(),
+        origin: OffsetCoord::new(0, 0),
         width: 10,
         height: 10,
+        shape: MapShape::default(),
         orientation: HexOrientation::Pointy,
         projection: ProjectionMode::TopDown,
         character_height_tiles: DEFAULT_CHARACTER_HEIGHT_TILES,

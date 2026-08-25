@@ -47,6 +47,7 @@ import {
 } from '../../../../content/content-types';
 import { TILE_ART_BUNDLE } from '../../../../content/sprite-bundle';
 import {
+  CellOccupant,
   DocumentEntity,
   DocumentLink,
   DocumentTile,
@@ -90,7 +91,19 @@ const ZONE_OPTION = 'zone:';
  * place here because the dock it opens is chosen by the tool like any other.
  */
 export type EditorTool =
-  'map' | 'paint' | 'raise' | 'lower' | 'player' | 'monster' | 'link' | 'erase';
+  | 'map'
+  | 'paint'
+  | 'raise'
+  | 'lower'
+  | 'addCell'
+  | 'removeCell'
+  | 'player'
+  | 'monster'
+  | 'link'
+  | 'erase';
+
+/** How far one click of the extent controls grows or shrinks a map. */
+const EXTENT_STEP = 4;
 
 @Component({
   selector: 'app-map-editor-page',
@@ -138,6 +151,8 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   protected readonly selected = signal<Offset | null>(null);
   protected readonly showGrid = signal(true);
   protected readonly gridLineWidths = [1, 2, 3, 4] as const;
+  /** The four sides the extent controls act on, in reading order. */
+  protected readonly extentSides = ['north', 'south', 'west', 'east'] as const;
   protected readonly showCoordinates = signal(false);
   /** Character brushes stay separate so switching tools does not lose either. */
   private readonly playerPreviewCharacter = signal<string | null>(null);
@@ -299,7 +314,9 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   });
 
   /** Which inspector the left dock shows below the tool picker, if any. */
-  protected readonly inspector = computed<'brush' | 'elevation' | 'placement' | 'doors' | 'none'>(
+  protected readonly inspector = computed<
+    'brush' | 'elevation' | 'shape' | 'placement' | 'doors' | 'none'
+  >(
     () => {
       switch (this.tool()) {
         case 'map':
@@ -311,6 +328,9 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
         case 'raise':
         case 'lower':
           return 'elevation';
+        case 'addCell':
+        case 'removeCell':
+          return 'shape';
         case 'link':
           return 'doors';
         default:
@@ -567,6 +587,12 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       case 'lower':
         changed = document.raise(cell, -1);
         break;
+      case 'addCell':
+        changed = document.setPresent(cell, true);
+        break;
+      case 'removeCell':
+        changed = this.carve(document, cell);
+        break;
       case 'player':
         changed =
           document.placeEntity(cell, 'player', true, this.playerPreviewCharacter()) !== null;
@@ -596,6 +622,101 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       this.message.set(null);
     }
     this.refresh();
+  }
+
+  // ------------------------------------------------------------------ shape
+
+  /** How many hexes the map has, out of how many its buffers cover. */
+  protected readonly shapeStats = computed(() => {
+    this.revision();
+    const document = this.document();
+    if (document === null) {
+      return null;
+    }
+    return {
+      present: document.presentCellCount,
+      total: document.width * document.height,
+      width: document.width,
+      height: document.height,
+      col: document.bounds.origin.col,
+      row: document.bounds.origin.row,
+    };
+  });
+
+  /**
+   * Carves a hex out of the map, refusing while something stands on it.
+   *
+   * Refusing rather than taking the entity, the door or the point of interest
+   * with it: authored content is never destroyed by a brush stroke
+   * (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+   */
+  private carve(document: WorldDocument, cell: Offset): boolean {
+    const occupants = document.occupantsAt(cell);
+    if (occupants.length > 0) {
+      const first = occupants[0] as CellOccupant;
+      this.error.set(
+        this.i18n.t(`ui.editor.map.error.carveBlocked.${first.kind}`, { id: first.id }),
+      );
+      return false;
+    }
+    return document.setPresent(cell, false);
+  }
+
+  /**
+   * Grows or shrinks the extent on one side.
+   *
+   * Growing north or west moves the origin instead of renumbering the cells, so
+   * an authored coordinate — and every door in another map pointing at it —
+   * survives the change (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`). New
+   * cells arrive absent: blank canvas, not a slab of terrain.
+   */
+  protected extend(side: 'north' | 'south' | 'east' | 'west', steps: number): void {
+    const document = this.store.document();
+    if (document === null) {
+      return;
+    }
+    const { origin, width, height } = document.bounds;
+    const next =
+      side === 'north'
+        ? { origin: { col: origin.col, row: origin.row - steps }, width, height: height + steps }
+        : side === 'south'
+          ? { origin, width, height: height + steps }
+          : side === 'west'
+            ? { origin: { col: origin.col - steps, row: origin.row }, width: width + steps, height }
+            : { origin, width: width + steps, height };
+
+    const stranded = document.occupantsOutside(next);
+    if (stranded.length > 0) {
+      const first = stranded[0] as CellOccupant;
+      this.error.set(
+        this.i18n.t(`ui.editor.map.error.trimBlocked.${first.kind}`, { id: first.id }),
+      );
+      return;
+    }
+    const hexes = document.presentOutside(next);
+    if (hexes > 0) {
+      this.error.set(this.i18n.t('ui.editor.map.error.trimBlocked.cells', { count: hexes }));
+      return;
+    }
+    if (!document.resize(next)) {
+      return;
+    }
+    this.store.touch();
+    this.report.set(null);
+    this.message.set(null);
+    this.framed = false;
+    this.refresh();
+    this.view?.fit();
+  }
+
+  /** Grows the extent by {@link EXTENT_STEP} on one side. */
+  protected grow(side: 'north' | 'south' | 'east' | 'west'): void {
+    this.extend(side, EXTENT_STEP);
+  }
+
+  /** Shrinks the extent by {@link EXTENT_STEP} on one side. */
+  protected shrink(side: 'north' | 'south' | 'east' | 'west'): void {
+    this.extend(side, -EXTENT_STEP);
   }
 
   // --------------------------------------------------------------- cell art
@@ -1358,13 +1479,13 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   private buildModel(document: WorldDocument): RenderModel {
     const characterPreviews = new Map<string, ResolvedCharacter | null>();
     return {
-      width: document.width,
-      height: document.height,
+      bounds: document.bounds,
       projection: document.projection,
       characterHeightTiles: document.characterHeightTiles,
       tileArt: document.tileArt,
       palette: document.palette,
       terrain: document.terrain,
+      presence: document.presence,
       elevation: document.elevation,
       elevationRange: document.elevationRange,
       artChoices: resolveCellArtChoices(document.palette, document.terrain, document.artOverrides),
@@ -1389,6 +1510,9 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       })),
       overlays: [],
       selected: this.selected(),
+      // The author needs to see — and click — the canvas they may extend into
+      // (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+      showExtent: true,
       showGrid: this.showGrid(),
       gridLineWidth: document.grid.lineWidth,
       gridLineColor: document.grid.color,

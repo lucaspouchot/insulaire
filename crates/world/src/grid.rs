@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::definition::{PlacedTileArt, WorldDefinition, MAX_ELEVATION, MIN_ELEVATION};
-use crate::hex::{Hex, OffsetCoord};
+use crate::hex::{Hex, MapBounds, OffsetCoord};
 use crate::tile_art::{CellArt, TileArt};
 use crate::tileset::TileSetDefinition;
 
@@ -41,15 +41,13 @@ pub enum GridError {
         /// Tile set that was searched.
         tile_set: String,
     },
-    /// A painted cell lies outside `width x height`.
-    #[error("tile position {at} is outside the {width}x{height} map")]
+    /// A painted cell lies outside the map's extent.
+    #[error("tile position {at} is outside the map's {bounds} extent")]
     OutOfBounds {
         /// The offending position.
         at: OffsetCoord,
-        /// Map width.
-        width: u32,
-        /// Map height.
-        height: u32,
+        /// The extent it fell outside of.
+        bounds: MapBounds,
     },
     /// The palette does not fit in a `u8`.
     #[error("tile set `{tile_set}` defines {count} tiles; at most 256 are supported")]
@@ -163,13 +161,20 @@ impl CellArtChoice {
 /// A dense, index-addressable world map.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WorldGrid {
-    width: u32,
-    height: u32,
+    bounds: MapBounds,
     palette: Vec<ResolvedTile>,
     /// One palette index per cell, row-major in offset coordinates.
     cells: Vec<u8>,
     /// One elevation per cell, in the same layout as [`cells`](Self::cells).
     elevations: Vec<i8>,
+    /// `1` where the map has a hex, `0` where it has a hole, in the same layout
+    /// as [`cells`](Self::cells).
+    ///
+    /// The third dense buffer, and the one that makes the extent storage rather
+    /// than shape (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`). One byte per
+    /// cell, like the two beside it: a bit per cell would be eight times
+    /// smaller and costs a shift and a mask in the renderer's inner loop.
+    presence: Vec<u8>,
     /// The cells that chose their art, sorted by [`CellArtChoice::cell`].
     art_choices: Vec<CellArtChoice>,
 }
@@ -207,21 +212,30 @@ impl WorldGrid {
                 })
         };
 
+        let bounds = world.bounds();
         let default_index = index_of(&world.default_tile)?;
-        let mut cells = vec![default_index; world.cell_count()];
-        let mut elevations = vec![0_i8; world.cell_count()];
+        let mut cells = vec![default_index; bounds.cell_count()];
+        let mut elevations = vec![0_i8; bounds.cell_count()];
         let mut art_choices = Vec::new();
 
+        // The shape is authored as a default plus exceptions, exactly like the
+        // tiles below it; flattening it is one fill and one pass over the
+        // exception list (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+        let default_presence = u8::from(world.shape.default.is_present());
+        let mut presence = vec![default_presence; bounds.cell_count()];
+        for &at in &world.shape.exceptions {
+            // An exception outside the extent is a validation error, not a
+            // reason to refuse the map: it simply names no cell.
+            if let Some(cell) = bounds.index_of(at) {
+                presence[cell] = 1 - default_presence;
+            }
+        }
+
         for placed in &world.tiles {
-            let cell =
-                placed
-                    .at
-                    .index_in(world.width, world.height)
-                    .ok_or(GridError::OutOfBounds {
-                        at: placed.at,
-                        width: world.width,
-                        height: world.height,
-                    })?;
+            let cell = bounds.index_of(placed.at).ok_or(GridError::OutOfBounds {
+                at: placed.at,
+                bounds,
+            })?;
             let tile_index = index_of(&placed.tile)?;
             cells[cell] = tile_index;
             // Validation rejects anything outside the byte range; clamping here
@@ -244,25 +258,31 @@ impl WorldGrid {
         art_choices.sort_unstable_by_key(|choice| choice.cell);
 
         Ok(Self {
-            width: world.width,
-            height: world.height,
+            bounds,
             palette,
             cells,
             elevations,
+            presence,
             art_choices,
         })
     }
 
-    /// Map width in columns.
+    /// The rectangle the packed buffers cover.
     #[must_use]
-    pub const fn width(&self) -> u32 {
-        self.width
+    pub const fn bounds(&self) -> MapBounds {
+        self.bounds
     }
 
-    /// Map height in rows.
+    /// Extent width in columns. Storage, not the size of the world.
+    #[must_use]
+    pub const fn width(&self) -> u32 {
+        self.bounds.width
+    }
+
+    /// Extent height in rows. Storage, not the size of the world.
     #[must_use]
     pub const fn height(&self) -> u32 {
-        self.height
+        self.bounds.height
     }
 
     /// The tile palette, indexed by the values in [`cells`](Self::cells).
@@ -298,7 +318,7 @@ impl WorldGrid {
     /// What `hex` chose, or `None` when it rolls everything.
     #[must_use]
     pub fn art_choice_at(&self, hex: Hex) -> Option<CellArtChoice> {
-        let index = u32::try_from(hex.to_offset().index_in(self.width, self.height)?).ok()?;
+        let index = u32::try_from(self.bounds.index_of(hex.to_offset())?).ok()?;
         self.art_choices
             .binary_search_by_key(&index, |choice| choice.cell)
             .ok()
@@ -313,23 +333,55 @@ impl WorldGrid {
             .map_or_else(CellArt::default, |choice| choice.against(&self.palette))
     }
 
-    /// The elevation at `hex`, or `None` when out of bounds.
+    /// The elevation at `hex`, or `None` when outside the extent.
+    ///
+    /// Presentation, so this answers for a hole too: carving a hex out does not
+    /// clear what was authored under it
+    /// (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
     #[must_use]
     pub fn elevation_at(&self, hex: Hex) -> Option<i8> {
-        let index = hex.to_offset().index_in(self.width, self.height)?;
+        let index = self.bounds.index_of(hex.to_offset())?;
         self.elevations.get(index).copied()
     }
 
-    /// Returns `true` when `hex` lies inside the map.
+    /// The packed presence flags: `1` where the map has a hex, `0` elsewhere.
     #[must_use]
-    pub fn contains(&self, hex: Hex) -> bool {
-        hex.to_offset().is_within(self.width, self.height)
+    pub fn presence(&self) -> &[u8] {
+        &self.presence
     }
 
-    /// Returns the tile at `hex`, or `None` when out of bounds.
+    /// How many hexes the map actually has.
+    ///
+    /// This is the size of the world; [`cells`](Self::cells)`.len()` is the size
+    /// of its storage, and the two differ on every shaped map.
+    #[must_use]
+    pub fn present_cell_count(&self) -> usize {
+        self.presence.iter().filter(|flag| **flag == 1).count()
+    }
+
+    /// Returns `true` when the **map has** `hex`.
+    ///
+    /// Not "is inside the bounding box": a hole is outside the map exactly as a
+    /// coordinate beyond the extent is, and this is the one question rules ask
+    /// (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`). Use
+    /// [`bounds`](Self::bounds)`.contains` for the storage question.
+    #[must_use]
+    pub fn contains(&self, hex: Hex) -> bool {
+        self.bounds
+            .index_of(hex.to_offset())
+            .is_some_and(|index| self.presence[index] == 1)
+    }
+
+    /// Returns the tile at `hex`, or `None` when the map has no such hex.
+    ///
+    /// A hole answers `None`, which is what makes it impassable and costless to
+    /// every rule downstream without any of them learning about shapes.
     #[must_use]
     pub fn tile_at(&self, hex: Hex) -> Option<&ResolvedTile> {
-        let index = hex.to_offset().index_in(self.width, self.height)?;
+        let index = self.bounds.index_of(hex.to_offset())?;
+        if self.presence[index] != 1 {
+            return None;
+        }
         self.palette.get(usize::from(self.cells[index]))
     }
 
@@ -339,7 +391,8 @@ impl WorldGrid {
         self.tile_at(hex).is_some_and(|tile| tile.passable)
     }
 
-    /// Returns the movement cost of `hex`, or `None` when out of bounds.
+    /// Returns the movement cost of `hex`, or `None` when the map has no such
+    /// hex.
     #[must_use]
     pub fn movement_cost(&self, hex: Hex) -> Option<u32> {
         self.tile_at(hex).map(|tile| tile.movement_cost)
@@ -645,11 +698,92 @@ mod tests {
     }
 
     #[test]
+    fn a_full_shape_is_what_every_map_used_to_be() {
+        let world = testing::sample_world();
+        let grid = WorldGrid::build(&world, &testing::sample_tile_set()).expect("build");
+        assert_eq!(grid.presence().len(), world.cell_count());
+        assert!(grid.presence().iter().all(|flag| *flag == 1));
+        assert_eq!(grid.present_cell_count(), world.cell_count());
+    }
+
+    #[test]
+    fn a_carved_cell_is_outside_the_map_even_though_it_is_inside_the_extent() {
+        let hole = OffsetCoord::new(2, 2);
+        let mut world = testing::sample_world();
+        world.shape.exceptions.push(hole);
+        let grid = WorldGrid::build(&world, &testing::sample_tile_set()).expect("build");
+
+        let hex = Hex::from_offset(hole);
+        assert!(grid.bounds().contains(hole), "the buffers still cover it");
+        assert!(!grid.contains(hex), "but the map does not have it");
+        assert!(grid.tile_at(hex).is_none());
+        assert!(!grid.is_passable(hex));
+        assert_eq!(grid.movement_cost(hex), None);
+        assert_eq!(grid.present_cell_count(), world.cell_count() - 1);
+    }
+
+    #[test]
+    fn an_absent_default_makes_the_exceptions_the_map() {
+        // The archipelago case: an empty canvas, three hexes drawn on it.
+        let drawn = [
+            OffsetCoord::new(1, 1),
+            OffsetCoord::new(2, 1),
+            OffsetCoord::new(7, 6),
+        ];
+        let mut world = testing::sample_world();
+        world.shape.default = crate::definition::CellPresence::Absent;
+        world.shape.exceptions = drawn.to_vec();
+        let grid = WorldGrid::build(&world, &testing::sample_tile_set()).expect("build");
+
+        assert_eq!(grid.present_cell_count(), drawn.len());
+        for at in drawn {
+            assert!(grid.contains(Hex::from_offset(at)));
+        }
+        // Disconnected is legitimate: nothing checks connectivity.
+        assert!(!grid.contains(Hex::from_offset(OffsetCoord::new(4, 4))));
+    }
+
+    #[test]
+    fn carving_a_cell_keeps_what_was_painted_under_it() {
+        let mut world = testing::sample_world();
+        let painted = world.tiles[0].at;
+        world.shape.exceptions.push(painted);
+        let grid = WorldGrid::build(&world, &testing::sample_tile_set()).expect("build");
+
+        let cell = grid.bounds().index_of(painted).expect("inside the extent");
+        assert_eq!(
+            grid.palette()[usize::from(grid.cells()[cell])].id,
+            world.tiles[0].tile,
+            "the paint outlives the hole, so restoring the hex restores it"
+        );
+        assert!(!grid.contains(Hex::from_offset(painted)));
+    }
+
+    #[test]
+    fn an_origin_moves_the_extent_without_moving_a_single_cell() {
+        let mut world = testing::sample_world();
+        let painted = world.tiles[0].at;
+        world.origin = OffsetCoord::new(-4, -4);
+        world.width += 4;
+        world.height += 4;
+        let grid = WorldGrid::build(&world, &testing::sample_tile_set()).expect("build");
+
+        assert!(grid.contains(Hex::from_offset(OffsetCoord::new(-4, -4))));
+        assert_eq!(
+            grid.tile_at(Hex::from_offset(painted))
+                .map(|tile| tile.id.as_str()),
+            Some(world.tiles[0].tile.as_str()),
+            "an authored coordinate still names the hex its author meant"
+        );
+    }
+
+    #[test]
     fn packed_cells_are_row_major_in_offset_space() {
         let world = testing::sample_world();
         let grid = WorldGrid::build(&world, &testing::sample_tile_set()).expect("build");
-        let water_index = testing::WATER_CELL
-            .index_in(world.width, world.height)
+        let water_index = world
+            .bounds()
+            .index_of(testing::WATER_CELL)
             .expect("water cell inside map");
         let palette_index = usize::from(grid.cells()[water_index]);
         assert_eq!(grid.palette()[palette_index].id, "water");

@@ -71,14 +71,14 @@ pub use character_creation::{
     CHARACTER_CREATION_SCHEMA_VERSION,
 };
 pub use definition::{
-    EntityDefinition, GridStyle, HexOrientation, LinkTrigger, LocationDefinition,
-    MapLinkDefinition, PlacedTile, PlacedTileArt, ProjectionMode, WorldDefinition, WorldMetadata,
-    DEFAULT_CHARACTER_HEIGHT_TILES, DEFAULT_GRID_ALPHA, DEFAULT_GRID_COLOR,
+    CellPresence, EntityDefinition, GridStyle, HexOrientation, LinkTrigger, LocationDefinition,
+    MapLinkDefinition, MapShape, PlacedTile, PlacedTileArt, ProjectionMode, WorldDefinition,
+    WorldMetadata, DEFAULT_CHARACTER_HEIGHT_TILES, DEFAULT_GRID_ALPHA, DEFAULT_GRID_COLOR,
     DEFAULT_GRID_LINE_WIDTH, MAX_CHARACTER_HEIGHT_TILES, MAX_ELEVATION, MAX_GRID_LINE_WIDTH,
     MIN_CHARACTER_HEIGHT_TILES, MIN_ELEVATION, MIN_GRID_LINE_WIDTH, WORLD_SCHEMA_VERSION,
 };
 pub use grid::{resolve_cell_art, CellArtChoice, GridError, ResolvedTile, WorldGrid};
-pub use hex::{Hex, HexDirection, OffsetCoord, DIRECTIONS};
+pub use hex::{Hex, HexDirection, MapBounds, OffsetCoord, DIRECTIONS};
 pub use locale::{missing_keys, LocaleBundle, LocaleError, LocaleNode};
 pub use project::{
     ContentRef, LanguageDefinition, LocalesDefinition, ProjectDefinition, ZoneDefinition,

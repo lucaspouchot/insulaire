@@ -459,6 +459,22 @@ impl Engine {
         Ok(self.prepare(world_id)?.grid.elevations().to_vec())
     }
 
+    /// Which cells the map actually has: `1` for a hex, `0` for a hole,
+    /// row-major and the same length as
+    /// [`terrain_buffer`](Self::terrain_buffer).
+    ///
+    /// A map is a set of hexes rather than a rectangle, and this is how the
+    /// renderer learns which of the extent's cells to draw
+    /// (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`). An unshaped map sends
+    /// all ones.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::UnknownContent`] when `world_id` is not registered.
+    pub fn presence_buffer(&self, world_id: &str) -> Result<Vec<u8>, EngineError> {
+        Ok(self.prepare(world_id)?.grid.presence().to_vec())
+    }
+
     fn prepare(&self, world_id: &str) -> Result<PreparedWorld, EngineError> {
         let world = self.world_or_err(world_id)?;
         let tile_set =
@@ -493,8 +509,7 @@ impl Engine {
         WorldView {
             world_id: world.id.clone(),
             name: world.name.clone(),
-            width: grid.width(),
-            height: grid.height(),
+            bounds: grid.bounds(),
             orientation: "pointy".to_owned(),
             projection: match world.projection {
                 ProjectionMode::TopDown => "topDown",
@@ -524,6 +539,7 @@ impl Engine {
             links: world.links.iter().map(Into::into).collect(),
             art_choices: grid.art_choices().to_vec(),
             cell_count: grid.cells().len() as u32,
+            present_cell_count: grid.present_cell_count() as u32,
         }
     }
 
@@ -1032,9 +1048,11 @@ mod tests {
     #[test]
     fn the_world_view_describes_the_map_without_containing_it() {
         let view = engine().world_view("sample_world").expect("view");
-        assert_eq!(view.width, 10);
-        assert_eq!(view.height, 10);
+        assert_eq!(view.bounds.width, 10);
+        assert_eq!(view.bounds.height, 10);
+        assert_eq!(view.bounds.origin, OffsetCoord::new(0, 0));
         assert_eq!(view.cell_count, 100);
+        assert_eq!(view.present_cell_count, 100);
         assert_eq!(view.orientation, "pointy");
         assert_eq!(view.projection, "topDown");
         assert_eq!(view.character_height_tiles, 2.0);
@@ -1114,8 +1132,9 @@ mod tests {
 
         assert_eq!(elevations.len(), view.cell_count as usize);
 
-        let raised = testing::RAISED_CELL
-            .index_in(view.width, view.height)
+        let raised = view
+            .bounds
+            .index_of(testing::RAISED_CELL)
             .expect("in bounds");
         assert_eq!(elevations[raised], testing::RAISED_ELEVATION as i8);
         assert_eq!(elevations.iter().filter(|value| **value != 0).count(), 1);
@@ -1134,8 +1153,9 @@ mod tests {
 
         assert_eq!(buffer.len(), view.cell_count as usize);
 
-        let water_index = testing::WATER_CELL
-            .index_in(view.width, view.height)
+        let water_index = view
+            .bounds
+            .index_of(testing::WATER_CELL)
             .expect("in bounds");
         let palette_index = usize::from(buffer[water_index]);
         assert_eq!(view.palette[palette_index].id, "water");
@@ -1335,7 +1355,7 @@ mod tests {
 
         // The new map is the one the renderer will ask for, and it is loaded.
         let view = engine.world_view(&result.state.world_id).expect("view");
-        assert_eq!(view.width, 5);
+        assert_eq!(view.bounds.width, 5);
         assert_eq!(view.links.len(), 1);
         assert_eq!(view.links[0].target_world, "linked_world");
         assert_eq!(view.links[0].trigger, "enter");

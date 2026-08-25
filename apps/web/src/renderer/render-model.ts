@@ -18,7 +18,7 @@ import {
   TileArtGeometry,
   tileArtGeometry,
 } from '../content/content-types';
-import { Offset } from '../core/hex/hex-coords';
+import { EMPTY_BOUNDS, MapBounds, Offset } from '../core/hex/hex-coords';
 import { ProjectionMode } from './projection';
 
 /** A tile palette entry; mirrors the engine's `PaletteEntry`. */
@@ -109,8 +109,13 @@ export interface RenderOverlay {
 
 /** Everything needed to paint one frame. */
 export interface RenderModel {
-  readonly width: number;
-  readonly height: number;
+  /**
+   * The rectangle the packed buffers cover.
+   *
+   * Storage, not the shape of the world: which of those cells the map has is
+   * {@link presence} (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+   */
+  readonly bounds: MapBounds;
   /** How the hex plane is projected; authored per world. */
   readonly projection: ProjectionMode;
   /** Tile-face heights occupied by a 128-pixel character canvas. */
@@ -126,6 +131,14 @@ export interface RenderModel {
   readonly palette: readonly RenderPaletteEntry[];
   /** One palette index per cell, row-major in offset coordinates. */
   readonly terrain: Uint8Array;
+  /**
+   * `1` where the map has a hex, `0` where it has a hole, same layout again.
+   *
+   * Always the full length of {@link bounds}, unlike {@link elevation}: the
+   * renderer reads it once per cell in its innermost loop, and an
+   * empty-means-everything convention would put a branch there.
+   */
+  readonly presence: Uint8Array;
   /**
    * One elevation per cell, in the same layout as {@link terrain}.
    *
@@ -164,6 +177,15 @@ export interface RenderModel {
    * the pointer moved — tells it directly through `setHover`.
    */
   readonly selected: Offset | null;
+  /**
+   * Whether the cells the extent covers but the map lacks are hinted at.
+   *
+   * The editor draws them as a faint ghost so an author can see — and click —
+   * the canvas they may extend into. Play draws nothing there: a hole is
+   * simply not part of the world
+   * (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+   */
+  readonly showExtent: boolean;
   readonly showGrid: boolean;
   /** Grid stroke width in screen pixels, kept stable while the camera zooms. */
   readonly gridLineWidth: number;
@@ -258,13 +280,13 @@ const indexOrNull = (index: number): number | null => (index < 0 ? null : index)
 /** An empty model, used before content has loaded. */
 export function emptyRenderModel(): RenderModel {
   return {
-    width: 0,
-    height: 0,
+    bounds: EMPTY_BOUNDS,
     projection: 'topDown',
     characterHeightTiles: DEFAULT_CHARACTER_HEIGHT_TILES,
     tileArt: tileArtGeometry({}),
     palette: [],
     terrain: new Uint8Array(0),
+    presence: new Uint8Array(0),
     elevation: new Int8Array(0),
     elevationRange: { min: 0, max: 0 },
     artChoices: new Map(),
@@ -273,6 +295,7 @@ export function emptyRenderModel(): RenderModel {
     links: [],
     overlays: [],
     selected: null,
+    showExtent: false,
     showGrid: true,
     gridLineWidth: DEFAULT_GRID_LINE_WIDTH,
     gridLineColor: DEFAULT_GRID_COLOR,

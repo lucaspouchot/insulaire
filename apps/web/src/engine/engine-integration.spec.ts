@@ -359,8 +359,7 @@ describe.skipIf(!built)('engine boundary', () => {
     const view = JSON.parse(instance.worldView('demo_world')) as WorldView;
     const terrain = instance.terrainBuffer('demo_world');
 
-    expect(view.width).toBe(20);
-    expect(view.height).toBe(20);
+    expect(view.bounds).toEqual({ origin: [0, 0], width: 20, height: 20 });
     expect(view.palette).toHaveLength(7);
     expect(terrain).toBeInstanceOf(Uint8Array);
     expect(terrain.length).toBe(view.cellCount);
@@ -542,6 +541,55 @@ describe.skipIf(!built)('engine boundary', () => {
     expect(outcome.report.valid).toBe(true);
     const snapshot = JSON.parse(instance.createGame(outcome.id, 1, '{}')) as GameSnapshot;
     expect(snapshot.entities.filter((entity) => entity.kind === 'monster')).toHaveLength(3);
+  });
+
+  /**
+   * A shape authored in the editor, through the real boundary and back out as
+   * an engine verdict (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+   */
+  it('carries a custom map shape across the boundary', () => {
+    const tileSet = readJson<TileSetDefinition>('content/tilesets/mvp_terrain.json');
+    const definition = readJson<WorldDefinition>('content/worlds/demo_world.json');
+
+    const document = WorldDocument.fromDefinition(definition, tileSet);
+    // A bay carved out of a corner nothing stands on, and the canvas pushed
+    // north so the origin has to survive the round trip.
+    const carved = [
+      { col: 0, row: 0 },
+      { col: 1, row: 0 },
+      { col: 0, row: 1 },
+    ];
+    for (const cell of carved) {
+      expect(document.setPresent(cell, false)).toBe(true);
+    }
+    expect(document.resize({ origin: { col: 0, row: -2 }, width: 20, height: 22 })).toBe(true);
+
+    const instance = engine();
+    instance.loadTileSet(JSON.stringify(tileSet));
+    const outcome = JSON.parse(
+      instance.loadWorld(serializeWorld(document.toDefinition())),
+    ) as LoadOutcome;
+    expect(outcome.report.valid).toBe(true);
+
+    const view = JSON.parse(instance.worldView(outcome.id)) as WorldView;
+    expect(view.bounds).toEqual({ origin: [0, -2], width: 20, height: 22 });
+    expect(view.cellCount).toBe(440);
+    // Three cells carved, and the two rows of new canvas are empty too.
+    expect(view.presentCellCount).toBe(400 - carved.length);
+
+    const presence = instance.presenceBuffer(outcome.id);
+    expect(presence).toBeInstanceOf(Uint8Array);
+    expect(presence.length).toBe(view.cellCount);
+    for (const cell of carved) {
+      const index = (cell.row - view.bounds.origin[1]) * view.bounds.width + cell.col;
+      expect(presence[index]).toBe(0);
+    }
+
+    // And the rule follows without asking: a hole is outside the map.
+    const snapshot = JSON.parse(instance.createGame(outcome.id, 1, '{}')) as GameSnapshot;
+    for (const [col, row] of snapshot.legalMoves) {
+      expect(carved).not.toContainEqual({ col, row });
+    }
   });
 
   /**
