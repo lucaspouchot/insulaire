@@ -32,15 +32,17 @@
  * come last, unoccluded; see {@link HexMapRenderer.drawLayered}.
  */
 
-import { bandLevels, shoulderLine } from '../content/content-types';
+import { MAX_REVEAL_RADIUS, bandLevels, shoulderLine } from '../content/content-types';
 import {
   MapBounds,
   Offset,
+  axialToOffset,
   fromIndex,
   indexIn,
   mapBounds,
   maxRow,
   minRow,
+  offsetToAxial,
   sameOffset,
 } from '../core/hex/hex-coords';
 import { HexLayout, Point, Rect } from '../core/hex/hex-layout';
@@ -100,8 +102,56 @@ const ROW_SEARCH_SLACK = 2;
  */
 const EXTENT_GHOST_ALPHA = 0.4;
 
+/**
+ * How much of a hex's top face has to be hidden before it counts as buried.
+ *
+ * Buried is what the pointer may claim back from the relief standing in front
+ * of it, so the threshold decides how much of a map the reveal takes over. With
+ * the shipped set's geometry a cell one row behind a neighbour raised three
+ * levels keeps about a third of its face — enough to aim at — and one behind a
+ * neighbour raised four keeps about a twentieth, which is not
+ * (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+ */
+const BURIED_COVERAGE = 0.75;
+
+/**
+ * Points sampled across a top face to measure how much of it is hidden.
+ *
+ * A lattice over the hexagon's bounding box, trimmed to the hexagon: every kept
+ * sample stands for an equal patch of it, so the covered fraction is the
+ * covered count. In units of the circumradius, centred on the cell.
+ */
+const COVERAGE_SAMPLES: readonly Point[] = buildCoverageSamples();
+
+/** Rows searched in front of a cell for whatever might be hiding it. */
+const OCCLUSION_ROW_LIMIT = 8;
+
+/** How much of a cell's top face the relief hides, and which cells hide it. */
+interface Occlusion {
+  /** Fraction of the top face covered, from `0` to `1`. */
+  readonly hidden: number;
+  /** Indices of the cells whose silhouettes cover part of it. */
+  readonly by: readonly number[];
+}
+
+/** The answer for a cell nothing stands in front of. */
+const NOTHING_HIDDEN: Occlusion = { hidden: 0, by: [] };
+
 /** Canvas height the map-wide character ratio is defined against. */
 const REFERENCE_CHARACTER_HEIGHT_PX = 128;
+
+/**
+ * What a screen-space point resolves to.
+ *
+ * Two answers because the projection is not injective: see
+ * {@link HexMapRenderer.resolvePointer}.
+ */
+export interface PointerTarget {
+  /** The hex a click lands on. */
+  readonly cell: Offset | null;
+  /** The buried hex under the pointer, whatever the click resolves to. */
+  readonly buried: Offset | null;
+}
 
 /** Statistics from the last frame, surfaced in the UI to make culling visible. */
 export interface FrameStats {
@@ -154,6 +204,32 @@ export class HexMapRenderer {
    * a model rebuild and a change-detection pass.
    */
   private hovered: Offset | null = null;
+  /**
+   * The buried hex the pointer is resting on, drawn back over what hides it.
+   *
+   * Renderer state for the same reason {@link hovered} is, and separate from it
+   * because they answer different questions: what a click lands on, and what
+   * the relief is being seen through
+   * (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+   */
+  private revealed: Offset | null = null;
+  /**
+   * What hides each cell, and how much of it, by cell index.
+   *
+   * Measured lazily and kept until the terrain changes: the answer depends on
+   * the elevation buffer alone, and a pointer crossing a map asks for the same
+   * handful of cells over and over.
+   */
+  private readonly occlusion = new Map<number, Occlusion>();
+  /**
+   * The cells drawn see-through this frame, by cell index, and how solidly.
+   *
+   * Derived from {@link revealed} and the model; rebuilt only when one of the
+   * two moves (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+   */
+  private fades: ReadonlyMap<number, number> = new Map();
+  /** What {@link fades} was built from, so it is not built twice for one hover. */
+  private fadesFrom: { cell: Offset | null; model: RenderModel } | null = null;
   /** One shared picture per distinct look; see {@link TileAppearanceCache}. */
   private readonly appearances: TileAppearanceCache;
   /** Set while {@link warmTileArt} is loading the art the model is made of. */
@@ -201,11 +277,27 @@ export class HexMapRenderer {
     this.hovered = cell;
   }
 
+  /**
+   * Names the buried hex the next frame draws back over what hides it, or
+   * `null` to draw none.
+   *
+   * Separate from {@link setHover} on purpose: the reveal follows the pointer
+   * whatever a click would resolve to, so a host may show an author what is
+   * behind a mountain without changing what clicking the mountain does
+   * (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+   */
+  setReveal(cell: Offset | null): void {
+    this.revealed = cell;
+  }
+
   /** Replaces the model drawn by the next {@link draw}. */
   setModel(model: RenderModel): void {
     this.model = model;
     this.projection = this.projectionFor(model);
     this.appearances.use(model);
+    // What hides what is a fact about the elevation buffer, and this is the
+    // only door a new one comes through.
+    this.occlusion.clear();
   }
 
   /**
@@ -403,6 +495,64 @@ export class HexMapRenderer {
   }
 
   /**
+   * What the pointer is on: what a click lands on, and what the relief hides
+   * there.
+   *
+   * Two answers rather than one because the projection gives the same pixels to
+   * more than one hex. A cell raised four levels is drawn all but exactly on top
+   * of the cell one row behind it, so nothing in the picture says which of the
+   * two the pointer means — the front one is what a click has always resolved
+   * to, and `peek` is the extra bit of intent that asks for the other. The
+   * reveal needs no such bit: showing what is behind changes nothing, so
+   * {@link PointerTarget.buried} is answered whether or not `peek` is set
+   * (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+   */
+  resolvePointer(point: Point, peek = false): PointerTarget {
+    const front = this.cellAtScreen(point);
+    const buried = this.buriedCellAtScreen(point);
+    return { cell: peek && buried !== null ? buried : front, buried };
+  }
+
+  /**
+   * The frontmost buried hex whose top face contains a screen-space point.
+   *
+   * Its *face* alone, not its side: a cliff is the picture of the cell that owns
+   * it, and a buried cell's cliff is buried under that cliff rather than beside
+   * it. Searching front to back matches the order the reveal draws in, so the
+   * window the pointer is over is the one it names.
+   */
+  buriedCellAtScreen(point: Point, model: RenderModel = this.model): Offset | null {
+    const projection = model === this.model ? this.projection : this.projectionFor(model);
+    if (projection.isIdentity) {
+      return null;
+    }
+    const drawing = this.camera.toWorld(point);
+    const { min, max } = model.elevationRange;
+    const frontRow = this.layout.cellAt(projection.unproject(drawing, max)).row + ROW_SEARCH_SLACK;
+    const backRow = this.layout.cellAt(projection.unproject(drawing, min)).row - ROW_SEARCH_SLACK;
+
+    for (
+      let row = Math.min(frontRow, maxRow(model.bounds));
+      row >= Math.max(backRow, minRow(model.bounds));
+      row -= 1
+    ) {
+      const shift = row % 2 === 0 ? 0 : 0.5;
+      const approximate = Math.round(drawing.x / this.layout.hexWidth - shift);
+
+      for (const col of [approximate, approximate - 1, approximate + 1]) {
+        const cell = { col, row };
+        if (!this.hittable(model, cell) || !this.isBuried(model, projection, cell)) {
+          continue;
+        }
+        if (containsPoint(this.cornersOf(cell, this.elevationOf(model, cell), projection), drawing)) {
+          return cell;
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
    * Whether a click on `cell` resolves to anything.
    *
    * A hole is only clickable where the extent is shown — the editor, so that
@@ -545,6 +695,11 @@ export class HexMapRenderer {
       model.bounds,
     );
 
+    // What the relief has to be seen through, decided once for the frame: the
+    // terrain pass reads it per cell in its innermost loop
+    // (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+    this.fadesFor(model);
+
     this.batchCount = 0;
     const cellsDrawn = this.projection.isIdentity
       ? this.drawFlat(model, range)
@@ -647,8 +802,115 @@ export class HexMapRenderer {
         this.drawCoordinates(model, range, row, row);
       }
     }
+    this.drawRevealedOutline(model);
     this.drawLabels(model, model.locations, model.links);
     return cellsDrawn;
+  }
+
+  /**
+   * How solidly each cell in the way of the revealed hexes is drawn, by index.
+   *
+   * The reveal works on the *occluders*: a hex the relief hides is not painted
+   * back over the relief — that reads as a tile floating in front of a cliff,
+   * because it is one. What the relief hides is seen by drawing the relief
+   * see-through, which is the only way round that keeps the mountain in front
+   * and the hex behind (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+   *
+   * A cell in the way of the hex the pointer rests on is drawn at
+   * `reveal.opacity`, one in the way of the ring around it at
+   * `reveal.neighbourOpacity`; a cell in the way of both takes the fainter of
+   * the two, because the hex being aimed at wins.
+   *
+   * Rebuilt only when the pointer or the model moves: the answer costs a
+   * coverage measurement per revealed hex, and a frame does not change it.
+   */
+  private fadesFor(model: RenderModel): ReadonlyMap<number, number> {
+    if (
+      this.fadesFrom !== null &&
+      this.fadesFrom.model === model &&
+      sameOffset(this.fadesFrom.cell, this.revealed)
+    ) {
+      return this.fades;
+    }
+    this.fades = this.buildFades(model);
+    this.fadesFrom = { cell: this.revealed, model };
+    return this.fades;
+  }
+
+  private buildFades(model: RenderModel): ReadonlyMap<number, number> {
+    const fades = new Map<number, number>();
+    const anchor = this.revealed;
+    if (anchor === null || this.projection.isIdentity) {
+      return fades;
+    }
+    const fade = (cell: Offset, alpha: number): void => {
+      for (const index of this.occlusionOf(model, this.projection, cell).by) {
+        const current = fades.get(index);
+        if (current === undefined || alpha < current) {
+          fades.set(index, alpha);
+        }
+      }
+    };
+
+    const radius = Math.min(Math.max(Math.trunc(model.reveal.radius), 0), MAX_REVEAL_RADIUS);
+    const ring = Math.min(Math.max(model.reveal.neighbourOpacity, 0), 1);
+    if (ring < 1) {
+      for (const cell of this.buriedRing(model, anchor, radius)) {
+        fade(cell, ring);
+      }
+    }
+    fade(anchor, Math.min(Math.max(model.reveal.opacity, 0), 1));
+    return fades;
+  }
+
+  /**
+   * Re-outlines the revealed hex once the relief in front of it is out of the
+   * way.
+   *
+   * Its row drew the outline before anything could hide it, and the see-through
+   * relief in front dulls it along with everything else. The outline is chrome
+   * rather than scenery — it says which hex the pointer holds — so it is drawn
+   * again, crisp, after the last row.
+   */
+  private drawRevealedOutline(model: RenderModel): void {
+    const anchor = this.revealed;
+    if (anchor === null || this.projection.isIdentity) {
+      return;
+    }
+    if (sameOffset(model.selected, anchor)) {
+      this.drawHighlight(model, model.selected, CHROME.selection, 3);
+    }
+    if (sameOffset(this.hovered, anchor)) {
+      this.drawHighlight(model, this.hovered, CHROME.hover, 2);
+    }
+  }
+
+  /**
+   * The buried hexes within `radius` rings of `anchor`.
+   *
+   * Sorted back to front, which is the order their occluders are collected in;
+   * a cell in the way of two of them keeps the fainter answer either way.
+   */
+  private buriedRing(model: RenderModel, anchor: Offset, radius: number): Offset[] {
+    if (radius <= 0) {
+      return [];
+    }
+    const centre = offsetToAxial(anchor);
+    const cells: Offset[] = [];
+    for (let q = -radius; q <= radius; q += 1) {
+      const from = Math.max(-radius, -q - radius);
+      const to = Math.min(radius, -q + radius);
+      for (let r = from; r <= to; r += 1) {
+        if (q === 0 && r === 0) {
+          continue;
+        }
+        const cell = axialToOffset({ q: centre.q + q, r: centre.r + r });
+        if (this.hittable(model, cell) && this.isBuried(model, this.projection, cell)) {
+          cells.push(cell);
+        }
+      }
+    }
+    return cells.sort((left, right) => left.row - right.row);
   }
 
   // -------------------------------------------------------------- primitives
@@ -670,6 +932,8 @@ export class HexMapRenderer {
     const walls = new Map<number, Path2D>();
     /** Cells whose art is loaded; blitted after the colour batches. */
     const painted: PaintedCell[] = [];
+    /** Cells in the way of a revealed hex; drawn one by one, see-through. */
+    const faded: { cell: Offset; index: number; paletteIndex: number; alpha: number }[] = [];
     let visited = 0;
     // How many levels one drawn band covers, so a stack that is one image for
     // every two steps is not mistaken for a cliff whose art ran out.
@@ -687,6 +951,18 @@ export class HexMapRenderer {
           continue;
         }
         visited += 1;
+
+        // A cell standing in front of a revealed hex leaves the batches: it is
+        // drawn on its own, at its own opacity, once the batches are down. At
+        // nothing it is not drawn at all, and what it hides is simply there
+        // (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+        const alpha = this.fades.get(index);
+        if (alpha !== undefined && alpha < 1) {
+          if (alpha > 0) {
+            faded.push({ cell, index, paletteIndex, alpha });
+          }
+          continue;
+        }
 
         const elevation = this.elevationAt(model, index);
         const base = this.wallBaseOf(model, cell);
@@ -742,7 +1018,71 @@ export class HexMapRenderer {
       this.drawPaintedCell(model, cell);
     }
 
+    // See-through cells close the band, still inside it: a row further forward
+    // has to be able to cover them, so they cannot wait until the end of the
+    // frame. Within a band nothing overlaps, so drawing them one at a time is
+    // the same picture the batches would have made, only fainter.
+    for (const cell of faded) {
+      this.drawFadedCell(model, cell.cell, cell.index, cell.paletteIndex, cell.alpha, span);
+    }
+
     return visited;
+  }
+
+  /**
+   * Draws one cell see-through, on its own, exactly as the batches would have.
+   *
+   * Out of the batches because opacity is per cell and a `Path2D` is per
+   * palette entry: two cells of the same tile, one faded and one not, cannot
+   * share a fill. There are only ever a handful of them — what stands in front
+   * of a hex or two — so the batching this gives up costs nothing
+   * (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+   */
+  private drawFadedCell(
+    model: RenderModel,
+    cell: Offset,
+    index: number,
+    paletteIndex: number,
+    alpha: number,
+    span: number,
+  ): void {
+    const ctx = this.context;
+    const elevation = this.elevationAt(model, index);
+    const base = this.wallBaseOf(model, cell);
+    const found = this.appearances.of(paletteIndex, index, cell, elevation, base);
+    const appearance = found !== null && found.ready ? found : null;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    if (
+      appearance === null
+        ? elevation > base
+        : this.facesAreShort(appearance.render, elevation, base, span)
+    ) {
+      const wall = new Path2D();
+      this.addWallTo(wall, cell, elevation, base);
+      ctx.fillStyle = this.fillFor(model, paletteIndex);
+      ctx.fill(wall);
+      ctx.fillStyle = CHROME.wallShade;
+      ctx.fill(wall);
+      ctx.lineWidth = 1 / this.camera.zoom;
+      ctx.strokeStyle = CHROME.wallEdge;
+      ctx.stroke(wall);
+      this.batchCount += 1;
+    }
+
+    if (appearance !== null) {
+      this.drawPaintedCell(model, { cell, elevation, appearance });
+    } else {
+      const top = new Path2D();
+      this.addHexTo(top, cell, elevation);
+      ctx.fillStyle = this.fillFor(model, paletteIndex);
+      ctx.fill(top);
+      this.batchCount += 1;
+    }
+
+    ctx.restore();
   }
 
   /**
@@ -865,6 +1205,8 @@ export class HexMapRenderer {
     // where an author can act on them, so the shape's outline is what the grid
     // shows (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
     const ghost = new Path2D();
+    /** One path per opacity the reveal is drawing cells at. */
+    const faded = new Map<number, Path2D>();
     // `Path2D` cannot be asked whether it is empty, and an unshaped map must
     // not pay a second `stroke()` for a path with nothing in it.
     let ghosted = 0;
@@ -876,7 +1218,12 @@ export class HexMapRenderer {
           continue;
         }
         if (model.presence[index] === 1) {
-          this.addHexTo(grid, cell, this.elevationOf(model, cell));
+          const alpha = this.fades.get(index);
+          if (alpha === undefined) {
+            this.addHexTo(grid, cell, this.elevationOf(model, cell));
+          } else if (alpha > 0) {
+            this.addHexTo(pathFor(faded, alpha), cell, this.elevationOf(model, cell));
+          }
         } else if (model.showExtent) {
           this.addHexTo(ghost, cell, 0);
           ghosted += 1;
@@ -889,6 +1236,10 @@ export class HexMapRenderer {
     if (ghosted > 0) {
       ctx.globalAlpha = model.gridLineAlpha * EXTENT_GHOST_ALPHA;
       ctx.stroke(ghost);
+    }
+    for (const [alpha, path] of faded) {
+      ctx.globalAlpha = model.gridLineAlpha * alpha;
+      ctx.stroke(path);
     }
     ctx.globalAlpha = model.gridLineAlpha;
     ctx.stroke(grid);
@@ -904,15 +1255,25 @@ export class HexMapRenderer {
       if (cells.length === 0) {
         continue;
       }
-      const path = new Path2D();
+      // One path per opacity, so an overlay on a cell the reveal is looking
+      // through fades with it rather than hanging over the gap.
+      const paths = new Map<number, Path2D>();
       for (const cell of cells) {
-        this.addHexTo(path, cell, this.elevationOf(model, cell));
+        const alpha = this.alphaAt(model, cell);
+        if (alpha > 0) {
+          this.addHexTo(pathFor(paths, alpha), cell, this.elevationOf(model, cell));
+        }
       }
-      ctx.fillStyle = overlay.fill;
-      ctx.fill(path);
-      ctx.lineWidth = 2 / this.camera.zoom;
-      ctx.strokeStyle = overlay.stroke;
-      ctx.stroke(path);
+      ctx.save();
+      for (const [alpha, path] of paths) {
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = overlay.fill;
+        ctx.fill(path);
+        ctx.lineWidth = 2 / this.camera.zoom;
+        ctx.strokeStyle = overlay.stroke;
+        ctx.stroke(path);
+      }
+      ctx.restore();
     }
   }
 
@@ -923,6 +1284,12 @@ export class HexMapRenderer {
     ctx.textBaseline = 'middle';
 
     for (const location of locations) {
+      const alpha = this.alphaAt(model, location.at);
+      if (alpha <= 0) {
+        continue;
+      }
+      ctx.save();
+      ctx.globalAlpha = alpha;
       const center = this.centerOf(model, location.at);
       ctx.beginPath();
       ctx.arc(center.x, center.y - this.layout.size * 0.15, radius, 0, Math.PI * 2);
@@ -932,6 +1299,7 @@ export class HexMapRenderer {
       ctx.fillStyle = CHROME.locationText;
       ctx.font = `${Math.round(radius * 1.3)}px system-ui, sans-serif`;
       ctx.fillText('★', center.x, center.y - this.layout.size * 0.13);
+      ctx.restore();
     }
   }
 
@@ -948,6 +1316,12 @@ export class HexMapRenderer {
     ctx.textBaseline = 'middle';
 
     for (const link of links) {
+      const alpha = this.alphaAt(model, link.at);
+      if (alpha <= 0) {
+        continue;
+      }
+      ctx.save();
+      ctx.globalAlpha = alpha;
       const center = this.centerOf(model, link.at);
       const y = center.y - this.layout.size * 0.15;
 
@@ -963,6 +1337,7 @@ export class HexMapRenderer {
       ctx.fillStyle = CHROME.linkText;
       ctx.font = `${Math.round(radius * 1.1)}px system-ui, sans-serif`;
       ctx.fillText('\u25B8', center.x, y);
+      ctx.restore();
     }
   }
 
@@ -1038,6 +1413,14 @@ export class HexMapRenderer {
     ctx.textBaseline = 'middle';
 
     for (const entity of entities) {
+      // Someone standing on a cell the reveal is looking through is in the way
+      // exactly as the cell is (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+      const alpha = this.alphaAt(model, entity.at);
+      if (alpha <= 0) {
+        continue;
+      }
+      ctx.save();
+      ctx.globalAlpha = alpha;
       const base = this.entityBaseOf(model, entity);
 
       if (entity.character !== null && entity.character !== undefined) {
@@ -1068,6 +1451,7 @@ export class HexMapRenderer {
         ctx.scale(scale, scale);
         drawCharacter(ctx, entity.character, { x: -width / 2, y: -height, width, height }, this.images ?? undefined);
         ctx.restore();
+        ctx.restore();
         continue;
       }
 
@@ -1090,6 +1474,7 @@ export class HexMapRenderer {
       ctx.fillStyle = CHROME.entityText;
       ctx.font = `bold ${Math.round(radius * 1.1)}px system-ui, sans-serif`;
       ctx.fillText(entity.glyph, center.x, center.y + radius * 0.04);
+      ctx.restore();
     }
   }
 
@@ -1122,6 +1507,19 @@ export class HexMapRenderer {
   }
 
   // ------------------------------------------------------------- geometry
+
+  /**
+   * How solidly whatever stands on `cell` is drawn this frame.
+   *
+   * `1` for the whole map except the handful of cells the reveal is looking
+   * through; everything a cell carries — its grid outline, its overlay, its
+   * markers, whoever stands on it — fades with the cell, or the map is left
+   * with bright chrome floating over nothing
+   * (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+   */
+  private alphaAt(model: RenderModel, cell: Offset): number {
+    return Math.min(this.fades.get(indexIn(cell, model.bounds)) ?? 1, 1);
+  }
 
   /** The authored elevation of a cell by buffer index, or `0`. */
   private elevationAt(model: RenderModel, index: number): number {
@@ -1199,10 +1597,146 @@ export class HexMapRenderer {
   }
 
   /** The projected corners of a cell's top face. */
-  private cornersOf(cell: Offset, elevation: number): Point[] {
+  private cornersOf(cell: Offset, elevation: number, projection = this.projection): Point[] {
     return this.layout
       .corners(this.layout.centerOf(cell))
-      .map((corner) => this.projection.project(corner, elevation));
+      .map((corner) => projection.project(corner, elevation));
+  }
+
+  /**
+   * The polygons a cell's terrain is drawn as: its top face, and its side face
+   * when it has one.
+   *
+   * One description of a cell's silhouette, used by everything that has to
+   * agree with the picture — what the pointer hits, and what hides what.
+   */
+  private silhouetteOf(model: RenderModel, projection: Projection, cell: Offset): Point[][] {
+    const elevation = this.elevationOf(model, cell);
+    const corners = this.cornersOf(cell, elevation, projection);
+    const polygons: Point[][] = [corners];
+
+    const lift = projection.liftOf(elevation - this.wallBaseOf(model, cell));
+    if (lift <= 0) {
+      return polygons;
+    }
+    const front = [corners[1], corners[2], corners[3]].filter(
+      (corner): corner is Point => corner !== undefined,
+    );
+    if (front.length === 3) {
+      polygons.push([
+        ...front,
+        ...front.map((corner) => ({ x: corner.x, y: corner.y + lift })).reverse(),
+      ]);
+    }
+    return polygons;
+  }
+
+  /**
+   * `true` when so little of a cell's top face is left showing that the pointer
+   * cannot reasonably be asked to aim at it.
+   *
+   * The threshold is {@link BURIED_COVERAGE}; the measurement is
+   * {@link occlusionOf}.
+   */
+  private isBuried(model: RenderModel, projection: Projection, cell: Offset): boolean {
+    return this.occlusionOf(model, projection, cell).hidden >= BURIED_COVERAGE;
+  }
+
+  /**
+   * How much of a cell's top face the relief in front of it hides, and which
+   * cells do the hiding.
+   *
+   * Measured by sampling rather than by intersecting polygons: the covering set
+   * is a handful of overlapping hexagons and side faces, whose union is fiddly
+   * to build and worth nothing once built. {@link COVERAGE_SAMPLES} stands for
+   * equal patches of the face, so the covered fraction is the covered count.
+   *
+   * The list of *who* covers it comes out of the same sweep, because it is what
+   * the reveal draws see-through: fading exactly the cells whose pixels are in
+   * the way, and nothing else.
+   *
+   * Only cells *in front* can hide a cell: hexagons tile the plane, so an
+   * unraised neighbour never overlaps, and a cell behind is drawn before it and
+   * covered by it rather than the reverse.
+   */
+  private occlusionOf(model: RenderModel, projection: Projection, cell: Offset): Occlusion {
+    const index = indexIn(cell, model.bounds);
+    if (projection.isIdentity || index < 0) {
+      return NOTHING_HIDDEN;
+    }
+    const memoised = this.occlusion.get(index);
+    if (memoised !== undefined && projection === this.projection) {
+      return memoised;
+    }
+
+    const elevation = this.elevationAt(model, index);
+    const occluders = this.occludersOf(model, projection, cell, elevation);
+    const by = new Set<number>();
+    let covered = 0;
+    if (occluders.length > 0) {
+      const centre = this.layout.centerOf(cell);
+      const size = this.layout.size;
+      for (const sample of COVERAGE_SAMPLES) {
+        const point = projection.project(
+          { x: centre.x + sample.x * size, y: centre.y + sample.y * size },
+          elevation,
+        );
+        let hit = false;
+        for (const occluder of occluders) {
+          if (occluder.polygons.some((polygon) => containsPoint(polygon, point))) {
+            by.add(occluder.index);
+            hit = true;
+          }
+        }
+        if (hit) {
+          covered += 1;
+        }
+      }
+    }
+
+    const found: Occlusion = { hidden: covered / COVERAGE_SAMPLES.length, by: [...by] };
+    if (projection === this.projection) {
+      this.occlusion.set(index, found);
+    }
+    return found;
+  }
+
+  /** The cells drawn in front of `cell` that can hide it, with their silhouettes. */
+  private occludersOf(
+    model: RenderModel,
+    projection: Projection,
+    cell: Offset,
+    elevation: number,
+  ): { index: number; polygons: Point[][] }[] {
+    // How far ahead a cell has to be raised to still reach back over this one:
+    // one row of lift is `rowStep * tilt` of drawing, and nothing on the map is
+    // raised past `elevationRange.max`.
+    const rowLift = this.layout.rowStep * projection.tilt;
+    const reach =
+      rowLift > 0
+        ? Math.ceil(projection.liftOf(model.elevationRange.max - elevation) / rowLift) + 1
+        : 1;
+    const rows = Math.min(Math.max(reach, 1), OCCLUSION_ROW_LIMIT);
+
+    const occluders: { index: number; polygons: Point[][] }[] = [];
+    const last = Math.min(cell.row + rows, maxRow(model.bounds));
+    for (let row = cell.row + 1; row <= last; row += 1) {
+      // odd-r shifts every other row half a hex, so the columns that can reach
+      // back over this cell are the two under it and their outer neighbours.
+      const shift = cell.row % 2 === 0 ? -1 : 0;
+      for (let col = cell.col + shift - 1; col <= cell.col + shift + 2; col += 1) {
+        const front = { col, row };
+        const index = indexIn(front, model.bounds);
+        if (index < 0 || model.presence[index] !== 1) {
+          continue;
+        }
+        if (this.elevationAt(model, index) <= elevation) {
+          continue;
+        }
+        occluders.push({ index, polygons: this.silhouetteOf(model, projection, front) });
+      }
+    }
+    return occluders;
   }
 
   private addHexTo(path: Path2D, cell: Offset, elevation: number): void {
@@ -1247,28 +1781,8 @@ export class HexMapRenderer {
     cell: Offset,
     drawing: Point,
   ): boolean {
-    const elevation = this.elevationOf(model, cell);
-    const corners = this.layout
-      .corners(this.layout.centerOf(cell))
-      .map((corner) => projection.project(corner, elevation));
-
-    if (containsPoint(corners, drawing)) {
-      return true;
-    }
-
-    const lift = projection.liftOf(elevation - this.wallBaseOf(model, cell));
-    if (lift <= 0) {
-      return false;
-    }
-    const front = [corners[1], corners[2], corners[3]].filter(
-      (corner): corner is Point => corner !== undefined,
-    );
-    return (
-      front.length === 3 &&
-      containsPoint(
-        [...front, ...front.map((corner) => ({ x: corner.x, y: corner.y + lift })).reverse()],
-        drawing,
-      )
+    return this.silhouetteOf(model, projection, cell).some((polygon) =>
+      containsPoint(polygon, drawing),
     );
   }
 
@@ -1290,6 +1804,30 @@ interface VisibleRange {
   maxCol: number;
   minRow: number;
   maxRow: number;
+}
+
+/**
+ * A lattice of points inside a pointy-top hexagon of circumradius `1`.
+ *
+ * Sampled over the bounding box and trimmed to the hexagon, so every kept point
+ * stands for an equal patch of it — which is what makes counting them a measure
+ * of area. The hexagon is `|y| <= 1 - |x| / sqrt(3)`.
+ */
+function buildCoverageSamples(): Point[] {
+  const SQRT3 = Math.sqrt(3);
+  const columns = 7;
+  const rows = 9;
+  const points: Point[] = [];
+  for (let column = 0; column < columns; column += 1) {
+    const x = (SQRT3 / 2) * ((2 * (column + 0.5)) / columns - 1);
+    for (let row = 0; row < rows; row += 1) {
+      const y = (2 * (row + 0.5)) / rows - 1;
+      if (Math.abs(y) <= 1 - Math.abs(x) / SQRT3) {
+        points.push({ x, y });
+      }
+    }
+  }
+  return points;
 }
 
 function pathFor(paths: Map<number, Path2D>, key: number): Path2D {

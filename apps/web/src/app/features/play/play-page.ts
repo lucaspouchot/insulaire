@@ -35,6 +35,7 @@ import {
   HostListener,
   OnDestroy,
   computed,
+  effect,
   inject,
   signal,
   viewChild,
@@ -62,8 +63,8 @@ import {
 import { serializeWorld } from '../../../content/world-serializer';
 import { I18nService } from '../../i18n/i18n.service';
 import { SettingsService } from '../../settings/settings.service';
-import { MOVEMENT_SHORTCUTS } from '../../settings/engine-settings.schema';
-import { ignoresGameplayShortcut } from '../../settings/keyboard-shortcuts';
+import { ENGINE_SHORTCUT, MOVEMENT_SHORTCUTS } from '../../settings/engine-settings.schema';
+import { ignoresGameplayShortcut } from '../../../core/keyboard-shortcuts';
 import { TranslatePipe } from '../../i18n/translate.pipe';
 import { EngineService } from '../../services/engine.service';
 import { ProjectStoreService, contentUrl } from '../../services/project-store.service';
@@ -124,6 +125,18 @@ export class PlayPage implements AfterViewInit, OnDestroy {
   private readonly titleScreen = inject(TitleScreenService);
   private readonly characters = inject(CharacterLibraryService);
   private readonly characterCreation = inject(CharacterCreationService);
+
+  /**
+   * Keeps the map view on the player's own peek binding.
+   *
+   * Rebinding happens on the settings screen while a map may already be open,
+   * and a view still watching the old key would look through relief on a key
+   * that now means something else
+   * (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+   */
+  private readonly peekBinding = effect(() => {
+    this.view?.setPeekKey(this.settings.keyBinding(ENGINE_SHORTCUT.peek));
+  });
 
   private view: CanvasView | null = null;
   private renderer: HexMapRenderer | null = null;
@@ -525,6 +538,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       onResize: () => this.view?.fit(),
       onFrameDrawn: () => this.frameTick.update((value) => value + 1),
     });
+    this.view.setPeekKey(this.settings.keyBinding(ENGINE_SHORTCUT.peek));
     this.view.fit();
     this.ensurePresentationClock();
   }
@@ -604,6 +618,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       // Authored by the world, transported by the engine, applied here.
       projection: toProjectionMode(view.projection),
       characterHeightTiles: view.characterHeightTiles,
+      reveal: view.reveal,
       tileArt: view.tileArt,
       palette: view.palette,
       terrain,

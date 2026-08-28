@@ -959,3 +959,181 @@ describe('HexMapRenderer hover', () => {
     expect(arcs).toContainEqual([(start.x + end.x) / 2, (start.y + end.y) / 2]);
   });
 });
+
+/**
+ * Seeing — and reaching — a hex the relief hides.
+ *
+ * The projection is not injective: a cell raised enough is drawn where the cell
+ * behind it is drawn, so a pixel names two hexes and the picture cannot say
+ * which. These pin both halves of the answer: the reveal, which needs no intent
+ * because it decides nothing, and the peek, which is the intent that resolves
+ * the ambiguity (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+ */
+describe('HexMapRenderer reveal', () => {
+  const HEX_SIZE = 24;
+  const LAYOUT = new HexLayout(HEX_SIZE);
+  const ISOMETRIC = isometricFor(HEX_SIZE);
+  const HILL = offset(4, 6);
+  const ROWS_BEHIND = 2;
+
+  /**
+   * Whatever lifts the hill's top face onto the centre of the cell
+   * {@link ROWS_BEHIND} rows behind it — which, those rows sharing a parity,
+   * puts the two hexagons on top of each other.
+   */
+  const ELEVATION = Math.round(
+    (ROWS_BEHIND * LAYOUT.rowStep * ISOMETRIC.tilt) / ISOMETRIC.elevationStep,
+  );
+
+  const BURIED = offset(HILL.col, HILL.row - ROWS_BEHIND);
+
+  beforeAll(() => {
+    globalThis.Path2D ??= class {
+      moveTo(): void {}
+      lineTo(): void {}
+      closePath(): void {}
+      addPath(): void {}
+    } as unknown as typeof Path2D;
+  });
+
+  /**
+   * A world with one raised cell, or — with `ridge` — its two neighbours raised
+   * with it.
+   *
+   * One hill buries the hex behind it and no more: its neighbours in that row
+   * are half a hexagon to the side, so half of each is left showing. Burying a
+   * ring takes a ridge, which is what a mountain on a real map is.
+   */
+  function model(
+    elevation: number,
+    projection: 'topDown' | 'isometric' = 'isometric',
+    ridge = false,
+  ): RenderModel {
+    const width = 10;
+    const height = 10;
+    const heights = new Int8Array(width * height);
+    heights[HILL.row * width + HILL.col] = elevation;
+    if (ridge) {
+      heights[HILL.row * width + HILL.col - 1] = elevation;
+      heights[HILL.row * width + HILL.col + 1] = elevation;
+    }
+    return {
+      ...emptyRenderModel(),
+      bounds: mapBounds(width, height),
+      projection,
+      terrain: new Uint8Array(width * height),
+      presence: new Uint8Array(width * height).fill(1),
+      elevation: heights,
+      elevationRange: { min: 0, max: elevation },
+      showGrid: false,
+    };
+  }
+
+  function rendererFor(source: RenderModel): HexMapRenderer {
+    const renderer = new HexMapRenderer({} as CanvasRenderingContext2D, LAYOUT, new Camera());
+    renderer.setModel(source);
+    return renderer;
+  }
+
+  /** The screen point at the centre of the buried cell's own top face. */
+  const AT_BURIED = ISOMETRIC.project(LAYOUT.centerOf(BURIED));
+
+  it('names the buried hex without changing what a click resolves to', () => {
+    const renderer = rendererFor(model(ELEVATION));
+
+    // The hill is what is drawn there, and what a click still lands on.
+    expect(renderer.resolvePointer(AT_BURIED)).toEqual({ cell: HILL, buried: BURIED });
+  });
+
+  it('hands the buried hex to a pointer that asks for it', () => {
+    const renderer = rendererFor(model(ELEVATION));
+
+    expect(renderer.resolvePointer(AT_BURIED, true).cell).toEqual(BURIED);
+  });
+
+  it('buries nothing a viewer could still aim at', () => {
+    // One level of relief leaves most of the cell behind it showing, so the
+    // pointer is not taken off the hill to reach it.
+    const renderer = rendererFor(model(1));
+
+    expect(renderer.buriedCellAtScreen(AT_BURIED)).toBeNull();
+    expect(renderer.resolvePointer(AT_BURIED, true).cell).toEqual(BURIED);
+  });
+
+  it('buries nothing at all in top-down mode', () => {
+    // A flat world hides nothing by construction: there is no relief to see
+    // through (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+    const renderer = rendererFor(model(ELEVATION, 'topDown'));
+
+    expect(renderer.buriedCellAtScreen(LAYOUT.centerOf(BURIED))).toBeNull();
+  });
+
+  it('draws what stands in front of a revealed hex see-through, or not at all', () => {
+    /** Every `fill()` the frame issued, tagged with the opacity it ran at. */
+    const fills: number[] = [];
+    let alpha = 1;
+    const stack: number[] = [];
+    const context = new Proxy(
+      {},
+      {
+        get(_target, property) {
+          if (property === 'fill') {
+            return () => fills.push(alpha);
+          }
+          // The renderer leans on save/restore to put the opacity back, so a
+          // double that ignores them would report every later fill as faded.
+          if (property === 'save') {
+            return () => stack.push(alpha);
+          }
+          if (property === 'restore') {
+            return () => {
+              alpha = stack.pop() ?? 1;
+            };
+          }
+          if (property === 'measureText') {
+            return () => ({ width: 0 });
+          }
+          return () => undefined;
+        },
+        set(_target, property, value) {
+          if (property === 'globalAlpha') {
+            alpha = Number(value);
+          }
+          return true;
+        },
+      },
+    ) as CanvasRenderingContext2D;
+
+    // A ridge, so the hex behind it is buried and so are two of its neighbours.
+    const renderer = new HexMapRenderer(context, LAYOUT, new Camera());
+    renderer.setModel(model(ELEVATION, 'isometric', true));
+
+    renderer.draw(600, 600);
+    const whole = [...fills];
+    expect(whole.every((opacity) => opacity === 1)).toBe(true);
+
+    renderer.setReveal(BURIED);
+    fills.length = 0;
+    renderer.draw(600, 600);
+
+    const { opacity, neighbourOpacity } = emptyRenderModel().reveal;
+    const ghosted = fills.filter((value) => value < 1);
+    const solid = fills.filter((value) => value === 1);
+    // Whatever stands in the way is drawn see-through, at the opacity the map
+    // authored for the hex it hides — and at no other opacity, so nothing but
+    // the relief in the way is touched.
+    expect(ghosted.length).toBeGreaterThan(0);
+    for (const value of ghosted) {
+      expect([opacity, neighbourOpacity]).toContain(value);
+    }
+    // The hex the pointer holds is always one of them.
+    expect(ghosted).toContain(opacity);
+    // Those cells left the opaque batches, so the frame issues fewer of them.
+    expect(solid.length).toBeLessThan(whole.length);
+
+    renderer.setReveal(null);
+    fills.length = 0;
+    renderer.draw(600, 600);
+    expect(fills).toEqual(whole);
+  });
+});

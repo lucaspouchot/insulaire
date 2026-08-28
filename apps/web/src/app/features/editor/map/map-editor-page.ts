@@ -26,6 +26,7 @@ import {
   ElementRef,
   OnDestroy,
   computed,
+  effect,
   inject,
   signal,
   viewChild,
@@ -39,7 +40,9 @@ import {
   DEFAULT_GRID_LINE_WIDTH,
   MAX_CHARACTER_HEIGHT_TILES,
   MAX_GRID_LINE_WIDTH,
+  MAX_REVEAL_RADIUS,
   MIN_CHARACTER_HEIGHT_TILES,
+  RevealStyle,
   MIN_GRID_LINE_WIDTH,
   ProjectionMode,
   ResolvedCharacter,
@@ -64,6 +67,7 @@ import { RenderModel, resolveCellArtChoices } from '../../../../renderer/render-
 import { SpriteRegistry } from '../../../../renderer/sprite-registry';
 import { I18nService } from '../../../i18n/i18n.service';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
+import { ENGINE_SHORTCUT } from '../../../settings/engine-settings.schema';
 import { SettingsService } from '../../../settings/settings.service';
 import { CharacterLibraryService } from '../../../services/character-library.service';
 import { TitleScreenService } from '../../../services/title-screen.service';
@@ -121,6 +125,18 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   private readonly titleScreen = inject(TitleScreenService);
   private readonly characters = inject(CharacterLibraryService);
   private readonly workspace = inject(ContentWorkspaceService);
+
+  /**
+   * Keeps the map view on the player's own peek binding.
+   *
+   * Rebinding happens on the settings screen while a map may already be open,
+   * and a view still watching the old key would look through relief on a key
+   * that now means something else
+   * (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+   */
+  private readonly peekBinding = effect(() => {
+    this.view?.setPeekKey(this.settings.keyBinding(ENGINE_SHORTCUT.peek));
+  });
 
   private view: CanvasView | null = null;
   private renderer: HexMapRenderer | null = null;
@@ -478,6 +494,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
         }
       },
     });
+    this.view.setPeekKey(this.settings.keyBinding(ENGINE_SHORTCUT.peek));
     this.frameOnce();
   }
 
@@ -848,7 +865,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   }
 
   /**
-   * Applies the open map's id, name, zone and character scale in one go.
+   * Applies the open map's id, name, zone, character scale and reveal in one go.
    *
    * The zone is set first: renaming may be refused for a duplicate id, and the
    * move it was bundled with should not be lost with it.
@@ -858,6 +875,9 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     name: string,
     zone: string,
     characterHeightTiles: string,
+    revealRadius: string,
+    revealOpacity: string,
+    revealNeighbourOpacity: string,
   ): void {
     if (this.store.setZone(zone)) {
       // Follow the map into its new zone rather than letting the picker filter
@@ -880,7 +900,48 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
         this.report.set(null);
       }
     }
+    if (
+      document !== null &&
+      this.applyReveal(document, revealRadius, revealOpacity, revealNeighbourOpacity)
+    ) {
+      this.store.touch();
+      this.report.set(null);
+    }
     this.renameWorld(id, name);
+  }
+
+  /**
+   * Clamps and stores how far relief may be seen through; `true` when it moved.
+   *
+   * Clamped rather than refused: these are two dials on a slider, and an author
+   * who types `9` means "as far as it goes"
+   * (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+   */
+  private applyReveal(
+    document: WorldDocument,
+    radius: string,
+    opacity: string,
+    neighbourOpacity: string,
+  ): boolean {
+    const numbers = [radius, opacity, neighbourOpacity].map(Number);
+    if (!numbers.every((value) => Number.isFinite(value))) {
+      return false;
+    }
+    const [parsedRadius = 0, parsedOpacity = 0, parsedNeighbour = 0] = numbers;
+    const next: RevealStyle = {
+      radius: Math.min(MAX_REVEAL_RADIUS, Math.max(0, Math.trunc(parsedRadius))),
+      opacity: Math.min(1, Math.max(0, parsedOpacity)),
+      neighbourOpacity: Math.min(1, Math.max(0, parsedNeighbour)),
+    };
+    if (
+      document.reveal.radius === next.radius &&
+      document.reveal.opacity === next.opacity &&
+      document.reveal.neighbourOpacity === next.neighbourOpacity
+    ) {
+      return false;
+    }
+    document.reveal = next;
+    return true;
   }
 
   /** Declares a zone, named by the author; the id is derived from the name. */
@@ -1482,6 +1543,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       bounds: document.bounds,
       projection: document.projection,
       characterHeightTiles: document.characterHeightTiles,
+      reveal: document.reveal,
       tileArt: document.tileArt,
       palette: document.palette,
       terrain: document.terrain,

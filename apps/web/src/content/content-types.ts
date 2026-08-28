@@ -10,8 +10,13 @@
 /** `[col, row]` in odd-r offset coordinates. */
 export type OffsetPair = [number, number];
 
-/** `3` adds authored grid appearance shared by editor and Play. */
-export const WORLD_SCHEMA_VERSION = 4;
+/**
+ * `3` added authored grid appearance shared by editor and Play; `4` made a map
+ * a set of hexes rather than a rectangle
+ * (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`); `5` adds the authored
+ * {@link RevealStyle} (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+ */
+export const WORLD_SCHEMA_VERSION = 5;
 
 export const DEFAULT_GRID_LINE_WIDTH = 1;
 export const MIN_GRID_LINE_WIDTH = 1;
@@ -34,6 +39,62 @@ export const DEFAULT_GRID_STYLE: Readonly<GridStyle> = {
   color: DEFAULT_GRID_COLOR,
   alpha: DEFAULT_GRID_ALPHA,
 };
+
+/** Hex rings revealed around the hex the pointer rests on, when none is authored. */
+export const DEFAULT_REVEAL_RADIUS = 1;
+/**
+ * Largest authored reveal radius.
+ *
+ * Every revealed hex costs one coverage measurement, so the radius is bounded
+ * rather than free (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+ */
+export const MAX_REVEAL_RADIUS = 6;
+/**
+ * Opacity of the relief in front of the pointed-at hex, when none is authored.
+ *
+ * Not `0`: a cell drawn away entirely takes its silhouette with it, and where
+ * nothing stands behind it that is a hole in the map rather than a hex seen
+ * through (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+ */
+export const DEFAULT_REVEAL_OPACITY = 0.25;
+/** Opacity of the relief in front of a revealed neighbour, when none is authored. */
+export const DEFAULT_REVEAL_NEIGHBOUR_OPACITY = 0.55;
+
+/**
+ * How far relief may be seen through when the pointer rests on a buried hex.
+ *
+ * Both opacities are those of **what stands in the way**, not of the hex behind
+ * it: seeing a buried hex means drawing the relief in front of it see-through,
+ * since drawing the hex back over that relief puts it in front of the cliff it
+ * is behind (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+ *
+ * Presentation only, and per map: how tall a map's relief is decides how much
+ * of it hides its own hexes, so the dials belong to the map rather than to the
+ * application.
+ */
+export interface RevealStyle {
+  /** Hex rings around the pointed-at hex revealed with it; `0` reveals it alone. */
+  radius: number;
+  /** Opacity of the relief in front of the pointed-at hex; `1` reveals nothing. */
+  opacity: number;
+  /** The same for the relief in front of the ring around it. */
+  neighbourOpacity: number;
+}
+
+export const DEFAULT_REVEAL_STYLE: Readonly<RevealStyle> = {
+  radius: DEFAULT_REVEAL_RADIUS,
+  opacity: DEFAULT_REVEAL_OPACITY,
+  neighbourOpacity: DEFAULT_REVEAL_NEIGHBOUR_OPACITY,
+};
+
+/** `true` when nothing but the defaults is authored. */
+export function isDefaultRevealStyle(reveal: RevealStyle): boolean {
+  return (
+    reveal.radius === DEFAULT_REVEAL_RADIUS &&
+    reveal.opacity === DEFAULT_REVEAL_OPACITY &&
+    reveal.neighbourOpacity === DEFAULT_REVEAL_NEIGHBOUR_OPACITY
+  );
+}
 
 /**
  * `2` added authored tile art
@@ -378,6 +439,8 @@ export interface WorldDefinition {
   characterHeightTiles?: number;
   /** Appearance used whenever the grid is visible in the editor or Play. */
   grid?: GridStyle;
+  /** How far relief may be seen through around the pointer; defaults apply when absent. */
+  reveal?: RevealStyle;
   tileSetId: string;
   defaultTile: string;
   tiles?: PlacedTile[];

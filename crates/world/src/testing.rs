@@ -6,8 +6,8 @@
 
 use crate::definition::{
     EntityDefinition, GridStyle, HexOrientation, LinkTrigger, LocationDefinition,
-    MapLinkDefinition, MapShape, PlacedTile, ProjectionMode, WorldDefinition, WorldMetadata,
-    DEFAULT_CHARACTER_HEIGHT_TILES, WORLD_SCHEMA_VERSION,
+    MapLinkDefinition, MapShape, PlacedTile, ProjectionMode, RevealStyle, WorldDefinition,
+    WorldMetadata, DEFAULT_CHARACTER_HEIGHT_TILES, WORLD_SCHEMA_VERSION,
 };
 use crate::hex::OffsetCoord;
 use crate::tile_art::{
@@ -123,6 +123,7 @@ pub fn sample_world() -> WorldDefinition {
         projection: ProjectionMode::TopDown,
         character_height_tiles: DEFAULT_CHARACTER_HEIGHT_TILES,
         grid: GridStyle::default(),
+        reveal: RevealStyle::default(),
         tile_set_id: "mvp_terrain".to_owned(),
         default_tile: "grass".to_owned(),
         tiles: vec![

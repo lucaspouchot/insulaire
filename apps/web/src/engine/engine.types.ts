@@ -9,7 +9,13 @@
  * Positions cross as offset pairs `[col, row]`.
  */
 
-import { GridStyle, SettingsValues, TileArt, TileArtGeometry } from '../content/content-types';
+import {
+  GridStyle,
+  RevealStyle,
+  SettingsValues,
+  TileArt,
+  TileArtGeometry,
+} from '../content/content-types';
 
 /** `[col, row]` in odd-r offset coordinates. */
 export type OffsetWire = [number, number];
@@ -143,6 +149,14 @@ export interface WorldView {
   characterHeightTiles: number;
   /** Authored grid appearance shared by editor and Play. */
   grid: GridStyle;
+  /**
+   * How far relief may be seen through around the pointer.
+   *
+   * Presentation transported the same way the grid is; the map renderer is the
+   * only thing that reads it
+   * (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+   */
+  reveal: RevealStyle;
   tileSetId: string;
   /** The pixel grid the tile set's images are authored on. */
   tileArt: TileArtGeometry;

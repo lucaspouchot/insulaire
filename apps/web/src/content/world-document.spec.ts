@@ -148,6 +148,16 @@ describe('WorldDocument', () => {
     expect(document.toDefinition().characterHeightTiles).toBe(3.25);
   });
 
+  it('carries an authored reveal and omits the default', () => {
+    expect(documentFor().reveal).toEqual({ radius: 1, opacity: 0.25, neighbourOpacity: 0.55 });
+    expect(documentFor().toDefinition()).not.toHaveProperty('reveal');
+
+    const reveal = { radius: 3, opacity: 0.1, neighbourOpacity: 0.25 };
+    const document = WorldDocument.fromDefinition({ ...world, reveal }, tileSet);
+    expect(document.reveal).toEqual(reveal);
+    expect(document.toDefinition().reveal).toEqual(reveal);
+  });
+
   it('carries authored grid appearance and omits the default', () => {
     expect(documentFor().grid).toEqual({ lineWidth: 1, color: '#000000', alpha: 0.25 });
     expect(documentFor().toDefinition()).not.toHaveProperty('grid');

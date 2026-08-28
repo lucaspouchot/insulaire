@@ -180,6 +180,26 @@ case can deliberately state both:
 ]
 ```
 
+`hovers` moves the pointer without pressing, capturing after each move — the
+only way to reach what a hand does on the way to a click: the hex outline, the
+coordinate readout, and the relief a map draws see-through to show the hex it
+hides (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`). `at` is a fraction of
+the canvas box like `clicks`; `hold` names a physical `KeyboardEvent.code` kept
+down **on the keyboard** until a later step names another or none, and
+`move: false` captures without touching the pointer at all — which is how a key
+that must act under a still hand is pinned:
+
+```jsonc
+"hovers": [
+  { "name": "play-reveal-buried", "at": [0.277, 0.241] },
+  { "name": "play-peek-buried", "hold": "KeyS", "move": false }
+]
+```
+
+Hovers run **last** on a page, after `press`, `keys` and `clicks`, so a pointer
+left resting over the map cannot change what an earlier capture saw, and a held
+key is released before the page closes.
+
 Rules for the scenario: it must stay deterministic (no wall-clock, no random),
 it must keep at least one rejected command (the rejection path is a rule too),
 and a new page or mode is not covered until it is listed in `pages`.

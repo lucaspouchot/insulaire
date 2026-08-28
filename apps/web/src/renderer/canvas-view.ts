@@ -11,6 +11,7 @@
 
 import { Offset, sameOffset } from '../core/hex/hex-coords';
 import { Point } from '../core/hex/hex-layout';
+import { isEditableTarget } from '../core/keyboard-shortcuts';
 import { HexMapRenderer } from './hex-map-renderer';
 
 /** How far the pointer may travel during a press and still count as a click. */
@@ -69,6 +70,27 @@ export class CanvasView {
   private stroking = false;
   private lastPaintedCell: Offset | null = null;
   private hovered: Offset | null = null;
+  /** The buried hex the pointer is over; see `HexMapRenderer.setReveal`. */
+  private revealed: Offset | null = null;
+  /**
+   * Where the pointer last was, so the modifier can re-ask without it moving.
+   *
+   * `null` while the pointer is off the canvas, which is what stops a key press
+   * anywhere else in the application from resolving a hex.
+   */
+  private pointerAt: Point | null = null;
+  /** Whether the peek key is currently held down. */
+  private peeking = false;
+  /**
+   * Physical key held to reach a hex the relief hides, or `null` for none.
+   *
+   * A `KeyboardEvent.code` — the physical position, not the printed character
+   * (`docs/adr/ADR-0045-shortcuts-use-physical-keys.md`) — set by the host from
+   * the player's own binding. This class never reads the setting itself: it is
+   * framework-free, and which key it is is an application decision
+   * (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+   */
+  private peekKey: string | null = null;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -86,6 +108,15 @@ export class CanvasView {
     this.listen('wheel', this.handleWheel, { passive: false });
     this.listen('contextmenu', this.handleContextMenu);
 
+    // On the window, not the canvas: a canvas is not focusable, so a key press
+    // never reaches it. What the key changes is the answer to a question the
+    // pointer is already asking, and that answer must not wait for the hand to
+    // move (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+    this.listenToWindow('keydown', this.handlePeekDown);
+    this.listenToWindow('keyup', this.handlePeekUp);
+    // A window losing focus with the key held never sends its `keyup`.
+    this.listenToWindow('blur', this.handleBlur);
+
     this.resize();
     this.loop();
   }
@@ -93,6 +124,22 @@ export class CanvasView {
   /** Requests a redraw on the next animation frame. */
   invalidate(): void {
     this.needsRedraw = true;
+  }
+
+  /**
+   * Binds the physical key held to reach a hex the relief hides, or `null`.
+   *
+   * A `KeyboardEvent.code`, the player's own from the controls settings
+   * (`docs/adr/ADR-0045-shortcuts-use-physical-keys.md`). Rebinding while the
+   * old key is down lets it go, so a key that will never send its `keyup` to
+   * this class cannot leave the map stuck looking through its relief.
+   */
+  setPeekKey(code: string | null): void {
+    if (code === this.peekKey) {
+      return;
+    }
+    this.peekKey = code;
+    this.setPeeking(false);
   }
 
   /**
@@ -105,6 +152,7 @@ export class CanvasView {
    * go on believing the cursor is over a hex it has already reported.
    */
   clearHover(): void {
+    this.setReveal(null);
     if (this.hovered !== null) {
       this.setHover(null);
     }
@@ -148,6 +196,15 @@ export class CanvasView {
     const bound = handler.bind(this) as EventListener;
     this.canvas.addEventListener(type, bound, options);
     this.disposers.push(() => this.canvas.removeEventListener(type, bound, options));
+  }
+
+  private listenToWindow<K extends keyof WindowEventMap>(
+    type: K,
+    handler: (event: WindowEventMap[K]) => void,
+  ): void {
+    const bound = handler.bind(this) as EventListener;
+    window.addEventListener(type, bound);
+    this.disposers.push(() => window.removeEventListener(type, bound));
   }
 
   /**
@@ -235,12 +292,15 @@ export class CanvasView {
     this.panning = event.button === 1 || event.button === 2;
     this.painting = event.button === 0 && this.handlers.onDragPaint !== undefined;
     this.stroking = false;
-    this.pointerDownCell = this.renderer.cellAtScreen(this.pointerDownAt);
+    this.pointerDownCell = this.renderer.resolvePointer(this.pointerDownAt, this.peeking).cell;
     this.lastPaintedCell = this.pointerDownCell;
   }
 
   private handlePointerMove(event: PointerEvent): void {
     const point = this.pointAt(event);
+    // Kept even while panning, so the modifier re-resolves against where the
+    // pointer actually is rather than where it was before the drag.
+    this.pointerAt = point;
 
     if (this.panning && this.pointerDownAt !== null) {
       this.renderer.camera.panBy(event.movementX, event.movementY);
@@ -248,13 +308,7 @@ export class CanvasView {
       return;
     }
 
-    // Off the map on both sides counts as unchanged: a pointer wandering the
-    // margin around a map reports nothing and redraws nothing.
-    const cell = this.renderer.cellAtScreen(point);
-    const unchanged = cell === null ? this.hovered === null : sameOffset(cell, this.hovered);
-    if (!unchanged) {
-      this.setHover(cell);
-    }
+    const cell = this.resolvePointer(point);
 
     if (this.painting && cell !== null && !sameOffset(cell, this.lastPaintedCell)) {
       // Leaving the first hex is what turns a press into a stroke; that hex is
@@ -267,6 +321,66 @@ export class CanvasView {
       }
       this.lastPaintedCell = cell;
       this.handlers.onDragPaint?.(cell);
+    }
+  }
+
+  /**
+   * Re-answers what the pointer is on, and tells the renderer and the host.
+   *
+   * The one path both a moving hand and a pressed modifier go through, so the
+   * two cannot disagree about which hex is held.
+   */
+  private resolvePointer(point: Point): Offset | null {
+    // Off the map on both sides counts as unchanged: a pointer wandering the
+    // margin around a map reports nothing and redraws nothing.
+    const { cell, buried } = this.renderer.resolvePointer(point, this.peeking);
+    const unchanged = cell === null ? this.hovered === null : sameOffset(cell, this.hovered);
+    if (!unchanged) {
+      this.setHover(cell);
+    }
+    // The reveal follows the pointer whether or not the modifier is held:
+    // seeing through relief changes nothing, so it needs no intent
+    // (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+    this.setReveal(buried);
+    return cell;
+  }
+
+  private handlePeekDown(event: KeyboardEvent): void {
+    // A key typed into a form belongs to the form, and a chord is another
+    // command: a bound key means what it means on its own (ADR-0045).
+    if (
+      event.code !== this.peekKey ||
+      isEditableTarget(event.target) ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey
+    ) {
+      return;
+    }
+    this.setPeeking(true);
+  }
+
+  private handlePeekUp(event: KeyboardEvent): void {
+    // Released whatever it was typed into, so a key let go over a text field
+    // cannot leave the map holding it down.
+    if (event.code === this.peekKey) {
+      this.setPeeking(false);
+    }
+  }
+
+  private handleBlur(): void {
+    this.setPeeking(false);
+  }
+
+  private setPeeking(held: boolean): void {
+    if (held === this.peeking) {
+      return;
+    }
+    this.peeking = held;
+    // Nothing to re-answer if the pointer is off the canvas, and a pan is
+    // moving the world rather than pointing at it.
+    if (this.pointerAt !== null && !this.panning) {
+      this.resolvePointer(this.pointerAt);
     }
   }
 
@@ -293,7 +407,7 @@ export class CanvasView {
     }
 
     const end = this.pointAt(event);
-    const cell = this.renderer.cellAtScreen(end);
+    const cell = this.renderer.resolvePointer(end, this.peeking).cell;
     if (cell === null) {
       return;
     }
@@ -311,6 +425,7 @@ export class CanvasView {
   }
 
   private handlePointerLeave(): void {
+    this.pointerAt = null;
     this.clearHover();
   }
 
@@ -328,6 +443,24 @@ export class CanvasView {
     this.renderer.setHover(cell);
     this.invalidate();
     this.handlers.onHover?.(cell);
+  }
+
+  /**
+   * Moves the window the relief is seen through.
+   *
+   * No handler: unlike a hover, this tells a host nothing it does not already
+   * know — it is a view of the map, not a change of what the pointer means.
+   */
+  private setReveal(cell: Offset | null): void {
+    // `sameOffset` answers `false` for two nulls, and off a buried hex that is
+    // most of the time: comparing them by hand keeps a pointer crossing open
+    // ground from invalidating a frame it changes nothing in.
+    if (cell === null ? this.revealed === null : sameOffset(cell, this.revealed)) {
+      return;
+    }
+    this.revealed = cell;
+    this.renderer.setReveal(cell);
+    this.invalidate();
   }
 
   private handleWheel(event: WheelEvent): void {

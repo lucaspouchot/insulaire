@@ -882,6 +882,43 @@
                 />
                 <small>{{ 'ui.editor.map.open.characterHeightHint' | t }}</small>
               </label>
+              <label class="field">
+                <span>{{ 'ui.editor.map.open.revealRadiusLabel' | t }}</span>
+                <input
+                  #revealRadius
+                  type="number"
+                  min="0"
+                  max="6"
+                  step="1"
+                  [value]="doc.reveal.radius"
+                  [attr.aria-label]="'ui.editor.map.open.revealRadiusAria' | t"
+                />
+              </label>
+              <label class="field">
+                <span>{{ 'ui.editor.map.open.revealOpacityLabel' | t }}</span>
+                <input
+                  #revealOpacity
+                  type="number"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  [value]="doc.reveal.opacity"
+                  [attr.aria-label]="'ui.editor.map.open.revealOpacityAria' | t"
+                />
+              </label>
+              <label class="field">
+                <span>{{ 'ui.editor.map.open.revealNeighbourOpacityLabel' | t }}</span>
+                <input
+                  #revealNeighbourOpacity
+                  type="number"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  [value]="doc.reveal.neighbourOpacity"
+                  [attr.aria-label]="'ui.editor.map.open.revealNeighbourOpacityAria' | t"
+                />
+                <small>{{ 'ui.editor.map.open.revealHint' | t }}</small>
+              </label>
               <div class="button-row">
                 <button
                   type="button"
@@ -890,7 +927,10 @@
                       mapId.value,
                       mapName.value,
                       mapZone.value,
-                      characterHeightTiles.value
+                      characterHeightTiles.value,
+                      revealRadius.value,
+                      revealOpacity.value,
+                      revealNeighbourOpacity.value
                     )
                   "
                 >

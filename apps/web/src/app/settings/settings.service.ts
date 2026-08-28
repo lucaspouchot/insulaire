@@ -33,7 +33,7 @@ import {
   engineSettingsDefaults,
   engineSettingsSections,
 } from './engine-settings.schema';
-import { isKeyboardCode } from './keyboard-shortcuts';
+import { isKeyboardCode } from '../../core/keyboard-shortcuts';
 
 const STORAGE_KEY = 'insulaire.settings.v1';
 

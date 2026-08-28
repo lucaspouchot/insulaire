@@ -518,6 +518,7 @@ impl Engine {
             .to_owned(),
             character_height_tiles: world.character_height_tiles,
             grid: world.grid.clone(),
+            reveal: world.reveal.clone(),
             tile_set_id: world.tile_set_id.clone(),
             tile_art,
             palette: grid
@@ -1122,6 +1123,25 @@ mod tests {
         assert_eq!(grid.line_width, 4);
         assert_eq!(grid.color, "#123456");
         assert_eq!(grid.alpha, 0.7);
+    }
+
+    #[test]
+    fn the_view_republishes_the_authored_reveal() {
+        let mut world = testing::sample_world();
+        world.id = "revealing_world".to_owned();
+        world.reveal.radius = 3;
+        world.reveal.opacity = 0.1;
+        world.reveal.neighbour_opacity = 0.25;
+
+        let mut engine = engine();
+        engine
+            .load_world(&serde_json::to_string(&world).expect("serialise"))
+            .expect("world loads");
+
+        let reveal = &engine.world_view("revealing_world").expect("view").reveal;
+        assert_eq!(reveal.radius, 3);
+        assert_eq!(reveal.opacity, 0.1);
+        assert_eq!(reveal.neighbour_opacity, 0.25);
     }
 
     #[test]

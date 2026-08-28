@@ -2,7 +2,7 @@
 
 import { Injectable, signal } from '@angular/core';
 
-import { fallbackKeyboardLabel } from './keyboard-shortcuts';
+import { fallbackKeyboardLabel } from '../../core/keyboard-shortcuts';
 
 interface KeyboardLayoutMapLike {
   get(code: string): string | undefined;

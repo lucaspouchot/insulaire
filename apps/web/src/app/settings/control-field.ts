@@ -15,7 +15,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, output, si
 import { ControlDefinition, SettingValue } from '../../content/content-types';
 import { TranslatePipe } from '../i18n/translate.pipe';
 import { KeyboardLayoutService } from './keyboard-layout.service';
-import { capturedKeyboardCode } from './keyboard-shortcuts';
+import { capturedKeyboardCode } from '../../core/keyboard-shortcuts';
 
 @Component({
   selector: 'app-control-field',

@@ -1159,7 +1159,7 @@ mod tests {
     fn engine_info_reports_the_build() {
         let info = json(&JsonEngine::new().engine_info().expect("info"));
         assert_eq!(info["name"], "insulaire-engine");
-        assert_eq!(info["worldSchemaVersion"], 4);
+        assert_eq!(info["worldSchemaVersion"], 5);
         assert!(info["version"].is_string());
     }
 

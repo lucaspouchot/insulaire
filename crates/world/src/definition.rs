@@ -21,8 +21,11 @@ use crate::hex::{MapBounds, OffsetCoord};
 /// [`WorldDefinition::origin`] and [`WorldDefinition::shape`]: a map is a set of
 /// hexes rather than a rectangle
 /// (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`). Both default to what every
-/// earlier file meant — anchored at `[0, 0]`, every cell present.
-pub const WORLD_SCHEMA_VERSION: u32 = 4;
+/// earlier file meant — anchored at `[0, 0]`, every cell present. Version 5 adds
+/// the authored [`RevealStyle`], which says how far relief may be seen through
+/// (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`); its defaults reveal one
+/// ring at half opacity.
+pub const WORLD_SCHEMA_VERSION: u32 = 5;
 
 /// Hex orientation of an authored map.
 ///
@@ -114,6 +117,69 @@ impl Default for GridStyle {
 
 impl GridStyle {
     /// `true` when the renderer's historical appearance is unchanged.
+    #[must_use]
+    pub fn is_default(&self) -> bool {
+        self == &Self::default()
+    }
+}
+
+/// Default number of hex rings revealed around the hex the pointer rests on.
+pub const DEFAULT_REVEAL_RADIUS: u8 = 1;
+
+/// Largest authored reveal radius.
+///
+/// Every revealed hex costs one coverage measurement, so the radius is bounded
+/// rather than free (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+pub const MAX_REVEAL_RADIUS: u8 = 6;
+
+/// Default opacity of the relief standing in front of the pointed-at hex.
+///
+/// Not `0`: a cell drawn away entirely takes its silhouette with it, and where
+/// nothing stands behind it that is a hole in the map rather than a hex seen
+/// through (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+pub const DEFAULT_REVEAL_OPACITY: f32 = 0.25;
+
+/// Default opacity of the relief standing in front of a revealed neighbour.
+pub const DEFAULT_REVEAL_NEIGHBOUR_OPACITY: f32 = 0.55;
+
+/// How far relief may be seen through when the pointer rests on a buried hex.
+///
+/// Both numbers are the opacity of **what stands in the way**, not of the hex
+/// behind it: seeing a buried hex means drawing the relief in front of it
+/// see-through, since drawing the hex back over that relief puts it in front of
+/// the cliff it is behind (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+/// Presentation only; no simulation rule reads it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RevealStyle {
+    /// Hex rings around the pointed-at hex revealed with it; `0` reveals it alone.
+    #[serde(default = "default_reveal_radius")]
+    pub radius: u8,
+    /// Opacity of the relief in front of the pointed-at hex, `0` to `1`.
+    ///
+    /// `1` leaves the relief alone and reveals nothing.
+    #[serde(default = "default_reveal_opacity")]
+    pub opacity: f32,
+    /// The same for the relief in front of the ring around it.
+    ///
+    /// Higher than [`opacity`](Self::opacity) by default: the ring is context,
+    /// and the hex being aimed at is the one that has to be readable.
+    #[serde(default = "default_reveal_neighbour_opacity")]
+    pub neighbour_opacity: f32,
+}
+
+impl Default for RevealStyle {
+    fn default() -> Self {
+        Self {
+            radius: DEFAULT_REVEAL_RADIUS,
+            opacity: DEFAULT_REVEAL_OPACITY,
+            neighbour_opacity: DEFAULT_REVEAL_NEIGHBOUR_OPACITY,
+        }
+    }
+}
+
+impl RevealStyle {
+    /// `true` when nothing but the defaults is authored.
     #[must_use]
     pub fn is_default(&self) -> bool {
         self == &Self::default()
@@ -252,6 +318,12 @@ pub struct WorldDefinition {
     /// Grid appearance shared by editor preview and gameplay rendering.
     #[serde(default, skip_serializing_if = "GridStyle::is_default")]
     pub grid: GridStyle,
+    /// How far relief may be seen through around the pointer.
+    ///
+    /// Presentation, transported and validated here and applied by the map
+    /// renderer (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+    #[serde(default, skip_serializing_if = "RevealStyle::is_default")]
+    pub reveal: RevealStyle,
     /// Id of the [`crate::TileSetDefinition`] this world paints with.
     pub tile_set_id: String,
     /// Tile id used for every cell not listed in [`tiles`](Self::tiles).
@@ -503,6 +575,18 @@ fn is_default_character_height_tiles(value: &f32) -> bool {
     *value == DEFAULT_CHARACTER_HEIGHT_TILES
 }
 
+const fn default_reveal_radius() -> u8 {
+    DEFAULT_REVEAL_RADIUS
+}
+
+const fn default_reveal_opacity() -> f32 {
+    DEFAULT_REVEAL_OPACITY
+}
+
+const fn default_reveal_neighbour_opacity() -> f32 {
+    DEFAULT_REVEAL_NEIGHBOUR_OPACITY
+}
+
 const fn default_grid_line_width() -> u8 {
     DEFAULT_GRID_LINE_WIDTH
 }
@@ -580,6 +664,27 @@ mod tests {
         assert!(serde_json::to_string(&zoned)
             .expect("serialise")
             .contains(r#""zone":"Northern Reach""#));
+    }
+
+    #[test]
+    fn a_custom_reveal_round_trips_and_the_default_is_omitted() {
+        let world: WorldDefinition = serde_json::from_str(MINIMAL).expect("parse");
+        assert_eq!(world.reveal, RevealStyle::default());
+        assert!(!serde_json::to_string(&world)
+            .expect("serialise")
+            .contains("\"reveal\""));
+
+        let custom: WorldDefinition = serde_json::from_str(&MINIMAL.replace(
+            r#""width": 3,"#,
+            r#""width": 3, "reveal": { "radius": 3, "opacity": 0.1, "neighbourOpacity": 0.25 },"#,
+        ))
+        .expect("parse");
+        assert_eq!(custom.reveal.radius, 3);
+        assert_eq!(custom.reveal.opacity, 0.1);
+        assert_eq!(custom.reveal.neighbour_opacity, 0.25);
+        assert!(serde_json::to_string(&custom)
+            .expect("serialise")
+            .contains(r#""reveal":{"radius":3,"opacity":0.1,"neighbourOpacity":0.25}"#));
     }
 
     #[test]

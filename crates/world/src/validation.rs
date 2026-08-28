@@ -22,8 +22,8 @@ use crate::character_creation::{
 };
 use crate::definition::{
     HexOrientation, LinkTrigger, WorldDefinition, MAX_CHARACTER_HEIGHT_TILES, MAX_ELEVATION,
-    MAX_GRID_LINE_WIDTH, MIN_CHARACTER_HEIGHT_TILES, MIN_ELEVATION, MIN_GRID_LINE_WIDTH,
-    WORLD_SCHEMA_VERSION,
+    MAX_GRID_LINE_WIDTH, MAX_REVEAL_RADIUS, MIN_CHARACTER_HEIGHT_TILES, MIN_ELEVATION,
+    MIN_GRID_LINE_WIDTH, WORLD_SCHEMA_VERSION,
 };
 use crate::hex::OffsetCoord;
 use crate::locale::{missing_keys, LocaleBundle};
@@ -526,6 +526,29 @@ fn validate_world_header(world: &WorldDefinition, issues: &mut Vec<ValidationIss
             "world.gridAlphaOutOfRange",
             "grid.alpha",
             "grid alpha must be between 0 and 1",
+        ));
+    }
+    if world.reveal.radius > MAX_REVEAL_RADIUS {
+        issues.push(ValidationIssue::error(
+            "world.revealRadiusOutOfRange",
+            "reveal.radius",
+            format!("reveal radius must not exceed {MAX_REVEAL_RADIUS}"),
+        ));
+    }
+    if !world.reveal.opacity.is_finite() || !(0.0..=1.0).contains(&world.reveal.opacity) {
+        issues.push(ValidationIssue::error(
+            "world.revealOpacityOutOfRange",
+            "reveal.opacity",
+            "reveal opacity must be between 0 and 1",
+        ));
+    }
+    if !world.reveal.neighbour_opacity.is_finite()
+        || !(0.0..=1.0).contains(&world.reveal.neighbour_opacity)
+    {
+        issues.push(ValidationIssue::error(
+            "world.revealNeighbourOpacityOutOfRange",
+            "reveal.neighbourOpacity",
+            "reveal neighbourOpacity must be between 0 and 1",
         ));
     }
 }
@@ -3031,6 +3054,48 @@ mod tests {
         world.grid.line_width = MIN_GRID_LINE_WIDTH;
         world.grid.color = "#A0b1C2".to_owned();
         world.grid.alpha = 0.0;
+        let report = validate_world(
+            &world,
+            Some(&testing::sample_tile_set()),
+            &TemplateRegistry::builtin(),
+        );
+        assert!(report.valid, "the bounds are legal: {:?}", report.issues);
+    }
+
+    #[test]
+    fn a_reveal_must_be_drawable() {
+        let cases = [
+            (
+                MAX_REVEAL_RADIUS + 1,
+                0.5,
+                0.5,
+                "world.revealRadiusOutOfRange",
+            ),
+            (1, -0.5, 0.5, "world.revealOpacityOutOfRange"),
+            (1, f32::NAN, 0.5, "world.revealOpacityOutOfRange"),
+            (1, 0.5, 1.5, "world.revealNeighbourOpacityOutOfRange"),
+            (1, 0.5, f32::NAN, "world.revealNeighbourOpacityOutOfRange"),
+        ];
+        for (radius, opacity, neighbour, expected) in cases {
+            let mut world = testing::sample_world();
+            world.reveal.radius = radius;
+            world.reveal.opacity = opacity;
+            world.reveal.neighbour_opacity = neighbour;
+            let report = validate_world(
+                &world,
+                Some(&testing::sample_tile_set()),
+                &TemplateRegistry::builtin(),
+            );
+            assert!(!report.valid);
+            assert!(codes(&report).contains(&expected), "{:?}", report.issues);
+        }
+
+        // The bounds themselves are legal: nothing revealed, relief drawn away
+        // entirely over one hex and left alone over the ring.
+        let mut world = testing::sample_world();
+        world.reveal.radius = 0;
+        world.reveal.opacity = 0.0;
+        world.reveal.neighbour_opacity = 1.0;
         let report = validate_world(
             &world,
             Some(&testing::sample_tile_set()),

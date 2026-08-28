@@ -788,6 +788,14 @@ const EN: StringTree = {
           characterHeightAria: 'Height of a 128 pixel character in tiles',
           characterHeightHint:
             'A 128 px character spans this many projected tile faces; smaller and larger canvases keep their relative scale.',
+          revealRadiusAria: 'Hex rings revealed around the pointer',
+          revealRadiusLabel: 'Reveal radius',
+          revealOpacityAria: 'Opacity of the relief in front of the pointed hex',
+          revealOpacityLabel: 'Relief opacity',
+          revealNeighbourOpacityAria: 'Opacity of the relief in front of a revealed neighbour',
+          revealNeighbourOpacityLabel: 'Neighbour relief opacity',
+          revealHint:
+            'When the pointer rests on a hex the relief hides, whatever stands in front of it is drawn this see-through — 0 removes it, 1 reveals nothing. The key that takes the pointer to the revealed hex is bound under Settings › Controls.',
           removeMap: 'Remove map',
         },
         message: {
@@ -877,6 +885,10 @@ const EN: StringTree = {
       moveEast: 'Move east',
       moveSouthWest: 'Move south-west',
       moveSouthEast: 'Move south-east',
+      view: 'View',
+      peek: 'Look through relief',
+      peekHelp:
+        'Hold it with the pointer over a hex the relief hides: what stands in front is drawn see-through, and the hex behind takes the pointer.',
     },
     creation: {
       documentTitle: 'Create your character',
@@ -1716,6 +1728,14 @@ const FR: StringTree = {
           characterHeightAria: 'Hauteur d’un personnage de 128 pixels en tuiles',
           characterHeightHint:
             'Un personnage de 128 px occupe ce nombre de faces de tuile projetées ; les autres canevas gardent leur échelle relative.',
+          revealRadiusAria: 'Anneaux d’hexagones révélés autour du pointeur',
+          revealRadiusLabel: 'Rayon de révélation',
+          revealOpacityAria: 'Opacité du relief devant l’hexagone pointé',
+          revealOpacityLabel: 'Opacité du relief',
+          revealNeighbourOpacityAria: 'Opacité du relief devant un voisin révélé',
+          revealNeighbourOpacityLabel: 'Opacité du relief (voisins)',
+          revealHint:
+            'Quand le pointeur se pose sur un hexagone caché par le relief, ce qui le masque est dessiné à cette transparence — 0 l’efface, 1 ne révèle rien. La touche qui amène le pointeur sur l’hexagone révélé se règle dans Réglages › Commandes.',
           removeMap: 'Supprimer la carte',
         },
         message: {
@@ -1808,6 +1828,10 @@ const FR: StringTree = {
       moveEast: 'Se déplacer vers l’est',
       moveSouthWest: 'Se déplacer vers le sud-ouest',
       moveSouthEast: 'Se déplacer vers le sud-est',
+      view: 'Vue',
+      peek: 'Voir à travers le relief',
+      peekHelp:
+        'Maintenez-la, pointeur sur une case cachée par le relief : ce qui la masque devient translucide, et c’est elle que vise le pointeur.',
     },
     creation: {
       documentTitle: 'Créer votre personnage',

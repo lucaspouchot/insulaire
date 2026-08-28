@@ -67,6 +67,9 @@ import {
   MIN_ELEVATION,
   DEFAULT_CHARACTER_HEIGHT_TILES,
   DEFAULT_GRID_STYLE,
+  DEFAULT_REVEAL_STYLE,
+  RevealStyle,
+  isDefaultRevealStyle,
   WORLD_SCHEMA_VERSION,
 } from './content-types';
 
@@ -185,6 +188,8 @@ export interface WorldDocumentInit {
   projection?: ProjectionMode;
   characterHeightTiles?: number;
   grid?: GridStyle;
+  /** How far relief may be seen through around the pointer. */
+  reveal?: RevealStyle;
   /** Authoring zone; empty leaves the map unzoned. */
   zone?: string;
 }
@@ -224,6 +229,11 @@ export class WorldDocument {
     public characterHeightTiles: number,
     /** Authored grid appearance shared by editor preview and gameplay. */
     public grid: GridStyle,
+    /**
+     * How far relief may be seen through when the pointer rests on a hex it
+     * hides (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+     */
+    public reveal: RevealStyle,
     /** Authoring zone; `''` means unzoned. Grouping only, never a rule. */
     public zone: string,
   ) {}
@@ -276,6 +286,7 @@ export class WorldDocument {
       init.projection ?? 'topDown',
       init.characterHeightTiles ?? DEFAULT_CHARACTER_HEIGHT_TILES,
       { ...DEFAULT_GRID_STYLE, ...(init.grid ?? {}) },
+      { ...DEFAULT_REVEAL_STYLE, ...(init.reveal ?? {}) },
       init.zone ?? '',
     );
   }
@@ -304,6 +315,7 @@ export class WorldDocument {
       projection: definition.projection,
       characterHeightTiles: definition.characterHeightTiles,
       grid: definition.grid,
+      reveal: definition.reveal,
       zone: definition.zone,
     });
 
@@ -935,6 +947,7 @@ export class WorldDocument {
         ? {}
         : { characterHeightTiles: this.characterHeightTiles }),
       ...(sameGridStyle(this.grid, DEFAULT_GRID_STYLE) ? {} : { grid: { ...this.grid } }),
+      ...(isDefaultRevealStyle(this.reveal) ? {} : { reveal: { ...this.reveal } }),
       tileSetId: this.tileSetId,
       defaultTile: this.defaultTile.id,
       tiles,

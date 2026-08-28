@@ -84,7 +84,7 @@ Build identity of the running binary.
   "version": "0.1.0",
   "targetArch": "wasm32",
   "pointerWidth": 32,
-  "worldSchemaVersion": 3,
+  "worldSchemaVersion": 5,
   "tileSetSchemaVersion": 3
 }
 ```
@@ -548,6 +548,7 @@ Everything the renderer needs about a world **except** the per-cell buffers.
   "projection": "isometric",
   "characterHeightTiles": 2,
   "grid": { "lineWidth": 3, "color": "#336699", "alpha": 0.6 },
+  "reveal": { "radius": 1, "opacity": 0.25, "neighbourOpacity": 0.55 },
   "tileSetId": "mvp_terrain",
   "tileArt": { "width": 64, "surfaceHeight": 40, "elevationHeight": 26, "elevationStep": 8 },
   "palette": [
@@ -595,6 +596,13 @@ it (`docs/adr/ADR-0044-map-entity-presentation.md`).
 `alpha` from `0` to `1`. Like the projection and character scale, the engine
 only republishes it; editor and Play hand the same values to the shared canvas
 renderer.
+
+`reveal` is transported the same way: `radius`, the number of hex rings revealed
+around a buried hex the pointer rests on, and `opacity` / `neighbourOpacity`,
+how solidly the relief standing in front of that hex and of those rings is
+drawn. The engine validates the three numbers and republishes them; only the map
+renderer reads them, and only in isometric mode
+(`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
 
 `tileArt` is the tile set's authored pixel grid — `width`, `flatHeight`,
 `surfaceHeight`, `elevationHeight`, `elevationStep` — transported the same way

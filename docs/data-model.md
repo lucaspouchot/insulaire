@@ -18,6 +18,9 @@ An authored world contains at minimum:
 - `projection` — presentation only; carried, never interpreted by the engine
 - `characterHeightTiles` — presentation-only map scale; a 128-pixel character
   spans this many projected tile faces (default `2`, ADR-0044)
+- `reveal` — presentation only; how far relief may be seen through around the
+  pointer: `radius` rings, and the opacity the relief in front of the pointed
+  hex and of that ring is drawn at (defaults `1`, `0.25`, `0.55`, ADR-0047)
 - `tileSetId`
 - `defaultTile`
 - `tiles`
@@ -364,7 +367,8 @@ world being *authored* has no tick, no RNG and no entity handles, and every
 cell is freely mutable. It holds a dense `Uint8Array` of palette indices, a
 dense `Int8Array` of elevations and a dense `Uint8Array` of presence flags — the
 same three buffers the runtime and the renderer use — plus its `MapBounds`, the
-authored `projection`, `characterHeightTiles`, grid appearance and `zone`, the
+authored `projection`, `characterHeightTiles`, grid appearance, reveal and
+`zone`, the
 placed entities' opaque properties (including `previewCharacter`), and
 re-sparsifies on export.
 

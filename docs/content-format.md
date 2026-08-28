@@ -324,7 +324,7 @@ since.
 ```json
 {
   "id": "demo_world",
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "name": "Demo Valley",
   "zone": "valley",
   "origin": [0, 0],
@@ -335,6 +335,7 @@ since.
   "projection": "isometric",
   "characterHeightTiles": 2,
   "grid": { "lineWidth": 3, "color": "#336699", "alpha": 0.6 },
+  "reveal": { "radius": 1, "opacity": 0.25, "neighbourOpacity": 0.55 },
   "tileSetId": "mvp_terrain",
   "defaultTile": "grass",
   "tiles": [
@@ -363,7 +364,7 @@ since.
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `id` | string | yes | Stable id. Loading a world replaces any world with the same id. |
-| `schemaVersion` | integer | yes | `4`. |
+| `schemaVersion` | integer | yes | `5`. |
 | `name` | string | no | Display name. |
 | `zone` | string | no | Id of the `ZoneDefinition` this map belongs to. Absent means the project's default zone — never *no* zone; see below. |
 | `origin` | `[col, row]` | no | North-west corner of the extent; the coordinate stored at buffer index `0`. Defaults to `[0, 0]`. May be negative. |
@@ -373,6 +374,7 @@ since.
 | `projection` | `"topDown"` \| `"isometric"` | no | Defaults to `"topDown"`. How the renderer draws this world; see below. |
 | `characterHeightTiles` | number | no | Defaults to `2`; must be `0.25..=8`. Projected tile-face heights occupied by a 128-pixel character canvas. |
 | `grid` | object | no | Grid appearance shared by editor and Play. Defaults to `{ "lineWidth": 1, "color": "#000000", "alpha": 0.25 }`. |
+| `reveal` | object | no | How far relief may be seen through around the pointer. Defaults to `{ "radius": 1, "opacity": 0.25, "neighbourOpacity": 0.55 }`. |
 | `tileSetId` | string | yes | The `TileSetDefinition` this world paints with. |
 | `defaultTile` | string | yes | Tile used for every cell not listed in `tiles`. |
 | `tiles` | PlacedTile[] | no | Only the cells that differ from `defaultTile`. |
@@ -447,7 +449,7 @@ never an error.
 **Connectivity is never checked.** Three rocks off the western shore are a
 legitimate map (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
 
-### Presentation: projection, character scale and grid
+### Presentation: projection, character scale, grid and reveal
 
 `projection` is **presentation carried by content**. The simulation never reads
 it and no rule may depend on it; it decides how the renderer draws the map, and
@@ -469,6 +471,31 @@ six-digit RGB colour (`#rrggbb`) and `alpha` is its opacity from `0` to `1`.
 Visibility itself remains a local toggle, so a player can hide the grid without
 rewriting the map. An absent `grid` block receives the former renderer defaults
 and is omitted again by canonical serialisation.
+
+`reveal` authors how far relief may be seen through. In an isometric world a
+raised cell is drawn over the rows behind it, and past about four levels it
+covers a hex entirely; whenever the pointer rests on such a **buried** hex, the
+renderer draws whatever stands in front of it see-through
+(`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+
+| Field | Meaning |
+|---|---|
+| `radius` | Hex rings around the pointed-at hex revealed with it. Integer `0..=6`; `0` reveals it alone. |
+| `opacity` | How solidly the relief in front of the pointed-at hex is drawn, `0..=1`. `1` reveals nothing. |
+| `neighbourOpacity` | The same for the relief in front of the ring around it. |
+
+Both opacities are those of **what stands in the way**, not of the hex behind
+it. Neither should normally be `0`: a cell drawn away entirely takes its
+silhouette with it, and where nothing stands behind it that is a hole in the map
+rather than a hex seen through. Everything a see-through cell carries — its grid
+outline, its overlay, its markers, whoever stands on it — is drawn at the same
+opacity.
+
+The dials belong to the map because how tall its relief is decides how much of
+it hides its own hexes; all three are ignored in a top-down world, which hides
+nothing. An absent `reveal` block receives
+`{ "radius": 1, "opacity": 0.25, "neighbourOpacity": 0.55 }` and is omitted
+again by canonical serialisation.
 
 | Value | What it draws |
 |---|---|
@@ -1346,6 +1373,9 @@ exposed across the boundary as `validateLinks()` and `loadProject()`.
 | `world.gridLineWidthOutOfRange` | `grid.lineWidth` is outside `1..=4`. |
 | `world.gridColorInvalid` | `grid.color` is not a six-digit RGB colour. |
 | `world.gridAlphaOutOfRange` | `grid.alpha` is not finite or outside `0..=1`. |
+| `world.revealRadiusOutOfRange` | `reveal.radius` is above `6`. |
+| `world.revealOpacityOutOfRange` | `reveal.opacity` is not finite or outside `0..=1`. |
+| `world.revealNeighbourOpacityOutOfRange` | `reveal.neighbourOpacity` is not finite or outside `0..=1`. |
 | `world.unknownTileSet` | `tileSetId` is not loaded. |
 | `world.unknownDefaultTile` | `defaultTile` is not in the tile set. |
 | `world.missingPlayer` / `world.multiplePlayers` | Not exactly one player entity. |
@@ -1548,13 +1578,16 @@ which vocabulary it was written against. Renaming or removing a field, or
 changing the meaning of an existing one, likewise requires a bump and an
 explicit migration.
 
-`WORLD_SCHEMA_VERSION` is at **4**. Version 4 added `origin` and `shape`: a map
-is a set of hexes rather than a rectangle (ADR-0046). Both default to what every
-earlier file meant — anchored at `[0, 0]`, every cell present — so a version-3
-file loads unchanged. Version 3 added the map-wide `grid` appearance used by
-both editor and Play; absent values keep the former 1 px, black-at-25% renderer
-style. Version 2 added `PlacedTile.art`, the per-cell art choice (ADR-0036). The
-shipped files are written as `4`.
+`WORLD_SCHEMA_VERSION` is at **5**. Version 5 adds `reveal`, which says how far
+relief may be seen through around the pointer (ADR-0047); every field of it is
+defaulted, so a version-4 file loads unchanged. Version 4 added
+`origin` and `shape`: a map is a set of hexes rather than a rectangle
+(ADR-0046). Both default to what every earlier file meant — anchored at
+`[0, 0]`, every cell present — so a version-3 file loads unchanged. Version 3
+added the map-wide `grid` appearance used by both editor and Play; absent values
+keep the former 1 px, black-at-25% renderer style. Version 2 added
+`PlacedTile.art`, the per-cell art choice (ADR-0036). The shipped files are
+written as `5`.
 
 `TILE_SET_SCHEMA_VERSION` is at **2**. Version 2 added `art` — the set's pixel
 grid and each tile's images (ADR-0035). Everything it added is optional with a

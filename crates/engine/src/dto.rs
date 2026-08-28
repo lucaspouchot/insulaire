@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 use insulaire_simulation::{EntityRuntime, Rng, SimEvent};
 use insulaire_world::{
     CellArtChoice, EntityKind, GridStyle, Hex, LinkTrigger, MapBounds, MapLinkDefinition,
-    OffsetCoord, ProjectDefinition, ResolvedTile, TileArt, TileArtGeometry,
+    OffsetCoord, ProjectDefinition, ResolvedTile, RevealStyle, TileArt, TileArtGeometry,
 };
 use serde::{Deserialize, Serialize};
 
@@ -307,6 +307,11 @@ pub struct WorldView {
     pub character_height_tiles: f32,
     /// Authored grid appearance, transported without becoming a game rule.
     pub grid: GridStyle,
+    /// How far relief may be seen through around the pointer.
+    ///
+    /// Transported the same way, and applied by the map renderer alone
+    /// (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+    pub reveal: RevealStyle,
     /// Id of the tile set this world paints with.
     pub tile_set_id: String,
     /// The pixel grid the tile set's images are authored on.

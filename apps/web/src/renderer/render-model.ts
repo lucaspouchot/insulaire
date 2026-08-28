@@ -13,7 +13,9 @@ import {
   DEFAULT_GRID_ALPHA,
   DEFAULT_GRID_COLOR,
   DEFAULT_GRID_LINE_WIDTH,
+  DEFAULT_REVEAL_STYLE,
   ResolvedCharacter,
+  RevealStyle,
   TileArt,
   TileArtGeometry,
   tileArtGeometry,
@@ -194,6 +196,13 @@ export interface RenderModel {
   /** Grid stroke opacity from transparent (`0`) to opaque (`1`). */
   readonly gridLineAlpha: number;
   readonly showCoordinates: boolean;
+  /**
+   * How far relief may be seen through around the pointer.
+   *
+   * Authored per map because how tall a map's relief is decides how much of it
+   * hides its own hexes (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+   */
+  readonly reveal: RevealStyle;
 }
 
 /**
@@ -301,6 +310,7 @@ export function emptyRenderModel(): RenderModel {
     gridLineColor: DEFAULT_GRID_COLOR,
     gridLineAlpha: DEFAULT_GRID_ALPHA,
     showCoordinates: false,
+    reveal: { ...DEFAULT_REVEAL_STYLE },
   };
 }
 

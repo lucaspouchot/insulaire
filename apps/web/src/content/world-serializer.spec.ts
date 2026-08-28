@@ -134,6 +134,23 @@ describe('serializeWorld', () => {
     );
   });
 
+  it('writes the reveal after the grid, where the renderer settings live', () => {
+    const json = serializeWorld({
+      id: 'w',
+      schemaVersion: 5,
+      width: 1,
+      height: 1,
+      grid: { lineWidth: 3, color: '#336699', alpha: 0.6 },
+      reveal: { radius: 2, opacity: 0.1, neighbourOpacity: 0.25 },
+      tileSetId: 't',
+      defaultTile: 'grass',
+    });
+
+    expect(json).toContain(
+      '  "reveal": {"radius":2,"opacity":0.1,"neighbourOpacity":0.25},\n  "tileSetId": "t",\n',
+    );
+  });
+
   it('writes a custom shape one carved hex per line, and omits a full one', () => {
     const base = {
       id: 'w',

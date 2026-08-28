@@ -39,7 +39,19 @@ export const ENGINE_SHORTCUT = {
   moveEast: 'input.moveEast',
   moveSouthWest: 'input.moveSouthWest',
   moveSouthEast: 'input.moveSouthEast',
+  peek: 'input.peek',
 } as const;
+
+/**
+ * Physical default for the key held to reach a hex the relief hides.
+ *
+ * `KeyS` sits in the middle of the six movement positions, so the same hand
+ * that walks can hold it while the other points. A binding rather than a
+ * modifier because a browser gives `Alt` to its own menu bar and takes the
+ * focus out of the game with it
+ * (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+ */
+export const DEFAULT_PEEK_CODE = 'KeyS';
 
 /** Movement actions and their physical defaults, in visual reading order. */
 export const MOVEMENT_SHORTCUTS: readonly {
@@ -257,6 +269,20 @@ export function engineSettingsSections(
             default: shortcut.defaultCode,
             scope: 'session',
           })),
+        },
+        {
+          id: 'view',
+          labelKey: 'ui.settings.view',
+          fields: [
+            {
+              id: ENGINE_SHORTCUT.peek,
+              labelKey: 'ui.settings.peek',
+              helpKey: 'ui.settings.peekHelp',
+              control: 'keyBinding',
+              default: DEFAULT_PEEK_CODE,
+              scope: 'session',
+            },
+          ],
         },
       ],
     },

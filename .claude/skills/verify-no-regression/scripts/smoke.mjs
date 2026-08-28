@@ -359,10 +359,40 @@ async function openPage(browser, viewport) {
       await browser.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...base }, sessionId);
       await browser.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...base, buttons: 0 }, sessionId);
     },
+    hover: async (x, y) => {
+      // No press, no release: the pointer is only passing over, which is what
+      // drives hover and the reveal through relief
+      // (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+      await browser.send(
+        'Input.dispatchMouseEvent',
+        { type: 'mouseMoved', x, y, button: 'none', buttons: 0 },
+        sessionId,
+      );
+    },
     key: async (code, key) => {
       const event = { code, key, text: '', unmodifiedText: '' };
       await browser.send('Input.dispatchKeyEvent', { type: 'keyDown', ...event }, sessionId);
       await browser.send('Input.dispatchKeyEvent', { type: 'keyUp', ...event }, sessionId);
+    },
+    // A key held down and let go on its own, which no `key` press can stand in
+    // for: what it changes is the answer to a question the pointer is already
+    // asking, with no pointer event to carry it
+    // (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+    hold: async (code, down) => {
+      const letter = /^Key([A-Z])$/.exec(code)?.[1] ?? '';
+      await browser.send(
+        'Input.dispatchKeyEvent',
+        {
+          type: down ? 'keyDown' : 'keyUp',
+          code,
+          key: letter.toLowerCase(),
+          text: down ? letter.toLowerCase() : '',
+          unmodifiedText: down ? letter.toLowerCase() : '',
+          windowsVirtualKeyCode: letter.charCodeAt(0) || 0,
+          nativeVirtualKeyCode: letter.charCodeAt(0) || 0,
+        },
+        sessionId,
+      );
     },
     screenshot: async () => {
       const shot = await browser.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, sessionId);
@@ -618,6 +648,35 @@ async function capturePages(browser, baseUrl, scenario, viewport, outDir, log) {
         await page.click(Math.round(box.x + box.width * fx), Math.round(box.y + box.height * fy));
         await settle(page, spec.clickSettleMs ?? 600);
         shots.push(await capture(page, `${spec.name}-click-${index + 1}`, outDir));
+      }
+
+      // Last of the four, so a pointer left resting over the map cannot change
+      // what an earlier capture saw. `hold` names a physical key kept down on
+      // the keyboard, so a step with `move: false` proves the application
+      // listens to the key rather than waiting for the hand
+      // (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+      let held = null;
+      for (const [index, spot] of (spec.hovers ?? []).entries()) {
+        const wanted = spot.hold ?? null;
+        if (wanted !== held) {
+          if (held !== null) await page.hold(held, false);
+          if (wanted !== null) await page.hold(wanted, true);
+          held = wanted;
+        }
+        if (spot.move !== false) {
+          const box = await canvasBox(page);
+          if (!box) throw new Error(`${spec.name}: no canvas to hover over`);
+          const [fx, fy] = spot.at;
+          await page.hover(
+            Math.round(box.x + box.width * fx),
+            Math.round(box.y + box.height * fy),
+          );
+        }
+        await settle(page, spot.settleMs ?? 500);
+        shots.push(await capture(page, spot.name ?? `${spec.name}-hover-${index + 1}`, outDir));
+      }
+      if (held !== null) {
+        await page.hold(held, false);
       }
 
       for (const problem of page.problems) problems.push({ page: spec.name, ...problem });
