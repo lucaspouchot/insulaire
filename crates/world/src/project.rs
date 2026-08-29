@@ -138,6 +138,18 @@ pub struct ProjectDefinition {
     /// (`docs/adr/ADR-0028-character-definitions.md`).
     #[serde(default)]
     pub characters: Vec<ContentRef>,
+    /// Decoration definitions to load, in order.
+    ///
+    /// A project may ship none: a map of bare terrain needs no props
+    /// (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+    #[serde(default)]
+    pub decorations: Vec<ContentRef>,
+    /// Object definitions to load, in order.
+    ///
+    /// A project may ship none: a game with no inventory carries nothing
+    /// (`docs/adr/ADR-0049-an-object-is-carried-not-placed.md`).
+    #[serde(default)]
+    pub objects: Vec<ContentRef>,
     /// The player-facing character-creation workflow, if this game has one.
     ///
     /// The file contains generic choices and bindings. Words such as race or

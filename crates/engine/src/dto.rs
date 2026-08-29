@@ -14,7 +14,8 @@ use std::collections::BTreeMap;
 use insulaire_simulation::{EntityRuntime, Rng, SimEvent};
 use insulaire_world::{
     CellArtChoice, EntityKind, GridStyle, Hex, LinkTrigger, MapBounds, MapLinkDefinition,
-    OffsetCoord, ProjectDefinition, ResolvedTile, RevealStyle, TileArt, TileArtGeometry,
+    OffsetCoord, PixelOffset, ProjectDefinition, ResolvedTile, RevealStyle, TileArt,
+    TileArtGeometry,
 };
 use serde::{Deserialize, Serialize};
 
@@ -237,6 +238,33 @@ pub struct LocationView {
     pub tags: Vec<String>,
 }
 
+/// One decoration standing on a cell, as the UI sees it.
+///
+/// Republished so a host can draw the trees and offer the interactive ones
+/// without re-reading the world file. Only the *placement* travels: what a
+/// tree looks like is `resolveDecoration`, asked once per definition rather
+/// than once per tree
+/// (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlacedDecorationView {
+    /// Stable id, unique within the world; what a scenario addresses.
+    pub id: String,
+    /// Id of the `DecorationDefinition` this is drawn from.
+    pub decoration: String,
+    /// Position in offset coordinates.
+    pub at: OffsetCoord,
+    /// Whole-pixel nudge from where the definition's anchor puts it.
+    ///
+    /// In the tile set's authored pixels, positive right and down. `[0, 0]` is
+    /// exactly what the decoration editor authored.
+    pub offset: PixelOffset,
+    /// Whether a player may interact with this one.
+    pub interactive: bool,
+    /// Gameplay tags.
+    pub tags: Vec<String>,
+}
+
 /// An authored map link, as the UI sees it.
 ///
 /// Republished so the client can draw the door and name where it leads without
@@ -322,6 +350,13 @@ pub struct WorldView {
     pub tile_art: TileArtGeometry,
     /// The palette that the packed terrain buffer indexes into.
     pub palette: Vec<PaletteEntry>,
+    /// Decorations standing on this map's cells, in author order.
+    ///
+    /// Author order is the tie-breaker within a plane: two trees from the same
+    /// definition sort equally, and the later one is drawn over the earlier
+    /// (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub decorations: Vec<PlacedDecorationView>,
     /// Authored points of interest.
     pub locations: Vec<LocationView>,
     /// Authored map links leaving this world.
@@ -461,6 +496,10 @@ pub struct ContentSummary {
     pub templates: Vec<TemplateView>,
     /// Ids of the loaded character definitions.
     pub characters: Vec<String>,
+    /// Ids of the loaded decoration definitions.
+    pub decorations: Vec<String>,
+    /// Ids of the loaded object definitions.
+    pub objects: Vec<String>,
     /// Id of the loaded character-creation declaration, if any.
     pub character_creation: Option<String>,
     /// The project manifest, when one has been loaded.

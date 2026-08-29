@@ -76,15 +76,13 @@ import {
   SettingValue,
   SpriteResolution,
   blankVariant,
-  clampResolution,
-  freeId,
   heldOffset,
   hierarchy,
   isNumeric,
-  move,
   usesOptions,
   wouldLoop,
 } from './character-editor.types';
+import { clampResolution, freeId, move } from './asset-editing';
 import { AssetWorkspace } from './asset-workspace';
 import { CharacterAnimator } from './character-animator';
 import { PixelEditor, steppedZoom } from './pixel-editor';

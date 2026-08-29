@@ -1,0 +1,503 @@
+@let doc = document();
+
+<app-asset-workspace>
+  <div toolbar class="toolbar">
+    <span class="path">{{ path() || ('ui.editor.decoration.noFile' | t) }}</span>
+    <!-- Zoom, fit and the grid live here, above every surface, so they are in
+         one place whichever one is open
+         (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). -->
+    <span class="view" [title]="'ui.editor.decoration.zoom' | t">
+      <button type="button" class="small" (click)="zoomBy(-1)" aria-label="−">−</button>
+      <span class="readout">{{ barZoom() }}×</span>
+      <button type="button" class="small" (click)="zoomBy(1)" aria-label="+">+</button>
+      <button type="button" class="small" (click)="fitZoom()">
+        {{ 'ui.editor.decoration.fitZoom' | t }}
+      </button>
+    </span>
+    <label class="toggle">
+      <input type="checkbox" [checked]="showGrid()" (change)="showGrid.set(!showGrid())" />
+      {{ 'ui.editor.asset.grid' | t }}
+    </label>
+    @if (dirty()) {
+      <span class="dot" [title]="'ui.editor.decoration.unsaved' | t"></span>
+    }
+    <span class="spacer"></span>
+    @if (errorCount(); as count) {
+      <span class="issues-count">
+        {{ 'ui.editor.decoration.issueCount' | t: { count: count } }}
+      </span>
+    }
+    @if (unsavedSprites().length; as pending) {
+      <span class="pending">
+        {{ 'ui.editor.decoration.framesUnsaved' | t: { count: pending } }}
+      </span>
+    }
+    @if (!writable()) {
+      <span class="readonly">{{ 'ui.editor.workspace.readOnly' | t }}</span>
+    }
+    <button type="button" (click)="refresh()">{{ 'ui.editor.map.actions.validate' | t }}</button>
+    <button
+      type="button"
+      class="primary"
+      [disabled]="busy() || !writable() || doc === null"
+      (click)="save()"
+    >
+      {{ 'ui.editor.decoration.save' | t }}
+    </button>
+  </div>
+
+  @if (error(); as failure) {
+    <div banner class="banner error">{{ failure }}</div>
+  }
+  @if (message(); as note) {
+    <div banner class="banner ok">{{ note }}</div>
+  }
+  @if (doc !== null && unlisted()) {
+    <div banner class="banner warn">{{ 'ui.editor.decoration.unlisted' | t }}</div>
+  }
+  @if (unreadable().length) {
+    <div banner class="banner warn">
+      {{ 'ui.editor.decoration.unreadable' | t: { files: unreadable().join(', ') } }}
+    </div>
+  }
+  @if (loading()) {
+    <p banner class="banner">{{ 'ui.common.loading' | t }}</p>
+  }
+
+  <!-- --------------------------------------------------------------- list -->
+  <div list class="library">
+    <section class="panel">
+      <h2>{{ 'ui.editor.decoration.decorations' | t }}</h2>
+      @for (entry of documents(); track entry.id) {
+        <button
+          type="button"
+          class="pick-row"
+          [class.on]="entry.id === doc?.id"
+          (click)="open(entry.id)"
+        >
+          <span class="name">{{ entry.name || entry.id }}</span>
+          <span class="tag">
+            {{ 'ui.editor.decoration.planes.' + (entry.plane ?? 'behind') | t }}
+          </span>
+        </button>
+      }
+      @if (documents().length === 0) {
+        <p class="hint">{{ 'ui.editor.decoration.empty' | t }}</p>
+      }
+      <div class="add">
+        <button type="button" (click)="addDecoration()">
+          {{ 'ui.editor.decoration.addDecoration' | t }}
+        </button>
+        @if (doc !== null) {
+          <button type="button" class="remove" (click)="removeDecoration()">
+            {{ 'ui.editor.decoration.removeDecoration' | t }}
+          </button>
+        }
+      </div>
+    </section>
+  </div>
+
+  <!-- -------------------------------------------------------------- scene -->
+  <!-- The decoration on the hexagon it will stand on, with a figure standing
+       there too: the plane switch is judged by looking, not by reasoning
+       (docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md). -->
+  <div scene class="decoration-scene">
+    <div class="decoration-scene-bar">
+      <!-- One control with two positions rather than two buttons: there are
+           exactly two surfaces and you are always on one of them. -->
+      <button
+        type="button"
+        class="switch"
+        role="switch"
+        [attr.aria-checked]="scene() === 'flat'"
+        [attr.aria-label]="'ui.editor.decoration.scene' | t"
+        (click)="scene.set(scene() === 'flat' ? 'hex' : 'flat')"
+      >
+        <span class="side" [class.on]="scene() === 'hex'">
+          {{ 'ui.editor.decoration.sceneHex' | t }}
+        </span>
+        <span class="side" [class.on]="scene() === 'flat'">
+          {{ 'ui.editor.decoration.sceneFlat' | t }}
+        </span>
+      </button>
+
+      @if (scene() === 'hex') {
+        <select
+          [attr.aria-label]="'ui.editor.decoration.projection' | t"
+          (change)="projection.set($any($event.target).value)"
+        >
+          <option value="isometric" [selected]="projection() === 'isometric'">
+            {{ 'ui.editor.decoration.projections.isometric' | t }}
+          </option>
+          <option value="topDown" [selected]="projection() === 'topDown'">
+            {{ 'ui.editor.decoration.projections.topDown' | t }}
+          </option>
+        </select>
+        <!-- A real character, not a stand-in shape: the plane decision is
+             "does a character pass in front of this", so the thing standing on
+             the hex is the one the game will draw
+             (docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md). -->
+        <select
+          class="figure"
+          [attr.aria-label]="'ui.editor.decoration.figure' | t"
+          (change)="figureId.set($any($event.target).value)"
+        >
+          <option value="" [selected]="figureId().length === 0">
+            {{ 'ui.editor.decoration.noFigure' | t }}
+          </option>
+          <option [value]="genericFigure" [selected]="figureId() === genericFigure">
+            {{ 'ui.editor.decoration.silhouette' | t }}
+          </option>
+          @for (choice of figureChoices(); track choice.id) {
+            <option [value]="choice.id" [selected]="choice.id === figureId()">
+              {{ choice.name }} · {{ 'ui.editor.character.categories.' + choice.category | t }}
+            </option>
+          }
+        </select>
+      }
+
+      <span class="spacer"></span>
+      @if (resolved(); as drawn) {
+        <span class="note">
+          {{
+            'ui.editor.decoration.drawnFrame'
+              | t
+                : {
+                    animation: drawn.animation || '—',
+                    frame: drawn.frame,
+                    x: drawn.anchor[0],
+                    y: drawn.anchor[1],
+                  }
+          }}
+        </span>
+      }
+    </div>
+
+    @if (scene() === 'hex') {
+      <div #frame class="stage-frame" [title]="'ui.editor.decoration.dragHint' | t">
+        <canvas
+          #stage
+          class="stage-canvas"
+          (pointerdown)="onPointerDown($event)"
+          (pointermove)="onPointerMove($event)"
+          (pointerup)="onPointerUp($event)"
+          (pointercancel)="onPointerUp($event)"
+          (wheel)="onWheel($event)"
+        ></canvas>
+      </div>
+      <p class="hint">{{ 'ui.editor.decoration.dragHint' | t }}</p>
+    } @else {
+      <!-- The very same buffer the hex stage draws: one document, two views,
+           nothing to synchronise. -->
+      <app-pixel-editor
+        [sprite]="sprite()"
+        [label]="openAsset()"
+        [(zoom)]="flatZoom"
+        [(showGrid)]="showGrid"
+        (edited)="onPainted()"
+      />
+      @if (openAsset().length === 0) {
+        <p class="hint">{{ 'ui.editor.decoration.noFrameImage' | t }}</p>
+      }
+    }
+  </div>
+
+  <!-- ---------------------------------------------------------- inspector -->
+  <div inspector class="form">
+    @if (doc !== null) {
+      <section class="panel">
+        <h2>{{ 'ui.editor.decoration.definition' | t }}</h2>
+        <label class="row">
+          <span>{{ 'ui.editor.decoration.id' | t }}</span>
+          <input type="text" [value]="doc.id" (change)="setId($any($event.target).value)" />
+        </label>
+        <p class="hint">{{ 'ui.editor.decoration.idHint' | t }}</p>
+        <label class="row">
+          <span>{{ 'ui.editor.decoration.name' | t }}</span>
+          <input
+            type="text"
+            [value]="doc.name ?? ''"
+            (change)="setName($any($event.target).value)"
+          />
+        </label>
+        <label class="row">
+          <span>{{ 'ui.editor.decoration.category' | t }}</span>
+          <select (change)="setCategory($any($event.target).value)">
+            @for (category of categories; track category) {
+              <option [value]="category" [selected]="category === (doc.category ?? 'other')">
+                {{ 'ui.editor.decoration.categories.' + category | t }}
+              </option>
+            }
+          </select>
+        </label>
+        <label class="row">
+          <span>{{ 'ui.editor.decoration.tags' | t }}</span>
+          <input
+            type="text"
+            [value]="(doc.tags ?? []).join(', ')"
+            (change)="setTags($any($event.target).value)"
+          />
+        </label>
+        <p class="hint">{{ 'ui.editor.decoration.interactiveMoved' | t }}</p>
+      </section>
+
+      <!-- The three numbers this screen exists for. -->
+      <section class="panel">
+        <h2>{{ 'ui.editor.decoration.placement' | t }}</h2>
+        <label class="row">
+          <span>{{ 'ui.editor.decoration.resolution' | t }}</span>
+          <span class="pair">
+            <input
+              type="number"
+              min="1"
+              max="256"
+              [value]="resolution().width"
+              [attr.aria-label]="'ui.editor.decoration.canvasWidth' | t"
+              (change)="setResolution('width', $any($event.target).value)"
+            />
+            <span class="times">×</span>
+            <input
+              type="number"
+              min="1"
+              max="256"
+              [value]="resolution().height"
+              [attr.aria-label]="'ui.editor.decoration.canvasHeight' | t"
+              (change)="setResolution('height', $any($event.target).value)"
+            />
+            <span class="unit">px</span>
+          </span>
+        </label>
+        <label class="row">
+          <span>{{ 'ui.editor.decoration.anchor' | t }}</span>
+          <span class="pair">
+            <input
+              type="number"
+              [value]="anchor()[0]"
+              [attr.aria-label]="'ui.editor.decoration.anchorX' | t"
+              (change)="setAnchor(0, $any($event.target).value)"
+            />
+            <input
+              type="number"
+              [value]="anchor()[1]"
+              [attr.aria-label]="'ui.editor.decoration.anchorY' | t"
+              (change)="setAnchor(1, $any($event.target).value)"
+            />
+            <button type="button" class="small" (click)="anchorToFoot()">
+              {{ 'ui.editor.decoration.anchorToFoot' | t }}
+            </button>
+          </span>
+        </label>
+        <p class="hint">{{ 'ui.editor.decoration.anchorHint' | t }}</p>
+
+        <label class="row">
+          <span>{{ 'ui.editor.decoration.plane' | t }}</span>
+          <select class="plane" (change)="setPlane($any($event.target).value)">
+            <option value="behind" [selected]="(doc.plane ?? 'behind') === 'behind'">
+              {{ 'ui.editor.decoration.planes.behind' | t }}
+            </option>
+            <option value="front" [selected]="doc.plane === 'front'">
+              {{ 'ui.editor.decoration.planes.front' | t }}
+            </option>
+          </select>
+        </label>
+        <p class="hint">{{ 'ui.editor.decoration.planeHint' | t }}</p>
+
+        <label class="row">
+          <span>{{ 'ui.editor.decoration.order' | t }}</span>
+          <input
+            type="number"
+            [min]="-maxOrder"
+            [max]="maxOrder"
+            [value]="doc.order ?? 0"
+            (change)="setOrder($any($event.target).value)"
+          />
+        </label>
+        <p class="hint">{{ 'ui.editor.decoration.orderHint' | t }}</p>
+      </section>
+
+      <!-- An animation and a state are the same thing: a named list of frames
+           (docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md). -->
+      <section class="panel">
+        <h2>{{ 'ui.editor.decoration.animations' | t }}</h2>
+        <div class="chips">
+          @for (entry of animations(); track entry.id) {
+            <button
+              type="button"
+              class="chip"
+              [class.on]="entry.id === animation()?.id"
+              (click)="openAnimation(entry.id)"
+            >
+              {{ entry.name || entry.id }}
+            </button>
+          }
+          <button type="button" class="chip add" (click)="addAnimation()">
+            {{ 'ui.editor.decoration.addAnimation' | t }}
+          </button>
+        </div>
+        @if (animations().length === 0) {
+          <p class="hint">{{ 'ui.editor.decoration.noAnimations' | t }}</p>
+        }
+
+        @if (animation(); as open) {
+          <label class="row">
+            <span>{{ 'ui.editor.decoration.animationId' | t }}</span>
+            <input
+              type="text"
+              [value]="open.id"
+              (change)="setAnimationId($any($event.target).value)"
+            />
+          </label>
+          <label class="row">
+            <span>{{ 'ui.editor.decoration.animationName' | t }}</span>
+            <input
+              type="text"
+              [value]="open.name ?? ''"
+              (change)="setAnimationName($any($event.target).value)"
+            />
+          </label>
+          <label class="row">
+            <span>{{ 'ui.editor.decoration.frameDuration' | t }}</span>
+            <input
+              type="number"
+              min="0"
+              [value]="open.frameDurationMs ?? 120"
+              (change)="setFrameDuration($any($event.target).value)"
+            />
+          </label>
+          <label class="check">
+            <input
+              type="checkbox"
+              [checked]="open.looping === true"
+              (change)="setLooping($any($event.target).checked)"
+            />
+            {{ 'ui.editor.decoration.looping' | t }}
+          </label>
+
+          <div class="transport">
+            <button type="button" class="small" (click)="togglePlay()">
+              {{ (playing() ? 'ui.editor.decoration.pause' : 'ui.editor.decoration.play') | t }}
+            </button>
+            <span class="note">
+              {{
+                'ui.editor.decoration.frameOf'
+                  | t: { frame: frameIndex() + 1, total: frames().length }
+              }}
+            </span>
+            <span class="spacer"></span>
+            <button type="button" class="small remove" (click)="removeAnimation(open.id)">
+              {{ 'ui.editor.decoration.removeAnimation' | t }}
+            </button>
+          </div>
+
+          <!-- One frame per row: the image it names, and where it sits. -->
+          @for (frame of frames(); track $index) {
+            <div class="node" [class.on]="$index === frameIndex()">
+              <div class="line">
+                <button type="button" class="small" (click)="selectFrame($index)">
+                  {{ 'ui.editor.decoration.frameNumber' | t: { frame: $index + 1 } }}
+                </button>
+                <input
+                  type="text"
+                  list="decoration-images"
+                  [value]="frame"
+                  (change)="setFrame($index, $any($event.target).value)"
+                />
+                <button
+                  type="button"
+                  class="small"
+                  [disabled]="$index === 0"
+                  (click)="moveFrame($index, -1)"
+                  aria-label="↑"
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  class="small"
+                  [disabled]="$index === frames().length - 1"
+                  (click)="moveFrame($index, 1)"
+                  aria-label="↓"
+                >
+                  ↓
+                </button>
+                <button type="button" class="small remove" (click)="removeFrame($index)">×</button>
+              </div>
+              <div class="line">
+                @if (frame.length === 0) {
+                  <button
+                    type="button"
+                    class="small"
+                    [disabled]="!writable()"
+                    (click)="createFrame($index)"
+                  >
+                    {{
+                      'ui.editor.decoration.createImage'
+                        | t: { width: resolution().width, height: resolution().height }
+                    }}
+                  </button>
+                } @else if (frameMissing(frame)) {
+                  <span class="resolved missing">
+                    {{ 'ui.editor.decoration.frameMissing' | t: { file: frame } }}
+                  </span>
+                }
+                <input
+                  type="file"
+                  accept="image/png,image/gif,image/webp"
+                  [disabled]="!writable()"
+                  [attr.aria-label]="'ui.editor.decoration.upload' | t"
+                  (change)="uploadFrame($event, $index)"
+                />
+              </div>
+            </div>
+          }
+          <datalist id="decoration-images">
+            @for (file of assets(); track file.path) {
+              <option [value]="file.path"></option>
+            }
+          </datalist>
+
+          <div class="line">
+            <button
+              type="button"
+              class="small"
+              [disabled]="frames().length >= maxFrames"
+              (click)="addFrame()"
+            >
+              {{ 'ui.editor.decoration.addFrame' | t }}
+            </button>
+          </div>
+        }
+
+        @if (animations().length > 1) {
+          <label class="row">
+            <span>{{ 'ui.editor.decoration.defaultAnimation' | t }}</span>
+            <select (change)="setDefaultAnimation($any($event.target).value)">
+              <option value="" [selected]="(doc.defaultAnimation ?? '').length === 0">
+                {{ 'ui.editor.decoration.firstAnimation' | t }}
+              </option>
+              @for (entry of animations(); track entry.id) {
+                <option [value]="entry.id" [selected]="entry.id === doc.defaultAnimation">
+                  {{ entry.name || entry.id }}
+                </option>
+              }
+            </select>
+          </label>
+        }
+      </section>
+
+      <section class="panel">
+        <h2>{{ 'ui.editor.decoration.issues' | t }}</h2>
+        @if ((report()?.issues ?? []).length === 0) {
+          <p class="hint ok">{{ 'ui.editor.decoration.noIssues' | t }}</p>
+        }
+        @for (issue of report()?.issues ?? []; track $index) {
+          <p class="issue" [class.warn]="issue.severity === 'warning'">
+            <span class="code">{{ issue.code }}</span>
+            <span class="where">{{ issue.path }}</span>
+            {{ issue.message }}
+          </p>
+        }
+      </section>
+    }
+  </div>
+</app-asset-workspace>

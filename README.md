@@ -745,6 +745,11 @@ Read in order:
 44. **ADR-0044 — scale and move map entities in presentation space**
 45. **ADR-0045 — shortcuts use physical keys**
 46. **ADR-0046 — a map is a set of hexes, not a rectangle**
+47. **ADR-0047 — relief never hides a hex**
+48. **ADR-0048 — a decoration is anchored to a hex, in two planes**
+49. **ADR-0049 — an object is carried, not placed**
+50. **ADR-0050 — an object icon is a flipbook**
+51. **ADR-0051 — a decoration is placed, and the placement decides**
 
 `CLAUDE.md` contains project-level instructions for Claude Code and other coding
 agents.

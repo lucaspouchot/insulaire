@@ -54,6 +54,7 @@ export function serializeWorld(world: WorldDefinition): string {
   lines.push(...shapeBlock(world.shape));
   lines.push(...recordArray('tiles', world.tiles ?? []));
   lines.push(...recordArray('entities', world.entities ?? []));
+  lines.push(...recordArray('decorations', world.decorations ?? []));
   lines.push(...recordArray('locations', world.locations ?? []));
   lines.push(...recordArray('links', world.links ?? []));
   lines.push(...metadataBlock(world.metadata ?? {}));
@@ -115,6 +116,12 @@ export function serializeProject(project: ProjectDefinition): string {
   // seen one should not grow an empty array on its first unrelated save.
   if (project.characters !== undefined && project.characters.length > 0) {
     lines.push(...recordArray('characters', project.characters));
+  }
+  if (project.decorations !== undefined && project.decorations.length > 0) {
+    lines.push(...recordArray('decorations', project.decorations));
+  }
+  if (project.objects !== undefined && project.objects.length > 0) {
+    lines.push(...recordArray('objects', project.objects));
   }
   if (project.characterCreation !== undefined) {
     lines.push(`  "characterCreation": ${inlineObject(project.characterCreation)},`);

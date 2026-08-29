@@ -59,6 +59,8 @@ function categoryTitle(category: AssetCategory): () => string {
 const WORKSPACES: Record<string, NonNullable<Route['loadComponent']>> = {
   tiles: () => import('./asset/tile-workspace').then((m) => m.TileWorkspace),
   characters: () => import('./asset/character-workspace').then((m) => m.CharacterWorkspace),
+  decorations: () => import('./asset/decoration-workspace').then((m) => m.DecorationWorkspace),
+  objects: () => import('./asset/object-workspace').then((m) => m.ObjectWorkspace),
 };
 
 /** The route for one asset category: its workspace, or the placeholder. */

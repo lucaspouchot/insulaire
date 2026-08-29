@@ -75,6 +75,51 @@ pub const MAX_ANIMATION_FRAMES: u32 = 240;
 /// breathing rather than as a flicker.
 pub const DEFAULT_FRAME_DURATION_MS: u32 = 120;
 
+/// Most frames one **flipbook** may declare.
+///
+/// A flipbook is the other way this crate animates: one whole image per frame,
+/// played at a fixed rate, which is how a decoration flickers and how an object
+/// icon glints ([`crate::DecorationAnimation`], [`crate::ObjectDefinition`]).
+/// It is a cap rather than a preference — every frame is a *separate PNG* here,
+/// not a row of offsets, so sixty-four is already a folder of sixty-four files
+/// and a file asking for a thousand is a mistake, not a flame.
+pub const MAX_FLIPBOOK_FRAMES: usize = 64;
+
+/// How long one full play of a flipbook takes, in milliseconds.
+#[must_use]
+pub fn flipbook_duration_ms(frames: usize, frame_duration_ms: u32) -> u32 {
+    u32::try_from(frames)
+        .unwrap_or(u32::MAX)
+        .saturating_mul(frame_duration_ms)
+}
+
+/// Which frame of a flipbook this time falls in, `0`-based.
+///
+/// A looping flipbook wraps; one that does not holds its **last** frame, which
+/// is what makes a one-shot state stay in the state it reached — the same rule
+/// [`Animation::position_at`] follows for a skeleton.
+///
+/// Written once, here, so a decoration and an object cannot disagree about
+/// which drawing is on screen at 250ms.
+#[must_use]
+pub fn flipbook_index_at(
+    frames: usize,
+    frame_duration_ms: u32,
+    looping: bool,
+    time_ms: u32,
+) -> usize {
+    if frames == 0 || frame_duration_ms == 0 {
+        return 0;
+    }
+    let duration = flipbook_duration_ms(frames, frame_duration_ms);
+    let elapsed = if looping {
+        time_ms % duration.max(1)
+    } else {
+        time_ms.min(duration.saturating_sub(1))
+    };
+    ((elapsed / frame_duration_ms) as usize).min(frames - 1)
+}
+
 /// The gameplay situation an animation illustrates.
 ///
 /// Ids stay author-owned: a cycle called `shuffle` can be the idle and one

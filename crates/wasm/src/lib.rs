@@ -423,6 +423,153 @@ impl InsulaireEngine {
         self.inner.character_ids().map_err(to_js)
     }
 
+    /// Parses, validates and registers a decoration definition. Returns a
+    /// `LoadOutcome`.
+    ///
+    /// # Errors
+    ///
+    /// `parse` or `invalidContent`.
+    #[wasm_bindgen(js_name = loadDecoration)]
+    pub fn load_decoration(&mut self, json: &str) -> Result<String, JsValue> {
+        self.inner.load_decoration(json).map_err(to_js)
+    }
+
+    /// Validates a decoration definition *without* registering it. Returns a
+    /// `ValidationReport`.
+    ///
+    /// `cell_json` is the `TileArtGeometry` it will stand among; `""` skips
+    /// `decoration.overflowsCell` alone.
+    ///
+    /// # Errors
+    ///
+    /// `parse` when either JSON is malformed.
+    #[wasm_bindgen(js_name = validateDecoration)]
+    pub fn validate_decoration(&self, json: &str, cell_json: &str) -> Result<String, JsValue> {
+        self.inner
+            .validate_decoration(json, cell_json)
+            .map_err(to_js)
+    }
+
+    /// Returns a registered `DecorationDefinition`.
+    ///
+    /// # Errors
+    ///
+    /// `unknownContent` when no definition has that id.
+    #[wasm_bindgen(js_name = decoration)]
+    pub fn decoration(&self, id: &str) -> Result<String, JsValue> {
+        self.inner.decoration(id).map_err(to_js)
+    }
+
+    /// Returns the ids of every registered decoration definition.
+    ///
+    /// # Errors
+    ///
+    /// A JSON error payload; not reachable in practice.
+    #[wasm_bindgen(js_name = decorationIds)]
+    pub fn decoration_ids(&self) -> Result<String, JsValue> {
+        self.inner.decoration_ids().map_err(to_js)
+    }
+
+    /// Resolves a registered decoration at a moment of one of its animations.
+    /// Returns a `ResolvedDecoration`.
+    ///
+    /// # Errors
+    ///
+    /// `unknownContent` when no definition has that id.
+    #[wasm_bindgen(js_name = resolveDecoration)]
+    pub fn resolve_decoration(
+        &self,
+        id: &str,
+        animation: Option<String>,
+        time_ms: u32,
+    ) -> Result<String, JsValue> {
+        self.inner
+            .resolve_decoration(id, animation.as_deref(), time_ms)
+            .map_err(to_js)
+    }
+
+    /// Resolves a decoration definition passed in by the editor.
+    ///
+    /// # Errors
+    ///
+    /// `parse` when the JSON is malformed.
+    #[wasm_bindgen(js_name = previewDecoration)]
+    pub fn preview_decoration(
+        &self,
+        decoration_json: &str,
+        animation: Option<String>,
+        time_ms: u32,
+    ) -> Result<String, JsValue> {
+        self.inner
+            .preview_decoration(decoration_json, animation.as_deref(), time_ms)
+            .map_err(to_js)
+    }
+
+    /// Parses, validates and registers an object definition. Returns a
+    /// `LoadOutcome`.
+    ///
+    /// # Errors
+    ///
+    /// `parse` or `invalidContent`.
+    #[wasm_bindgen(js_name = loadObject)]
+    pub fn load_object(&mut self, json: &str) -> Result<String, JsValue> {
+        self.inner.load_object(json).map_err(to_js)
+    }
+
+    /// Validates an object definition *without* registering it, keys included.
+    /// Returns a `ValidationReport`.
+    ///
+    /// # Errors
+    ///
+    /// `parse` when the JSON is malformed.
+    #[wasm_bindgen(js_name = validateObject)]
+    pub fn validate_object(&self, json: &str) -> Result<String, JsValue> {
+        self.inner.validate_object(json).map_err(to_js)
+    }
+
+    /// Returns a registered `ObjectDefinition`.
+    ///
+    /// # Errors
+    ///
+    /// `unknownContent` when no definition has that id.
+    #[wasm_bindgen(js_name = object)]
+    pub fn object(&self, id: &str) -> Result<String, JsValue> {
+        self.inner.object(id).map_err(to_js)
+    }
+
+    /// Returns the ids of every registered object definition.
+    ///
+    /// # Errors
+    ///
+    /// A JSON error payload; not reachable in practice.
+    #[wasm_bindgen(js_name = objectIds)]
+    pub fn object_ids(&self) -> Result<String, JsValue> {
+        self.inner.object_ids().map_err(to_js)
+    }
+
+    /// Resolves a registered object's icon at a moment of its flipbook.
+    /// Returns a `ResolvedObject`.
+    ///
+    /// # Errors
+    ///
+    /// `unknownContent` when no definition has that id.
+    #[wasm_bindgen(js_name = resolveObject)]
+    pub fn resolve_object(&self, id: &str, time_ms: u32) -> Result<String, JsValue> {
+        self.inner.resolve_object(id, time_ms).map_err(to_js)
+    }
+
+    /// Resolves an object definition passed in by the editor.
+    ///
+    /// # Errors
+    ///
+    /// `parse` when the JSON is malformed.
+    #[wasm_bindgen(js_name = previewObject)]
+    pub fn preview_object(&self, object_json: &str, time_ms: u32) -> Result<String, JsValue> {
+        self.inner
+            .preview_object(object_json, time_ms)
+            .map_err(to_js)
+    }
+
     /// Parses, validates and registers a generic character-creation
     /// declaration. Character definitions must be loaded first.
     #[wasm_bindgen(js_name = loadCharacterCreation)]

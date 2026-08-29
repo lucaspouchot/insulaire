@@ -52,6 +52,8 @@ import {
   LocationDefinition,
   CellPresence,
   MapLink,
+  PixelOffset,
+  PlacedDecoration,
   MapShape,
   PlacedTile,
   PlacedTileArt,
@@ -162,6 +164,30 @@ export interface DocumentLink {
 }
 
 /**
+ * One decoration the author put on a cell.
+ *
+ * Several may share a hex — that is the point of a decoration — so unlike an
+ * entity or a door this is never "the one at this cell"
+ * (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+ */
+export interface DocumentDecoration {
+  id: string;
+  /** Id of the {@link DecorationDefinition} it is drawn from. */
+  decoration: string;
+  at: Offset;
+  /**
+   * Whole-pixel nudge from where the definition's anchor puts it.
+   *
+   * `[0, 0]` is exactly what the decoration editor authored; a few pixels off
+   * is what keeps a row of the same fence post from reading as a stamp.
+   */
+  offset: PixelOffset;
+  /** Whether a player may interact with **this** one. */
+  interactive: boolean;
+  tags: string[];
+}
+
+/**
  * Something authored that stands on a hex.
  *
  * Carving a cell out from under an entity, a point of interest or a door would
@@ -170,7 +196,7 @@ export interface DocumentLink {
  * (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
  */
 export interface CellOccupant {
-  readonly kind: 'entity' | 'location' | 'link';
+  readonly kind: 'entity' | 'location' | 'link' | 'decoration';
   readonly id: string;
 }
 
@@ -222,6 +248,8 @@ export class WorldDocument {
     private entities: DocumentEntity[],
     private locations: DocumentLocation[],
     private links: DocumentLink[],
+    /** The trees, houses and chests standing on this map, in author order. */
+    private decorations: DocumentDecoration[],
     public metadata: WorldMetadata,
     /** How the runtime and the editor render this world. */
     public projection: ProjectionMode,
@@ -279,6 +307,7 @@ export class WorldDocument {
       new Int8Array(size),
       new Uint8Array(size).fill(init.presence === 'absent' ? 0 : 1),
       new Map(),
+      [],
       [],
       [],
       [],
@@ -364,6 +393,14 @@ export class WorldDocument {
       name: location.name ?? location.id,
       tags: [...(location.tags ?? [])],
     }));
+    document.decorations = (definition.decorations ?? []).map((placed) => ({
+      id: placed.id,
+      decoration: placed.decoration,
+      at: { col: placed.at[0], row: placed.at[1] },
+      offset: [...(placed.offset ?? [0, 0])] as PixelOffset,
+      interactive: placed.interactive === true,
+      tags: [...(placed.tags ?? [])],
+    }));
     document.links = (definition.links ?? []).map((link) => ({
       id: link.id,
       at: { col: link.at[0], row: link.at[1] },
@@ -421,6 +458,7 @@ export class WorldDocument {
       ...this.entities.filter((entity) => here(entity.at)).map(entityOccupant),
       ...this.locations.filter((location) => here(location.at)).map(locationOccupant),
       ...this.links.filter((link) => here(link.at)).map(linkOccupant),
+      ...this.decorations.filter((decoration) => here(decoration.at)).map(decorationOccupant),
     ];
   }
 
@@ -458,6 +496,7 @@ export class WorldDocument {
       ...this.entities.filter((entity) => lost(entity.at)).map(entityOccupant),
       ...this.locations.filter((location) => lost(location.at)).map(locationOccupant),
       ...this.links.filter((link) => lost(link.at)).map(linkOccupant),
+      ...this.decorations.filter((decoration) => lost(decoration.at)).map(decorationOccupant),
     ];
   }
 
@@ -778,6 +817,111 @@ export class WorldDocument {
     return this.locations.length !== before;
   }
 
+  // ------------------------------------------------------------ decorations
+
+  /** Every decoration standing on this map, in author order. */
+  get placedDecorations(): readonly DocumentDecoration[] {
+    return this.decorations;
+  }
+
+  /** The decorations standing on a cell, in author order; several may. */
+  decorationsAt(cell: Offset): DocumentDecoration[] {
+    return this.decorations.filter(
+      (decoration) => decoration.at.col === cell.col && decoration.at.row === cell.row,
+    );
+  }
+
+  /**
+   * Puts a decoration drawn from `definitionId` on `cell`.
+   *
+   * Unlike an entity or a door, this **appends**: a cell may hold a tree, a
+   * bush and a signpost, and author order is what settles which is drawn over
+   * which (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+   *
+   * The new placement is not interactive. Whether a player may open *this*
+   * chest is a decision the author makes afterwards, in the inspector
+   * (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+   *
+   * @returns the placement, or `null` when the cell is out of bounds.
+   */
+  placeDecoration(cell: Offset, definitionId: string): DocumentDecoration | null {
+    if (indexIn(cell, this.bounds) < 0 || definitionId.length === 0) {
+      return null;
+    }
+    const placed: DocumentDecoration = {
+      id: this.nextId(this.decorations, definitionId),
+      decoration: definitionId,
+      at: { col: cell.col, row: cell.row },
+      offset: [0, 0],
+      interactive: false,
+      tags: [],
+    };
+    this.decorations.push(placed);
+    return placed;
+  }
+
+  /**
+   * Renames one placement.
+   *
+   * The id is what a scenario addresses, so an author has to be able to write
+   * it — `chest_with_the_letter` rather than `chest_3`
+   * (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+   *
+   * Refused rather than allowed-and-reported when the name is empty or already
+   * taken: a duplicate id is not a state worth passing through, because while
+   * it lasts two placements answer to one name.
+   *
+   * @returns `false` when nothing was renamed.
+   */
+  renameDecoration(id: string, nextId: string): boolean {
+    const next = nextId.trim();
+    const placed = this.decorations.find((candidate) => candidate.id === id);
+    if (placed === undefined || next.length === 0 || next === id) {
+      return false;
+    }
+    if (this.decorations.some((candidate) => candidate.id === next)) {
+      return false;
+    }
+    placed.id = next;
+    return true;
+  }
+
+  /** Applies an edit to one placement, by its id. */
+  updateDecoration(
+    id: string,
+    patch: Partial<Omit<DocumentDecoration, 'id' | 'at'>>,
+  ): boolean {
+    const placed = this.decorations.find((candidate) => candidate.id === id);
+    if (placed === undefined) {
+      return false;
+    }
+    Object.assign(placed, patch);
+    return true;
+  }
+
+  /** Removes one placement by its id. */
+  removeDecoration(id: string): boolean {
+    const before = this.decorations.length;
+    this.decorations = this.decorations.filter((decoration) => decoration.id !== id);
+    return this.decorations.length !== before;
+  }
+
+  /**
+   * Removes the decoration drawn **last** on `cell`.
+   *
+   * The one on top, which is the one an author clicking the eraser sees.
+   */
+  removeTopDecorationAt(cell: Offset): boolean {
+    for (let index = this.decorations.length - 1; index >= 0; index -= 1) {
+      const placed = this.decorations[index] as DocumentDecoration;
+      if (placed.at.col === cell.col && placed.at.row === cell.row) {
+        this.decorations.splice(index, 1);
+        return true;
+      }
+    }
+    return false;
+  }
+
   // ------------------------------------------------------------------ links
 
   /** Every door leaving this map. */
@@ -915,6 +1059,17 @@ export class WorldDocument {
       ...(location.tags.length > 0 ? { tags: [...location.tags] } : {}),
     }));
 
+    const decorations: PlacedDecoration[] = this.decorations.map((placed) => ({
+      id: placed.id,
+      decoration: placed.decoration,
+      at: [placed.at.col, placed.at.row],
+      ...(placed.offset[0] === 0 && placed.offset[1] === 0
+        ? {}
+        : { offset: [...placed.offset] as PixelOffset }),
+      ...(placed.interactive ? { interactive: true } : {}),
+      ...(placed.tags.length > 0 ? { tags: [...placed.tags] } : {}),
+    }));
+
     const links: MapLink[] = this.links.map((link) => ({
       id: link.id,
       at: [link.at.col, link.at.row],
@@ -952,6 +1107,7 @@ export class WorldDocument {
       defaultTile: this.defaultTile.id,
       tiles,
       entities,
+      decorations,
       locations,
       links,
       metadata: { ...this.metadata, updatedAt: now().toISOString() },
@@ -1012,6 +1168,11 @@ const locationOccupant = (location: DocumentLocation): CellOccupant => ({
   id: location.id,
 });
 const linkOccupant = (link: DocumentLink): CellOccupant => ({ kind: 'link', id: link.id });
+
+const decorationOccupant = (decoration: DocumentDecoration): CellOccupant => ({
+  kind: 'decoration',
+  id: decoration.id,
+});
 
 function sameGridStyle(left: GridStyle, right: Readonly<GridStyle>): boolean {
   return (

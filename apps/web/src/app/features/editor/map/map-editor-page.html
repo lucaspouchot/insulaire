@@ -79,6 +79,13 @@
             <button type="button" [class.on]="tool() === 'monster'" (click)="selectTool('monster')">
               {{ 'ui.editor.map.tool.monster' | t }}
             </button>
+            <button
+              type="button"
+              [class.on]="tool() === 'decoration'"
+              (click)="selectTool('decoration')"
+            >
+              {{ 'ui.editor.map.tool.decoration' | t }}
+            </button>
             <button type="button" [class.on]="tool() === 'link'" (click)="selectTool('link')">
               {{ 'ui.editor.map.tool.link' | t }}
             </button>
@@ -242,6 +249,119 @@
                   <span>{{ entityCounts().monsters }}</span>
                 </div>
               </div>
+            </section>
+          }
+
+          <!-- Planting a decoration and deciding whether it can be searched are
+               one screen: the second question is what the first one raises
+               (docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md). -->
+          @case ('decorations') {
+            <section class="panel">
+              <h2>{{ 'ui.editor.map.decorations.brush' | t }}</h2>
+              @for (choice of decorationChoices(); track choice.id) {
+                <button
+                  type="button"
+                  class="pick-row"
+                  [class.on]="choice.id === selectedDecoration()"
+                  (click)="selectDecoration(choice.id)"
+                >
+                  <span class="name">{{ choice.name }}</span>
+                  <span class="tag">{{ 'ui.editor.decoration.planes.' + choice.plane | t }}</span>
+                </button>
+              }
+              @if (decorationChoices().length === 0) {
+                <p class="hint">{{ 'ui.editor.map.decorations.none' | t }}</p>
+              } @else if (selectedDecoration() === null) {
+                <p class="hint">{{ 'ui.editor.map.decorations.pick' | t }}</p>
+              }
+            </section>
+
+            <section class="panel">
+              <h2>{{ 'ui.editor.map.decorations.onHex' | t }}</h2>
+              @if (selected() === null) {
+                <p class="hint">{{ 'ui.editor.map.decorations.noHex' | t }}</p>
+              } @else if (placementsHere().length === 0) {
+                <p class="hint">{{ 'ui.editor.map.decorations.empty' | t }}</p>
+              }
+              @for (placed of placementsHere(); track placed.id) {
+                <div class="node" [class.on]="placed.id === selectedPlacement()">
+                  <div class="line head">
+                    <button type="button" class="small pick" (click)="selectPlacement(placed.id)">
+                      {{ placed.decoration }}
+                    </button>
+                    <button
+                      type="button"
+                      class="small remove"
+                      (click)="removePlacement(placed.id)"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <!-- The id is what a scenario will name, so it is written
+                       here rather than only generated. -->
+                  <div class="line">
+                    <span class="axis">{{ 'ui.editor.map.decorations.id' | t }}</span>
+                    <input
+                      type="text"
+                      class="id"
+                      [value]="placed.id"
+                      [attr.aria-label]="'ui.editor.map.decorations.id' | t"
+                      (change)="setPlacementId(placed.id, $any($event.target))"
+                    />
+                  </div>
+                  <!-- Where on the case it sits: the anchor its definition
+                       gives it, plus this nudge. -->
+                  <div class="line nudge">
+                    <span class="axis">{{ 'ui.editor.map.decorations.offset' | t }}</span>
+                    <input
+                      type="number"
+                      [min]="-maxOffset"
+                      [max]="maxOffset"
+                      [value]="placed.offset[0]"
+                      [attr.aria-label]="'ui.editor.map.decorations.offsetX' | t"
+                      (change)="setPlacementOffset(placed.id, 0, $any($event.target).value)"
+                    />
+                    <input
+                      type="number"
+                      [min]="-maxOffset"
+                      [max]="maxOffset"
+                      [value]="placed.offset[1]"
+                      [attr.aria-label]="'ui.editor.map.decorations.offsetY' | t"
+                      (change)="setPlacementOffset(placed.id, 1, $any($event.target).value)"
+                    />
+                    <span class="unit">px</span>
+                  </div>
+                  <div class="line nudge arrows">
+                    <button type="button" class="small" (click)="nudgePlacement(placed.id, -1, 0)">
+                      ←
+                    </button>
+                    <button type="button" class="small" (click)="nudgePlacement(placed.id, 1, 0)">
+                      →
+                    </button>
+                    <button type="button" class="small" (click)="nudgePlacement(placed.id, 0, -1)">
+                      ↑
+                    </button>
+                    <button type="button" class="small" (click)="nudgePlacement(placed.id, 0, 1)">
+                      ↓
+                    </button>
+                  </div>
+                  <div class="line">
+                    <button type="button" class="small" (click)="resetPlacementOffset(placed.id)">
+                      {{ 'ui.editor.map.decorations.centre' | t }}
+                    </button>
+                  </div>
+                  <label class="check">
+                    <input
+                      type="checkbox"
+                      [checked]="placed.interactive"
+                      (change)="setPlacementInteractive(placed.id, $any($event.target).checked)"
+                    />
+                    {{ 'ui.editor.map.decorations.interactive' | t }}
+                  </label>
+                </div>
+              }
+              <p class="hint">{{ 'ui.editor.map.decorations.offsetHint' | t }}</p>
+              <p class="hint">{{ 'ui.editor.map.decorations.interactiveHint' | t }}</p>
             </section>
           }
 

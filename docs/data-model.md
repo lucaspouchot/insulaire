@@ -389,6 +389,15 @@ Grid visibility remains view state, but `WorldDefinition.grid` authors its
 models. Width is expressed in screen pixels and divided by camera zoom before
 the shared hex path is stroked, so it never grows or shrinks while zooming.
 
+**Placed decorations** are a list rather than a buffer, and the only authored
+record that is *not* one per cell: a hex may hold a tree, a bush and a
+signpost, so `placeDecoration` appends and `decorationsAt` returns all of them
+(ADR-0051). Each placement carries the id a scenario addresses, its own pixel `offset` from
+the definition's anchor, and its own `interactive` bit — the definition says
+what a tree looks like, the placement says where exactly it sits and whether
+*this* one can be searched. Author order is the tie-breaker within
+a plane, so the document never reorders the list.
+
 Per-cell **art choices** are the exception to that density, here as in the grid:
 a `Map` keyed by cell index, holding the ids the file carries. Painting a cell
 with another tile drops its choice, because `grass_f` means nothing on sand
@@ -402,6 +411,14 @@ holds them the same way, and a character's two scene modes are two views of the
 same buffer rather than two buffers (ADR-0039). It is the only editor state that
 is *not* mirrored into `localStorage`: unwritten pixels live in the tab, and the
 screen says how many there are.
+
+Three of the manifest's lists — characters, decorations, objects — are held by
+one shape, `ContentLibrary`
+(`apps/web/src/app/services/content-library.ts`). Each keeps the files **as
+authored**, by id, and hands them back to the engine after `resetContent()`,
+because `loadProject` refuses a manifest naming a definition that is not loaded.
+A subclass says only which list it reads, how one file is registered, and how
+one is described for a picker (ADR-0028, ADR-0048, ADR-0049).
 
 The editor holds **one document per map**, not one document
 (`ProjectStoreService`, `apps/web/src/app/services/project-store.service.ts`),

@@ -19,11 +19,16 @@ import {
   CharacterCreationResult,
   CharacterDefinition,
   CharacterValues,
+  DecorationDefinition,
+  ObjectDefinition,
   PlacedTileArt,
   ProjectionMode,
   ResolvedCharacter,
+  ResolvedDecoration,
+  ResolvedObject,
   SettingsDefinition,
   SettingsValues,
+  TileArtGeometry,
   TitleScreenDefinition,
 } from '../../content/content-types';
 import {
@@ -254,6 +259,125 @@ export class EngineService {
   /** Ids of every registered character definition. */
   characterIds(): string[] {
     return this.parse<string[]>(() => this.engine().characterIds());
+  }
+
+  /**
+   * Registers a decoration definition, before the project that lists it.
+   *
+   * A decoration is a kind of thing that stands on a hex — a tree, a chest, a
+   * bush — with the anchor, plane and order that decide how it shares that hex
+   * with the characters walking over it
+   * (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+   */
+  loadDecoration(json: string): LoadOutcome {
+    return this.parse<LoadOutcome>(() => this.engine().loadDecoration(json));
+  }
+
+  /**
+   * Validates a decoration definition without registering it.
+   *
+   * `cell` is the pixel grid it will stand among. Without one the file's own
+   * shape is still checked and only `decoration.overflowsCell` is skipped —
+   * which is why the editor, which knows its tile set, passes one
+   * (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+   */
+  validateDecoration(json: string, cell?: TileArtGeometry): ValidationReport {
+    return this.parse<ValidationReport>(() =>
+      this.engine().validateDecoration(json, cell === undefined ? '' : JSON.stringify(cell)),
+    );
+  }
+
+  /** A registered decoration definition, defaults filled in by the engine. */
+  decoration(id: string): DecorationDefinition {
+    return this.parse<DecorationDefinition>(() => this.engine().decoration(id));
+  }
+
+  /** Ids of every registered decoration definition. */
+  decorationIds(): string[] {
+    return this.parse<string[]>(() => this.engine().decorationIds());
+  }
+
+  /**
+   * Resolves a registered decoration at a moment of one of its animations.
+   *
+   * `animation` of `undefined` — or an id the definition does not declare — is
+   * its resting appearance.
+   */
+  resolveDecoration(id: string, animation?: string, timeMs = 0): ResolvedDecoration {
+    return this.parse<ResolvedDecoration>(() =>
+      this.engine().resolveDecoration(id, animation ?? undefined, Math.max(0, Math.round(timeMs))),
+    );
+  }
+
+  /**
+   * Resolves a decoration definition **in hand**, without registering it.
+   *
+   * What the editor previews with, for the reason {@link previewCharacter}
+   * exists: the definition being written is not registered, and may not be
+   * valid yet, but it still has to be visible.
+   */
+  previewDecoration(
+    decoration: DecorationDefinition,
+    animation?: string,
+    timeMs = 0,
+  ): ResolvedDecoration {
+    return this.parse<ResolvedDecoration>(() =>
+      this.engine().previewDecoration(
+        JSON.stringify(decoration),
+        animation ?? undefined,
+        Math.max(0, Math.round(timeMs)),
+      ),
+    );
+  }
+
+  /**
+   * Registers an object definition, before the project that lists it.
+   *
+   * An object is carried, not placed: an inventory item, a piece of equipment,
+   * a quest token (`docs/adr/ADR-0049-an-object-is-carried-not-placed.md`).
+   */
+  loadObject(json: string): LoadOutcome {
+    return this.parse<LoadOutcome>(() => this.engine().loadObject(json));
+  }
+
+  /** Validates an object definition without registering it, keys included. */
+  validateObject(json: string): ValidationReport {
+    return this.parse<ValidationReport>(() => this.engine().validateObject(json));
+  }
+
+  /** A registered object definition, defaults filled in by the engine. */
+  object(id: string): ObjectDefinition {
+    return this.parse<ObjectDefinition>(() => this.engine().object(id));
+  }
+
+  /** Ids of every registered object definition. */
+  objectIds(): string[] {
+    return this.parse<string[]>(() => this.engine().objectIds());
+  }
+
+  /**
+   * Resolves a registered object's icon at a moment of its flipbook.
+   *
+   * The frame arithmetic is Rust's, so an inventory panel and the editor's
+   * preview cannot disagree about which drawing is on screen
+   * (`docs/adr/ADR-0050-an-object-icon-is-a-flipbook.md`).
+   */
+  resolveObject(id: string, timeMs = 0): ResolvedObject {
+    return this.parse<ResolvedObject>(() =>
+      this.engine().resolveObject(id, Math.max(0, Math.round(timeMs))),
+    );
+  }
+
+  /**
+   * Resolves an object definition **in hand**, without registering it.
+   *
+   * What the object editor previews with: the definition being written is not
+   * registered and may not be valid yet, and it still has to be visible.
+   */
+  previewObject(object: ObjectDefinition, timeMs = 0): ResolvedObject {
+    return this.parse<ResolvedObject>(() =>
+      this.engine().previewObject(JSON.stringify(object), Math.max(0, Math.round(timeMs))),
+    );
   }
 
   /** Registers the generic player-character creation declaration. */

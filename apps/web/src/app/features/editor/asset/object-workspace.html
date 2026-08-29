@@ -1,0 +1,400 @@
+@let doc = document();
+
+<app-asset-workspace>
+  <div toolbar class="toolbar">
+    <span class="path">{{ path() || ('ui.editor.object.noFile' | t) }}</span>
+    <!-- Zoom, fit and the grid live in the file bar, above the surface, as they
+         do for every other category
+         (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). -->
+    <span class="view" [title]="'ui.editor.object.zoom' | t">
+      <button type="button" class="small" (click)="zoomBy(-1)" aria-label="−">−</button>
+      <span class="readout">{{ zoom() }}×</span>
+      <button type="button" class="small" (click)="zoomBy(1)" aria-label="+">+</button>
+      <button type="button" class="small" (click)="fitZoom()">
+        {{ 'ui.editor.object.fitZoom' | t }}
+      </button>
+    </span>
+    <label class="toggle">
+      <input type="checkbox" [checked]="showGrid()" (change)="showGrid.set(!showGrid())" />
+      {{ 'ui.editor.asset.grid' | t }}
+    </label>
+    @if (dirty()) {
+      <span class="dot" [title]="'ui.editor.object.unsaved' | t"></span>
+    }
+    <span class="spacer"></span>
+    @if (errorCount(); as count) {
+      <span class="issues-count">{{ 'ui.editor.object.issueCount' | t: { count: count } }}</span>
+    }
+    @if (unsavedSprites().length; as pending) {
+      <span class="pending">{{ 'ui.editor.object.framesUnsaved' | t: { count: pending } }}</span>
+    }
+    @if (!writable()) {
+      <span class="readonly">{{ 'ui.editor.workspace.readOnly' | t }}</span>
+    }
+    <button type="button" (click)="refresh()">{{ 'ui.editor.map.actions.validate' | t }}</button>
+    <button
+      type="button"
+      class="primary"
+      [disabled]="busy() || !writable() || doc === null"
+      (click)="save()"
+    >
+      {{ 'ui.editor.object.save' | t }}
+    </button>
+  </div>
+
+  @if (error(); as failure) {
+    <div banner class="banner error">{{ failure }}</div>
+  }
+  @if (message(); as note) {
+    <div banner class="banner ok">{{ note }}</div>
+  }
+  @if (doc !== null && unlisted()) {
+    <div banner class="banner warn">{{ 'ui.editor.object.unlisted' | t }}</div>
+  }
+  @if (unreadable().length) {
+    <div banner class="banner warn">
+      {{ 'ui.editor.object.unreadable' | t: { files: unreadable().join(', ') } }}
+    </div>
+  }
+  @if (loading()) {
+    <p banner class="banner">{{ 'ui.common.loading' | t }}</p>
+  }
+
+  <!-- --------------------------------------------------------------- list -->
+  <div list class="library">
+    <section class="panel">
+      <h2>{{ 'ui.editor.object.objects' | t }}</h2>
+      @for (entry of documents(); track entry.id) {
+        <button
+          type="button"
+          class="pick-row"
+          [class.on]="entry.id === doc?.id"
+          (click)="open(entry.id)"
+        >
+          <span class="name">{{ entry.name || entry.id }}</span>
+          <span class="tag">{{ 'ui.editor.object.kinds.' + (entry.kind ?? 'other') | t }}</span>
+        </button>
+      }
+      @if (documents().length === 0) {
+        <p class="hint">{{ 'ui.editor.object.empty' | t }}</p>
+      }
+      <div class="add">
+        <button type="button" (click)="addObject()">
+          {{ 'ui.editor.object.addObject' | t }}
+        </button>
+        @if (doc !== null) {
+          <button type="button" class="remove" (click)="removeObject()">
+            {{ 'ui.editor.object.removeObject' | t }}
+          </button>
+        }
+      </div>
+    </section>
+  </div>
+
+  <!-- -------------------------------------------------------------- scene -->
+  <!-- The icon, at a zoom that makes 32 pixels workable, on the same pixel
+       surface every category paints on. There is no second view: an object has
+       one image and nothing to compose it with. -->
+  <div scene class="object-scene">
+    @if (doc === null) {
+      <p class="hint">{{ 'ui.editor.object.noneOpen' | t }}</p>
+    } @else {
+      <app-pixel-editor
+        [sprite]="sprite()"
+        [label]="frame()"
+        [(zoom)]="zoom"
+        [(showGrid)]="showGrid"
+        (edited)="onPainted()"
+      />
+
+      <!-- The transport is here rather than in the form, because what it moves
+           is what the surface above is showing. -->
+      @if (frames().length > 1) {
+        <div class="transport">
+          <button type="button" class="small" (click)="togglePlay()">
+            {{ (playing() ? 'ui.editor.object.pause' : 'ui.editor.object.play') | t }}
+          </button>
+          <span class="note">
+            {{
+              'ui.editor.object.frameOf' | t: { frame: frameIndex() + 1, total: frames().length }
+            }}
+          </span>
+        </div>
+      }
+
+      @if (frames().length === 0) {
+        <p class="hint">
+          {{ 'ui.editor.object.noIcon' | t }}
+          <button type="button" class="small" [disabled]="!writable()" (click)="createFrame(0)">
+            {{
+              'ui.editor.object.createIcon'
+                | t: { width: resolution().width, height: resolution().height }
+            }}
+          </button>
+        </p>
+      } @else if (frame().length === 0) {
+        <p class="hint">
+          {{ 'ui.editor.object.emptyFrame' | t: { frame: frameIndex() + 1 } }}
+          <button
+            type="button"
+            class="small"
+            [disabled]="!writable()"
+            (click)="createFrame(frameIndex())"
+          >
+            {{
+              'ui.editor.object.createIcon'
+                | t: { width: resolution().width, height: resolution().height }
+            }}
+          </button>
+        </p>
+      } @else if (sprite() === null) {
+        <p class="hint warn">
+          {{ 'ui.editor.object.iconUnreadable' | t: { file: frame() } }}
+        </p>
+      }
+    }
+  </div>
+
+  <!-- ---------------------------------------------------------- inspector -->
+  <div inspector class="form">
+    @if (doc !== null) {
+      <section class="panel">
+        <h2>{{ 'ui.editor.object.definition' | t }}</h2>
+        <label class="row">
+          <span>{{ 'ui.editor.object.id' | t }}</span>
+          <input type="text" [value]="doc.id" (change)="setId($any($event.target).value)" />
+        </label>
+        <p class="hint">{{ 'ui.editor.object.idHint' | t }}</p>
+        <label class="row">
+          <span>{{ 'ui.editor.object.name' | t }}</span>
+          <input
+            type="text"
+            [value]="doc.name ?? ''"
+            (change)="setName($any($event.target).value)"
+          />
+        </label>
+        <label class="row">
+          <span>{{ 'ui.editor.object.kind' | t }}</span>
+          <select class="kind" (change)="setKind($any($event.target).value)">
+            @for (kind of kinds; track kind) {
+              <option [value]="kind" [selected]="kind === (doc.kind ?? 'other')">
+                {{ 'ui.editor.object.kinds.' + kind | t }}
+              </option>
+            }
+          </select>
+        </label>
+      </section>
+
+      <!-- What a player reads. Keys, never text: saving creates every one of
+           them in every language (docs/adr/ADR-0027-authoring-creates-keys.md). -->
+      <section class="panel">
+        <h2>{{ 'ui.editor.object.text' | t }}</h2>
+        <label class="row">
+          <span>{{ 'ui.editor.object.nameKey' | t }}</span>
+          <input
+            type="text"
+            [value]="doc.nameKey ?? ''"
+            [class.missing]="missingKey(doc.nameKey ?? '')"
+            (change)="setKey('nameKey', $any($event.target).value)"
+          />
+        </label>
+        @if ((doc.nameKey ?? '').length > 0) {
+          <p class="preview">{{ preview(doc.nameKey ?? '') }}</p>
+        }
+        <label class="row">
+          <span>{{ 'ui.editor.object.descriptionKey' | t }}</span>
+          <input
+            type="text"
+            [value]="doc.descriptionKey ?? ''"
+            [class.missing]="missingKey(doc.descriptionKey ?? '')"
+            (change)="setKey('descriptionKey', $any($event.target).value)"
+          />
+        </label>
+        @if ((doc.descriptionKey ?? '').length > 0) {
+          <p class="preview">{{ preview(doc.descriptionKey ?? '') }}</p>
+        }
+        <p class="hint">{{ 'ui.editor.object.keysHint' | t }}</p>
+      </section>
+
+      <!-- The icon is a flipbook: one frame is a still potion, four are a
+           glinting gem (docs/adr/ADR-0050-an-object-icon-is-a-flipbook.md). -->
+      <section class="panel">
+        <h2>{{ 'ui.editor.object.icon' | t }}</h2>
+
+        <!-- One frame per row: the image it names, and where it sits. -->
+        @for (entry of frames(); track $index) {
+          <div class="node" [class.on]="$index === frameIndex()">
+            <div class="line">
+              <button type="button" class="small" (click)="selectFrame($index)">
+                {{ 'ui.editor.object.frameNumber' | t: { frame: $index + 1 } }}
+              </button>
+              <input
+                type="text"
+                list="object-images"
+                [value]="entry"
+                (change)="setFrame($index, $any($event.target).value)"
+              />
+              <button
+                type="button"
+                class="small"
+                [disabled]="$index === 0"
+                (click)="moveFrame($index, -1)"
+                aria-label="↑"
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                class="small"
+                [disabled]="$index === frames().length - 1"
+                (click)="moveFrame($index, 1)"
+                aria-label="↓"
+              >
+                ↓
+              </button>
+              <button type="button" class="small remove" (click)="removeFrame($index)">×</button>
+            </div>
+            <div class="line">
+              @if (entry.length === 0) {
+                <button
+                  type="button"
+                  class="small"
+                  [disabled]="!writable()"
+                  (click)="createFrame($index)"
+                >
+                  {{
+                    'ui.editor.object.createImage'
+                      | t: { width: resolution().width, height: resolution().height }
+                  }}
+                </button>
+              } @else if (frameMissing(entry)) {
+                <span class="resolved missing">
+                  {{ 'ui.editor.object.iconMissing' | t: { file: entry } }}
+                </span>
+              }
+              <input
+                type="file"
+                accept="image/png,image/gif,image/webp"
+                [disabled]="!writable()"
+                [attr.aria-label]="'ui.editor.object.upload' | t"
+                (change)="uploadFrame($event, $index)"
+              />
+            </div>
+          </div>
+        }
+        <datalist id="object-images">
+          @for (file of images(); track file.path) {
+            <option [value]="file.path"></option>
+          }
+        </datalist>
+
+        <div class="line">
+          <button
+            type="button"
+            class="small"
+            [disabled]="frames().length >= maxFrames"
+            (click)="addFrame()"
+          >
+            {{ 'ui.editor.object.addFrame' | t }}
+          </button>
+        </div>
+        <p class="hint">{{ 'ui.editor.object.framesHint' | t }}</p>
+
+        <!-- A still icon states no rate and loops nothing, so it is not asked. -->
+        @if (frames().length > 1) {
+          <label class="row">
+            <span>{{ 'ui.editor.object.frameDuration' | t }}</span>
+            <input
+              type="number"
+              min="0"
+              [value]="doc.frameDurationMs ?? defaultFrameDuration"
+              (change)="setFrameDuration($any($event.target).value)"
+            />
+          </label>
+          <label class="check">
+            <input
+              type="checkbox"
+              [checked]="doc.looping === true"
+              (change)="setLooping($any($event.target).checked)"
+            />
+            {{ 'ui.editor.object.looping' | t }}
+          </label>
+        }
+
+        <label class="row">
+          <span>{{ 'ui.editor.object.resolution' | t }}</span>
+          <span class="pair">
+            <input
+              type="number"
+              min="1"
+              max="256"
+              [value]="resolution().width"
+              [attr.aria-label]="'ui.editor.object.canvasWidth' | t"
+              (change)="setResolution('width', $any($event.target).value)"
+            />
+            <span class="times">×</span>
+            <input
+              type="number"
+              min="1"
+              max="256"
+              [value]="resolution().height"
+              [attr.aria-label]="'ui.editor.object.canvasHeight' | t"
+              (change)="setResolution('height', $any($event.target).value)"
+            />
+            <span class="unit">px</span>
+          </span>
+        </label>
+      </section>
+
+      <section class="panel">
+        <h2>{{ 'ui.editor.object.inventory' | t }}</h2>
+        <label class="row">
+          <span>{{ 'ui.editor.object.stackSize' | t }}</span>
+          <input
+            type="number"
+            min="1"
+            [max]="maxStack"
+            [value]="doc.stackSize ?? 1"
+            (change)="setStackSize($any($event.target).value)"
+          />
+        </label>
+        <p class="hint">{{ 'ui.editor.object.stackHint' | t }}</p>
+        <label class="row">
+          <span>{{ 'ui.editor.object.slot' | t }}</span>
+          <input
+            type="text"
+            [value]="doc.slot ?? ''"
+            [placeholder]="'ui.editor.object.slotPlaceholder' | t"
+            (change)="setSlot($any($event.target).value)"
+          />
+        </label>
+        <p class="hint">{{ 'ui.editor.object.slotHint' | t }}</p>
+        <label class="row">
+          <span>{{ 'ui.editor.object.tags' | t }}</span>
+          <input
+            type="text"
+            [value]="(doc.tags ?? []).join(', ')"
+            (change)="setTags($any($event.target).value)"
+          />
+        </label>
+      </section>
+
+      <section class="panel">
+        <h2>{{ 'ui.editor.object.issues' | t }}</h2>
+        @if ((report()?.issues ?? []).length === 0) {
+          <p class="hint ok">{{ 'ui.editor.object.noIssues' | t }}</p>
+        }
+        @for (issue of report()?.issues ?? []; track $index) {
+          <p class="issue" [class.warn]="issue.severity === 'warning'">
+            <span class="code">{{ issue.code }}</span>
+            <span class="where">{{ issue.path }}</span>
+            {{ issue.message }}
+          </p>
+        }
+        @if (untranslated(); as count) {
+          <p class="hint">{{ 'ui.editor.object.untranslated' | t: { count: count } }}</p>
+        }
+      </section>
+    }
+  </div>
+</app-asset-workspace>

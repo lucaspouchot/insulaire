@@ -18,7 +18,13 @@ import {
   CharacterDefinition,
   CharacterCreationDefinition,
   CharacterCreationResult,
+  DECORATION_SCHEMA_VERSION,
+  DecorationDefinition,
+  OBJECT_SCHEMA_VERSION,
+  ObjectDefinition,
   ResolvedCharacter,
+  ResolvedDecoration,
+  ResolvedObject,
   TILE_SET_SCHEMA_VERSION,
   TileDefinition,
   TileSetDefinition,
@@ -28,6 +34,8 @@ import {
   tileArtGeometry,
 } from '../content/content-types';
 import { WorldDocument } from '../content/world-document';
+import { serializeDecoration } from '../content/decoration-serializer';
+import { serializeObject } from '../content/object-serializer';
 import { serializeWorld } from '../content/world-serializer';
 import { ResolvedTileRender, resolveTileRender, variantRoll } from '../renderer/tile-art';
 import { offsetToAxial, hexDistance } from '../core/hex/hex-coords';
@@ -202,9 +210,7 @@ describe.skipIf(!built)('engine boundary', () => {
     const json = JSON.stringify(set);
     const instance = engine();
 
-    expect(
-      (JSON.parse(instance.validateTileSet(json)) as ValidationReport).valid,
-    ).toBe(true);
+    expect((JSON.parse(instance.validateTileSet(json)) as ValidationReport).valid).toBe(true);
 
     // Both projections, because they resolve from different lists and a mirror
     // that agreed on only one of them would be half a mirror
@@ -377,9 +383,7 @@ describe.skipIf(!built)('engine boundary', () => {
       elevationStep: 8,
     });
     expect(view.palette.find((tile) => tile.id === 'grass')?.art?.surface).toHaveLength(8);
-    expect(
-      view.palette.find((tile) => tile.id === 'dirt')?.art?.elevation?.levels,
-    ).toHaveLength(3);
+    expect(view.palette.find((tile) => tile.id === 'dirt')?.art?.elevation?.levels).toHaveLength(3);
 
     // Every byte indexes a real palette entry.
     for (const index of terrain) {
@@ -1039,6 +1043,229 @@ describe.skipIf(!built)('engine boundary', () => {
     ) as ValidationReport;
     expect(report.valid).toBe(false);
     expect(report.issues.map((issue) => issue.code)).toContain('character.missingAsset');
+  });
+
+  /**
+   * A decoration crosses the boundary the same way a character does, and the
+   * placement box comes back with the anchor already subtracted — the editor
+   * and the map both blit at the cell's ground point plus that box
+   * (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+   */
+  it('resolves a decoration onto the ground point, frame by frame', () => {
+    const instance = engine();
+    const torch: DecorationDefinition = {
+      id: 'torch',
+      schemaVersion: DECORATION_SCHEMA_VERSION,
+      resolution: { width: 16, height: 32 },
+      anchor: [8, 31],
+      plane: 'front',
+      order: 2,
+      animations: [
+        {
+          id: 'burning',
+          frames: ['assets/decorations/torch_0.png', 'assets/decorations/torch_1.png'],
+          frameDurationMs: 100,
+          looping: true,
+        },
+      ],
+    };
+    const json = serializeDecoration(torch);
+
+    const outcome = JSON.parse(instance.loadDecoration(json)) as LoadOutcome;
+    expect(outcome.report.valid).toBe(true);
+
+    const resolved = JSON.parse(
+      instance.resolveDecoration('torch', 'burning', 100),
+    ) as ResolvedDecoration;
+    expect(resolved.asset).toBe('assets/decorations/torch_1.png');
+    expect(resolved.placement).toEqual([-8, -31, 16, 32]);
+    expect(resolved.plane).toBe('front');
+    // Looping, so twice the duration is back to the first drawing.
+    expect(
+      (JSON.parse(instance.resolveDecoration('torch', 'burning', 200)) as ResolvedDecoration).frame,
+    ).toBe(0);
+
+    // Previewing is total: a definition being written still draws.
+    const preview = JSON.parse(
+      instance.previewDecoration(json, undefined, 0),
+    ) as ResolvedDecoration;
+    expect(preview.animation).toBe('burning');
+  });
+
+  /**
+   * The anchor is a position **on the cell**, so it is the drawing leaving the
+   * hexagon that is worth reporting — never the anchor leaving the decoration's
+   * own canvas, which is what a small prop dropped off-centre looks like
+   * (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+   */
+  it('warns about a decoration that overflows its cell, and only then', () => {
+    const instance = engine();
+    const cell = tileArtGeometry(readJson<TileSetDefinition>('content/tilesets/mvp_terrain.json'));
+    const pebble: DecorationDefinition = {
+      id: 'pebble',
+      schemaVersion: DECORATION_SCHEMA_VERSION,
+      resolution: { width: 12, height: 12 },
+      // Nowhere near its own 12x12 canvas, and well inside a 64x74 hex.
+      anchor: [28, 14],
+      animations: [{ id: 'idle', frames: ['assets/decorations/pebble.png'] }],
+    };
+
+    const inside = JSON.parse(
+      instance.validateDecoration(serializeDecoration(pebble), JSON.stringify(cell)),
+    ) as ValidationReport;
+    expect(inside.valid).toBe(true);
+    expect(inside.issues).toHaveLength(0);
+
+    // A tree taller than its hex: still valid, and now said out loud.
+    const tree: DecorationDefinition = {
+      ...pebble,
+      resolution: { width: 64, height: 120 },
+      anchor: [32, 119],
+    };
+    const over = JSON.parse(
+      instance.validateDecoration(serializeDecoration(tree), JSON.stringify(cell)),
+    ) as ValidationReport;
+    expect(over.valid).toBe(true);
+    expect(over.issues.map((issue) => issue.code)).toContain('decoration.overflowsCell');
+
+    // With no cell in hand there is nothing to measure against, and nothing is
+    // claimed — which is what loading a decoration does.
+    const alone = JSON.parse(
+      instance.validateDecoration(serializeDecoration(tree), ''),
+    ) as ValidationReport;
+    expect(alone.issues).toHaveLength(0);
+  });
+
+  /**
+   * A placement is what a scenario addresses, and `interactive` is a fact about
+   * **this** tree rather than about trees
+   * (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+   */
+  it('carries placed decorations through the world view, one interactive', () => {
+    const instance = engine();
+    instance.loadTileSet(tileSetJson());
+    const world = JSON.parse(worldJson()) as WorldDefinition;
+    world.decorations = [
+      { id: 'oak_0', decoration: 'oak', at: [1, 1] },
+      { id: 'oak_1', decoration: 'oak', at: [1, 1], offset: [-6, 2], interactive: true },
+    ];
+    instance.loadWorld(serializeWorld(world));
+
+    const view = JSON.parse(instance.worldView(world.id)) as WorldView;
+    expect((view.decorations ?? []).map((placed) => placed.id)).toEqual(['oak_0', 'oak_1']);
+    expect(view.decorations?.[0]?.interactive).toBe(false);
+    expect(view.decorations?.[1]?.interactive).toBe(true);
+    // Two oaks on one hex, and the nudge is what keeps them from being one
+    // oak drawn twice in the same place.
+    expect(view.decorations?.[0]?.offset).toEqual([0, 0]);
+    expect(view.decorations?.[1]?.offset).toEqual([-6, 2]);
+
+    // Which definitions exist is a project-level question, so a world naming
+    // one nothing loaded still loads on its own.
+    const report = JSON.parse(instance.validateWorld(serializeWorld(world))) as ValidationReport;
+    expect(report.valid).toBe(true);
+  });
+
+  it('refuses an object whose stack is impossible, and takes a sound one', () => {
+    const instance = engine();
+    const potion: ObjectDefinition = {
+      id: 'small_potion',
+      schemaVersion: OBJECT_SCHEMA_VERSION,
+      kind: 'consumable',
+      nameKey: 'game.object.smallPotion.name',
+      frames: ['assets/objects/small_potion.png'],
+      resolution: { width: 16, height: 16 },
+      stackSize: 10,
+    };
+
+    const outcome = JSON.parse(instance.loadObject(serializeObject(potion))) as LoadOutcome;
+    expect(outcome.report.valid).toBe(true);
+    expect(JSON.parse(instance.objectIds()) as string[]).toEqual(['small_potion']);
+
+    const report = JSON.parse(
+      instance.validateObject(serializeObject({ ...potion, stackSize: 0 })),
+    ) as ValidationReport;
+    expect(report.valid).toBe(false);
+    expect(report.issues.map((issue) => issue.code)).toContain('object.invalidStackSize');
+  });
+
+  /**
+   * An icon is a flipbook, and the one frame nearly every object has is the
+   * degenerate case of it: still, whenever it is asked for
+   * (`docs/adr/ADR-0050-an-object-icon-is-a-flipbook.md`).
+   */
+  it('plays an object icon through the real resolver, and holds a still one', () => {
+    const instance = engine();
+    const gem: ObjectDefinition = {
+      id: 'gem',
+      schemaVersion: OBJECT_SCHEMA_VERSION,
+      kind: 'material',
+      nameKey: 'game.object.gem.name',
+      frames: ['assets/objects/gem_0.png', 'assets/objects/gem_1.png'],
+      frameDurationMs: 100,
+      looping: true,
+      resolution: { width: 16, height: 16 },
+    };
+
+    const loaded = JSON.parse(instance.loadObject(serializeObject(gem))) as LoadOutcome;
+    expect(loaded.report.valid).toBe(true);
+
+    const first = JSON.parse(instance.resolveObject('gem', 0)) as ResolvedObject;
+    expect(first.asset).toBe('assets/objects/gem_0.png');
+    expect(first.durationMs).toBe(200);
+
+    const second = JSON.parse(instance.resolveObject('gem', 150)) as ResolvedObject;
+    expect(second.frame).toBe(1);
+    expect(second.asset).toBe('assets/objects/gem_1.png');
+
+    // Past the end it wraps, because this one loops: 250ms is 50ms into the
+    // second play.
+    expect((JSON.parse(instance.resolveObject('gem', 250)) as ResolvedObject).frame).toBe(0);
+
+    // A still icon, previewed from the editor's hand rather than registered.
+    const still = JSON.parse(
+      instance.previewObject(
+        serializeObject({
+          id: 'letter',
+          schemaVersion: OBJECT_SCHEMA_VERSION,
+          nameKey: 'game.object.letter.name',
+          frames: ['assets/objects/letter.png'],
+        }),
+        9_000,
+      ),
+    ) as ResolvedObject;
+    expect(still.frame).toBe(0);
+    expect(still.frames).toBe(1);
+    expect(still.asset).toBe('assets/objects/letter.png');
+  });
+
+  /**
+   * An object blocked out before its art exists still saves: no frame is a
+   * warning, and a frame naming nothing is the error
+   * (`docs/adr/ADR-0049-an-object-is-carried-not-placed.md`).
+   */
+  it('warns about an object with no icon, and refuses one with an empty frame', () => {
+    const instance = engine();
+    const blank = JSON.parse(
+      instance.validateObject(
+        serializeObject({ id: 'draft', schemaVersion: OBJECT_SCHEMA_VERSION }),
+      ),
+    ) as ValidationReport;
+    expect(blank.valid).toBe(true);
+    expect(blank.issues.map((issue) => issue.code)).toContain('object.noFrames');
+
+    const empty = JSON.parse(
+      instance.validateObject(
+        serializeObject({
+          id: 'draft',
+          schemaVersion: OBJECT_SCHEMA_VERSION,
+          nameKey: 'game.object.draft.name',
+          frames: [''],
+        }),
+      ),
+    ) as ValidationReport;
+    expect(empty.valid).toBe(false);
+    expect(empty.issues.map((issue) => issue.code)).toContain('object.missingFrame');
   });
 
   it('refuses a project naming a character it never loaded', () => {

@@ -76,12 +76,34 @@ describe('serializeWorld', () => {
         { at: [2, 2], tile: 'rock' },
       ],
       entities: [{ id: 'p', templateId: 'player', at: [1, 1], tags: ['hero'] }],
+      decorations: [
+        { id: 'oak_0', decoration: 'oak', at: [2, 1], offset: [4, -3], interactive: true },
+      ],
       locations: [{ id: 'l', at: [0, 2], name: 'Here', tags: ['a', 'b'] }],
       links: [{ id: 'door', at: [2, 0], targetWorld: 'inside', targetAt: [1, 1], name: 'Door' }],
       metadata: { author: 'tests', description: 'quotes " and \\ backslashes' },
     };
 
     expect(JSON.parse(serializeWorld(world))).toEqual(world);
+  });
+
+  it('writes a placed decoration as one line', () => {
+    const json = serializeWorld({
+      id: 'w',
+      schemaVersion: 1,
+      width: 4,
+      height: 4,
+      tileSetId: 't',
+      defaultTile: 'grass',
+      decorations: [
+        { id: 'oak_0', decoration: 'oak', at: [1, 2], offset: [4, -3], interactive: true },
+      ],
+    });
+
+    expect(json).toContain(
+      '    { "id": "oak_0", "decoration": "oak", "at": [1, 2], "offset": [4, -3], ' +
+        '"interactive": true }\n',
+    );
   });
 
   it('writes a link as one line', () => {

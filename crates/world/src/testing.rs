@@ -158,6 +158,7 @@ pub fn sample_world() -> WorldDefinition {
                 properties: Default::default(),
             },
         ],
+        decorations: Vec::new(),
         locations: vec![LocationDefinition {
             id: "loc_camp".to_owned(),
             at: OffsetCoord::new(1, 1),

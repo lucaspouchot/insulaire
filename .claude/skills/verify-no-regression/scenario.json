@@ -194,6 +194,11 @@
           "settleMs": 700
         },
         {
+          "name": "editor-map-decoration-tool",
+          "selector": ".tools button:nth-of-type(9)",
+          "settleMs": 900
+        },
+        {
           "name": "editor-map-settings",
           "selector": ".tools button:nth-of-type(1)",
           "settleMs": 700
@@ -320,6 +325,89 @@
         {
           "name": "editor-asset-tiles-raised-2",
           "selector": ".preview-bar .elevation button:nth-of-type(2)",
+          "settleMs": 900
+        }
+      ]
+    },
+    {
+      "name": "editor-asset-decorations",
+      "path": "/editor/asset/decorations",
+      "settleMs": 2500,
+      "press": [
+        {
+          "name": "editor-asset-decorations-new",
+          "selector": ".library .add button:nth-of-type(1)",
+          "settleMs": 1400
+        },
+        {
+          "name": "editor-asset-decorations-front",
+          "selector": ".form select.plane",
+          "value": "front",
+          "event": "change",
+          "settleMs": 1000
+        },
+        {
+          "name": "editor-asset-decorations-silhouette",
+          "selector": ".decoration-scene-bar select.figure",
+          "value": "#silhouette",
+          "event": "change",
+          "settleMs": 1000
+        },
+        {
+          "name": "editor-asset-decorations-no-figure",
+          "selector": ".decoration-scene-bar select.figure",
+          "value": "",
+          "event": "change",
+          "settleMs": 1000
+        },
+        {
+          "name": "editor-asset-decorations-pixels",
+          "selector": ".decoration-scene-bar .switch",
+          "settleMs": 1200
+        },
+        {
+          "name": "editor-asset-decorations-hex",
+          "selector": ".decoration-scene-bar .switch",
+          "settleMs": 1200
+        },
+        {
+          "name": "editor-asset-decorations-cleared",
+          "selector": ".library .add button.remove",
+          "settleMs": 900
+        }
+      ]
+    },
+    {
+      "name": "editor-asset-objects",
+      "path": "/editor/asset/objects",
+      "settleMs": 2500,
+      "canvas": false,
+      "press": [
+        {
+          "name": "editor-asset-objects-new",
+          "selector": ".library .add button:nth-of-type(1)",
+          "settleMs": 1400
+        },
+        {
+          "name": "editor-asset-objects-painted",
+          "selector": ".object-scene .hint button",
+          "settleMs": 1200
+        },
+        {
+          "name": "editor-asset-objects-second-frame",
+          "selector": ".form .panel > .line > button",
+          "settleMs": 1000
+        },
+        {
+          "name": "editor-asset-objects-equipment",
+          "selector": ".form select.kind",
+          "value": "equipment",
+          "event": "change",
+          "settleMs": 1000
+        },
+        {
+          "name": "editor-asset-objects-cleared",
+          "selector": ".library .add button.remove",
           "settleMs": 900
         }
       ]

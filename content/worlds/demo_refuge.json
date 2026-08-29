@@ -1,6 +1,6 @@
 {
   "id": "demo_refuge",
-  "schemaVersion": 5,
+  "schemaVersion": 6,
   "name": "The Refuge",
   "zone": "valley",
   "width": 7,
@@ -37,6 +37,7 @@
     { "id": "player_1", "templateId": "player", "at": [3, 4], "tags": ["hero"] },
     { "id": "monster_1", "templateId": "monster", "at": [2, 2], "tags": ["hunter"] }
   ],
+  "decorations": [],
   "locations": [
     { "id": "loc_hearth", "at": [3, 2], "name": "Hearth", "tags": ["landmark"] }
   ],

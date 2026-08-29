@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 
 use serde_json::Value;
 
-use crate::animation::{Animation, AnimationRole, PixelOffset, MAX_ANIMATION_FRAMES};
+use crate::animation::{
+    Animation, AnimationRole, PixelOffset, MAX_ANIMATION_FRAMES, MAX_FLIPBOOK_FRAMES,
+};
 use crate::character::{
     CharacterDefinition, CharacterLayer, ColorSource, LayerVariant, CHARACTER_SCHEMA_VERSION,
     MAX_SPRITE_RESOLUTION,
@@ -20,13 +22,17 @@ use crate::character_creation::{
     CharacterCreationDefinition, CharacteristicDefinition, CreationBinding, CreationBlock,
     CHARACTER_CREATION_SCHEMA_VERSION,
 };
+use crate::decoration::{
+    DecorationAnimation, DecorationDefinition, DECORATION_SCHEMA_VERSION, MAX_DECORATION_ORDER,
+};
 use crate::definition::{
-    HexOrientation, LinkTrigger, WorldDefinition, MAX_CHARACTER_HEIGHT_TILES, MAX_ELEVATION,
-    MAX_GRID_LINE_WIDTH, MAX_REVEAL_RADIUS, MIN_CHARACTER_HEIGHT_TILES, MIN_ELEVATION,
-    MIN_GRID_LINE_WIDTH, WORLD_SCHEMA_VERSION,
+    HexOrientation, LinkTrigger, WorldDefinition, MAX_CHARACTER_HEIGHT_TILES,
+    MAX_DECORATION_OFFSET, MAX_ELEVATION, MAX_GRID_LINE_WIDTH, MAX_REVEAL_RADIUS,
+    MIN_CHARACTER_HEIGHT_TILES, MIN_ELEVATION, MIN_GRID_LINE_WIDTH, WORLD_SCHEMA_VERSION,
 };
 use crate::hex::OffsetCoord;
 use crate::locale::{missing_keys, LocaleBundle};
+use crate::object::{ObjectDefinition, ObjectKind, MAX_STACK_SIZE, OBJECT_SCHEMA_VERSION};
 use crate::project::{ProjectDefinition, PROJECT_SCHEMA_VERSION};
 use crate::settings::{
     ControlDefinition, ControlKind, SettingScope, SettingsDefinition, SETTINGS_SCHEMA_VERSION,
@@ -446,6 +452,7 @@ pub fn validate_world(
     };
 
     validate_tiles(world, tile_set, &mut issues);
+    validate_decorations(world, &mut issues);
     validate_entities(world, tile_set, templates, &mut issues);
     validate_locations(world, &mut issues);
     validate_links(world, tile_set, &mut issues);
@@ -774,6 +781,87 @@ fn validate_cell_art(
     }
 }
 
+/// Placed decorations: a unique id, on a hex the map has, naming something.
+///
+/// **Not** whether the definition is loaded — that is a cross-file reference,
+/// resolved next to the project like `targetWorld` is
+/// ([`validate_placed_decorations`]). A world file is validated on its own, and
+/// on its own it cannot know which decorations exist.
+///
+/// Nothing here rejects two decorations on one cell: sharing a cell is the
+/// point (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+fn validate_decorations(world: &WorldDefinition, issues: &mut Vec<ValidationIssue>) {
+    let mut ids: BTreeSet<&str> = BTreeSet::new();
+
+    for (index, placed) in world.decorations.iter().enumerate() {
+        let path = format!("decorations[{index}]");
+
+        if placed.id.trim().is_empty() {
+            issues.push(ValidationIssue::error(
+                "decoration.missingPlacementId",
+                format!("{path}.id"),
+                "placed decoration id must not be empty",
+            ));
+        } else if !ids.insert(placed.id.as_str()) {
+            issues.push(ValidationIssue::error(
+                "decoration.duplicatePlacementId",
+                format!("{path}.id"),
+                format!(
+                    "duplicate placed decoration id `{}`; a scenario could not say which one it \
+                     means",
+                    placed.id
+                ),
+            ));
+        }
+
+        if placed.decoration.trim().is_empty() {
+            issues.push(ValidationIssue::error(
+                "decoration.missingReference",
+                format!("{path}.decoration"),
+                format!("placed decoration `{}` names no definition", placed.id),
+            ));
+        }
+
+        // A nudge is a few pixels of variety; a four-digit one is a typo that
+        // puts a tree on another map.
+        if placed.offset.x().abs() > MAX_DECORATION_OFFSET
+            || placed.offset.y().abs() > MAX_DECORATION_OFFSET
+        {
+            issues.push(ValidationIssue::error(
+                "decoration.offsetOutOfRange",
+                format!("{path}.offset"),
+                format!(
+                    "decoration `{}` is nudged to [{}, {}]; each axis must be within \
+                     ±{MAX_DECORATION_OFFSET}px",
+                    placed.id,
+                    placed.offset.x(),
+                    placed.offset.y()
+                ),
+            ));
+        }
+
+        if !world.bounds().contains(placed.at) {
+            issues.push(ValidationIssue::error(
+                "decoration.outOfBounds",
+                format!("{path}.at"),
+                format!(
+                    "decoration `{}` is placed outside the map at {}",
+                    placed.id, placed.at
+                ),
+            ));
+        } else if !world.has_cell(placed.at) {
+            issues.push(ValidationIssue::error(
+                "decoration.absentCell",
+                format!("{path}.at"),
+                format!(
+                    "decoration `{}` stands at {}, where the map has no hex",
+                    placed.id, placed.at
+                ),
+            ));
+        }
+    }
+}
+
 fn validate_entities(
     world: &WorldDefinition,
     tile_set: &TileSetDefinition,
@@ -1026,6 +1114,43 @@ fn validate_links(
     }
 }
 
+/// Resolves every world's placed decorations against the loaded definitions.
+///
+/// The other half of decoration validation, and the half no single file can
+/// perform: a world names a decoration by id, and whether that id exists is a
+/// fact about the *project*, exactly as `targetWorld` is
+/// ([`validate_project_links`],
+/// `docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+///
+/// `decorations` is the id of everything currently registered.
+#[must_use]
+pub fn validate_placed_decorations<'a>(
+    worlds: impl IntoIterator<Item = &'a WorldDefinition>,
+    decorations: &[String],
+) -> ValidationReport {
+    let known: BTreeSet<&str> = decorations.iter().map(String::as_str).collect();
+    let mut issues = Vec::new();
+
+    for world in worlds {
+        for (index, placed) in world.decorations.iter().enumerate() {
+            if placed.decoration.trim().is_empty() || known.contains(placed.decoration.as_str()) {
+                // Empty is the world file's own error, already reported there.
+                continue;
+            }
+            issues.push(ValidationIssue::error(
+                "decoration.unknownDefinition",
+                format!("{}.decorations[{index}].decoration", world.id),
+                format!(
+                    "decoration `{}` in map `{}` is drawn from `{}`, which is not loaded",
+                    placed.id, world.id, placed.decoration
+                ),
+            ));
+        }
+    }
+
+    ValidationReport::from_issues(issues)
+}
+
 /// Resolves every map link across a whole set of loaded worlds.
 ///
 /// This is the half of link validation that no single file can perform: it
@@ -1165,6 +1290,10 @@ pub struct LoadedContent<'a> {
     pub tile_sets: &'a [String],
     /// Ids of the registered character definitions.
     pub characters: &'a [String],
+    /// Ids of the registered decoration definitions.
+    pub decorations: &'a [String],
+    /// Ids of the registered object definitions.
+    pub objects: &'a [String],
     /// Id of the registered character-creation declaration, if any.
     pub character_creation: Option<&'a str>,
     /// Id of the registered title screen, if any.
@@ -1276,6 +1405,48 @@ pub fn validate_project(
                 format!("characters[{index}].id"),
                 format!(
                     "character `{}` (`{}`) is listed by the project but not loaded",
+                    entry.id, entry.path
+                ),
+            ));
+        }
+    }
+
+    let mut declared_decorations: BTreeSet<&str> = BTreeSet::new();
+    for (index, entry) in project.decorations.iter().enumerate() {
+        if !declared_decorations.insert(entry.id.as_str()) {
+            issues.push(ValidationIssue::error(
+                "project.duplicateDecoration",
+                format!("decorations[{index}].id"),
+                format!("decoration `{}` is listed twice", entry.id),
+            ));
+        }
+        if !loaded.decorations.iter().any(|id| id == &entry.id) {
+            issues.push(ValidationIssue::error(
+                "project.unloadedDecoration",
+                format!("decorations[{index}].id"),
+                format!(
+                    "decoration `{}` (`{}`) is listed by the project but not loaded",
+                    entry.id, entry.path
+                ),
+            ));
+        }
+    }
+
+    let mut declared_objects: BTreeSet<&str> = BTreeSet::new();
+    for (index, entry) in project.objects.iter().enumerate() {
+        if !declared_objects.insert(entry.id.as_str()) {
+            issues.push(ValidationIssue::error(
+                "project.duplicateObject",
+                format!("objects[{index}].id"),
+                format!("object `{}` is listed twice", entry.id),
+            ));
+        }
+        if !loaded.objects.iter().any(|id| id == &entry.id) {
+            issues.push(ValidationIssue::error(
+                "project.unloadedObject",
+                format!("objects[{index}].id"),
+                format!(
+                    "object `{}` (`{}`) is listed by the project but not loaded",
                     entry.id, entry.path
                 ),
             ));
@@ -2973,6 +3144,391 @@ fn tile_at_is_passable(
         .is_none_or(super::tileset::TileDefinition::is_passable)
 }
 
+// ---------------------------------------------------------------- decorations
+
+/// Validates a decoration definition, optionally against the cell it stands on.
+///
+/// `cell` is the pixel grid of the tile set it will be placed among. Pass
+/// `None` when there is none in hand: everything about the file's own shape is
+/// still checked, and only `decoration.overflowsCell` is skipped — which is why
+/// loading a definition needs no tile set, while the editor, which has one,
+/// gets the extra warning.
+///
+/// What it does **not** check is deliberate: whether the images it names exist
+/// on disk is the host's business, and what interacting with it does is the
+/// scenario's
+/// (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+#[must_use]
+pub fn validate_decoration(
+    decoration: &DecorationDefinition,
+    cell: Option<TileArtGeometry>,
+) -> ValidationReport {
+    let mut issues = Vec::new();
+
+    if decoration.id.trim().is_empty() {
+        issues.push(ValidationIssue::error(
+            "decoration.missingId",
+            "id",
+            "decoration id must not be empty",
+        ));
+    }
+    if decoration.schema_version == 0 || decoration.schema_version > DECORATION_SCHEMA_VERSION {
+        issues.push(ValidationIssue::error(
+            "decoration.unsupportedSchemaVersion",
+            "schemaVersion",
+            format!(
+                "unsupported decoration schemaVersion {}; this build supports up to \
+                 {DECORATION_SCHEMA_VERSION}",
+                decoration.schema_version
+            ),
+        ));
+    }
+
+    if !decoration.resolution.is_valid() {
+        issues.push(ValidationIssue::error(
+            "decoration.invalidResolution",
+            "resolution",
+            format!(
+                "decoration `{}` is authored on a {}x{} canvas; each side must be between 1 and \
+                 {MAX_SPRITE_RESOLUTION}",
+                decoration.id, decoration.resolution.width, decoration.resolution.height
+            ),
+        ));
+    }
+
+    if let Some(cell) = cell {
+        issues.extend(cell_overflow_issue(decoration, cell));
+    }
+
+    if decoration.order.abs() > MAX_DECORATION_ORDER {
+        issues.push(ValidationIssue::error(
+            "decoration.orderOutOfRange",
+            "order",
+            format!(
+                "decoration `{}` sorts at {}; order must be within ±{MAX_DECORATION_ORDER}",
+                decoration.id, decoration.order
+            ),
+        ));
+    }
+
+    if decoration.animations.is_empty() {
+        issues.push(ValidationIssue::warning(
+            "decoration.noAnimations",
+            "animations",
+            format!(
+                "decoration `{}` declares no appearance, so it draws nothing",
+                decoration.id
+            ),
+        ));
+    }
+
+    let mut ids: BTreeSet<&str> = BTreeSet::new();
+    for (index, animation) in decoration.animations.iter().enumerate() {
+        let path = format!("animations[{index}]");
+        if animation.id.trim().is_empty() {
+            issues.push(ValidationIssue::error(
+                "decoration.missingAnimationId",
+                format!("{path}.id"),
+                "a decoration animation id must not be empty",
+            ));
+        } else if !ids.insert(animation.id.as_str()) {
+            issues.push(ValidationIssue::error(
+                "decoration.duplicateAnimation",
+                format!("{path}.id"),
+                format!("animation `{}` is declared twice", animation.id),
+            ));
+        }
+        issues.extend(decoration_frame_issues(decoration, &path, animation));
+    }
+
+    // A warning, because the resolver falls back to the first declared: a
+    // decoration whose default was renamed still draws, and telling the author
+    // is enough (`DecorationDefinition::resting_animation`).
+    if !decoration.default_animation.is_empty()
+        && decoration
+            .animation(&decoration.default_animation)
+            .is_none()
+    {
+        issues.push(ValidationIssue::warning(
+            "decoration.unknownDefaultAnimation",
+            "defaultAnimation",
+            format!(
+                "decoration `{}` defaults to `{}`, which is not declared; the first animation \
+                 will play instead",
+                decoration.id, decoration.default_animation
+            ),
+        ));
+    }
+
+    ValidationReport::from_issues(issues)
+}
+
+/// How far a decoration reaches past the hex it stands on, if it does.
+///
+/// The anchor is a position **on the cell**, not a pixel of the decoration's
+/// own canvas, so a small prop placed off-centre is entirely normal and says
+/// nothing about whether it fits. What is worth reporting is the *drawing*
+/// leaving the hexagon — and even that is only a **warning**, because a big
+/// tree is supposed to overhang its cell
+/// (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+///
+/// Measured against the **flat** hexagon, the larger of the two footprints a
+/// projection gives it: the permissive reading, so a decoration that fits on a
+/// top-down map is not reported for an isometric one it may never be placed on.
+fn cell_overflow_issue(
+    decoration: &DecorationDefinition,
+    cell: TileArtGeometry,
+) -> Option<ValidationIssue> {
+    let [x, y, width, height] = decoration.placement();
+    let half_width = i32::try_from(cell.width).unwrap_or(i32::MAX) / 2;
+    let half_height = i32::try_from(cell.flat_height).unwrap_or(i32::MAX) / 2;
+
+    let over = [
+        -half_width - x,
+        -half_height - y,
+        x + width - half_width,
+        y + height - half_height,
+    ]
+    .into_iter()
+    .max()
+    .unwrap_or(0);
+
+    (over > 0).then(|| {
+        ValidationIssue::warning(
+            "decoration.overflowsCell",
+            "offset",
+            format!(
+                "decoration `{}` reaches {over}px past its {}x{} cell. Legal — a tree overhangs \
+                 its hex — and worth knowing when it was not meant to",
+                decoration.id, cell.width, cell.flat_height
+            ),
+        )
+    })
+}
+
+/// One appearance: at least one frame, each naming a usable image, at a rate
+/// that actually advances.
+fn decoration_frame_issues(
+    decoration: &DecorationDefinition,
+    path: &str,
+    animation: &DecorationAnimation,
+) -> Vec<ValidationIssue> {
+    let mut issues = Vec::new();
+
+    if animation.frames.is_empty() {
+        issues.push(ValidationIssue::error(
+            "decoration.emptyAnimation",
+            format!("{path}.frames"),
+            format!(
+                "animation `{}` of decoration `{}` has no frame",
+                animation.id, decoration.id
+            ),
+        ));
+    }
+    if animation.frames.len() > MAX_FLIPBOOK_FRAMES {
+        issues.push(ValidationIssue::error(
+            "decoration.tooManyFrames",
+            format!("{path}.frames"),
+            format!(
+                "animation `{}` of decoration `{}` declares {} frames; the limit is \
+                 {MAX_FLIPBOOK_FRAMES}",
+                animation.id,
+                decoration.id,
+                animation.frames.len()
+            ),
+        ));
+    }
+
+    // Only when it would actually stall: a single-frame state has no rate to
+    // get wrong, and refusing one would make every chest carry a duration.
+    if animation.frame_duration_ms == 0 && animation.frames.len() > 1 {
+        issues.push(ValidationIssue::error(
+            "decoration.invalidFrameDuration",
+            format!("{path}.frameDurationMs"),
+            format!(
+                "animation `{}` of decoration `{}` has {} frames and a frame duration of 0, so it \
+                 would never advance",
+                animation.id,
+                decoration.id,
+                animation.frames.len()
+            ),
+        ));
+    }
+
+    for (index, asset) in animation.frames.iter().enumerate() {
+        let frame_path = format!("{path}.frames[{index}]");
+        if asset.trim().is_empty() {
+            issues.push(ValidationIssue::error(
+                "decoration.missingFrame",
+                frame_path,
+                format!(
+                    "frame {index} of animation `{}` of decoration `{}` names no image",
+                    animation.id, decoration.id
+                ),
+            ));
+        } else if let Some(reason) = unusable_asset_path(asset) {
+            issues.push(ValidationIssue::error(
+                "decoration.invalidAssetPath",
+                frame_path,
+                format!(
+                    "frame {index} of animation `{}` of decoration `{}` names `{asset}`, which \
+                     {reason}",
+                    animation.id, decoration.id
+                ),
+            ));
+        }
+    }
+
+    issues
+}
+
+// -------------------------------------------------------------------- objects
+
+/// Validates an object definition in isolation.
+///
+/// What it cannot check is the same limit every other file has: whether the
+/// icon's frames exist on disk is the host's business, and whether the keys resolve
+/// needs the loaded languages ([`validate_referenced_keys`],
+/// `docs/adr/ADR-0049-an-object-is-carried-not-placed.md`).
+#[must_use]
+pub fn validate_object(object: &ObjectDefinition) -> ValidationReport {
+    let mut issues = Vec::new();
+
+    if object.id.trim().is_empty() {
+        issues.push(ValidationIssue::error(
+            "object.missingId",
+            "id",
+            "object id must not be empty",
+        ));
+    }
+    if object.schema_version == 0 || object.schema_version > OBJECT_SCHEMA_VERSION {
+        issues.push(ValidationIssue::error(
+            "object.unsupportedSchemaVersion",
+            "schemaVersion",
+            format!(
+                "unsupported object schemaVersion {}; this build supports up to \
+                 {OBJECT_SCHEMA_VERSION}",
+                object.schema_version
+            ),
+        ));
+    }
+
+    if !object.resolution.is_valid() {
+        issues.push(ValidationIssue::error(
+            "object.invalidResolution",
+            "resolution",
+            format!(
+                "object `{}` draws its icon on a {}x{} canvas; each side must be between 1 and \
+                 {MAX_SPRITE_RESOLUTION}",
+                object.id, object.resolution.width, object.resolution.height
+            ),
+        ));
+    }
+
+    // Warnings, both of them: an object is routinely written before its art and
+    // its text exist, and an editor that refused to save one would send the
+    // author back to a text editor (`docs/adr/ADR-0027-authoring-creates-keys.md`).
+    if object.name_key.trim().is_empty() {
+        issues.push(ValidationIssue::warning(
+            "object.missingNameKey",
+            "nameKey",
+            format!(
+                "object `{}` names no key, so a player would see nothing in an inventory",
+                object.id
+            ),
+        ));
+    }
+    if object.frames.is_empty() {
+        issues.push(ValidationIssue::warning(
+            "object.noFrames",
+            "frames",
+            format!("object `{}` has no icon yet", object.id),
+        ));
+    }
+    if object.frames.len() > MAX_FLIPBOOK_FRAMES {
+        issues.push(ValidationIssue::error(
+            "object.tooManyFrames",
+            "frames",
+            format!(
+                "object `{}` declares {} icon frames; the limit is {MAX_FLIPBOOK_FRAMES}",
+                object.id,
+                object.frames.len()
+            ),
+        ));
+    }
+
+    // Only when it would actually stall: a still icon has no rate to get
+    // wrong, and refusing one would make every potion carry a duration.
+    if object.frame_duration_ms == 0 && object.animated() {
+        issues.push(ValidationIssue::error(
+            "object.invalidFrameDuration",
+            "frameDurationMs",
+            format!(
+                "object `{}` has {} icon frames and a frame duration of 0, so it would never \
+                 advance",
+                object.id,
+                object.frames.len()
+            ),
+        ));
+    }
+
+    for (index, asset) in object.frames.iter().enumerate() {
+        let path = format!("frames[{index}]");
+        if asset.trim().is_empty() {
+            issues.push(ValidationIssue::error(
+                "object.missingFrame",
+                path,
+                format!("frame {index} of object `{}` names no image", object.id),
+            ));
+        } else if let Some(reason) = unusable_asset_path(asset) {
+            issues.push(ValidationIssue::error(
+                "object.invalidAssetPath",
+                path,
+                format!(
+                    "frame {index} of object `{}` names `{asset}`, which {reason}",
+                    object.id
+                ),
+            ));
+        }
+    }
+
+    if object.stack_size == 0 || object.stack_size > MAX_STACK_SIZE {
+        issues.push(ValidationIssue::error(
+            "object.invalidStackSize",
+            "stackSize",
+            format!(
+                "object `{}` stacks {} to a slot; a stack must be between 1 and {MAX_STACK_SIZE}",
+                object.id, object.stack_size
+            ),
+        ));
+    }
+
+    // A slot is what equipment is *worn in*, so the two travel together. Both
+    // are warnings: the pair is a mistake, not a file the runtime cannot read.
+    if !object.slot.trim().is_empty() && object.kind != ObjectKind::Equipment {
+        issues.push(ValidationIssue::warning(
+            "object.slotWithoutEquipment",
+            "slot",
+            format!(
+                "object `{}` names slot `{}` but is filed as `{:?}`, so nothing will wear it",
+                object.id, object.slot, object.kind
+            ),
+        ));
+    }
+    if object.slot.trim().is_empty() && object.kind == ObjectKind::Equipment {
+        issues.push(ValidationIssue::warning(
+            "object.equipmentWithoutSlot",
+            "slot",
+            format!(
+                "object `{}` is equipment but names no slot to wear it in",
+                object.id
+            ),
+        ));
+    }
+
+    ValidationReport::from_issues(issues)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3647,6 +4203,8 @@ mod tests {
                 id: "mvp_terrain".to_owned(),
                 path: "tilesets/mvp_terrain.json".to_owned(),
             }],
+            decorations: Vec::new(),
+            objects: Vec::new(),
             worlds: vec![
                 crate::project::ContentRef {
                     id: "linked_world".to_owned(),
@@ -4749,5 +5307,331 @@ mod tests {
         let report = validate_referenced_keys([("buttons[1].labelKey", "  ")], &bundles);
         assert!(!report.valid);
         assert!(codes(&report).contains(&"locale.missingKey"));
+    }
+
+    // ----------------------------------------------------------- decorations
+
+    /// The grid the shipped tile set is drawn on: a 64x74 hexagon.
+    fn cell() -> TileArtGeometry {
+        TileArtGeometry {
+            width: 64,
+            flat_height: 74,
+            surface_height: 40,
+            elevation_height: 26,
+            elevation_step: 8,
+        }
+    }
+
+    fn torch() -> DecorationDefinition {
+        serde_json::from_str(
+            r#"{
+              "id": "torch", "schemaVersion": 1,
+              "resolution": { "width": 16, "height": 32 },
+              "anchor": [8, 31], "plane": "front", "order": 2,
+              "animations": [
+                { "id": "burning", "frames": ["a.png", "b.png"], "frameDurationMs": 100,
+                  "looping": true }
+              ]
+            }"#,
+        )
+        .expect("the fixture parses")
+    }
+
+    #[test]
+    fn a_sound_decoration_validates() {
+        assert!(validate_decoration(&torch(), None).valid);
+    }
+
+    #[test]
+    fn a_decoration_animation_with_no_frame_is_an_error() {
+        let mut torch = torch();
+        torch.animations[0].frames.clear();
+        let report = validate_decoration(&torch, None);
+        assert!(!report.valid);
+        assert!(codes(&report).contains(&"decoration.emptyAnimation"));
+    }
+
+    #[test]
+    fn two_decoration_animations_may_not_share_an_id() {
+        let mut torch = torch();
+        let duplicate = torch.animations[0].clone();
+        torch.animations.push(duplicate);
+        assert!(
+            codes(&validate_decoration(&torch, None)).contains(&"decoration.duplicateAnimation")
+        );
+    }
+
+    /// A frame path that escapes the content root cannot be shipped, exactly
+    /// as for a tile image or a character sprite.
+    #[test]
+    fn a_frame_outside_the_content_root_is_an_error() {
+        let mut torch = torch();
+        torch.animations[0].frames[0] = "../../etc/passwd".to_owned();
+        assert!(codes(&validate_decoration(&torch, None)).contains(&"decoration.invalidAssetPath"));
+    }
+
+    /// Several frames at zero milliseconds each would never advance; one frame
+    /// has no rate to get wrong.
+    #[test]
+    fn a_stalled_multi_frame_animation_is_an_error_and_a_still_one_is_not() {
+        let mut torch = torch();
+        torch.animations[0].frame_duration_ms = 0;
+        assert!(
+            codes(&validate_decoration(&torch, None)).contains(&"decoration.invalidFrameDuration")
+        );
+
+        torch.animations[0].frames.truncate(1);
+        assert!(
+            !codes(&validate_decoration(&torch, None)).contains(&"decoration.invalidFrameDuration")
+        );
+    }
+
+    /// The anchor is a position **on the cell**, so an anchor outside the
+    /// decoration's own canvas is a small prop placed off-centre — an ordinary
+    /// thing to author, and nothing to report.
+    #[test]
+    fn an_anchor_outside_the_decorations_own_canvas_is_not_an_issue() {
+        // A 12x12 prop dropped in the north-west of a 64x74 hex: its anchor is
+        // nowhere near its own canvas, and it is entirely inside the cell.
+        let mut pebble = torch();
+        pebble.resolution = SpriteResolution::new(12, 12);
+        pebble.anchor = PixelOffset::new(28, 14);
+
+        let report = validate_decoration(&pebble, Some(cell()));
+        assert!(report.valid);
+        assert!(codes(&report).is_empty());
+    }
+
+    /// The shape the editor creates: a canvas the size of the cell's own box,
+    /// anchored at the middle of it. It fits exactly, so nothing is said — a
+    /// new decoration must not open with a warning already on it.
+    #[test]
+    fn a_decoration_that_is_exactly_its_cell_is_not_reported() {
+        let mut hex = torch();
+        hex.resolution = SpriteResolution::new(64, 74);
+        hex.anchor = PixelOffset::new(32, 37);
+
+        assert!(
+            !codes(&validate_decoration(&hex, Some(cell()))).contains(&"decoration.overflowsCell")
+        );
+    }
+
+    /// A warning and never an error, because a big tree is *supposed* to
+    /// overhang its hex.
+    #[test]
+    fn a_decoration_reaching_past_its_cell_is_a_warning() {
+        let mut tree = torch();
+        tree.resolution = SpriteResolution::new(64, 120);
+        tree.anchor = PixelOffset::new(32, 119);
+
+        let report = validate_decoration(&tree, Some(cell()));
+        assert!(report.valid);
+        assert!(codes(&report).contains(&"decoration.overflowsCell"));
+
+        // And nothing is said when there is no cell to measure against.
+        assert!(!codes(&validate_decoration(&tree, None)).contains(&"decoration.overflowsCell"));
+    }
+
+    #[test]
+    fn a_dangling_default_animation_is_a_warning() {
+        let mut torch = torch();
+        torch.default_animation = "gone".to_owned();
+
+        let report = validate_decoration(&torch, None);
+        assert!(report.valid);
+        assert!(codes(&report).contains(&"decoration.unknownDefaultAnimation"));
+    }
+
+    #[test]
+    fn a_decoration_sorted_past_the_bound_is_an_error() {
+        let mut torch = torch();
+        torch.order = MAX_DECORATION_ORDER + 1;
+        assert!(codes(&validate_decoration(&torch, None)).contains(&"decoration.orderOutOfRange"));
+    }
+
+    // ---------------------------------------------------- placed decorations
+
+    /// A placement is addressed by a scenario, so its id has to be unique, and
+    /// it has to stand somewhere the map actually has
+    /// (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+    #[test]
+    fn a_placement_needs_a_unique_id_and_a_hex_under_it() {
+        let mut world = testing::sample_world();
+        world.decorations = vec![
+            crate::PlacedDecoration {
+                id: "oak".to_owned(),
+                decoration: "tree".to_owned(),
+                at: OffsetCoord::new(0, 0),
+                offset: PixelOffset::new(0, 0),
+                interactive: false,
+                tags: Vec::new(),
+            },
+            crate::PlacedDecoration {
+                id: "oak".to_owned(),
+                decoration: String::new(),
+                at: OffsetCoord::new(900, 900),
+                offset: PixelOffset::new(9_000, 0),
+                interactive: true,
+                tags: Vec::new(),
+            },
+        ];
+
+        let report = validate_world(
+            &world,
+            Some(&testing::sample_tile_set()),
+            &TemplateRegistry::builtin(),
+        );
+        let codes = codes(&report);
+        assert!(codes.contains(&"decoration.duplicatePlacementId"));
+        assert!(codes.contains(&"decoration.missingReference"));
+        assert!(codes.contains(&"decoration.outOfBounds"));
+        assert!(codes.contains(&"decoration.offsetOutOfRange"));
+        // Which decorations exist is not a question a world file can answer.
+        assert!(!codes.contains(&"decoration.unknownDefinition"));
+    }
+
+    /// Two decorations on one cell is the point, not a mistake.
+    #[test]
+    fn two_decorations_may_share_a_cell() {
+        let mut world = testing::sample_world();
+        let at = world.entities[0].at;
+        world.decorations = vec![
+            crate::PlacedDecoration {
+                id: "bush".to_owned(),
+                decoration: "bush".to_owned(),
+                at,
+                // A nudge: two bushes on one hex should not be one bush drawn
+                // twice in the same place.
+                offset: PixelOffset::new(-6, 2),
+                interactive: true,
+                tags: Vec::new(),
+            },
+            crate::PlacedDecoration {
+                id: "stone".to_owned(),
+                decoration: "stone".to_owned(),
+                at,
+                offset: PixelOffset::new(5, -1),
+                interactive: false,
+                tags: Vec::new(),
+            },
+        ];
+
+        let report = validate_world(
+            &world,
+            Some(&testing::sample_tile_set()),
+            &TemplateRegistry::builtin(),
+        );
+        assert!(report.valid, "unexpected issues: {:?}", report.issues);
+    }
+
+    /// The other half, resolved next to the project like `targetWorld` is.
+    #[test]
+    fn a_map_drawing_from_an_unloaded_decoration_is_refused() {
+        let mut world = testing::sample_world();
+        world.decorations = vec![crate::PlacedDecoration {
+            id: "oak".to_owned(),
+            decoration: "tree".to_owned(),
+            at: OffsetCoord::new(0, 0),
+            offset: PixelOffset::new(0, 0),
+            interactive: false,
+            tags: Vec::new(),
+        }];
+
+        let missing = validate_placed_decorations([&world], &[]);
+        assert!(codes(&missing).contains(&"decoration.unknownDefinition"));
+
+        let loaded = validate_placed_decorations([&world], &["tree".to_owned()]);
+        assert!(loaded.valid, "unexpected issues: {:?}", loaded.issues);
+    }
+
+    // --------------------------------------------------------------- objects
+
+    fn potion() -> ObjectDefinition {
+        serde_json::from_str(
+            r#"{
+              "id": "small_potion", "schemaVersion": 2, "kind": "consumable",
+              "nameKey": "game.object.smallPotion.name",
+              "frames": ["assets/objects/small_potion.png"],
+              "resolution": { "width": 16, "height": 16 }, "stackSize": 10
+            }"#,
+        )
+        .expect("the fixture parses")
+    }
+
+    #[test]
+    fn a_sound_object_validates() {
+        assert!(validate_object(&potion()).valid);
+    }
+
+    #[test]
+    fn a_stack_of_none_is_an_error() {
+        let mut potion = potion();
+        potion.stack_size = 0;
+        assert!(codes(&validate_object(&potion)).contains(&"object.invalidStackSize"));
+    }
+
+    /// An object written before its art and its text exist still saves: both
+    /// are warnings (`docs/adr/ADR-0027-authoring-creates-keys.md`).
+    #[test]
+    fn a_nameless_iconless_object_is_only_warned_about() {
+        let mut potion = potion();
+        potion.name_key = String::new();
+        potion.frames.clear();
+
+        let report = validate_object(&potion);
+        assert!(report.valid);
+        assert!(codes(&report).contains(&"object.missingNameKey"));
+        assert!(codes(&report).contains(&"object.noFrames"));
+    }
+
+    /// An animated icon is held to the rules a decoration's flipbook is held
+    /// to, because it is the same flipbook
+    /// (`docs/adr/ADR-0050-an-object-icon-is-a-flipbook.md`).
+    #[test]
+    fn an_icon_that_would_never_advance_is_an_error() {
+        let mut gem = potion();
+        gem.frames = vec!["assets/objects/a.png".to_owned(), String::new()];
+        gem.frame_duration_ms = 0;
+
+        let report = validate_object(&gem);
+        assert!(!report.valid);
+        assert!(codes(&report).contains(&"object.invalidFrameDuration"));
+        assert!(codes(&report).contains(&"object.missingFrame"));
+    }
+
+    /// A still icon says nothing about a rate, and is not asked to.
+    #[test]
+    fn a_still_icon_needs_no_frame_duration() {
+        let mut potion = potion();
+        potion.frame_duration_ms = 0;
+        assert!(validate_object(&potion).valid);
+    }
+
+    #[test]
+    fn a_slot_and_equipment_travel_together() {
+        let mut potion = potion();
+        potion.slot = "head".to_owned();
+        assert!(codes(&validate_object(&potion)).contains(&"object.slotWithoutEquipment"));
+
+        potion.kind = ObjectKind::Equipment;
+        potion.slot = String::new();
+        assert!(codes(&validate_object(&potion)).contains(&"object.equipmentWithoutSlot"));
+    }
+
+    #[test]
+    fn a_project_naming_an_unloaded_decoration_or_object_is_refused() {
+        let mut project = project();
+        project.decorations = vec![crate::project::ContentRef {
+            id: "torch".to_owned(),
+            path: "decorations/torch.json".to_owned(),
+        }];
+        project.objects = vec![crate::project::ContentRef {
+            id: "small_potion".to_owned(),
+            path: "objects/small_potion.json".to_owned(),
+        }];
+
+        let report = validate_project(&project, LoadedContent::default());
+        assert!(codes(&report).contains(&"project.unloadedDecoration"));
+        assert!(codes(&report).contains(&"project.unloadedObject"));
     }
 }

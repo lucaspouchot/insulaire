@@ -11,6 +11,7 @@
 
 import {
   GridStyle,
+  PlacedDecoration,
   RevealStyle,
   SettingsValues,
   TileArt,
@@ -161,6 +162,14 @@ export interface WorldView {
   /** The pixel grid the tile set's images are authored on. */
   tileArt: TileArtGeometry;
   palette: PaletteEntry[];
+  /**
+   * Decorations standing on this map's cells, in author order.
+   *
+   * Only the *placement* travels: what a tree looks like is `resolveDecoration`,
+   * asked once per definition rather than once per tree
+   * (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+   */
+  decorations?: PlacedDecoration[];
   locations: LocationView[];
   links: LinkView[];
   /**
@@ -252,6 +261,10 @@ export interface ContentSummary {
   templates: TemplateView[];
   /** Ids of the loaded character definitions. */
   characters: string[];
+  /** Ids of the loaded decoration definitions. */
+  decorations: string[];
+  /** Ids of the loaded object definitions. */
+  objects: string[];
   /** Id of the loaded generic character-creation declaration. */
   characterCreation: string | null;
   project: ProjectView | null;
@@ -360,6 +373,18 @@ export interface RawInsulaireEngine {
   validateCharacter(json: string): string;
   character(id: string): string;
   characterIds(): string;
+  loadDecoration(json: string): string;
+  validateDecoration(json: string, cellJson: string): string;
+  decoration(id: string): string;
+  decorationIds(): string;
+  resolveDecoration(id: string, animation: string | undefined, timeMs: number): string;
+  previewDecoration(decorationJson: string, animation: string | undefined, timeMs: number): string;
+  loadObject(json: string): string;
+  validateObject(json: string): string;
+  object(id: string): string;
+  objectIds(): string;
+  resolveObject(id: string, timeMs: number): string;
+  previewObject(objectJson: string, timeMs: number): string;
   loadCharacterCreation(json: string): string;
   validateCharacterCreation(json: string): string;
   characterCreation(): string;

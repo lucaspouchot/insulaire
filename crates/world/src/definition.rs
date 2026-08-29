@@ -9,7 +9,15 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::animation::PixelOffset;
 use crate::hex::{MapBounds, OffsetCoord};
+
+/// Furthest a placed decoration may be nudged from its anchor, in either axis.
+///
+/// A bound rather than a preference: a nudge is a few pixels of variety, and a
+/// four-digit one is a typo that puts a tree on another map
+/// (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+pub const MAX_DECORATION_OFFSET: i32 = 256;
 
 /// Highest world schema version this build understands.
 ///
@@ -24,8 +32,13 @@ use crate::hex::{MapBounds, OffsetCoord};
 /// earlier file meant — anchored at `[0, 0]`, every cell present. Version 5 adds
 /// the authored [`RevealStyle`], which says how far relief may be seen through
 /// (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`); its defaults reveal one
-/// ring at half opacity.
-pub const WORLD_SCHEMA_VERSION: u32 = 5;
+/// ring at half opacity. Version 6 adds [`WorldDefinition::decorations`]: the
+/// trees, houses and chests standing on the map, each with the id a scenario
+/// addresses and its own `interactive` bit
+/// (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`),
+/// each free to sit a few pixels off its anchor. An earlier file places none,
+/// which is what an absent list means.
+pub const WORLD_SCHEMA_VERSION: u32 = 6;
 
 /// Hex orientation of an authored map.
 ///
@@ -337,6 +350,13 @@ pub struct WorldDefinition {
     /// Authored entities (player, monsters, ...).
     #[serde(default)]
     pub entities: Vec<EntityDefinition>,
+    /// Decorations standing on this map's cells.
+    ///
+    /// Several may share a cell, and each is drawn in the plane its definition
+    /// declares — everything `behind`, then the characters, then everything
+    /// `front` (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+    #[serde(default)]
+    pub decorations: Vec<PlacedDecoration>,
     /// Authored points of interest.
     #[serde(default)]
     pub locations: Vec<LocationDefinition>,
@@ -472,6 +492,52 @@ pub struct EntityDefinition {
     pub properties: BTreeMap<String, Value>,
 }
 
+/// One decoration standing on one cell.
+///
+/// The *definition* says what a tree looks like, where its trunk sits and which
+/// side of the characters it is drawn on. This says **which** tree, **where**,
+/// and — the field that only makes sense once a thing exists in the world —
+/// whether *this* one can be interacted with
+/// (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+///
+/// [`Self::id`] is unique within the map because that is what a scenario
+/// addresses: one definition is placed a dozen times, and only one of those
+/// chests holds the letter.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlacedDecoration {
+    /// Stable id, unique within this world.
+    pub id: String,
+    /// Referenced [`crate::DecorationDefinition::id`].
+    pub decoration: String,
+    /// Offset position `[col, row]`.
+    pub at: OffsetCoord,
+    /// Whole-pixel nudge from where the definition's anchor puts it.
+    ///
+    /// `[0, 0]` — the usual case — is exactly what the decoration editor
+    /// authored: the anchor pixel on the cell's ground point. A nudge is what
+    /// keeps a row of the same fence post from reading as a stamped pattern,
+    /// and it is per *placement* because that is the only thing that differs
+    /// between two trees drawn from one definition
+    /// (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+    ///
+    /// Positive moves the drawing right and down, which is the direction
+    /// dragging it in the editor moves it. Measured in the tile set's authored
+    /// pixels, like every other length in the format.
+    #[serde(default, skip_serializing_if = "is_zero_offset")]
+    pub offset: PixelOffset,
+    /// Whether a player may interact with **this** placement.
+    ///
+    /// *Whether*, never *what*: opening a chest and searching a bush are
+    /// scenario content, and an `if this is a chest` in the engine is the thing
+    /// `CLAUDE.md` forbids (`docs/adr/ADR-0005-scenario-runtime.md`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub interactive: bool,
+    /// Free-form gameplay tags, as everywhere else in the format.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+}
+
 /// An authored point of interest.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -559,6 +625,16 @@ pub struct WorldMetadata {
     /// Anything else the editor wants to keep alongside the world.
     #[serde(default, flatten, skip_serializing_if = "BTreeMap::is_empty")]
     pub extra: BTreeMap<String, Value>,
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)] // required shape for `skip_serializing_if`
+const fn is_false(value: &bool) -> bool {
+    !*value
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)] // required shape for `skip_serializing_if`
+fn is_zero_offset(value: &PixelOffset) -> bool {
+    value.is_zero()
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)] // required shape for `skip_serializing_if`

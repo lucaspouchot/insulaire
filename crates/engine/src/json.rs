@@ -430,6 +430,163 @@ impl JsonEngine {
         ok(&self.inner.character_ids())
     }
 
+    /// Registers a decoration definition; returns a
+    /// [`LoadOutcome`](crate::LoadOutcome).
+    ///
+    /// # Errors
+    ///
+    /// `parse` for malformed JSON, `invalidContent` for a failing definition.
+    pub fn load_decoration(&mut self, json: &str) -> JsonResult {
+        let outcome = self
+            .inner
+            .load_decoration(json)
+            .map_err(|error| err(&error))?;
+        ok(&outcome)
+    }
+
+    /// Validates a decoration definition without registering it.
+    ///
+    /// `cell_json` is the `TileArtGeometry` it will stand among; `""` skips the
+    /// cell check alone.
+    ///
+    /// # Errors
+    ///
+    /// `parse` when either JSON is malformed.
+    pub fn validate_decoration(&self, json: &str, cell_json: &str) -> JsonResult {
+        let report = self
+            .inner
+            .validate_decoration(json, cell_json)
+            .map_err(|error| err(&error))?;
+        ok(&report)
+    }
+
+    /// Returns a registered
+    /// [`DecorationDefinition`](insulaire_world::DecorationDefinition).
+    ///
+    /// # Errors
+    ///
+    /// `unknownContent` when no definition has that id.
+    pub fn decoration(&self, id: &str) -> JsonResult {
+        let decoration = self.inner.decoration(id).map_err(|error| err(&error))?;
+        ok(&decoration)
+    }
+
+    /// Returns the ids of every registered decoration definition.
+    ///
+    /// # Errors
+    ///
+    /// Only on serialisation failure.
+    pub fn decoration_ids(&self) -> JsonResult {
+        ok(&self.inner.decoration_ids())
+    }
+
+    /// Resolves a registered decoration at a moment of one of its animations.
+    ///
+    /// # Errors
+    ///
+    /// `unknownContent` when no definition has that id.
+    pub fn resolve_decoration(
+        &self,
+        id: &str,
+        animation: Option<&str>,
+        time_ms: u32,
+    ) -> JsonResult {
+        let resolved = self
+            .inner
+            .resolve_decoration(id, animation, time_ms)
+            .map_err(|error| err(&error))?;
+        ok(&resolved)
+    }
+
+    /// Resolves a decoration definition passed in by the editor.
+    ///
+    /// # Errors
+    ///
+    /// `parse` when the JSON is malformed.
+    pub fn preview_decoration(
+        &self,
+        decoration_json: &str,
+        animation: Option<&str>,
+        time_ms: u32,
+    ) -> JsonResult {
+        let resolved = self
+            .inner
+            .preview_decoration(decoration_json, animation, time_ms)
+            .map_err(|error| err(&error))?;
+        ok(&resolved)
+    }
+
+    /// Registers an object definition; returns a
+    /// [`LoadOutcome`](crate::LoadOutcome).
+    ///
+    /// # Errors
+    ///
+    /// `parse` for malformed JSON, `invalidContent` for a failing definition.
+    pub fn load_object(&mut self, json: &str) -> JsonResult {
+        let outcome = self.inner.load_object(json).map_err(|error| err(&error))?;
+        ok(&outcome)
+    }
+
+    /// Validates an object definition without registering it, keys included.
+    ///
+    /// # Errors
+    ///
+    /// `parse` when the JSON is malformed.
+    pub fn validate_object(&self, json: &str) -> JsonResult {
+        let report = self
+            .inner
+            .validate_object(json)
+            .map_err(|error| err(&error))?;
+        ok(&report)
+    }
+
+    /// Returns a registered
+    /// [`ObjectDefinition`](insulaire_world::ObjectDefinition).
+    ///
+    /// # Errors
+    ///
+    /// `unknownContent` when no definition has that id.
+    pub fn object(&self, id: &str) -> JsonResult {
+        let object = self.inner.object(id).map_err(|error| err(&error))?;
+        ok(&object)
+    }
+
+    /// Returns the ids of every registered object definition.
+    ///
+    /// # Errors
+    ///
+    /// Only on serialisation failure.
+    pub fn object_ids(&self) -> JsonResult {
+        ok(&self.inner.object_ids())
+    }
+
+    /// Resolves a registered object's icon at a moment of its flipbook.
+    /// Returns a `ResolvedObject`.
+    ///
+    /// # Errors
+    ///
+    /// `unknownContent` when no definition has that id.
+    pub fn resolve_object(&self, id: &str, time_ms: u32) -> JsonResult {
+        let resolved = self
+            .inner
+            .resolve_object(id, time_ms)
+            .map_err(|error| err(&error))?;
+        ok(&resolved)
+    }
+
+    /// Resolves an object definition passed in by the editor.
+    ///
+    /// # Errors
+    ///
+    /// `parse` when the JSON is malformed.
+    pub fn preview_object(&self, object_json: &str, time_ms: u32) -> JsonResult {
+        let resolved = self
+            .inner
+            .preview_object(object_json, time_ms)
+            .map_err(|error| err(&error))?;
+        ok(&resolved)
+    }
+
     /// Registers a character-creation declaration; returns a `LoadOutcome`.
     pub fn load_character_creation(&mut self, json: &str) -> JsonResult {
         let outcome = self
@@ -798,6 +955,199 @@ mod tests {
         assert_eq!(code(&engine.validate_tile_set("{").unwrap_err()), "parse");
     }
 
+    const TORCH: &str = r#"{
+        "id": "torch", "schemaVersion": 1, "name": "Torch",
+        "category": "prop",
+        "resolution": { "width": 16, "height": 32 },
+        "anchor": [8, 31], "plane": "front", "order": 2, "interactive": true,
+        "animations": [
+            { "id": "burning", "frames": ["assets/decorations/torch_0.png",
+              "assets/decorations/torch_1.png"], "frameDurationMs": 100, "looping": true },
+            { "id": "out", "frames": ["assets/decorations/torch_out.png"] }
+        ]}"#;
+
+    const POTION: &str = r#"{
+        "id": "small_potion", "schemaVersion": 2, "kind": "consumable",
+        "nameKey": "game.object.smallPotion.name",
+        "frames": ["assets/objects/small_potion.png"],
+        "resolution": { "width": 16, "height": 16 }, "stackSize": 10 }"#;
+
+    /// A placed decoration crosses to the host as a *placement*: which
+    /// definition, where, and whether this one can be interacted with
+    /// (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+    #[test]
+    fn a_placed_decoration_crosses_in_the_world_view() {
+        let mut engine = JsonEngine::new();
+        engine.load_tile_set(TILE_SET).expect("tile set loads");
+        let world = WORLD.replace(
+            r#""tiles": ["#,
+            r#""decorations": [
+                { "id": "oak_0", "decoration": "torch", "at": [3, 3] },
+                { "id": "oak_1", "decoration": "torch", "at": [3, 3],
+                  "offset": [-6, 2], "interactive": true }
+            ],
+            "tiles": ["#,
+        );
+        engine.load_world(&world).expect("world loads");
+
+        let view = json(&engine.world_view("w").expect("view"));
+        let placed = &view["decorations"];
+        assert_eq!(placed[0]["id"], "oak_0");
+        assert_eq!(placed[0]["decoration"], "torch");
+        assert_eq!(placed[0]["at"], serde_json::json!([3, 3]));
+        // Whether is per placement: two torches on one cell, one of them live.
+        assert_eq!(placed[0]["interactive"], false);
+        assert_eq!(placed[1]["interactive"], true);
+        // And so is the nudge, which is what keeps the two from being one
+        // torch drawn twice in the same place.
+        assert_eq!(placed[0]["offset"], serde_json::json!([0, 0]));
+        assert_eq!(placed[1]["offset"], serde_json::json!([-6, 2]));
+    }
+
+    /// Which decorations exist is a fact about the *project*, so that is where
+    /// a map drawing from one nothing loaded is caught — exactly as a
+    /// `targetWorld` is.
+    #[test]
+    fn a_project_whose_map_places_an_unloaded_decoration_is_refused() {
+        let mut engine = JsonEngine::new();
+        engine.load_tile_set(TILE_SET).expect("tile set loads");
+        engine
+            .load_world(&WORLD.replace(
+                r#""tiles": ["#,
+                r#""decorations": [{ "id": "oak_0", "decoration": "torch", "at": [3, 3] }],
+                "tiles": ["#,
+            ))
+            .expect("world loads");
+
+        let project = r#"{ "id": "p", "schemaVersion": 1, "startWorld": "w",
+            "worlds": [{ "id": "w", "path": "worlds/w.json" }],
+            "tileSets": [{ "id": "t", "path": "tilesets/t.json" }] }"#;
+        let error = engine.load_project(project).unwrap_err();
+        assert_eq!(code(&error), "invalidContent");
+        assert!(error.contains("decoration.unknownDefinition"), "{error}");
+
+        // With the definition registered, the same project loads.
+        engine.load_decoration(TORCH).expect("decoration loads");
+        assert!(engine.load_project(project).is_ok());
+    }
+
+    #[test]
+    fn a_decoration_loads_resolves_and_previews_through_the_boundary() {
+        let mut engine = JsonEngine::new();
+
+        let outcome = json(&engine.load_decoration(TORCH).expect("decoration loads"));
+        assert_eq!(outcome["id"], "torch");
+        assert_eq!(outcome["report"]["valid"], true);
+
+        let ids: Value = json(&engine.decoration_ids().expect("ids"));
+        assert_eq!(ids, serde_json::json!(["torch"]));
+
+        // The second frame of a looping flame, and the anchor already
+        // subtracted: a host blits at the cell's ground point plus `placement`.
+        let resolved = json(
+            &engine
+                .resolve_decoration("torch", Some("burning"), 100)
+                .expect("resolve"),
+        );
+        assert_eq!(resolved["asset"], "assets/decorations/torch_1.png");
+        assert_eq!(resolved["frame"], 1);
+        assert_eq!(resolved["plane"], "front");
+        assert_eq!(resolved["placement"], serde_json::json!([-8, -31, 16, 32]));
+
+        // The editor previews a definition it has not registered.
+        let preview = json(
+            &engine
+                .preview_decoration(TORCH, Some("out"), 0)
+                .expect("preview"),
+        );
+        assert_eq!(preview["asset"], "assets/decorations/torch_out.png");
+
+        assert_eq!(
+            code(&engine.resolve_decoration("nope", None, 0).unwrap_err()),
+            "unknownContent"
+        );
+        assert_eq!(code(&engine.load_decoration("{").unwrap_err()), "parse");
+    }
+
+    #[test]
+    fn an_invalid_decoration_is_refused_with_its_report() {
+        let mut engine = JsonEngine::new();
+        let empty = TORCH.replace(
+            r#""frames": ["assets/decorations/torch_out.png"]"#,
+            r#""frames": []"#,
+        );
+
+        let error = engine.load_decoration(&empty).unwrap_err();
+        assert_eq!(code(&error), "invalidContent");
+        assert_eq!(
+            json(&error)["report"]["issues"][0]["code"],
+            "decoration.emptyAnimation"
+        );
+
+        // Validating does not register, and says the same thing.
+        let report = json(&engine.validate_decoration(&empty, "").expect("validate"));
+        assert_eq!(report["valid"], false);
+        assert!(engine.decoration("torch").is_err());
+    }
+
+    #[test]
+    fn an_object_loads_and_reads_back_through_the_boundary() {
+        let mut engine = JsonEngine::new();
+
+        let outcome = json(&engine.load_object(POTION).expect("object loads"));
+        assert_eq!(outcome["id"], "small_potion");
+        // No language is loaded, so a nameKey nothing defines is not yet an issue.
+        assert_eq!(outcome["report"]["valid"], true);
+
+        let object = json(&engine.object("small_potion").expect("read back"));
+        assert_eq!(object["kind"], "consumable");
+        assert_eq!(object["stackSize"], 10);
+
+        let ids: Value = json(&engine.object_ids().expect("ids"));
+        assert_eq!(ids, serde_json::json!(["small_potion"]));
+
+        // A still icon resolves to its one frame, whenever it is asked for.
+        let resolved = json(&engine.resolve_object("small_potion", 500).expect("resolve"));
+        assert_eq!(resolved["asset"], "assets/objects/small_potion.png");
+        assert_eq!(resolved["frame"], 0);
+        assert_eq!(resolved["frames"], 1);
+
+        let broken = POTION.replace(r#""stackSize": 10"#, r#""stackSize": 0"#);
+        let report = json(&engine.validate_object(&broken).expect("validate"));
+        assert_eq!(report["valid"], false);
+        assert_eq!(report["issues"][0]["code"], "object.invalidStackSize");
+
+        assert_eq!(code(&engine.object("nope").unwrap_err()), "unknownContent");
+        assert_eq!(
+            code(&engine.resolve_object("nope", 0).unwrap_err()),
+            "unknownContent"
+        );
+    }
+
+    /// An animated icon is previewed the way a decoration is: from the JSON in
+    /// the editor's hand, unregistered and possibly not yet valid
+    /// (`docs/adr/ADR-0050-an-object-icon-is-a-flipbook.md`).
+    #[test]
+    fn an_animated_object_icon_previews_through_the_boundary() {
+        let engine = JsonEngine::new();
+        let gem = POTION.replace(
+            r#""frames": ["assets/objects/small_potion.png"]"#,
+            r#""frames": ["assets/objects/gem_0.png", "assets/objects/gem_1.png"],
+               "frameDurationMs": 100, "looping": true"#,
+        );
+
+        let first = json(&engine.preview_object(&gem, 0).expect("preview"));
+        assert_eq!(first["asset"], "assets/objects/gem_0.png");
+        assert_eq!(first["durationMs"], 200);
+        assert_eq!(first["looping"], true);
+
+        let second = json(&engine.preview_object(&gem, 150).expect("preview"));
+        assert_eq!(second["frame"], 1);
+        assert_eq!(second["asset"], "assets/objects/gem_1.png");
+
+        assert_eq!(code(&engine.preview_object("{", 0).unwrap_err()), "parse");
+    }
+
     #[test]
     fn a_tile_render_resolves_through_the_boundary() {
         let engine = JsonEngine::new();
@@ -1159,7 +1509,7 @@ mod tests {
     fn engine_info_reports_the_build() {
         let info = json(&JsonEngine::new().engine_info().expect("info"));
         assert_eq!(info["name"], "insulaire-engine");
-        assert_eq!(info["worldSchemaVersion"], 5);
+        assert_eq!(info["worldSchemaVersion"], 6);
         assert!(info["version"].is_string());
     }
 

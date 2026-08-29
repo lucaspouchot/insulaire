@@ -6,7 +6,7 @@
 //!
 //! 1. *Where is a hex?* — [`hex`]
 //! 2. *What did the author write?* — [`definition`], [`tileset`], [`template`],
-//!    [`character`], [`animation`]
+//!    [`character`], [`animation`], [`decoration`], [`object`]
 //! 3. *Is it loadable, and what does it look like once loaded?* —
 //!    [`validation`], [`grid`]
 //!
@@ -36,10 +36,12 @@
 pub mod animation;
 pub mod character;
 pub mod character_creation;
+pub mod decoration;
 pub mod definition;
 pub mod grid;
 pub mod hex;
 pub mod locale;
+pub mod object;
 pub mod project;
 pub mod settings;
 pub mod template;
@@ -57,8 +59,9 @@ pub mod testing;
 mod testing;
 
 pub use animation::{
-    Animation, AnimationRole, AnimationTrack, Interpolation, Keyframe, PixelOffset, Transform,
-    DEFAULT_FRAME_DURATION_MS, MAX_ANIMATION_FRAMES,
+    flipbook_duration_ms, flipbook_index_at, Animation, AnimationRole, AnimationTrack,
+    Interpolation, Keyframe, PixelOffset, Transform, DEFAULT_FRAME_DURATION_MS,
+    MAX_ANIMATION_FRAMES, MAX_FLIPBOOK_FRAMES,
 };
 pub use character::{
     AttachmentPoint, CharacterCategory, CharacterDefinition, CharacterLayer, ColorSource,
@@ -70,18 +73,27 @@ pub use character_creation::{
     CreationBinding, CreationBlock, CreationChoice, CreationScreen, ScreenTransition,
     CHARACTER_CREATION_SCHEMA_VERSION,
 };
+pub use decoration::{
+    DecorationAnimation, DecorationCategory, DecorationDefinition, DecorationPlane,
+    ResolvedDecoration, DECORATION_SCHEMA_VERSION, DEFAULT_DECORATION_RESOLUTION,
+    MAX_DECORATION_ORDER,
+};
 pub use definition::{
     CellPresence, EntityDefinition, GridStyle, HexOrientation, LinkTrigger, LocationDefinition,
-    MapLinkDefinition, MapShape, PlacedTile, PlacedTileArt, ProjectionMode, RevealStyle,
-    WorldDefinition, WorldMetadata, DEFAULT_CHARACTER_HEIGHT_TILES, DEFAULT_GRID_ALPHA,
-    DEFAULT_GRID_COLOR, DEFAULT_GRID_LINE_WIDTH, DEFAULT_REVEAL_NEIGHBOUR_OPACITY,
-    DEFAULT_REVEAL_OPACITY, DEFAULT_REVEAL_RADIUS, MAX_CHARACTER_HEIGHT_TILES, MAX_ELEVATION,
-    MAX_GRID_LINE_WIDTH, MAX_REVEAL_RADIUS, MIN_CHARACTER_HEIGHT_TILES, MIN_ELEVATION,
-    MIN_GRID_LINE_WIDTH, WORLD_SCHEMA_VERSION,
+    MapLinkDefinition, MapShape, PlacedDecoration, PlacedTile, PlacedTileArt, ProjectionMode,
+    RevealStyle, WorldDefinition, WorldMetadata, DEFAULT_CHARACTER_HEIGHT_TILES,
+    DEFAULT_GRID_ALPHA, DEFAULT_GRID_COLOR, DEFAULT_GRID_LINE_WIDTH,
+    DEFAULT_REVEAL_NEIGHBOUR_OPACITY, DEFAULT_REVEAL_OPACITY, DEFAULT_REVEAL_RADIUS,
+    MAX_CHARACTER_HEIGHT_TILES, MAX_ELEVATION, MAX_GRID_LINE_WIDTH, MAX_REVEAL_RADIUS,
+    MIN_CHARACTER_HEIGHT_TILES, MIN_ELEVATION, MIN_GRID_LINE_WIDTH, WORLD_SCHEMA_VERSION,
 };
 pub use grid::{resolve_cell_art, CellArtChoice, GridError, ResolvedTile, WorldGrid};
 pub use hex::{Hex, HexDirection, MapBounds, OffsetCoord, DIRECTIONS};
 pub use locale::{missing_keys, LocaleBundle, LocaleError, LocaleNode};
+pub use object::{
+    ObjectDefinition, ObjectKind, ResolvedObject, DEFAULT_ICON_RESOLUTION, MAX_STACK_SIZE,
+    OBJECT_SCHEMA_VERSION,
+};
 pub use project::{
     ContentRef, LanguageDefinition, LocalesDefinition, ProjectDefinition, ZoneDefinition,
     DEFAULT_ZONE_ID, PROJECT_SCHEMA_VERSION,
@@ -104,8 +116,9 @@ pub use title_screen::{
     TitleScreenDefinition, TitleSplash, TitleTheme, TITLE_SCREEN_SCHEMA_VERSION,
 };
 pub use validation::{
-    validate_character, validate_character_creation, validate_locales, validate_project,
-    validate_project_links, validate_project_zones, validate_referenced_keys, validate_settings,
-    validate_tile_set, validate_title_screen, validate_world, LoadedContent, Severity,
-    ValidationIssue, ValidationReport,
+    validate_character, validate_character_creation, validate_decoration, validate_locales,
+    validate_object, validate_placed_decorations, validate_project, validate_project_links,
+    validate_project_zones, validate_referenced_keys, validate_settings, validate_tile_set,
+    validate_title_screen, validate_world, LoadedContent, Severity, ValidationIssue,
+    ValidationReport,
 };

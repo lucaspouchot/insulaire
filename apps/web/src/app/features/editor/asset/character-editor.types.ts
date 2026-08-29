@@ -32,7 +32,6 @@ import {
   PoseKey,
   SettingValue,
   MAX_ANIMATION_FRAMES,
-  MAX_SPRITE_RESOLUTION,
   PixelOffset,
   SpriteResolution,
 } from '../../../../content/content-types';
@@ -166,38 +165,6 @@ export function blankVariant(id: string, resolution: SpriteResolution): LayerVar
     ],
     sprite: { asset: '' },
   };
-}
-
-/** A canvas side clamped into what a definition may declare. */
-export function clampResolution(value: number): number {
-  if (!Number.isFinite(value)) {
-    return 1;
-  }
-  return Math.min(MAX_SPRITE_RESOLUTION, Math.max(1, Math.round(value)));
-}
-
-/** `<stem>`, `<stem>_2`, … — the first one nobody is using. */
-export function freeId(stem: string, taken: readonly string[]): string {
-  if (!taken.includes(stem)) {
-    return stem;
-  }
-  let index = 2;
-  while (taken.includes(`${stem}_${index}`)) {
-    index += 1;
-  }
-  return `${stem}_${index}`;
-}
-
-/** Moves one entry of an array, staying inside it. */
-export function move<T>(items: T[], index: number, delta: number): void {
-  const target = index + delta;
-  if (target < 0 || target >= items.length) {
-    return;
-  }
-  const [moved] = items.splice(index, 1);
-  if (moved !== undefined) {
-    items.splice(target, 0, moved);
-  }
 }
 
 // ------------------------------------------------------------------ animation

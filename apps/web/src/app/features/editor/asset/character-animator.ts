@@ -46,7 +46,6 @@ import {
   blankAnimation,
   clampDuration,
   clampFrames,
-  freeId,
   heldOffset,
   keyframeAt,
   heldPose,
@@ -54,6 +53,7 @@ import {
   poseValue,
   MAX_ANIMATION_FRAMES,
 } from './character-editor.types';
+import { freeId } from './asset-editing';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
 
 /** The speeds the playback picker offers, as a multiple of real time. */

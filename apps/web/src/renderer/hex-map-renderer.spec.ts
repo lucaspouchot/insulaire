@@ -1137,3 +1137,189 @@ describe('HexMapRenderer reveal', () => {
     expect(fills).toEqual(whole);
   });
 });
+
+/**
+ * Decorations: where one lands on its hex, and what it is drawn around.
+ *
+ * The whole point of two planes is that a character passes *between* them, so
+ * the order the three are painted in is the behaviour worth pinning
+ * (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`,
+ * `docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+ */
+describe('HexMapRenderer decorations', () => {
+  const HEX_SIZE = 24;
+  const LAYOUT = new HexLayout(HEX_SIZE);
+  const CELL = offset(1, 1);
+
+  /** Every asset resolves, so nothing falls back for want of a download. */
+  const IMAGES: SpriteSource = {
+    image: (asset: string) => ({ asset }) as unknown as CanvasImageSource,
+    preload: () => Promise.resolve(),
+  };
+
+  /**
+   * A canvas that records the *order* of what it was asked to paint.
+   *
+   * `drawImage` covers the decorations; `arc` covers the entity token, which is
+   * drawn with no authored character. One ordered list is what lets the test
+   * say "the walker went between the two trees".
+   */
+  function recorder(): {
+    context: CanvasRenderingContext2D;
+    painted: string[];
+    boxOf: (asset: string) => number[] | undefined;
+  } {
+    const painted: string[] = [];
+    const boxes = new Map<string, number[]>();
+    const context = new Proxy(
+      {},
+      {
+        get(_target, property) {
+          if (property === 'drawImage') {
+            return (
+              image: { asset: string },
+              x: number,
+              y: number,
+              width: number,
+              height: number,
+            ) => {
+              painted.push(image.asset);
+              boxes.set(image.asset, [x, y, width, height]);
+            };
+          }
+          if (property === 'arc') {
+            return () => painted.push('entity');
+          }
+          if (property === 'measureText') {
+            return () => ({ width: 0 });
+          }
+          return () => undefined;
+        },
+        set: () => true,
+      },
+    ) as CanvasRenderingContext2D;
+    return { context, painted, boxOf: (asset) => boxes.get(asset) };
+  }
+
+  function modelWith(): RenderModel {
+    const width = 3;
+    const height = 3;
+    const base = emptyRenderModel();
+    return {
+      ...base,
+      bounds: mapBounds(width, height),
+      presence: new Uint8Array(width * height).fill(1),
+      showGrid: false,
+      palette: [
+        {
+          index: 0,
+          id: 'dirt',
+          name: 'Dirt',
+          terrain: 'dirt',
+          movementCost: 1,
+          passable: true,
+          visualId: 'terrain.dirt',
+          fallbackColor: '#7a5230',
+          tags: [],
+        },
+      ],
+      terrain: new Uint8Array(width * height),
+      elevation: new Int8Array(width * height),
+      elevationRange: { min: 0, max: 0 },
+      entities: [
+        {
+          id: 'p',
+          at: CELL,
+          visualId: 'entity.player',
+          fallbackColor: '#f2c14e',
+          glyph: '@',
+          emphasised: false,
+        },
+      ],
+      decorations: [
+        {
+          id: 'grass_0',
+          at: CELL,
+          plane: 'behind',
+          placement: [-8, -4, 16, 8],
+          asset: 'grass.png',
+        },
+        {
+          id: 'canopy_0',
+          at: CELL,
+          plane: 'front',
+          placement: [-16, -40, 32, 40],
+          asset: 'canopy.png',
+        },
+      ],
+    };
+  }
+
+  it('draws the character between the two planes', () => {
+    const canvas = recorder();
+    const renderer = new HexMapRenderer(canvas.context, LAYOUT, new Camera(), undefined, IMAGES);
+    renderer.setModel(modelWith());
+    renderer.draw(600, 600);
+
+    const grass = canvas.painted.indexOf('grass.png');
+    const walker = canvas.painted.indexOf('entity');
+    const canopy = canvas.painted.indexOf('canopy.png');
+
+    expect(grass).toBeGreaterThanOrEqual(0);
+    expect(walker).toBeGreaterThan(grass);
+    expect(canopy).toBeGreaterThan(walker);
+  });
+
+  /**
+   * The other half of a map appearing dressed: a host whose definitions arrive
+   * after the first model — the map editor — has to be able to ask for their
+   * pictures without reloading the terrain
+   * (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+   */
+  it('asks its image source for the frames the placements name', async () => {
+    const asked: string[][] = [];
+    const images: SpriteSource = {
+      image: (asset: string) => ({ asset }) as unknown as CanvasImageSource,
+      preload: (assets: Iterable<string>) => {
+        asked.push([...assets]);
+        return Promise.resolve();
+      },
+    };
+    const renderer = new HexMapRenderer(
+      recorder().context,
+      LAYOUT,
+      new Camera(),
+      undefined,
+      images,
+    );
+    renderer.setModel(modelWith());
+
+    await renderer.warmDecorations();
+    // Once per distinct image, not once per tree.
+    expect(asked).toEqual([['grass.png', 'canopy.png']]);
+
+    // A map with nothing standing on it asks for nothing at all.
+    renderer.setModel({ ...modelWith(), decorations: [] });
+    await renderer.warmDecorations();
+    expect(asked).toHaveLength(1);
+  });
+
+  it('lands the placement on the cell ground point, at the tile scale', () => {
+    const canvas = recorder();
+    const model = modelWith();
+    const renderer = new HexMapRenderer(canvas.context, LAYOUT, new Camera(), undefined, IMAGES);
+    renderer.setModel(model);
+    renderer.draw(600, 600);
+
+    const box = canvas.boxOf('canopy.png');
+    const ground = LAYOUT.centerOf(CELL);
+    // One authored tile pixel is one hex width over the grid the art was drawn
+    // on — the same scale a painted cell is blitted at.
+    const perPixel = LAYOUT.hexWidth / model.tileArt.width;
+
+    expect(box?.[0]).toBeCloseTo(ground.x - 16 * perPixel, 6);
+    expect(box?.[1]).toBeCloseTo(ground.y - 40 * perPixel, 6);
+    expect(box?.[2]).toBeCloseTo(32 * perPixel, 6);
+    expect(box?.[3]).toBeCloseTo(40 * perPixel, 6);
+  });
+});

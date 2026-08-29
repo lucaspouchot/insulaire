@@ -8,12 +8,14 @@
 use std::collections::BTreeMap;
 
 use insulaire_world::{
-    validate_character, validate_character_creation, validate_locales, validate_project,
-    validate_project_links, validate_project_zones, validate_referenced_keys, validate_settings,
-    validate_tile_set, validate_title_screen, validate_world, AnimationRole,
-    CharacterCreationDefinition, CharacterCreationResult, CharacterDefinition, LoadedContent,
-    LocaleBundle, ProjectDefinition, ResolvedCharacter, SettingsDefinition, TemplateRegistry,
-    TileSetDefinition, TitleScreenDefinition, ValidationReport, WorldDefinition,
+    validate_character, validate_character_creation, validate_decoration, validate_locales,
+    validate_object, validate_placed_decorations, validate_project, validate_project_links,
+    validate_project_zones, validate_referenced_keys, validate_settings, validate_tile_set,
+    validate_title_screen, validate_world, AnimationRole, CharacterCreationDefinition,
+    CharacterCreationResult, CharacterDefinition, DecorationDefinition, LoadedContent,
+    LocaleBundle, ObjectDefinition, ProjectDefinition, ResolvedCharacter, ResolvedDecoration,
+    ResolvedObject, SettingsDefinition, TemplateRegistry, TileArtGeometry, TileSetDefinition,
+    TitleScreenDefinition, ValidationReport, WorldDefinition,
 };
 
 use crate::error::EngineError;
@@ -25,6 +27,8 @@ pub struct ContentRegistry {
     worlds: BTreeMap<String, WorldDefinition>,
     locales: BTreeMap<String, LocaleBundle>,
     characters: BTreeMap<String, CharacterDefinition>,
+    decorations: BTreeMap<String, DecorationDefinition>,
+    objects: BTreeMap<String, ObjectDefinition>,
     character_creation: Option<CharacterCreationDefinition>,
     title_screen: Option<TitleScreenDefinition>,
     settings: Option<SettingsDefinition>,
@@ -153,6 +157,8 @@ impl ContentRegistry {
                 worlds: &self.world_ids(),
                 tile_sets: &self.tile_set_ids(),
                 characters: &self.character_ids(),
+                decorations: &self.decoration_ids(),
+                objects: &self.object_ids(),
                 character_creation: self
                     .character_creation
                     .as_ref()
@@ -162,9 +168,14 @@ impl ContentRegistry {
             },
         )
         .merge(validate_project_zones(&project, self.worlds.values()))
+        .merge(validate_placed_decorations(
+            self.worlds.values(),
+            &self.decoration_ids(),
+        ))
         .merge(validate_locales(&project, self.locales.values()))
         .merge(self.title_screen_key_report())
-        .merge(self.character_creation_key_report());
+        .merge(self.character_creation_key_report())
+        .merge(self.object_key_report());
         if !report.valid {
             return Err(EngineError::Invalid {
                 what: format!("project `{}`", project.id),
@@ -449,6 +460,197 @@ impl ContentRegistry {
         self.characters.keys().cloned().collect()
     }
 
+    // ------------------------------------------------------------ decorations
+
+    /// Parses, validates and registers a decoration definition.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Parse`] when the JSON is malformed, or
+    /// [`EngineError::Invalid`] when the definition fails validation.
+    pub fn load_decoration(
+        &mut self,
+        json: &str,
+    ) -> Result<(String, ValidationReport), EngineError> {
+        let decoration = Self::parse_decoration(json)?;
+
+        // No cell in hand at load time: a decoration is not bound to one tile
+        // set, so `decoration.overflowsCell` is the editor's warning, not the
+        // registry's (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+        let report = validate_decoration(&decoration, None);
+        if !report.valid {
+            return Err(EngineError::Invalid {
+                what: format!("decoration `{}`", decoration.id),
+                report: Box::new(report),
+            });
+        }
+
+        let id = decoration.id.clone();
+        self.decorations.insert(id.clone(), decoration);
+        Ok((id, report))
+    }
+
+    /// Validates a decoration definition without registering it.
+    ///
+    /// `cell_json` is the pixel grid it will stand among, as a
+    /// [`TileArtGeometry`]; an empty string means there is none in hand and
+    /// skips the cell check alone.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Parse`] when either JSON is malformed.
+    pub fn validate_decoration_json(
+        &self,
+        json: &str,
+        cell_json: &str,
+    ) -> Result<ValidationReport, EngineError> {
+        let cell = if cell_json.trim().is_empty() {
+            None
+        } else {
+            Some(
+                serde_json::from_str::<TileArtGeometry>(cell_json).map_err(|source| {
+                    EngineError::Parse {
+                        what: "decoration cell".to_owned(),
+                        message: source.to_string(),
+                    }
+                })?,
+            )
+        };
+        Ok(validate_decoration(&Self::parse_decoration(json)?, cell))
+    }
+
+    fn parse_decoration(json: &str) -> Result<DecorationDefinition, EngineError> {
+        serde_json::from_str(json).map_err(|source| EngineError::Parse {
+            what: "decoration".to_owned(),
+            message: source.to_string(),
+        })
+    }
+
+    /// The registered decoration definition with this id.
+    #[must_use]
+    pub fn decoration(&self, id: &str) -> Option<&DecorationDefinition> {
+        self.decorations.get(id)
+    }
+
+    /// Ids of every registered decoration definition, sorted.
+    #[must_use]
+    pub fn decoration_ids(&self) -> Vec<String> {
+        self.decorations.keys().cloned().collect()
+    }
+
+    /// Resolves a registered decoration at a moment of one of its animations.
+    ///
+    /// The resolver lives in `insulaire_world`; this only finds the definition,
+    /// so the editor's preview and the map renderer place a tree with the same
+    /// arithmetic (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+    #[must_use]
+    pub fn resolve_decoration(
+        &self,
+        id: &str,
+        animation: Option<&str>,
+        time_ms: u32,
+    ) -> Option<ResolvedDecoration> {
+        self.decorations
+            .get(id)
+            .map(|decoration| decoration.resolve_at(animation, time_ms))
+    }
+
+    // ---------------------------------------------------------------- objects
+
+    /// Parses, validates and registers an object definition.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Parse`] when the JSON is malformed, or
+    /// [`EngineError::Invalid`] when the definition fails validation.
+    pub fn load_object(&mut self, json: &str) -> Result<(String, ValidationReport), EngineError> {
+        let object = Self::parse_object(json)?;
+
+        let report = validate_object(&object);
+        if !report.valid {
+            return Err(EngineError::Invalid {
+                what: format!("object `{}`", object.id),
+                report: Box::new(report),
+            });
+        }
+
+        let id = object.id.clone();
+        self.objects.insert(id.clone(), object);
+        Ok((id, report))
+    }
+
+    /// Validates an object definition without registering it, keys included.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Parse`] when the JSON is malformed.
+    pub fn validate_object_json(&self, json: &str) -> Result<ValidationReport, EngineError> {
+        let object = Self::parse_object(json)?;
+
+        let report = validate_object(&object);
+        if self.locales.is_empty() {
+            return Ok(report);
+        }
+        Ok(report.merge(self.key_report_for(&object)))
+    }
+
+    fn parse_object(json: &str) -> Result<ObjectDefinition, EngineError> {
+        serde_json::from_str(json).map_err(|source| EngineError::Parse {
+            what: "object".to_owned(),
+            message: source.to_string(),
+        })
+    }
+
+    /// The registered object definition with this id.
+    #[must_use]
+    pub fn object(&self, id: &str) -> Option<&ObjectDefinition> {
+        self.objects.get(id)
+    }
+
+    /// Ids of every registered object definition, sorted.
+    #[must_use]
+    pub fn object_ids(&self) -> Vec<String> {
+        self.objects.keys().cloned().collect()
+    }
+
+    /// Resolves a registered object's icon at a moment of its flipbook.
+    ///
+    /// The resolver lives in `insulaire_world`; this only finds the definition,
+    /// so an inventory panel and the editor's preview show the same frame
+    /// (`docs/adr/ADR-0050-an-object-icon-is-a-flipbook.md`).
+    #[must_use]
+    pub fn resolve_object(&self, id: &str, time_ms: u32) -> Option<ResolvedObject> {
+        self.objects
+            .get(id)
+            .map(|object| object.resolve_at(time_ms))
+    }
+
+    /// Whether every registered object's name and description resolve.
+    ///
+    /// Merged into the project's report rather than the object's own, for the
+    /// reason the title screen's keys are: a key is only missing relative to
+    /// the languages a *project* declares (`docs/adr/ADR-0023-localised-content-keys.md`).
+    fn object_key_report(&self) -> ValidationReport {
+        if self.locales.is_empty() {
+            return ValidationReport::clean();
+        }
+        self.objects
+            .values()
+            .fold(ValidationReport::clean(), |report, object| {
+                report.merge(self.key_report_for(object))
+            })
+    }
+
+    fn key_report_for(&self, object: &ObjectDefinition) -> ValidationReport {
+        let bundles: Vec<&LocaleBundle> = self.locales.values().collect();
+        let keys = object.referenced_keys();
+        let referenced: Vec<(&str, &str)> = keys
+            .iter()
+            .map(|(path, key)| (path.as_str(), *key))
+            .collect();
+        validate_referenced_keys(referenced, &bundles)
+    }
+
     // ---------------------------------------------------- character creation
 
     /// Parses, validates and registers the project's character creation.
@@ -612,6 +814,8 @@ impl ContentRegistry {
         self.worlds.clear();
         self.locales.clear();
         self.characters.clear();
+        self.decorations.clear();
+        self.objects.clear();
         self.character_creation = None;
         self.title_screen = None;
         self.settings = None;

@@ -188,8 +188,10 @@ file fails here rather than when a player walks through a door (ADR-0018).
 
 This is also where every loaded world's `zone` is resolved against the zones the
 project declares, since a world file alone cannot say whether its zone exists
-(ADR-0021), and where the loaded **languages** are compared against the ones the
-manifest declares (ADR-0023).
+(ADR-0021), where every world's **placed decorations** are resolved against the
+loaded definitions — `decoration.unknownDefinition`, for the same reason
+(ADR-0051) — and where the loaded **languages** are compared against the ones
+the manifest declares (ADR-0023).
 
 When `characterCreation` is present, load every character definition and then
 `loadCharacterCreation` before this call. Missing registration reports
@@ -333,6 +335,124 @@ Errors: `unknownContent` when no definition has that id.
 ### `characterIds(): string[]`
 
 Ids of every registered definition, sorted.
+
+### `loadDecoration(json: string): LoadOutcome`
+
+Registers a `DecorationDefinition` — a kind of thing that stands on a hex, with
+the anchor, plane and order that decide how it shares that hex with the
+characters walking over it (ADR-0048). Load it before `loadProject`, which
+refuses a manifest naming a decoration that is not loaded.
+
+Errors: `parse`, `invalidContent` (`decoration.emptyAnimation`,
+`decoration.duplicateAnimation`, `decoration.invalidAssetPath`, …).
+
+### `validateDecoration(json: string, cellJson: string): ValidationReport`
+
+The editor's pre-save check. Registers nothing. A decoration names no locale
+key, so there is nothing to resolve against the loaded languages.
+
+`cellJson` is the `TileArtGeometry` the decoration will stand among, and `""`
+means there is none in hand. Everything about the file's own shape is checked
+either way; only `decoration.overflowsCell` — the drawing reaching past its
+hexagon — needs a cell, which is why `loadDecoration` never reports it and the
+editor, which knows its tile set, does.
+
+Errors: `parse` when either JSON is malformed.
+
+### `decoration(id: string): DecorationDefinition`
+
+A registered definition, defaults filled in.
+
+Errors: `unknownContent` when no definition has that id.
+
+### `decorationIds(): string[]`
+
+Ids of every registered decoration definition, sorted.
+
+### `resolveDecoration(id, animation?, timeMs): ResolvedDecoration`
+
+What to draw, at a moment of one of its appearances:
+
+```json
+{
+  "id": "torch",
+  "resolution": { "width": 16, "height": 32 },
+  "anchor": [8, 31],
+  "placement": [-8, -31, 16, 32],
+  "plane": "front",
+  "order": 2,
+  "animation": "burning",
+  "frame": 1,
+  "asset": "assets/decorations/torch_1.png"
+}
+```
+
+`placement` is `[x, y, width, height]` **relative to the cell's ground point**,
+anchor already subtracted: a host blits there and is done. `animation` of
+`undefined` — or an id the definition does not declare — is the resting
+appearance, so a preview always draws something. A looping appearance wraps at
+`timeMs`; one that does not holds its last frame. `animation` and `asset` come
+back empty when the decoration declares no appearance.
+
+Errors: `unknownContent` when no definition has that id.
+
+### `previewDecoration(decorationJson, animation?, timeMs): ResolvedDecoration`
+
+The same, for a definition **in hand** rather than registered: what the editor
+previews with while a decoration is being written and may not be valid yet.
+
+Errors: `parse` when the JSON is malformed.
+
+### `loadObject(json: string): LoadOutcome`
+
+Registers an `ObjectDefinition` — what a character carries (ADR-0049). Load it
+before `loadProject`, which refuses a manifest naming an object that is not
+loaded.
+
+Errors: `parse`, `invalidContent` (`object.invalidStackSize`,
+`object.missingFrame`, …).
+
+### `validateObject(json: string): ValidationReport`
+
+The editor's pre-save check: the definition's own validation plus the two keys
+it references, resolved against the loaded languages. Registers nothing.
+
+### `object(id: string): ObjectDefinition`
+
+A registered definition, defaults filled in.
+
+Errors: `unknownContent` when no definition has that id.
+
+### `objectIds(): string[]`
+
+Ids of every registered object definition, sorted.
+
+### `resolveObject(id: string, timeMs: number): ResolvedObject`
+
+What to draw for a registered object's icon at a moment of its flipbook:
+
+```json
+{
+  "id": "gem", "resolution": { "width": 16, "height": 16 },
+  "frames": 2, "frame": 1, "asset": "assets/objects/gem_1.png",
+  "durationMs": 200, "looping": true
+}
+```
+
+The frame arithmetic happens once, in Rust, so an inventory panel and the
+editor's preview cannot disagree about which drawing is on screen (ADR-0050). A
+looping icon wraps at `timeMs`; one that does not holds its last frame. A still
+icon — one frame, which is nearly every object — stays on it however long it is
+left up, and `asset` comes back empty when the icon declares no frame.
+
+Errors: `unknownContent` when no definition has that id.
+
+### `previewObject(objectJson, timeMs): ResolvedObject`
+
+The same, for a definition **in hand** rather than registered: what the object
+editor previews with while an object is being written and may not be valid yet.
+
+Errors: `parse` when the JSON is malformed.
 
 ### `loadCharacterCreation(json: string): LoadOutcome`
 
@@ -529,8 +649,8 @@ is the same validator `loadWorld` runs (ADR-0015).
 ### `contentSummary(): ContentSummary`
 
 What the registry holds: tile set ids, world summaries, the entity templates
-this build knows, the ids of the loaded character definitions,
-`characterCreation` (its loaded id or `null`), and `project` — the loaded manifest as
+this build knows, the ids of the loaded character, decoration and object
+definitions, `characterCreation` (its loaded id or `null`), and `project` — the loaded manifest as
 `{ id, name, startWorld, worldIds, languages }`, or `null` when none was loaded.
 Each language is `{ id, name, isDefault }`, in author order: what a language
 picker is built from.
@@ -557,6 +677,10 @@ Everything the renderer needs about a world **except** the per-cell buffers.
       "visualId": "terrain.grass", "fallbackColor": "#4a7c3f", "tags": ["open"],
       "art": {} }
   ],
+  "decorations": [
+    { "id": "oak_0", "decoration": "oak", "at": [4, 7],
+      "offset": [-6, 2], "interactive": true, "tags": [] }
+  ],
   "locations": [ { "id": "loc_camp", "name": "Camp", "at": [3, 11], "tags": ["start"] } ],
   "links": [
     { "id": "link_refuge_door", "name": "Refuge", "at": [3, 10],
@@ -569,6 +693,14 @@ Everything the renderer needs about a world **except** the per-cell buffers.
 ```
 
 Fetched **once per world**.
+
+`decorations` carries only the **placements** — which definition, where, how
+many pixels off its anchor, and whether *this* one is interactive (ADR-0051).
+`offset` is added to the `placement` the definition resolves to; the host does
+the addition once, when it builds its model. What a tree looks like is
+`resolveDecoration`, asked once per definition rather than once per tree, and
+the host draws everything `behind`, then the characters, then everything
+`front`. Absent when the map places none.
 
 `bounds` is the map's **extent**: the rectangle the packed buffers cover, and
 the only thing that turns a coordinate into a buffer index. It is storage, not

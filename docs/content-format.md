@@ -16,9 +16,9 @@ Canonical implementations:
 
 | Concern | Rust | TypeScript |
 |---|---|---|
-| Types | `crates/world/src/definition.rs`, `tileset.rs` | `apps/web/src/content/content-types.ts` |
+| Types | `crates/world/src/definition.rs`, `tileset.rs`, `decoration.rs`, `object.rs` | `apps/web/src/content/content-types.ts` |
 | Validation | `crates/world/src/validation.rs` | *(none — see ADR-0015)* |
-| Writing | `serde_json` | `apps/web/src/content/world-serializer.ts` |
+| Writing | `serde_json` | `apps/web/src/content/world-serializer.ts`, `decoration-serializer.ts`, `object-serializer.ts` |
 
 ---
 
@@ -324,7 +324,7 @@ since.
 ```json
 {
   "id": "demo_world",
-  "schemaVersion": 5,
+  "schemaVersion": 6,
   "name": "Demo Valley",
   "zone": "valley",
   "origin": [0, 0],
@@ -364,7 +364,7 @@ since.
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `id` | string | yes | Stable id. Loading a world replaces any world with the same id. |
-| `schemaVersion` | integer | yes | `5`. |
+| `schemaVersion` | integer | yes | `6`. |
 | `name` | string | no | Display name. |
 | `zone` | string | no | Id of the `ZoneDefinition` this map belongs to. Absent means the project's default zone — never *no* zone; see below. |
 | `origin` | `[col, row]` | no | North-west corner of the extent; the coordinate stored at buffer index `0`. Defaults to `[0, 0]`. May be negative. |
@@ -379,6 +379,7 @@ since.
 | `defaultTile` | string | yes | Tile used for every cell not listed in `tiles`. |
 | `tiles` | PlacedTile[] | no | Only the cells that differ from `defaultTile`. |
 | `entities` | EntityDefinition[] | no | Placed entities. Exactly one player is required to play. |
+| `decorations` | PlacedDecoration[] | no | Trees, houses and chests standing on the map. Several may share a cell. |
 | `locations` | LocationDefinition[] | no | Points of interest. |
 | `links` | MapLink[] | no | Cells that send the player to another map. |
 | `metadata` | object | no | Free text; never read by the simulation. |
@@ -572,6 +573,43 @@ monster keeps its own preview value so distinct models can be placed once those
 definitions exist. This convention uses the already-open `properties` object,
 so it does not change `WORLD_SCHEMA_VERSION`.
 
+### PlacedDecoration
+
+One decoration standing on one cell (ADR-0051). Several may share a hex — that
+is what decorations are for — and author order breaks a tie between two drawn
+from the same definition.
+
+```json
+{ "id": "oak_0", "decoration": "oak", "at": [4, 7], "offset": [-6, 2], "interactive": true }
+```
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `id` | string | yes | Stable id, unique within the world. **What a scenario addresses.** |
+| `decoration` | string | yes | Id of the `DecorationDefinition` this is drawn from. |
+| `at` | `[col, row]` | yes | Position. Must be in bounds and on a hex the map has. |
+| `offset` | `[x, y]` | no | Whole-pixel nudge from where the definition's anchor puts it, `-256..=256` per axis. Positive is right and down. Defaults to `[0, 0]`. |
+| `interactive` | boolean | no | Whether a player may interact with **this** one. Defaults to `false`. |
+| `tags` | string[] | no | Free-form tags. |
+
+`offset` is *where on the hex* this one sits. The definition's `anchor` is where
+a tree belongs; the nudge is the few pixels that keep a row of the same fence
+post from reading as a stamped pattern, and it is per placement because that is
+the only thing that differs between two trees drawn from one definition. It is
+measured in the tile set's authored pixels, like every other length in the
+format, and it is **added to** `placement` — the definition is never edited by
+placing it.
+
+`interactive` lives here rather than on the definition because it is a fact
+about the chest standing at `[4, 7]`, not about chests: one in ten holds the
+letter and the other nine are scenery. *Whether*, never *what* — what happens
+when it is opened is scenario content (ADR-0005).
+
+Whether `decoration` names a definition that exists is a **project-level**
+question, like a link's `targetWorld`: a world file is validated on its own and
+cannot know, so the unresolved reference is reported as
+`decoration.unknownDefinition` when the project loads.
+
 ### LocationDefinition
 
 | Field | Type | Required | Meaning |
@@ -631,6 +669,12 @@ starts. It is what a delivered client build boots from (ADR-0018).
   "characters": [
     { "id": "human_player", "path": "characters/human_player.json" }
   ],
+  "decorations": [
+    { "id": "torch", "path": "decorations/torch.json" }
+  ],
+  "objects": [
+    { "id": "small_potion", "path": "objects/small_potion.json" }
+  ],
   "characterCreation": { "id": "new_game", "path": "character-creation.json" },
   "titleScreen": { "id": "main", "path": "menu/title-screen.json" },
   "settings": { "id": "insulaire_game", "path": "settings.json" },
@@ -654,6 +698,8 @@ starts. It is what a delivered client build boots from (ADR-0018).
 | `tileSets` | `{ id, path }[]` | no | Tile sets to load; `path` is relative to the content root. |
 | `worlds` | `{ id, path }[]` | yes | Worlds to load. Every world reachable through a link must be listed. |
 | `characters` | `{ id, path }[]` | no | Character definitions to load. See *CharacterDefinition* below. Absent means the project ships none. |
+| `decorations` | `{ id, path }[]` | no | Decoration definitions to load. See *DecorationDefinition* below. Absent means the project ships none. |
+| `objects` | `{ id, path }[]` | no | Object definitions to load. See *ObjectDefinition* below. Absent means the project ships none. |
 | `characterCreation` | `{ id, path }` | no | Generic character-creation choices, characteristics and workflow. See *CharacterCreationDefinition* below. |
 | `locales` | `{ default, languages }` | no | Languages the game is available in. See *Locales* below. Absent means the application's own languages, and no content translations. |
 | `titleScreen` | `{ id, path }` | no | The screen a client opens on. See *TitleScreenDefinition* below. Absent means the game starts on a map. |
@@ -1325,6 +1371,179 @@ previewing a definition mid-edit gets a picture rather than an error.
 
 ---
 
+## DecorationDefinition
+
+`content/decorations/*.json` describe **the things that stand on a hex without
+being the hex**: a tree, a house, a chest, a bush, a signpost. Several may share
+one cell (ADR-0048).
+
+```json
+{
+  "id": "torch",
+  "schemaVersion": 2,
+  "name": "Wall torch",
+  "category": "prop",
+  "resolution": { "width": 16, "height": 32 },
+  "anchor": [8, 31],
+  "plane": "front",
+  "order": 2,
+  "animations": [
+    {
+      "id": "burning",
+      "frameDurationMs": 100,
+      "looping": true,
+      "frames": [
+        "assets/decorations/torch_0.png",
+        "assets/decorations/torch_1.png"
+      ]
+    }
+  ]
+}
+```
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `id` | string | yes | Stable id, referenced by a placed decoration. |
+| `schemaVersion` | integer | yes | `2`. |
+| `name` | string | no | Editor label. Not player-facing, so not a key. |
+| `category` | enum | no | `nature`, `building`, `prop`, `container`, `other`. Filing only — nothing reads it. |
+| `resolution` | `{ width, height }` | no | The canvas every frame is drawn on, at most `256` a side. Defaults to `32x48`. |
+| `anchor` | `[x, y]` | no | The pixel of that canvas which lands on the cell's ground point. Defaults to `[0, 0]`. |
+| `plane` | enum | no | `behind` (default) or `front` — which side of the characters it is drawn on. |
+| `order` | integer | no | Sort key **within its plane**, `-999..=999`. Higher draws later, so over. Defaults to `0`. |
+| `tags` | string[] | no | Author-owned gameplay tags. |
+| `animations` | `DecorationAnimation[]` | no | The appearances it can play, in author order. |
+| `defaultAnimation` | string | no | Which one plays when nothing asks for one. Absent names the first declared. |
+
+**Schema `2` removed `interactive`** (ADR-0051). Whether a thing can be opened
+or searched is a fact about the chest standing at `[4, 7]`, so it moved to
+`PlacedDecoration`. There is no reader for the old field: a `1` file's
+`interactive` is ignored.
+
+### The anchor
+
+A decoration is **anchored, not centred**. `anchor` names the pixel of the image
+that sits on the cell's ground point, so a tree anchors at the foot of its trunk
+and a hanging lantern at the ring it hangs from. The resolver returns the box
+that follows from it — `placement`, `[x, y, width, height]` relative to that
+ground point — so no host redoes the subtraction.
+
+The anchor is a position **on the cell**, not a coordinate inside the image. An
+anchor outside the decoration's own canvas is therefore ordinary: it is a small
+prop dropped away from the middle of its hex, and nothing is reported for it.
+
+What *is* reported is the drawing leaving the hexagon —
+`decoration.overflowsCell`, and a **warning**, because a big tree is supposed to
+overhang its cell. It needs the cell's pixel grid to measure against, which a
+decoration file does not carry: `validateDecoration` takes an optional
+`TileArtGeometry` and skips this one check without it, so loading a definition
+needs no tile set while the editor, which has one, gets the warning. It is
+measured against the **flat** hexagon, the larger of the two footprints a
+projection gives a cell.
+
+### The two planes
+
+Depth on one cell is not a single number. A character standing on a hex is *in
+front of* the grass and *behind* the tree canopy, so the sort key is the
+`plane` first — everything `behind`, then the characters, then everything
+`front` — and `order` within each. One combined z-index cannot express that
+without the renderer knowing which numbers mean "past the characters", which is
+scenario-shaped knowledge the engine must not carry (ADR-0048).
+
+### Appearances are flipbooks
+
+A `DecorationAnimation` is a named, ordered list of images:
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `id` | string | yes | Stable id — `idle`, `open`, `burning`. |
+| `name` | string | no | Editor label. |
+| `frames` | string[] | yes | Image paths under the content root, in play order. At most 64. |
+| `frameDurationMs` | integer | no | How long each frame lasts. Defaults to `120`. |
+| `looping` | boolean | no | Whether it starts again when it ends. Defaults to `false`. |
+
+One image per frame, played at a fixed rate — not a skeleton with tracks and
+poses, which is what a *character* is (see below). A torch has four drawings.
+
+A named appearance is also how a decoration has **states**: a chest declares
+`closed` and `open`, each one frame long, and the scenario asks for one by id. A
+looping appearance wraps; one that does not holds its last frame, which is what
+makes a one-shot state stay in the state it reached.
+
+Nothing in the format says what *interacting* with a decoration does.
+`interactive` says **whether**, never **what**; opening a chest and searching a
+bush are scenario content (ADR-0005).
+
+### ResolvedDecoration
+
+What `resolveDecoration` / `previewDecoration` return (`docs/wasm-api.md`):
+`id`, `resolution`, `anchor`, `placement`, `plane`, `order`, `interactive`, the
+`animation` that played, the `frame` index within it, and the `asset` to blit.
+`animation` and `asset` are empty when the decoration declares no appearance.
+
+---
+
+## ObjectDefinition
+
+`content/objects/*.json` describe **what a character carries**: inventory items,
+equipment, consumables, quest tokens. The sibling of a decoration and its
+opposite — a decoration stands on a hex and is drawn in the world, an object
+travels in a bag and is drawn in a panel (ADR-0049).
+
+```json
+{
+  "id": "small_potion",
+  "schemaVersion": 2,
+  "name": "Small potion",
+  "kind": "consumable",
+  "nameKey": "game.object.smallPotion.name",
+  "descriptionKey": "game.object.smallPotion.description",
+  "frames": [
+    "assets/objects/small_potion.png"
+  ],
+  "resolution": { "width": 16, "height": 16 },
+  "stackSize": 10,
+  "tags": ["healing"]
+}
+```
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `id` | string | yes | Stable id, referenced by inventories and by the scenario. |
+| `schemaVersion` | integer | yes | `2`. |
+| `name` | string | no | Editor label. Not player-facing, so not a key. |
+| `kind` | enum | no | `consumable`, `equipment`, `quest`, `material`, `other`. Filing only. |
+| `nameKey` | string | no | Key of the name a player reads (ADR-0023). |
+| `descriptionKey` | string | no | Key of the description a player reads. |
+| `frames` | string[] | no | The images of the icon, in play order, under the content root. **One frame is a still icon.** At most 64. |
+| `frameDurationMs` | integer | no | How long each frame lasts. Defaults to `120`. Unread by a still icon. |
+| `looping` | boolean | no | Whether the icon starts again when it ends. Defaults to `false`. |
+| `resolution` | `{ width, height }` | no | The canvas every frame is drawn on. Defaults to `32x32`. |
+| `stackSize` | integer | no | How many fit in one inventory slot, `1..=9999`. `1` means it does not stack. Defaults to `1`. |
+| `slot` | string | no | Where equipment is worn — an author-owned id such as `head` or `mainHand`. Empty for anything not worn. |
+| `tags` | string[] | no | Author-owned gameplay tags. |
+
+**Schema `2` replaced `icon` with `frames`** (ADR-0050). An icon is the same
+flipbook a decoration animates with — an ordered list of images played at a
+fixed rate — and the still icon nearly every object has is that flipbook one
+frame long. There is no reader for the old field: a `1` file's `icon` is
+ignored, and this project ships no object content.
+
+`resolveObject` / `previewObject` return a `ResolvedObject`
+(`{ id, resolution, frames, frame, asset, durationMs, looping }`), so a panel
+does not redo the frame arithmetic (`docs/wasm-api.md`).
+
+An object with no `nameKey` and no `frames` is a **warning**, not an error: an
+object is routinely written before its art and its text exist, and the editor
+creates every key it names on save (ADR-0027). A frame that names *nothing*, on
+the other hand, is an error — it is a row an author left half-filled.
+
+What is deliberately absent: effects, prices, damage, durability. What drinking
+a potion *does* is scenario and combat content; `kind` and `tags` are how
+something is filed and found, not a behaviour table.
+
+---
+
 ## Entity templates
 
 `templateId` resolves against a **built-in registry** in
@@ -1475,6 +1694,29 @@ exposed across the boundary as `validateLinks()` and `loadProject()`.
 | `character.duplicatePoseFrame` | An animation sets a pose twice at the same frame. |
 | `character.unknownMirrorSource` | A `mirrorOf` names an animation nobody declares. |
 | `character.chainedMirror` | A `mirrorOf` names an animation that is itself a mirror. |
+| `project.unloadedDecoration` / `project.duplicateDecoration` | The manifest names a decoration that is not loaded, or lists one twice. |
+| `decoration.missingId` / `decoration.unsupportedSchemaVersion` | Decoration header problems. |
+| `decoration.invalidResolution` | A canvas side is `0` or above `256`. |
+| `decoration.orderOutOfRange` | `order` is outside `-999..=999`. |
+| `decoration.missingAnimationId` / `decoration.duplicateAnimation` | An appearance has no id, or two share one. |
+| `decoration.emptyAnimation` | An appearance declares no frame, so it draws nothing. |
+| `decoration.tooManyFrames` | An appearance declares more than 64 frames. |
+| `decoration.invalidFrameDuration` | An appearance has several frames and a frame duration of `0`, so it would never advance. |
+| `decoration.missingFrame` | A frame names no image. |
+| `decoration.invalidAssetPath` | A frame's image path is absolute, a URL, or steps outside the content root. |
+| `decoration.missingPlacementId` / `decoration.duplicatePlacementId` | A placed decoration has no id, or two share one — a scenario could not say which it means. |
+| `decoration.missingReference` | A placed decoration names no definition. |
+| `decoration.outOfBounds` / `decoration.absentCell` | A placed decoration is outside the extent, or on a cell the map does not have. |
+| `decoration.offsetOutOfRange` | A placement's nudge is beyond `±256px` on an axis. |
+| `decoration.unknownDefinition` | A map places a decoration nothing loaded. Reported when the **project** loads, like a link's `targetWorld`. |
+| `project.unloadedObject` / `project.duplicateObject` | The manifest names an object that is not loaded, or lists one twice. |
+| `object.missingId` / `object.unsupportedSchemaVersion` | Object header problems. |
+| `object.invalidResolution` | An icon canvas side is `0` or above `256`. |
+| `object.invalidStackSize` | `stackSize` is `0` or above `9999`. |
+| `object.invalidAssetPath` | An icon frame path is absolute, a URL, or steps outside the content root. |
+| `object.missingFrame` | An icon frame names no image. |
+| `object.tooManyFrames` | An icon declares more than 64 frames. |
+| `object.invalidFrameDuration` | An icon has several frames and a frame duration of `0`, so it would never advance. |
 | `tileSet.empty` / `tileSet.paletteTooLarge` / `tile.duplicateId` / `tile.missingVisualId` | Tile set problems. |
 
 **Warnings** (content loads):
@@ -1498,6 +1740,13 @@ exposed across the boundary as `validateLinks()` and `loadProject()`.
 | `character.mirrorWithPose` | A mirror sets a pose of its own, which is never read — the source's pose is what plays. |
 | `character.mirrorWithTracks` | A mirror declares tracks of its own, which are never read. |
 | `character.rectOutOfCanvas` | A variant reaches outside the declared canvas. Legal — a cape overhangs — and far more often a box left over from a smaller sprite. |
+| `decoration.noAnimations` | A decoration declares no appearance, so it draws nothing. |
+| `decoration.overflowsCell` | The drawing reaches past the hexagon it stands on. Legal — a big tree overhangs its cell — and worth knowing when it was not meant to. Only reported when the host supplies the cell's pixel grid. |
+| `decoration.unknownDefaultAnimation` | `defaultAnimation` names an appearance nobody declares; the first one plays instead. |
+| `object.missingNameKey` | An object names no key, so a player would see nothing in an inventory. The state an object is created in. |
+| `object.noFrames` | An object has no icon yet. |
+| `object.slotWithoutEquipment` | A `slot` on something that is not `equipment`: nothing will wear it. |
+| `object.equipmentWithoutSlot` | Equipment that names no slot to be worn in. |
 
 ---
 

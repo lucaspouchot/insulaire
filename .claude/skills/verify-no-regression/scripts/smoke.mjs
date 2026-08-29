@@ -487,6 +487,16 @@ async function recordTranscript(page, baseUrl, scenario) {
     for (const entry of manifest.characters ?? []) {
       content.characters.push(parse(engine.loadCharacter(await text('/content/' + entry.path))));
     }
+    // Decorations and objects are content the manifest lists too, so the
+    // project will not load without them either (ADR-0048, ADR-0049).
+    content.decorations = [];
+    for (const entry of manifest.decorations ?? []) {
+      content.decorations.push(parse(engine.loadDecoration(await text('/content/' + entry.path))));
+    }
+    content.objects = [];
+    for (const entry of manifest.objects ?? []) {
+      content.objects.push(parse(engine.loadObject(await text('/content/' + entry.path))));
+    }
     // Creation binds into those definitions, so it is loaded after them and
     // before the manifest that requires it (ADR-0042).
     content.characterCreation = null;

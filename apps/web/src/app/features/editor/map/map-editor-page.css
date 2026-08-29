@@ -424,3 +424,99 @@
   font-size: 11px;
   padding: 4px 8px;
 }
+
+/* ------------------------------------------------------- decoration panel */
+
+/* One row per decoration this project ships, picked as the brush. */
+.pick-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 5px 8px;
+  text-align: left;
+  font-size: 12px;
+}
+
+.pick-row.on {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+}
+
+.pick-row .name {
+  flex: 1;
+}
+
+.pick-row .tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+/* One placement standing on the selected hex: what it is, where it sits, and
+   whether a player may interact with it
+   (docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md). */
+.node {
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.node.on {
+  border-color: var(--accent-dim);
+}
+
+.node .line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.node .line:last-of-type {
+  margin-bottom: 0;
+}
+
+/* Only the heading's own button stretches; a nudge arrow is a nudge arrow. */
+.node .line.head > button.pick {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+
+.node .line.arrows button {
+  flex: 1;
+  min-width: 0;
+}
+
+.node input.id {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.node .nudge input {
+  width: 56px;
+}
+
+.node .nudge .axis {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.node .nudge .unit {
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.node .check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12px;
+}

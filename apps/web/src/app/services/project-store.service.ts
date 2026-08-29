@@ -63,6 +63,14 @@ const STORAGE_KEY = 'insulaire.editor.project.v1';
 export type ProjectSource = 'shipped' | 'restored' | 'imported' | 'new';
 
 /**
+ * The manifest lists that hold one file per definition.
+ *
+ * Also the directory each one lives in by convention, which is what lets
+ * {@link ProjectStoreService.characterPath} and its siblings be one function.
+ */
+type LibraryKind = 'characters' | 'decorations' | 'objects';
+
+/**
  * One locale file as authored, ready to hand to the engine.
  *
  * The text is kept as the file's own JSON rather than parsed here: the engine
@@ -407,9 +415,11 @@ export class ProjectStoreService {
         id: document.id,
         path: `worlds/${document.id}.json`,
       })),
-      // Carried through untouched, like the title screen below: the character
-      // editor owns this list and declares its own files.
+      // Carried through untouched, like the title screen below: each asset
+      // editor owns its own list and declares its own files.
       characters: project.characters,
+      decorations: project.decorations,
+      objects: project.objects,
       characterCreation: project.characterCreation,
       // Carried through untouched, like the languages below: these name files
       // the editor does not hold documents for, so regenerating them from what
@@ -694,49 +704,96 @@ export class ProjectStoreService {
   }
 
   /**
-   * Declares a character definition in the manifest, so it is loaded next time
-   * the project is.
+   * Declares a definition in one of the manifest's libraries, so it is loaded
+   * next time the project is.
    *
    * The same door `declareLocaleFile` opens, for the same reason: creating a
-   * character in the editor should not mean hand-editing `project.json` for it
-   * to exist (`docs/adr/ADR-0028-character-definitions.md`).
+   * character — or a decoration, or an object — in the editor should not mean
+   * hand-editing `project.json` for it to exist
+   * (`docs/adr/ADR-0028-character-definitions.md`,
+   * `docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
    *
    * @returns `false` when the project already declares that id.
    */
-  declareCharacter(id: string, path: string): boolean {
+  private declareIn(library: LibraryKind, id: string, path: string): boolean {
     const project = this.requireProject();
-    const declared = project.characters ?? [];
+    const declared = project[library] ?? [];
     if (declared.some((entry) => entry.id === id)) {
       return false;
     }
-    this.projectSignal.set({ ...project, characters: [...declared, { id, path }] });
+    this.projectSignal.set({ ...project, [library]: [...declared, { id, path }] });
     this.touch();
     return true;
   }
 
   /**
-   * Removes a character definition from the manifest.
+   * Removes a definition from one of the manifest's libraries.
    *
    * @returns `false` when the project does not declare it.
    */
-  undeclareCharacter(id: string): boolean {
+  private undeclareFrom(library: LibraryKind, id: string): boolean {
     const project = this.requireProject();
-    const declared = project.characters ?? [];
+    const declared = project[library] ?? [];
     if (!declared.some((entry) => entry.id === id)) {
       return false;
     }
     this.projectSignal.set({
       ...project,
-      characters: declared.filter((entry) => entry.id !== id),
+      [library]: declared.filter((entry) => entry.id !== id),
     });
     this.touch();
     return true;
   }
 
+  /** Where a definition's file lives, declared or by convention. */
+  private pathIn(library: LibraryKind, id: string): string {
+    const declared = this.projectSignal()?.[library]?.find((entry) => entry.id === id);
+    return declared?.path ?? `${library}/${id}.json`;
+  }
+
+  /** Declares a character definition in the manifest. */
+  declareCharacter(id: string, path: string): boolean {
+    return this.declareIn('characters', id, path);
+  }
+
+  /** Removes a character definition from the manifest. */
+  undeclareCharacter(id: string): boolean {
+    return this.undeclareFrom('characters', id);
+  }
+
   /** Where a character's file lives, declared or by convention. */
   characterPath(id: string): string {
-    const declared = this.projectSignal()?.characters?.find((entry) => entry.id === id);
-    return declared?.path ?? `characters/${id}.json`;
+    return this.pathIn('characters', id);
+  }
+
+  /** Declares a decoration definition in the manifest. */
+  declareDecoration(id: string, path: string): boolean {
+    return this.declareIn('decorations', id, path);
+  }
+
+  /** Removes a decoration definition from the manifest. */
+  undeclareDecoration(id: string): boolean {
+    return this.undeclareFrom('decorations', id);
+  }
+
+  /** Where a decoration's file lives, declared or by convention. */
+  decorationPath(id: string): string {
+    return this.pathIn('decorations', id);
+  }
+
+  /** Declares an object definition in the manifest. */
+  declareObject(id: string, path: string): boolean {
+    return this.declareIn('objects', id, path);
+  }
+
+  /** Removes an object definition from the manifest. */
+  undeclareObject(id: string): boolean {
+    return this.undeclareFrom('objects', id);
+  }
+
+  /** Where an object's file lives, declared or by convention. */
+  objectPath(id: string): string {
+    return this.pathIn('objects', id);
   }
 
   /** Declares or replaces the project's single character-creation file. */
@@ -940,6 +997,8 @@ function mergeManifest(onDisk: ProjectDefinition, stored: ProjectDefinition): Pr
     tileSets: union(onDisk.tileSets, stored.tileSets),
     worlds: union(onDisk.worlds, stored.worlds),
     characters: union(onDisk.characters ?? [], stored.characters ?? []),
+    decorations: union(onDisk.decorations ?? [], stored.decorations ?? []),
+    objects: union(onDisk.objects ?? [], stored.objects ?? []),
     characterCreation: onDisk.characterCreation ?? stored.characterCreation,
   };
 }

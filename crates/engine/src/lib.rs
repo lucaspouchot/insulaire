@@ -63,15 +63,16 @@ use std::collections::BTreeMap;
 use insulaire_simulation::{rules, tick, GameState, PendingTransition, SimEvent};
 use insulaire_world::{
     resolve_cell_art, resolve_tile_render, AnimationRole, CharacterCreationDefinition,
-    CharacterCreationResult, CharacterDefinition, Hex, PlacedTileArt, ProjectionMode,
-    ResolvedCharacter, ResolvedTile, ResolvedTileRender, SettingsDefinition, TileArtGeometry,
-    TitleScreenDefinition, WorldDefinition, WorldGrid,
+    CharacterCreationResult, CharacterDefinition, DecorationDefinition, Hex, ObjectDefinition,
+    PlacedTileArt, ProjectionMode, ResolvedCharacter, ResolvedDecoration, ResolvedObject,
+    ResolvedTile, ResolvedTileRender, SettingsDefinition, TileArtGeometry, TitleScreenDefinition,
+    WorldDefinition, WorldGrid,
 };
 
 pub use dto::{
     AxialDto, Command, CommandResult, ContentSummary, EngineInfo, EntitySnapshot, GameSnapshot,
-    LanguageView, LinkView, LoadOutcome, LocaleView, LocationView, PaletteEntry, ProjectView,
-    RngSnapshot, TemplateView, WorldSummary, WorldView,
+    LanguageView, LinkView, LoadOutcome, LocaleView, LocationView, PaletteEntry,
+    PlacedDecorationView, ProjectView, RngSnapshot, TemplateView, WorldSummary, WorldView,
 };
 pub use error::{EngineError, EngineErrorPayload};
 pub use json::{JsonEngine, JsonResult};
@@ -415,6 +416,8 @@ impl Engine {
                 })
                 .collect(),
             characters: self.content.character_ids(),
+            decorations: self.content.decoration_ids(),
+            objects: self.content.object_ids(),
             character_creation: self
                 .content
                 .character_creation()
@@ -526,6 +529,18 @@ impl Engine {
                 .iter()
                 .enumerate()
                 .map(|(index, tile)| PaletteEntry::new(index, tile))
+                .collect(),
+            decorations: world
+                .decorations
+                .iter()
+                .map(|placed| PlacedDecorationView {
+                    id: placed.id.clone(),
+                    decoration: placed.decoration.clone(),
+                    at: placed.at,
+                    offset: placed.offset,
+                    interactive: placed.interactive,
+                    tags: placed.tags.clone(),
+                })
                 .collect(),
             locations: world
                 .locations
@@ -707,6 +722,178 @@ impl Engine {
     #[must_use]
     pub fn character_ids(&self) -> Vec<String> {
         self.content.character_ids()
+    }
+
+    // ------------------------------------------------------------ decorations
+
+    /// Parses, validates and registers a decoration definition.
+    ///
+    /// # Errors
+    ///
+    /// See [`ContentRegistry::load_decoration`].
+    pub fn load_decoration(&mut self, json: &str) -> Result<LoadOutcome, EngineError> {
+        let (id, report) = self.content.load_decoration(json)?;
+        Ok(LoadOutcome { id, report })
+    }
+
+    /// Validates a decoration definition without registering it.
+    ///
+    /// `cell_json` is the pixel grid it will stand among; an empty string
+    /// skips the cell check. See [`ContentRegistry::validate_decoration_json`].
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Parse`] when either JSON is malformed.
+    pub fn validate_decoration(
+        &self,
+        json: &str,
+        cell_json: &str,
+    ) -> Result<insulaire_world::ValidationReport, EngineError> {
+        self.content.validate_decoration_json(json, cell_json)
+    }
+
+    /// A registered decoration definition.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::UnknownContent`] when no definition has that id.
+    pub fn decoration(&self, id: &str) -> Result<DecorationDefinition, EngineError> {
+        self.content
+            .decoration(id)
+            .cloned()
+            .ok_or_else(|| EngineError::UnknownContent {
+                kind: "decoration".to_owned(),
+                id: id.to_owned(),
+            })
+    }
+
+    /// Ids of every registered decoration definition.
+    #[must_use]
+    pub fn decoration_ids(&self) -> Vec<String> {
+        self.content.decoration_ids()
+    }
+
+    /// Resolves a registered decoration at a moment of one of its animations.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::UnknownContent`] when no definition has that id.
+    pub fn resolve_decoration(
+        &self,
+        id: &str,
+        animation: Option<&str>,
+        time_ms: u32,
+    ) -> Result<ResolvedDecoration, EngineError> {
+        self.content
+            .resolve_decoration(id, animation, time_ms)
+            .ok_or_else(|| EngineError::UnknownContent {
+                kind: "decoration".to_owned(),
+                id: id.to_owned(),
+            })
+    }
+
+    /// Resolves a decoration definition **in hand**, without registering it.
+    ///
+    /// What the editor previews with, for the reason
+    /// [`Self::preview_character`] exists: the definition being written is not
+    /// registered and may not be valid yet, and it still has to be visible.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Parse`] when the JSON is malformed.
+    pub fn preview_decoration(
+        &self,
+        decoration_json: &str,
+        animation: Option<&str>,
+        time_ms: u32,
+    ) -> Result<ResolvedDecoration, EngineError> {
+        let decoration: DecorationDefinition =
+            serde_json::from_str(decoration_json).map_err(|source| EngineError::Parse {
+                what: "decoration".to_owned(),
+                message: source.to_string(),
+            })?;
+        Ok(decoration.resolve_at(animation, time_ms))
+    }
+
+    // ---------------------------------------------------------------- objects
+
+    /// Parses, validates and registers an object definition.
+    ///
+    /// # Errors
+    ///
+    /// See [`ContentRegistry::load_object`].
+    pub fn load_object(&mut self, json: &str) -> Result<LoadOutcome, EngineError> {
+        let (id, report) = self.content.load_object(json)?;
+        Ok(LoadOutcome { id, report })
+    }
+
+    /// Validates an object definition without registering it, keys included.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Parse`] when the JSON is malformed.
+    pub fn validate_object(
+        &self,
+        json: &str,
+    ) -> Result<insulaire_world::ValidationReport, EngineError> {
+        self.content.validate_object_json(json)
+    }
+
+    /// A registered object definition.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::UnknownContent`] when no definition has that id.
+    pub fn object(&self, id: &str) -> Result<ObjectDefinition, EngineError> {
+        self.content
+            .object(id)
+            .cloned()
+            .ok_or_else(|| EngineError::UnknownContent {
+                kind: "object".to_owned(),
+                id: id.to_owned(),
+            })
+    }
+
+    /// Ids of every registered object definition.
+    #[must_use]
+    pub fn object_ids(&self) -> Vec<String> {
+        self.content.object_ids()
+    }
+
+    /// Resolves a registered object's icon at a moment of its flipbook.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::UnknownContent`] when no definition has that id.
+    pub fn resolve_object(&self, id: &str, time_ms: u32) -> Result<ResolvedObject, EngineError> {
+        self.content
+            .resolve_object(id, time_ms)
+            .ok_or_else(|| EngineError::UnknownContent {
+                kind: "object".to_owned(),
+                id: id.to_owned(),
+            })
+    }
+
+    /// Resolves an object definition **in hand**, without registering it.
+    ///
+    /// What the editor previews with, for the reason
+    /// [`Self::preview_decoration`] exists: the definition being written is not
+    /// registered and may not be valid yet, and it still has to be visible.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::Parse`] when the JSON is malformed.
+    pub fn preview_object(
+        &self,
+        object_json: &str,
+        time_ms: u32,
+    ) -> Result<ResolvedObject, EngineError> {
+        let object: ObjectDefinition =
+            serde_json::from_str(object_json).map_err(|source| EngineError::Parse {
+                what: "object".to_owned(),
+                message: source.to_string(),
+            })?;
+        Ok(object.resolve_at(time_ms))
     }
 
     /// Parses, validates and registers the character-creation declaration.

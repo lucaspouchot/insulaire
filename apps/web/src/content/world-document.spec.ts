@@ -519,6 +519,107 @@ describe('WorldDocument', () => {
     });
   });
 
+  describe('placed decorations', () => {
+    /**
+     * The one thing a decoration does that an entity and a door do not: share
+     * a cell (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+     */
+    it('stacks several on one hex and exports them in author order', () => {
+      const document = documentFor();
+      const at = offset(2, 1);
+
+      const bush = document.placeDecoration(at, 'bush');
+      const oak = document.placeDecoration(at, 'oak');
+      expect(bush?.id).toBe('bush_1');
+      expect(oak?.id).toBe('oak_1');
+      expect(document.decorationsAt(at)).toHaveLength(2);
+      expect(document.placeDecoration(offset(99, 9), 'oak')).toBeNull();
+
+      // Whether is per placement, and it is off until an author says otherwise.
+      expect(oak?.interactive).toBe(false);
+      expect(document.updateDecoration('oak_1', { interactive: true })).toBe(true);
+
+      // A nudge, so two bushes on one hex are not one bush drawn twice.
+      expect(bush?.offset).toEqual([0, 0]);
+      expect(document.updateDecoration('bush_1', { offset: [-6, 2] })).toBe(true);
+
+      expect(document.toDefinition().decorations).toEqual([
+        { id: 'bush_1', decoration: 'bush', at: [2, 1], offset: [-6, 2] },
+        { id: 'oak_1', decoration: 'oak', at: [2, 1], interactive: true },
+      ]);
+    });
+
+    it('round-trips placements through a definition', () => {
+      const dressed: WorldDefinition = {
+        ...world,
+        decorations: [
+          {
+            id: 'oak_0',
+            decoration: 'oak',
+            at: [3, 0],
+            offset: [4, -3],
+            interactive: true,
+            tags: ['searchable'],
+          },
+        ],
+      };
+      const document = WorldDocument.fromDefinition(dressed, tileSet);
+
+      expect(document.decorationsAt(offset(3, 0))[0]?.interactive).toBe(true);
+      expect(document.decorationsAt(offset(3, 0))[0]?.offset).toEqual([4, -3]);
+      expect(document.decorationsAt(offset(0, 0))).toHaveLength(0);
+      expect(document.toDefinition().decorations).toEqual(dressed.decorations);
+    });
+
+    /**
+     * The id is what a scenario names, so an author writes it — and two
+     * placements may never answer to one name.
+     */
+    it('renames a placement, and refuses a name already taken', () => {
+      const document = documentFor();
+      const at = offset(2, 1);
+      document.placeDecoration(at, 'chest');
+      document.placeDecoration(at, 'chest');
+
+      expect(document.renameDecoration('chest_1', 'chest_with_the_letter')).toBe(true);
+      expect(document.decorationsAt(at).map((placed) => placed.id)).toEqual([
+        'chest_with_the_letter',
+        'chest_2',
+      ]);
+
+      expect(document.renameDecoration('chest_2', 'chest_with_the_letter')).toBe(false);
+      expect(document.renameDecoration('chest_2', '  ')).toBe(false);
+      expect(document.renameDecoration('nobody', 'anything')).toBe(false);
+      expect(document.decorationsAt(at)[1]?.id).toBe('chest_2');
+    });
+
+    /** The eraser takes the one on top, not the whole hex. */
+    it('removes the last one placed, one click at a time', () => {
+      const document = documentFor();
+      const at = offset(2, 1);
+      document.placeDecoration(at, 'bush');
+      document.placeDecoration(at, 'oak');
+
+      expect(document.removeTopDecorationAt(at)).toBe(true);
+      expect(document.decorationsAt(at).map((placed) => placed.decoration)).toEqual(['bush']);
+      expect(document.removeTopDecorationAt(at)).toBe(true);
+      expect(document.removeTopDecorationAt(at)).toBe(false);
+    });
+
+    /** Authored content is never destroyed by a brush stroke (ADR-0046). */
+    it('refuses to carve a hex out from under one', () => {
+      const document = documentFor();
+      const at = offset(2, 1);
+      document.placeDecoration(at, 'oak');
+
+      expect(document.occupantsAt(at)).toEqual([{ kind: 'decoration', id: 'oak_1' }]);
+      expect(document.setPresent(at, false)).toBe(false);
+
+      expect(document.removeDecoration('oak_1')).toBe(true);
+      expect(document.setPresent(at, false)).toBe(true);
+    });
+  });
+
   describe('map links', () => {
     it('places at most one link per cell and exports it', () => {
       const document = documentFor();

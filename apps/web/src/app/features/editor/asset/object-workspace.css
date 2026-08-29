@@ -1,0 +1,322 @@
+/* The objects category. The frame around it — rail, list, scene, inspector —
+   is `asset-workspace.css`; what is here dresses the four slots this category
+   fills (docs/adr/ADR-0039-one-editor-for-everything-drawn.md).
+
+   It is the shortest of the three stylesheets, and that is the point: an object
+   has an icon and no geometry, so there is no stage to build
+   (docs/adr/ADR-0049-an-object-is-carried-not-placed.md). What it does have is
+   a frame strip, because the icon is a flipbook
+   (docs/adr/ADR-0050-an-object-icon-is-a-flipbook.md). */
+
+:host {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+.toolbar .path {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.toolbar .spacer {
+  flex: 1;
+}
+
+.toolbar .view {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 8px;
+}
+
+.toolbar .view .readout {
+  min-width: 34px;
+  font-family: var(--mono);
+  font-size: 11px;
+  text-align: center;
+  color: var(--text-dim);
+}
+
+.toolbar .view button {
+  font-size: 11px;
+  padding: 2px 7px;
+}
+
+.toolbar .toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 0 0 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.toolbar .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+
+.issues-count {
+  font-size: 11px;
+  color: var(--error);
+}
+
+.readonly,
+.pending {
+  font-size: 11px;
+  color: var(--warn);
+}
+
+.banner {
+  margin: 8px 12px 0;
+}
+
+/* The object list lives under the category rail, in the frame's own side
+   column, so it is a narrow thing and its panel wears no chrome of its own. */
+.library .panel {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.library .add {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.library .add button {
+  width: 100%;
+}
+
+.form {
+  min-height: 0;
+}
+
+/* ------------------------------------------------------------------- scene */
+
+/* Its own class, not `.scene`: the frame's slot is a `<section class="scene">`
+   and this is the element projected *into* it. */
+.object-scene {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  min-width: 0;
+}
+
+.object-scene app-pixel-editor {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Under the surface, because what it moves is what the surface shows. */
+.transport {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* ------------------------------------------------------------------- parts */
+
+.panel {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+}
+
+.panel h2 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.row input,
+.row select {
+  width: 100%;
+}
+
+/* A key nothing translates yet: the language editor's job, said here. */
+.row input.missing {
+  border-color: var(--warn);
+}
+
+/* What a key currently resolves to, so the form reads as prose rather than as
+   a list of identifiers (docs/adr/ADR-0023-localised-content-keys.md). */
+.preview {
+  margin: -2px 0 8px;
+  padding-left: 148px;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--text-dim);
+}
+
+.pick-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 5px 8px;
+  text-align: left;
+  font-size: 12px;
+}
+
+.pick-row.on {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+}
+
+.pick-row .name {
+  flex: 1;
+}
+
+.pick-row .tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+/* The canvas size: two numbers with a × between them. */
+.pair {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pair input {
+  width: 72px;
+}
+
+.pair .times,
+.pair .unit {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.hint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.hint.ok {
+  color: var(--ok);
+}
+
+.hint.warn {
+  color: var(--warn);
+}
+
+.hint button {
+  margin-left: 6px;
+}
+
+.issue {
+  margin: 0 0 6px;
+  font-size: 11px;
+  color: var(--error);
+}
+
+.issue.warn {
+  color: var(--warn);
+}
+
+.issue .code {
+  margin-right: 6px;
+  font-family: var(--mono);
+}
+
+.issue .where {
+  margin-right: 6px;
+  font-family: var(--mono);
+  color: var(--text-dim);
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+
+/* One frame: its image, where it sits, and how to replace it. */
+.node {
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.node.on {
+  border-color: var(--accent-dim);
+}
+
+.line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.line:last-child {
+  margin-bottom: 0;
+}
+
+.line input[type='text'] {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.line input[type='file'] {
+  flex: 1;
+  min-width: 0;
+  font-size: 10px;
+}
+
+.resolved {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.resolved.missing {
+  color: var(--warn);
+  font-style: italic;
+}

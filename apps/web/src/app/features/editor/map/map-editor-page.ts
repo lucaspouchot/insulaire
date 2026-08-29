@@ -46,6 +46,9 @@ import {
   MIN_GRID_LINE_WIDTH,
   ProjectionMode,
   ResolvedCharacter,
+  MAX_DECORATION_OFFSET,
+  PixelOffset,
+  ResolvedDecoration,
   WorldDefinition,
 } from '../../../../content/content-types';
 import { TILE_ART_BUNDLE } from '../../../../content/sprite-bundle';
@@ -63,6 +66,7 @@ import { Camera } from '../../../../renderer/camera';
 import { CanvasView } from '../../../../renderer/canvas-view';
 import { SpriteCache } from '../../../../renderer/character-renderer';
 import { HexMapRenderer } from '../../../../renderer/hex-map-renderer';
+import { renderDecorations } from '../../../../renderer/decoration-model';
 import { RenderModel, resolveCellArtChoices } from '../../../../renderer/render-model';
 import { SpriteRegistry } from '../../../../renderer/sprite-registry';
 import { I18nService } from '../../../i18n/i18n.service';
@@ -70,6 +74,8 @@ import { TranslatePipe } from '../../../i18n/translate.pipe';
 import { ENGINE_SHORTCUT } from '../../../settings/engine-settings.schema';
 import { SettingsService } from '../../../settings/settings.service';
 import { CharacterLibraryService } from '../../../services/character-library.service';
+import { DecorationLibraryService } from '../../../services/decoration-library.service';
+import { ObjectLibraryService } from '../../../services/object-library.service';
 import { TitleScreenService } from '../../../services/title-screen.service';
 import { EngineService } from '../../../services/engine.service';
 import { ContentWorkspaceService } from '../../../services/content-workspace.service';
@@ -103,6 +109,7 @@ export type EditorTool =
   | 'removeCell'
   | 'player'
   | 'monster'
+  | 'decoration'
   | 'link'
   | 'erase';
 
@@ -124,6 +131,8 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   private readonly settings = inject(SettingsService);
   private readonly titleScreen = inject(TitleScreenService);
   private readonly characters = inject(CharacterLibraryService);
+  private readonly decorations = inject(DecorationLibraryService);
+  private readonly objects = inject(ObjectLibraryService);
   private readonly workspace = inject(ContentWorkspaceService);
 
   /**
@@ -170,6 +179,12 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   /** The four sides the extent controls act on, in reading order. */
   protected readonly extentSides = ['north', 'south', 'west', 'east'] as const;
   protected readonly showCoordinates = signal(false);
+  /** Which decoration the decoration brush places. */
+  protected readonly selectedDecoration = signal<string | null>(null);
+  /** One resolve per definition, kept while the page is open. */
+  private readonly decorationResolutions = new Map<string, ResolvedDecoration | null>();
+  /** The placement the inspector is showing, so the canvas can outline it. */
+  protected readonly selectedPlacement = signal<string | null>(null);
   /** Character brushes stay separate so switching tools does not lose either. */
   private readonly playerPreviewCharacter = signal<string | null>(null);
   private readonly monsterPreviewCharacter = signal<string | null>(null);
@@ -331,7 +346,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
 
   /** Which inspector the left dock shows below the tool picker, if any. */
   protected readonly inspector = computed<
-    'brush' | 'elevation' | 'shape' | 'placement' | 'doors' | 'none'
+    'brush' | 'elevation' | 'shape' | 'placement' | 'decorations' | 'doors' | 'none'
   >(
     () => {
       switch (this.tool()) {
@@ -347,6 +362,8 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
         case 'addCell':
         case 'removeCell':
           return 'shape';
+        case 'decoration':
+          return 'decorations';
         case 'link':
           return 'doors';
         default:
@@ -426,6 +443,150 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     };
   });
 
+  protected readonly maxOffset = MAX_DECORATION_OFFSET;
+
+  /** The decorations this project ships, for the brush. */
+  protected readonly decorationChoices = this.decorations.choices;
+
+  /**
+   * The decorations standing on the selected hex, in author order.
+   *
+   * A list rather than one, because a cell may hold a tree, a bush and a
+   * signpost (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+   */
+  protected readonly placementsHere = computed(() => {
+    this.revision();
+    const cell = this.selected();
+    const document = this.document();
+    return cell === null || document === null ? [] : document.decorationsAt(cell);
+  });
+
+  /** Picks which decoration the brush plants. */
+  protected selectDecoration(id: string): void {
+    this.selectedDecoration.set(id);
+    this.tool.set('decoration');
+  }
+
+  /** Outlines one placement on the canvas, so a row and a tree can be paired. */
+  protected selectPlacement(id: string): void {
+    this.selectedPlacement.set(this.selectedPlacement() === id ? null : id);
+    this.refresh();
+  }
+
+  /**
+   * Says whether a player may interact with **this** placement.
+   *
+   * The decision belongs here rather than to the definition: one chest in ten
+   * holds the letter, and the other nine are scenery
+   * (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+   */
+  protected setPlacementInteractive(id: string, interactive: boolean): void {
+    const document = this.store.document();
+    if (document === null || !document.updateDecoration(id, { interactive })) {
+      return;
+    }
+    this.store.touch();
+    this.report.set(null);
+    this.message.set(null);
+    this.refresh();
+  }
+
+  /**
+   * Renames one placement.
+   *
+   * The id is what the scenario will name, so it is the author's to write. A
+   * name already taken on this map is refused and said so: two placements
+   * answering to one name is not a state worth passing through
+   * (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+   */
+  protected setPlacementId(id: string, input: HTMLInputElement): void {
+    const document = this.store.document();
+    const next = input.value.trim();
+    if (document === null || next === id) {
+      return;
+    }
+    if (!document.renameDecoration(id, next)) {
+      this.error.set(this.i18n.t('ui.editor.map.error.decorationIdTaken', { id: next }));
+      // Put the real id back in the box by hand: nothing about the document
+      // changed, so no binding would, and a field showing a name the placement
+      // does not have is the field lying.
+      input.value = id;
+      return;
+    }
+    if (this.selectedPlacement() === id) {
+      this.selectedPlacement.set(next);
+    }
+    this.error.set(null);
+    this.store.touch();
+    this.report.set(null);
+    this.message.set(null);
+    this.refresh();
+  }
+
+  /**
+   * Nudges one placement off the anchor its definition gives it.
+   *
+   * The anchor is where a tree *belongs*; this is the few pixels that keep a
+   * row of them from reading as a stamped pattern, and it is per placement
+   * because that is the only thing that differs between two trees drawn from
+   * one definition (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+   */
+  protected setPlacementOffset(id: string, axis: 0 | 1, raw: string): void {
+    const value = Math.round(Number.parseFloat(raw));
+    if (!Number.isFinite(value)) {
+      return;
+    }
+    this.movePlacement(id, (offset) => {
+      const next: PixelOffset = [...offset];
+      next[axis] = Math.max(-MAX_DECORATION_OFFSET, Math.min(MAX_DECORATION_OFFSET, value));
+      return next;
+    });
+  }
+
+  /** Moves a placement by a pixel, which is what the nudge buttons do. */
+  protected nudgePlacement(id: string, dx: number, dy: number): void {
+    this.movePlacement(id, (offset) => [
+      Math.max(-MAX_DECORATION_OFFSET, Math.min(MAX_DECORATION_OFFSET, offset[0] + dx)),
+      Math.max(-MAX_DECORATION_OFFSET, Math.min(MAX_DECORATION_OFFSET, offset[1] + dy)),
+    ]);
+  }
+
+  /** Puts a placement back exactly where its definition anchors it. */
+  protected resetPlacementOffset(id: string): void {
+    this.movePlacement(id, () => [0, 0]);
+  }
+
+  private movePlacement(id: string, move: (offset: PixelOffset) => PixelOffset): void {
+    const document = this.store.document();
+    const placed = document?.placedDecorations.find((candidate) => candidate.id === id);
+    if (document === null || placed === undefined) {
+      return;
+    }
+    if (!document.updateDecoration(id, { offset: move(placed.offset) })) {
+      return;
+    }
+    this.selectedPlacement.set(id);
+    this.store.touch();
+    this.report.set(null);
+    this.message.set(null);
+    this.refresh();
+  }
+
+  /** Removes one placement, whatever else stands on its cell. */
+  protected removePlacement(id: string): void {
+    const document = this.store.document();
+    if (document === null || !document.removeDecoration(id)) {
+      return;
+    }
+    if (this.selectedPlacement() === id) {
+      this.selectedPlacement.set(null);
+    }
+    this.store.touch();
+    this.report.set(null);
+    this.message.set(null);
+    this.refresh();
+  }
+
   async ngAfterViewInit(): Promise<void> {
     // The engine is only needed to *judge* a world, not to edit one, so a
     // failed WASM load degrades the editor rather than breaking it. The shell's
@@ -449,6 +610,26 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       .ensureLoaded()
       .then(() => this.refresh())
       .catch(() => undefined);
+    // Loaded for the same reason the characters are: the manifest names them,
+    // and a world is judged against a project that has to load
+    // (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+    //
+    // And followed through, unlike them: a map opened before its definitions
+    // land resolves every tree it places to nothing. Forgetting those misses
+    // and drawing again is what makes a dressed map appear on its own, rather
+    // than only after a visit to the decoration editor
+    // (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+    void this.decorations
+      .ensureLoaded()
+      .then(() => {
+        this.decorationResolutions.clear();
+        this.refresh();
+        // The model knows the trees now; their pictures still have to arrive.
+        return this.renderer?.warmDecorations();
+      })
+      .then(() => this.refresh())
+      .catch(() => undefined);
+    void this.objects.ensureLoaded().catch(() => undefined);
 
     const document = this.store.requireDocument();
     this.selectedTile.set(document.palette[0]?.id ?? null);
@@ -618,6 +799,19 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
         changed =
           document.placeEntity(cell, 'monster', false, this.monsterPreviewCharacter()) !== null;
         break;
+      case 'decoration': {
+        const decoration = this.selectedDecoration();
+        const placed =
+          decoration === null ? null : document.placeDecoration(cell, decoration);
+        if (placed !== null) {
+          // Straight into the inspector: the next decision an author makes about
+          // a tree they just planted is whether it can be searched
+          // (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+          this.selectedPlacement.set(placed.id);
+        }
+        changed = placed !== null;
+        break;
+      }
       case 'link': {
         // A new door points at the first *other* map, which is the common case;
         // the inspector below the canvas is where the author corrects it.
@@ -626,7 +820,10 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
         break;
       }
       case 'erase':
+        // Decorations first, and one at a time: a cell may hold three, and an
+        // eraser that took all of them would be a different tool.
         changed =
+          document.removeTopDecorationAt(cell) ||
           document.removeEntityAt(cell) ||
           document.removeLinkAt(cell) ||
           document.removeLocationAt(cell);
@@ -1331,6 +1528,8 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     this.titleScreen.register();
     this.settings.register();
     this.characters.register();
+    this.decorations.register();
+    this.objects.register();
     for (const tileSet of this.store.tileSetDefinitions()) {
       this.engine.loadTileSet(JSON.stringify(tileSet));
     }
@@ -1560,6 +1759,17 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
         glyph: entity.templateId === 'player' ? '@' : 'M',
         emphasised: false,
       })),
+      decorations: renderDecorations(
+        document.placedDecorations.map((placed) => ({
+          id: placed.id,
+          decoration: placed.decoration,
+          at: [placed.at.col, placed.at.row] as [number, number],
+          offset: placed.offset,
+          interactive: placed.interactive,
+        })),
+        (id) => this.resolveDecoration(id),
+        this.selectedPlacement(),
+      ),
       locations: document.placedLocations.map((location) => ({
         id: location.id,
         at: location.at,
@@ -1581,6 +1791,27 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       gridLineAlpha: document.grid.alpha,
       showCoordinates: this.showCoordinates(),
     };
+  }
+
+  /**
+   * What a decoration definition draws, or `null` when nothing loaded it.
+   *
+   * Through Rust, like every other resolve: the editor and the game place a
+   * trunk with the same arithmetic
+   * (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+   */
+  private resolveDecoration(id: string): ResolvedDecoration | null {
+    if (this.decorationResolutions.has(id)) {
+      return this.decorationResolutions.get(id) ?? null;
+    }
+    let drawn: ResolvedDecoration | null = null;
+    try {
+      drawn = this.engine.resolveDecoration(id);
+    } catch {
+      drawn = null;
+    }
+    this.decorationResolutions.set(id, drawn);
+    return drawn;
   }
 
   /** Resolves a static idle pose for one editor-only entity appearance. */

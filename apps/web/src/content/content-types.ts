@@ -16,7 +16,7 @@ export type OffsetPair = [number, number];
  * (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`); `5` adds the authored
  * {@link RevealStyle} (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
  */
-export const WORLD_SCHEMA_VERSION = 5;
+export const WORLD_SCHEMA_VERSION = 6;
 
 export const DEFAULT_GRID_LINE_WIDTH = 1;
 export const MIN_GRID_LINE_WIDTH = 1;
@@ -400,6 +400,33 @@ export interface MapShape {
   exceptions?: [number, number][];
 }
 
+/**
+ * One decoration standing on one cell. Mirrors `PlacedDecoration`.
+ *
+ * The *definition* says what a tree looks like and which side of the characters
+ * it is drawn on; this says which tree, where, and whether **this** one can be
+ * interacted with — the only question that needs the thing to exist in a world
+ * (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+ */
+export interface PlacedDecoration {
+  /** Stable id, unique within the world; what a scenario addresses. */
+  id: string;
+  /** Referenced {@link DecorationDefinition} id. */
+  decoration: string;
+  at: [number, number];
+  /**
+   * Whole-pixel nudge from where the definition's anchor puts it.
+   *
+   * Absent — the usual case — is exactly what the decoration editor authored.
+   * Positive moves the drawing right and down, in the tile set's authored
+   * pixels, which is the direction dragging it in that editor moves it.
+   */
+  offset?: PixelOffset;
+  /** Whether a player may interact with this placement. */
+  interactive?: boolean;
+  tags?: string[];
+}
+
 export interface WorldDefinition {
   id: string;
   schemaVersion: number;
@@ -445,6 +472,14 @@ export interface WorldDefinition {
   defaultTile: string;
   tiles?: PlacedTile[];
   entities?: EntityDefinition[];
+  /**
+   * Decorations standing on this map's cells, in author order.
+   *
+   * Author order breaks a tie within a plane: two trees from one definition
+   * sort equally, and the later one is drawn over the earlier
+   * (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+   */
+  decorations?: PlacedDecoration[];
   locations?: LocationDefinition[];
   links?: MapLink[];
   metadata?: WorldMetadata;
@@ -518,6 +553,10 @@ export interface ProjectDefinition {
   worlds: ContentRef[];
   /** Character definitions to load. Absent means the project ships none. */
   characters?: ContentRef[];
+  /** Decoration definitions to load. Absent means the project ships none. */
+  decorations?: ContentRef[];
+  /** Object definitions to load. Absent means the project ships none. */
+  objects?: ContentRef[];
   /** Generic player-character creation declaration. */
   characterCreation?: ContentRef;
   /** The title screen a client opens on. Absent means it starts on a map. */
@@ -1089,4 +1128,193 @@ export interface ResolvedCharacter {
   mirrored: boolean;
   /** The animation and moment this pose came from. Absent is the rest pose. */
   pose?: ResolvedPose;
+}
+
+/* -------------------------------------------------------------- decorations */
+
+/** Mirrors `DECORATION_SCHEMA_VERSION`. */
+export const DECORATION_SCHEMA_VERSION = 2;
+
+/** Mirrors `MAX_FLIPBOOK_FRAMES`: the longest one flipbook may be. */
+export const MAX_FLIPBOOK_FRAMES = 64;
+
+/** Mirrors `MAX_DECORATION_ORDER`: how far a decoration may sort in its plane. */
+export const MAX_DECORATION_ORDER = 999;
+
+/** Mirrors `MAX_DECORATION_OFFSET`: how far one placement may be nudged. */
+export const MAX_DECORATION_OFFSET = 256;
+
+/** The canvas a decoration is authored on when its file names none. */
+export const DEFAULT_DECORATION_RESOLUTION: Readonly<SpriteResolution> = {
+  width: 32,
+  height: 48,
+};
+
+/**
+ * What a decoration is, for filing.
+ *
+ * Filing, not behaviour — the same role {@link CharacterCategory} plays
+ * (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+ */
+export type DecorationCategory = 'nature' | 'building' | 'prop' | 'container' | 'other';
+
+/**
+ * Which side of the characters a decoration is drawn on.
+ *
+ * The two groups of z-index. A character standing on a cell is drawn between
+ * them, which is the one thing a single combined ordering cannot say.
+ */
+export type DecorationPlane = 'behind' | 'front';
+
+/**
+ * One appearance a decoration can play, as an ordered list of images.
+ *
+ * Both an animation (a torch flickering) and a **state** (a chest that is open)
+ * are this; the second is one frame long and the scenario asks for it by id.
+ */
+export interface DecorationAnimation {
+  /** Stable id, unique within the definition — `idle`, `open`, `burning`. */
+  id: string;
+  /** Shown in the editor. Not player-facing, so not a key. */
+  name?: string;
+  /** Paths under the content root, in play order. */
+  frames: string[];
+  /** How long each frame lasts, in milliseconds. */
+  frameDurationMs?: number;
+  /** Whether it starts again when it ends. A state does not; a flame does. */
+  looping?: boolean;
+}
+
+/**
+ * A kind of thing that stands on a hex: a tree, a house, a chest, a bush.
+ *
+ * Mirrors `crates/world/src/decoration.rs`. What it carries that a character
+ * does not is everything about *sharing a cell*: the {@link anchor} pixel that
+ * lands on the ground point, the {@link plane} that says whether a character
+ * walks in front of it or behind it, and the {@link order} within that plane.
+ */
+export interface DecorationDefinition {
+  id: string;
+  schemaVersion: number;
+  /** Shown in the editor. Not player-facing, so not a key. */
+  name?: string;
+  category?: DecorationCategory;
+  /** The canvas every frame is drawn on. */
+  resolution?: SpriteResolution;
+  /**
+   * The pixel of that canvas which lands on the cell's ground point.
+   *
+   * A tree anchors at the foot of its trunk, a lantern at the ring it hangs
+   * from. Absent is the canvas origin; the editor starts a new decoration at
+   * the bottom middle, which is what a thing standing on the ground wants.
+   */
+  anchor?: PixelOffset;
+  /** Whether characters on the same cell pass in front of it or behind it. */
+  plane?: DecorationPlane;
+  /** Sort key within {@link plane}; higher draws later, so over. */
+  order?: number;
+  tags?: string[];
+  /** The appearances it can play, in author order. */
+  animations?: DecorationAnimation[];
+  /** Id of the animation played by default; absent names the first declared. */
+  defaultAnimation?: string;
+}
+
+/**
+ * A decoration, resolved: one image and where to put it.
+ *
+ * Produced by the Rust resolver, never assembled here — the editor preview and
+ * the map place a tree with the same arithmetic.
+ */
+export interface ResolvedDecoration {
+  id: string;
+  resolution: SpriteResolution;
+  anchor: PixelOffset;
+  /** `[x, y, width, height]` relative to the cell's ground point. */
+  placement: PixelRect;
+  plane: DecorationPlane;
+  order: number;
+  /** Id of the animation played; empty when the decoration declares none. */
+  animation: string;
+  /** Index of the frame within that animation. */
+  frame: number;
+  /** Path of the image to draw; empty when the frame names none. */
+  asset: string;
+}
+
+/* ------------------------------------------------------------------ objects */
+
+/** Mirrors `OBJECT_SCHEMA_VERSION`. `2` made the icon a flipbook. */
+export const OBJECT_SCHEMA_VERSION = 2;
+
+/** Mirrors `MAX_STACK_SIZE`: the largest stack one inventory slot may hold. */
+export const MAX_STACK_SIZE = 9999;
+
+/** The canvas an object's icon is drawn on when its file names none. */
+export const DEFAULT_ICON_RESOLUTION: Readonly<SpriteResolution> = { width: 32, height: 32 };
+
+/**
+ * What an object is for.
+ *
+ * Filing, and the one seam an inventory screen may group by. No rule reads it:
+ * what a consumable does when consumed is scenario content.
+ */
+export type ObjectKind = 'consumable' | 'equipment' | 'quest' | 'material' | 'other';
+
+/**
+ * A kind of thing a character can carry: a potion, a key, a sword, a letter.
+ *
+ * Mirrors `crates/world/src/object.rs`. The sibling of
+ * {@link DecorationDefinition} and its opposite: a decoration stands on a hex
+ * and is drawn in the world, an object travels in an inventory and is drawn in
+ * a panel (`docs/adr/ADR-0049-an-object-is-carried-not-placed.md`).
+ */
+export interface ObjectDefinition {
+  id: string;
+  schemaVersion: number;
+  /** Shown in the editor. Not player-facing, so not a key. */
+  name?: string;
+  kind?: ObjectKind;
+  /** Key of the name a player reads. */
+  nameKey?: string;
+  /** Key of the description a player reads. */
+  descriptionKey?: string;
+  /**
+   * The images of the icon, in play order. One frame is a still icon.
+   *
+   * Empty is an object blocked out before its art exists
+   * (`docs/adr/ADR-0050-an-object-icon-is-a-flipbook.md`).
+   */
+  frames?: string[];
+  /** How long each frame lasts, in milliseconds. Unread by a still icon. */
+  frameDurationMs?: number;
+  /** Whether it starts again when it ends. */
+  looping?: boolean;
+  /** The canvas every frame is drawn on. */
+  resolution?: SpriteResolution;
+  /** How many fit in one inventory slot. `1` means it does not stack. */
+  stackSize?: number;
+  /** Where equipment is worn — an author-owned id such as `head`. */
+  slot?: string;
+  tags?: string[];
+}
+
+/**
+ * One object icon, ready to blit. Mirrors `ResolvedObject`.
+ *
+ * Flat on purpose: a panel should not redo the frame arithmetic to draw a
+ * glinting gem.
+ */
+export interface ResolvedObject {
+  id: string;
+  resolution: SpriteResolution;
+  /** How many frames the icon declares. */
+  frames: number;
+  /** Index of the frame on screen. */
+  frame: number;
+  /** Path of the image to draw; empty when the icon names none. */
+  asset: string;
+  /** How long one full play takes, in milliseconds. */
+  durationMs: number;
+  looping: boolean;
 }

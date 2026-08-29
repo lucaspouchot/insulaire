@@ -52,6 +52,7 @@ import { SpriteCache } from '../../../renderer/character-renderer';
 import { movementProgress, roleForMove } from '../../../renderer/character-animation';
 import { HexMapRenderer } from '../../../renderer/hex-map-renderer';
 import { toProjectionMode } from '../../../renderer/projection';
+import { renderDecorations } from '../../../renderer/decoration-model';
 import { RenderModel, cellArtChoicesOf, elevationRangeOf } from '../../../renderer/render-model';
 import { SpriteRegistry } from '../../../renderer/sprite-registry';
 import { TILE_ART_BUNDLE } from '../../../content/sprite-bundle';
@@ -59,6 +60,7 @@ import {
   AnimationRole,
   CharacterValues,
   ResolvedCharacter,
+  ResolvedDecoration,
 } from '../../../content/content-types';
 import { serializeWorld } from '../../../content/world-serializer';
 import { I18nService } from '../../i18n/i18n.service';
@@ -69,6 +71,8 @@ import { TranslatePipe } from '../../i18n/translate.pipe';
 import { EngineService } from '../../services/engine.service';
 import { ProjectStoreService, contentUrl } from '../../services/project-store.service';
 import { CharacterLibraryService } from '../../services/character-library.service';
+import { DecorationLibraryService } from '../../services/decoration-library.service';
+import { ObjectLibraryService } from '../../services/object-library.service';
 import { CharacterCreationService } from '../../services/character-creation.service';
 import { TitleScreenService } from '../../services/title-screen.service';
 
@@ -124,6 +128,8 @@ export class PlayPage implements AfterViewInit, OnDestroy {
   private readonly settings = inject(SettingsService);
   private readonly titleScreen = inject(TitleScreenService);
   private readonly characters = inject(CharacterLibraryService);
+  private readonly decorations = inject(DecorationLibraryService);
+  private readonly objects = inject(ObjectLibraryService);
   private readonly characterCreation = inject(CharacterCreationService);
 
   /**
@@ -227,6 +233,12 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       // will not load without them either
       // (`docs/adr/ADR-0028-character-definitions.md`).
       await this.characters.ensureLoaded();
+      // And the decorations and objects the manifest lists, for the same
+      // reason: `loadProject` refuses a manifest naming a file that is not
+      // registered (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`,
+      // `docs/adr/ADR-0049-an-object-is-carried-not-placed.md`).
+      await this.decorations.ensureLoaded();
+      await this.objects.ensureLoaded();
       // Character creation is optional content, but when the manifest names it
       // it participates in project validation like every other file.
       await this.characterCreation.ensureLoaded();
@@ -346,6 +358,8 @@ export class PlayPage implements AfterViewInit, OnDestroy {
     this.titleScreen.register();
     this.settings.register();
     this.characters.register();
+    this.decorations.register();
+    this.objects.register();
     this.characterCreation.register();
     for (const tileSet of this.store.tileSetDefinitions()) {
       this.engine.loadTileSet(JSON.stringify(tileSet));
@@ -599,6 +613,20 @@ export class PlayPage implements AfterViewInit, OnDestroy {
     this.view?.invalidate();
   }
 
+  /**
+   * What a decoration definition draws, or `null` when nothing loaded it.
+   *
+   * Through Rust, like every other resolve: the frame arithmetic and the anchor
+   * subtraction are the engine's (`docs/adr/ADR-0028-character-definitions.md`).
+   */
+  private resolveDecoration(id: string): ResolvedDecoration | null {
+    try {
+      return this.engine.resolveDecoration(id);
+    } catch {
+      return null;
+    }
+  }
+
   private buildModel(
     view: WorldView,
     terrain: Uint8Array,
@@ -627,6 +655,11 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       elevationRange,
       artChoices: cellArtChoicesOf(view.artChoices ?? []),
       entities: this.renderEntities(snapshot?.entities ?? []),
+      // Placement is content and definitions are content; putting the two
+      // together is the shared helper's, so Play and the editor draw a forest
+      // in the same order
+      // (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+      decorations: renderDecorations(view.decorations ?? [], (id) => this.resolveDecoration(id)),
       locations: view.locations.map((location) => ({
         id: location.id,
         at: { col: location.at[0], row: location.at[1] },

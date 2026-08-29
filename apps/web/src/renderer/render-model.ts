@@ -9,11 +9,13 @@
  */
 
 import {
+  DecorationPlane,
   DEFAULT_CHARACTER_HEIGHT_TILES,
   DEFAULT_GRID_ALPHA,
   DEFAULT_GRID_COLOR,
   DEFAULT_GRID_LINE_WIDTH,
   DEFAULT_REVEAL_STYLE,
+  PixelRect,
   ResolvedCharacter,
   RevealStyle,
   TileArt,
@@ -62,6 +64,27 @@ export interface RenderEntity {
   readonly glyph: string;
   /** Drawn with a heavier outline. */
   readonly emphasised: boolean;
+}
+
+/**
+ * One decoration standing on a cell, ready to blit.
+ *
+ * Already resolved: the frame is chosen and the anchor subtracted, so the
+ * renderer multiplies by the tile scale and draws
+ * (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+ */
+export interface RenderDecoration {
+  /** Id of the *placement*, unique within the map. */
+  readonly id: string;
+  readonly at: Offset;
+  /** Which side of the characters it is drawn on. */
+  readonly plane: DecorationPlane;
+  /** `[x, y, width, height]` in authored tile pixels, from the ground point. */
+  readonly placement: PixelRect;
+  /** Path of the image to draw; a decoration with none is skipped. */
+  readonly asset: string;
+  /** Drawn with a marker in the editor, so a placement can be seen and picked. */
+  readonly emphasised?: boolean;
 }
 
 /** An authored point of interest. */
@@ -166,6 +189,14 @@ export interface RenderModel {
    */
   readonly artChoices: ReadonlyMap<number, CellArtChoice>;
   readonly entities: readonly RenderEntity[];
+  /**
+   * Decorations standing on the map, **already sorted** into draw order.
+   *
+   * Sorted by the host, once per model, rather than by the renderer once per
+   * frame: the order is `plane`, then the definition's `order`, then author
+   * order (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+   */
+  readonly decorations: readonly RenderDecoration[];
   readonly locations: readonly RenderLocation[];
   readonly links: readonly RenderLink[];
   readonly overlays: readonly RenderOverlay[];
@@ -300,6 +331,7 @@ export function emptyRenderModel(): RenderModel {
     elevationRange: { min: 0, max: 0 },
     artChoices: new Map(),
     entities: [],
+    decorations: [],
     locations: [],
     links: [],
     overlays: [],

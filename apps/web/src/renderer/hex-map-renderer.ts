@@ -52,6 +52,7 @@ import { Projection } from './projection';
 import { TileAppearance, TileAppearanceCache } from './tile-appearance';
 import { ResolvedTileRender, projectionRatiosOf } from './tile-art';
 import {
+  RenderDecoration,
   RenderEntity,
   RenderLink,
   RenderLocation,
@@ -349,7 +350,10 @@ export class HexMapRenderer {
     if (images === null) {
       return Promise.resolve();
     }
-    const assets = this.appearances.paintedAssets();
+    // The trees standing on the map are part of what the map is made of, so
+    // they are waited for with it rather than popping in afterwards
+    // (`docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`).
+    const assets = [...this.appearances.paintedAssets(), ...decorationAssets(this.model)];
     if (assets.length === 0) {
       // A map drawn from colours alone must not be held back for art it will
       // never blit.
@@ -390,6 +394,31 @@ export class HexMapRenderer {
       return null;
     }
     return images.loadBundle(this.bundleUrl).catch(() => undefined);
+  }
+
+  /**
+   * Loads the pictures the decorations standing on this map are drawn from.
+   *
+   * {@link warmTileArt} already asks for them, and that is the normal path: a
+   * host that knows its decorations before it builds its first model gets them
+   * with the terrain. This is for the host that does **not** — the map editor,
+   * whose decoration definitions arrive from the manifest a moment after the
+   * map opens. Without it a tree is resolved, placed, and then drawn from an
+   * image nobody ever fetched
+   * (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+   *
+   * Never held for, unlike the terrain: a tree arriving a moment late redraws
+   * itself, while a map arriving in pieces reads as the tool loading.
+   *
+   * @returns when every frame has loaded or failed; the caller redraws then
+   */
+  warmDecorations(): Promise<void> {
+    const images = this.images;
+    const assets = decorationAssets(this.model);
+    if (images === null || assets.length === 0) {
+      return Promise.resolve();
+    }
+    return images.preload(assets).catch(() => undefined);
   }
 
   /**
@@ -747,7 +776,9 @@ export class HexMapRenderer {
     this.drawHighlight(model, model.selected, CHROME.selection, 3);
     this.drawLocations(model, model.locations);
     this.drawLinks(model, model.links);
+    this.drawDecorations(model, model.decorations, 'behind');
     this.drawEntities(model, model.entities);
+    this.drawDecorations(model, model.decorations, 'front');
     this.drawLabels(model, model.locations, model.links);
     if (model.showCoordinates) {
       this.drawCoordinates(model, range, range.minRow, range.maxRow);
@@ -776,6 +807,7 @@ export class HexMapRenderer {
     const locationsByRow = groupByRow(model.locations, (location) => location.at);
     const linksByRow = groupByRow(model.links, (link) => link.at);
     const entitiesByRow = groupByRow(model.entities, (entity) => this.entityDepthCell(entity));
+    const decorationsByRow = groupByRow(model.decorations, (decoration) => decoration.at);
 
     let cellsDrawn = 0;
     for (let row = range.minRow; row <= range.maxRow; row += 1) {
@@ -797,7 +829,13 @@ export class HexMapRenderer {
       }
       this.drawLocations(model, locationsByRow.get(row) ?? []);
       this.drawLinks(model, linksByRow.get(row) ?? []);
+      // The two planes with the characters between them, per row, which is
+      // what makes a walker pass behind a canopy and in front of the grass
+      // (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+      const decorations = decorationsByRow.get(row) ?? [];
+      this.drawDecorations(model, decorations, 'behind');
       this.drawEntities(model, entitiesByRow.get(row) ?? []);
+      this.drawDecorations(model, decorations, 'front');
       if (model.showCoordinates) {
         this.drawCoordinates(model, range, row, row);
       }
@@ -1399,6 +1437,71 @@ export class HexMapRenderer {
   }
 
   /**
+   * Draws one plane of the decorations standing on these cells.
+   *
+   * Everything is already resolved and already sorted: the frame was chosen and
+   * the anchor subtracted by the Rust resolver, and the host put the list in
+   * draw order, so this multiplies by the tile scale and blits
+   * (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+   *
+   * A decoration is authored on the tile set's own pixel grid, so one authored
+   * pixel is `hexWidth / tileArt.width` world units — exactly the scale a
+   * painted cell is drawn at, which is what keeps a trunk on its hex.
+   */
+  private drawDecorations(
+    model: RenderModel,
+    decorations: readonly RenderDecoration[],
+    plane: RenderDecoration['plane'],
+  ): void {
+    if (decorations.length === 0) {
+      return;
+    }
+    const ctx = this.context;
+    const perPixel = this.layout.hexWidth / Math.max(1, model.tileArt.width);
+
+    for (const decoration of decorations) {
+      if (decoration.plane !== plane || decoration.asset.length === 0) {
+        continue;
+      }
+      // A decoration on a cell the reveal is looking through is in the way
+      // exactly as the cell is (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+      const alpha = this.alphaAt(model, decoration.at);
+      if (alpha <= 0) {
+        continue;
+      }
+      const image = this.images?.image(decoration.asset);
+      if (image == null) {
+        continue;
+      }
+
+      const ground = this.centerOf(model, decoration.at);
+      const [x, y, width, height] = decoration.placement;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(
+        image,
+        ground.x + x * perPixel,
+        ground.y + y * perPixel,
+        width * perPixel,
+        height * perPixel,
+      );
+      if (decoration.emphasised === true) {
+        ctx.lineWidth = 2 / this.camera.zoom;
+        ctx.strokeStyle = CHROME.selection;
+        ctx.strokeRect(
+          ground.x + x * perPixel,
+          ground.y + y * perPixel,
+          width * perPixel,
+          height * perPixel,
+        );
+      }
+      ctx.restore();
+      this.batchCount += 1;
+    }
+  }
+
+  /**
    * Draws authored characters and fallback entity tokens.
    *
    * In isometric mode a token stands *on* its tile rather than lying flat: an
@@ -1894,3 +1997,14 @@ function containsPoint(polygon: readonly Point[], point: Point): boolean {
 
 /** Re-exported so callers can build models without importing two modules. */
 export { fromIndex, indexIn, sameOffset };
+
+/** Every distinct image the decorations on a map are drawn from. */
+function decorationAssets(model: RenderModel): string[] {
+  const assets = new Set<string>();
+  for (const decoration of model.decorations) {
+    if (decoration.asset.length > 0) {
+      assets.add(decoration.asset);
+    }
+  }
+  return [...assets];
+}

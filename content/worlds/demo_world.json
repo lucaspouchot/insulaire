@@ -1,6 +1,6 @@
 {
   "id": "demo_world",
-  "schemaVersion": 5,
+  "schemaVersion": 6,
   "name": "Demo Valley",
   "zone": "valley",
   "width": 20,
@@ -139,6 +139,7 @@
     { "id": "monster_1", "templateId": "monster", "at": [17, 10], "tags": ["hunter"] },
     { "id": "monster_2", "templateId": "monster", "at": [16, 14], "tags": ["hunter"] }
   ],
+  "decorations": [],
   "locations": [
     { "id": "loc_camp", "at": [3, 11], "name": "Camp", "tags": ["start", "safe"] },
     { "id": "loc_lake", "at": [10, 14], "name": "Still Lake", "tags": ["landmark"] },

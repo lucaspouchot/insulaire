@@ -26,9 +26,10 @@ export interface AssetCategory {
 /**
  * What the rail lists.
  *
- * Two categories open today. The rest are declared rather than hidden, for the
- * reason the shell declares its planned modules: the rail is the map of what
- * the tool will hold.
+ * Four open today, and the order is what an author walks through: the ground,
+ * who stands on it, what is put on it, and what is carried away from it. The
+ * rest are declared rather than hidden, for the reason the shell declares its
+ * planned modules: the rail is the map of what the tool will hold.
  */
 export const ASSET_CATEGORIES: readonly AssetCategory[] = [
   {
@@ -44,16 +45,16 @@ export const ASSET_CATEGORIES: readonly AssetCategory[] = [
     status: 'available',
   },
   {
-    id: 'objects',
-    titleKey: 'ui.editor.asset.categories.objects',
-    summaryKey: 'ui.editor.asset.categories.objectsSummary',
-    status: 'planned',
-  },
-  {
     id: 'decorations',
     titleKey: 'ui.editor.asset.categories.decorations',
     summaryKey: 'ui.editor.asset.categories.decorationsSummary',
-    status: 'planned',
+    status: 'available',
+  },
+  {
+    id: 'objects',
+    titleKey: 'ui.editor.asset.categories.objects',
+    summaryKey: 'ui.editor.asset.categories.objectsSummary',
+    status: 'available',
   },
   {
     id: 'effects',
