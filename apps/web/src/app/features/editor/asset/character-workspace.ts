@@ -95,7 +95,7 @@ import {
 import { serializeCharacter } from '../../../../content/character-serializer';
 import { PALETTE_SIZE, SpriteDocument } from '../../../../content/sprite-document';
 import { assetUrl } from '../../../../core/asset-url';
-import { isEditableTarget, undoRedoIntent } from '../../../../core/keyboard-shortcuts';
+import { isEditableTarget, routeUndoRedo } from '../../../../core/keyboard-shortcuts';
 import {
   CharacterBox,
   SpriteCache,
@@ -693,6 +693,13 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
    * The clock is here rather than in the animation panel because the preview
    * is here: the loop's only job is to move the time the resolver is asked
    * about, and everything else follows from the resolved character changing.
+   *
+   * And it is *this screen's own* rather than `app/editing/flipbook-clock.ts`,
+   * which the decoration and object editors share. A flipbook is a list of
+   * images at a rate; a character animation is a frame **count** with tracks
+   * over it, played at a speed the author sets, and it stops itself at the end
+   * when it does not loop. None of those three is a flipbook's
+   * (`docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`).
    */
   private startClock(): void {
     if (this.clock !== null) {
@@ -1518,7 +1525,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
     input.value = '';
 
     this.drafts.setBusy(true);
-    this.drafts.fail(null);
+    this.drafts.clearError();
     try {
       const path = `${ASSET_DIR}/${file.name}`;
       await this.workspace.write(path, file);
@@ -2016,16 +2023,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
    * only the screen knows which surface is open.
    */
   protected onKeyDown(event: KeyboardEvent): void {
-    const intent = undoRedoIntent(event);
-    if (intent === null) {
-      return;
-    }
-    event.preventDefault();
-    if (intent === 'redo') {
-      this.redo();
-    } else {
-      this.undo();
-    }
+    routeUndoRedo(event, { undo: () => this.undo(), redo: () => this.redo() });
   }
 
   /** Asks the browser to confirm before pixels nobody has written are lost. */
@@ -2080,7 +2078,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
   /** Writes every edited sprite into the content directory. */
   protected async saveSprites(): Promise<void> {
     this.drafts.setBusy(true);
-    this.drafts.fail(null);
+    this.drafts.clearError();
     this.drafts.announce(null);
     try {
       const written = await this.writeSprites();

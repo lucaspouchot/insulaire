@@ -127,8 +127,6 @@ export class TitleEditorPage {
       messages: {
         invalid: 'ui.editor.title.invalid',
         saved: 'ui.editor.title.saved',
-        spritesSaved: '',
-        savedManifest: '',
       },
       prepare: async () => {
         await this.i18n.ensureAdopted();
@@ -254,7 +252,7 @@ export class TitleEditorPage {
     input.value = '';
 
     this.drafts.setBusy(true);
-    this.drafts.fail(null);
+    this.drafts.clearError();
     try {
       const path = `${UPLOAD_DIR[kind]}/${file.name}`;
       await this.workspace.write(path, file);

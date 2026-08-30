@@ -13,7 +13,8 @@
  * timeline, the row the editor highlights while playback runs — which a
  * sixty-times-a-second call across the WASM boundary should not be paying for.
  * The mirroring is deliberate and the cases below are the same cases
- * `animation.rs` tests, for the reason ADR-0011 gives for the hex maths:
+ * `animation.rs` tests, for the reason
+ * `docs/adr/ADR-0011-hex-coordinate-model.md` gives for the hex maths:
  * duplication that is cheaper than the call, with the drift pinned by tests on
  * both sides.
  *

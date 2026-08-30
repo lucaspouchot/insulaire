@@ -200,8 +200,6 @@ export class SettingsEditorPage {
       messages: {
         invalid: 'ui.editor.settings.invalid',
         saved: 'ui.editor.settings.saved',
-        spritesSaved: '',
-        savedManifest: '',
       },
       prepare: async () => {
         await this.engine.ready();

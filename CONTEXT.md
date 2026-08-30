@@ -21,8 +21,11 @@ outlives the route a player navigated away from
 (`docs/adr/ADR-0023-session-outlives-the-route.md`). It is never the editor's
 open documents.
 
-The editor's equivalent is a **draft set**, and nothing in `app/editing/` uses
-the word session in an identifier, a comment or a message.
+The editor's equivalent is a **draft set**. `app/editing/` describes itself in
+prose as an editing session — that reads correctly and is where the reader
+arrives from — but the word appears in nothing it *exposes*: no identifier, no
+signal, no message, no locale key. A member called `session` in the editor is
+therefore always a mistake, and one in the play code always means a game.
 
 ### editor chords read `event.key`; game actions read `event.code`
 
@@ -88,9 +91,14 @@ neither is called an "entity".
 - **draft source** — the seam under a draft set: everything about a *kind* of
   content that the session must not know — how one is read, validated,
   serialized, written and declared. `app/editing/draft-source.ts`.
-- **unsaved** / **dirty** — one thing, and the draft set decides it. A draft is
-  dirty when its definition differs from the file **or** an image it owns is
-  unwritten. Nothing keeps a second answer.
+- **unsaved** / **dirty** — what a *draft* owes the disk, and the draft set is
+  the only thing that decides it: a draft is dirty when its definition differs
+  from the file **or** an image it owns is unwritten. There is no second answer
+  to that question. There is a second *question*, which the unload guard also
+  asks: a painted buffer that no draft names any more — a frame repointed after
+  it was drawn on — is still an author's work and still unwritten, and it is
+  not a dirty draft. `unsavedSprites` is that one, and it is named differently
+  on purpose.
 - **manifest** — `content/project.json`: which files make one game
   (`ProjectDefinition`). A kind is *declared in the manifest* when it lists one
   entry per draft; the settings file and the title screen live at a fixed path

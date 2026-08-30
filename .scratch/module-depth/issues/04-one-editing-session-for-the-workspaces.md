@@ -196,7 +196,16 @@ three is an evidenced one:
 |---|---|---|
 | owned | `DraftSet` itself, calling `ContentLibrary` to register | character, decoration, object |
 | store | `ProjectStoreService` | tile |
-| locale | `LocaleAuthoringService` | locale |
+| ~~locale~~ | ~~`LocaleAuthoringService`~~ | ~~locale~~ |
+
+**The locale row is withdrawn.** Read against `locale-editor-page.ts` there is
+no draft to hold: no path, no serializer, no validator, no report, no per-id
+dirtiness. `LocaleAuthoringService` already is that screen's session and has a
+spec. The adapter would have answered six members with stubs so that `DraftSet`
+could own nothing. `store` is still wanted, and waits on
+[05](05-close-the-project-store-read-side.md); see
+[09](09-tile-and-locale-do-not-fit-the-draft-set.md). Six `owned` adapters
+shipped, which is the evidence the seam needed.
 
 `ContentLibrary` is untouched and stays a peer. It passes the deletion test on
 its own — delete it and re-registration reappears in three places — and it is
@@ -243,8 +252,20 @@ direction.
   in progress (ADR-0023), never an editor's; and the `key`/`code` split above.
 - **One new ADR** on which build may import a shared editing module, written
   after the first module lands so it records what exists. Via `/create-adr`.
+
+  *Outcome: an amendment to ADR-0015, not a new file.*
+  `.claude/commands/create-adr.md` says most decisions touching an existing one
+  are an edit to it, and calls opening a new file here the defect that produced
+  fifty-one ADRs. This is ADR-0015's own subject — what a client build may
+  contain — and it closes a gap ADR-0015 already listed as a negative.
 - **`verify-client-build.mjs`** gains an assertion that no emitted chunk carries
   anything from `app/editing/`.
+
+  *Outcome: an import-graph check, not a chunk grep* (`scripts/client-graph.mjs`).
+  The existing grep works because a component selector is a string literal
+  minification cannot rename; `app/editing/` is pure functions and leaves no
+  such literal, so grepping for one would have meant planting a marker string
+  and hoping nobody shook it out.
 - **`docs/architecture.md`** repository layout, per `.claude/rules/specs.md`.
 
 ### Commit order — one branch, six commits

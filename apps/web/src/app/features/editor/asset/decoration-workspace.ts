@@ -66,7 +66,7 @@ import { serializeDecoration } from '../../../../content/decoration-serializer';
 import { SpriteDocument } from '../../../../content/sprite-document';
 import { assetUrl } from '../../../../core/asset-url';
 import { Point } from '../../../../core/hex/hex-layout';
-import { undoRedoIntent } from '../../../../core/keyboard-shortcuts';
+import { routeUndoRedo } from '../../../../core/keyboard-shortcuts';
 import { prepareSurface, zoomBy } from '../../../../renderer/canvas-surface';
 import { SpriteCache, drawCharacter } from '../../../../renderer/character-renderer';
 import { flatHexagon, surfaceHexagon } from '../../../../renderer/tile-preview';
@@ -827,7 +827,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
     input.value = '';
 
     this.drafts.setBusy(true);
-    this.drafts.fail(null);
+    this.drafts.clearError();
     try {
       const path = `${ASSET_DIR}/${file.name}`;
       await this.workspace.write(path, file);
@@ -905,16 +905,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
    * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
    */
   protected onKeyDown(event: KeyboardEvent): void {
-    const intent = undoRedoIntent(event);
-    if (intent === null) {
-      return;
-    }
-    event.preventDefault();
-    if (intent === 'redo') {
-      this.redo();
-    } else {
-      this.undo();
-    }
+    routeUndoRedo(event, { undo: () => this.undo(), redo: () => this.redo() });
   }
 
   protected undo(): void {

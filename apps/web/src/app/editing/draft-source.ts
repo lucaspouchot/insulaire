@@ -26,16 +26,24 @@ export interface Draft {
   id: string;
 }
 
-/** The strings one kind of draft announces itself with, as locale keys. */
+/**
+ * The strings one kind of draft announces itself with, as locale keys.
+ *
+ * The two optional ones are absent for a kind that cannot say them: a
+ * declaration with no art never writes an image, and one at a fixed path never
+ * moves the manifest. Absent rather than empty, because an empty key resolves
+ * to itself — which is the empty string — and would put a bare separator in the
+ * message (`docs/adr/ADR-0020-localised-content-keys.md`).
+ */
 export interface DraftMessages {
   /** Shown instead of writing, when the draft does not validate. */
   readonly invalid: string;
   /** Shown when the file is written. Takes `{ file }`. */
   readonly saved: string;
   /** Shown when images went with it. Takes `{ count }`. */
-  readonly spritesSaved: string;
+  readonly spritesSaved?: string;
   /** Shown when the manifest had to be rewritten too. */
-  readonly savedManifest: string;
+  readonly savedManifest?: string;
 }
 
 export interface DraftSource<TDraft extends Draft> {

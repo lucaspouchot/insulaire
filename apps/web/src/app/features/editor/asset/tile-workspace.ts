@@ -62,7 +62,7 @@ import {
 import { SpriteDocument } from '../../../../content/sprite-document';
 import { serializeTileSet } from '../../../../content/tile-set-serializer';
 import { ValidationReport } from '../../../../engine/engine.types';
-import { undoRedoIntent } from '../../../../core/keyboard-shortcuts';
+import { routeUndoRedo } from '../../../../core/keyboard-shortcuts';
 import { prepareSurface, zoomBy } from '../../../../renderer/canvas-surface';
 import { SpriteCache, SpriteSource } from '../../../../renderer/character-renderer';
 import { CellArt } from '../../../../renderer/tile-art';
@@ -1087,16 +1087,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
    * painting surface answers to (`core/keyboard-shortcuts.ts`).
    */
   protected onKeyDown(event: KeyboardEvent): void {
-    const intent = undoRedoIntent(event);
-    if (intent === null) {
-      return;
-    }
-    event.preventDefault();
-    if (intent === 'redo') {
-      this.redo();
-    } else {
-      this.undo();
-    }
+    routeUndoRedo(event, { undo: () => this.undo(), redo: () => this.redo() });
   }
 
   protected undo(): void {

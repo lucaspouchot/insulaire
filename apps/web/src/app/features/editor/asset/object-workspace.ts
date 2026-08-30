@@ -45,7 +45,7 @@ import {
 } from '../../../../content/content-types';
 import { serializeObject } from '../../../../content/object-serializer';
 import { SpriteDocument } from '../../../../content/sprite-document';
-import { undoRedoIntent } from '../../../../core/keyboard-shortcuts';
+import { routeUndoRedo } from '../../../../core/keyboard-shortcuts';
 import { zoomBy } from '../../../../renderer/canvas-surface';
 import { assetUrl } from '../../../../core/asset-url';
 import { I18nService } from '../../../i18n/i18n.service';
@@ -558,7 +558,7 @@ export class ObjectWorkspace implements OnDestroy {
     input.value = '';
 
     this.drafts.setBusy(true);
-    this.drafts.fail(null);
+    this.drafts.clearError();
     try {
       const path = `${ASSET_DIR}/${file.name}`;
       await this.workspace.write(path, file);
@@ -607,16 +607,7 @@ export class ObjectWorkspace implements OnDestroy {
    * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
    */
   protected onKeyDown(event: KeyboardEvent): void {
-    const intent = undoRedoIntent(event);
-    if (intent === null) {
-      return;
-    }
-    event.preventDefault();
-    if (intent === 'redo') {
-      this.redo();
-    } else {
-      this.undo();
-    }
+    routeUndoRedo(event, { undo: () => this.undo(), redo: () => this.redo() });
   }
 
   protected undo(): void {

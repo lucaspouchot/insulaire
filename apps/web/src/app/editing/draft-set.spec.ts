@@ -64,6 +64,8 @@ interface Faults {
   readonly blank?: Thing;
   /** Whether saving this kind may rewrite the manifest. Defaults to true. */
   readonly declaredInManifest?: boolean;
+  /** Drop the messages a kind with no art and no manifest entry cannot say. */
+  readonly silentAboutSpritesAndManifest?: boolean;
 }
 
 function harness(
@@ -90,12 +92,14 @@ function harness(
   const source: DraftSource<Thing> = {
     declaredInManifest: faults.declaredInManifest ?? true,
     blank: () => faults.blank ?? null,
-    messages: {
-      invalid: 'thing.invalid',
-      saved: 'thing.saved',
-      spritesSaved: 'thing.spritesSaved',
-      savedManifest: 'thing.savedManifest',
-    },
+    messages: faults.silentAboutSpritesAndManifest
+      ? { invalid: 'thing.invalid', saved: 'thing.saved' }
+      : {
+          invalid: 'thing.invalid',
+          saved: 'thing.saved',
+          spritesSaved: 'thing.spritesSaved',
+          savedManifest: 'thing.savedManifest',
+        },
     async prepare(): Promise<void> {
       trace.push('prepare');
       if (faults.prepare !== undefined) {
@@ -442,6 +446,20 @@ describe('DraftSet save', () => {
     await held.set.save();
 
     expect(held.trace).not.toContain('writeJson project.json');
+  });
+
+  it('says nothing rather than nothing-shaped for a message the kind does not have', async () => {
+    // An absent key must not become an empty part: `t('')` resolves to '', and
+    // the message would end in a bare separator.
+    const quiet = harness(undefined, { silentAboutSpritesAndManifest: true });
+    await quiet.set.load();
+    quiet.dirtySprites.set('a', ['assets/a.png']);
+    quiet.set.touchSprites();
+    quiet.manifestDirty.value = true;
+
+    await quiet.set.save();
+
+    expect(quiet.set.message()).toBe('thing.saved(things/a.json) · ui.editor.locale.created(1)');
   });
 
   it('never touches the manifest for a kind whose file is at a fixed path', async () => {

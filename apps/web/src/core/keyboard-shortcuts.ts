@@ -98,6 +98,36 @@ export function undoRedoIntent(event: KeyboardEvent): 'undo' | 'redo' | null {
   return null;
 }
 
+/** What an undo chord acts on: whatever holds the history. */
+export interface UndoRedo {
+  undo(): void;
+  redo(): void;
+}
+
+/**
+ * Routes an undo/redo chord to whichever surface is holding the history.
+ *
+ * The listener stays with the screen — only a screen knows which of its
+ * surfaces is open — but the parse and the dispatch are here, so four screens
+ * share one answer instead of four copies of the same four lines
+ * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
+ *
+ * @returns whether it acted, for a caller that wants to do something else
+ */
+export function routeUndoRedo(event: KeyboardEvent, target: UndoRedo): boolean {
+  const intent = undoRedoIntent(event);
+  if (intent === null) {
+    return false;
+  }
+  event.preventDefault();
+  if (intent === 'redo') {
+    target.redo();
+  } else {
+    target.undo();
+  }
+  return true;
+}
+
 /** Readable fallback when the browser cannot expose its keyboard layout map. */
 export function fallbackKeyboardLabel(code: string): string {
   if (/^Key[A-Z]$/.test(code)) {

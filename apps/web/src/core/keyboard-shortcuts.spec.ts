@@ -5,6 +5,7 @@ import {
   fallbackKeyboardLabel,
   ignoresGameplayShortcut,
   isKeyboardCode,
+  routeUndoRedo,
   undoRedoIntent,
 } from './keyboard-shortcuts';
 
@@ -71,6 +72,32 @@ describe('physical keyboard shortcuts', () => {
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }));
 
     expect(intent).toBeNull();
+  });
+
+  it('routes a chord to the surface holding the history, and prevents the default', () => {
+    const acted: string[] = [];
+    const target = { undo: () => acted.push('undo'), redo: () => acted.push('redo') };
+    const chord = (init: KeyboardEventInit): KeyboardEvent =>
+      new KeyboardEvent('keydown', { code: 'KeyZ', cancelable: true, ...init });
+
+    const undone = chord({ key: 'z', ctrlKey: true });
+    expect(routeUndoRedo(undone, target)).toBe(true);
+    expect(undone.defaultPrevented).toBe(true);
+
+    routeUndoRedo(chord({ key: 'z', ctrlKey: true, shiftKey: true }), target);
+
+    expect(acted).toEqual(['undo', 'redo']);
+  });
+
+  it('leaves a keystroke it does not claim entirely alone', () => {
+    const target = {
+      undo: () => expect.unreachable('undid a key it should not have claimed'),
+      redo: () => expect.unreachable('redid a key it should not have claimed'),
+    };
+    const plain = new KeyboardEvent('keydown', { key: 'z', cancelable: true });
+
+    expect(routeUndoRedo(plain, target)).toBe(false);
+    expect(plain.defaultPrevented).toBe(false);
   });
 
   it('formats common codes when the layout map is unavailable', () => {

@@ -420,6 +420,39 @@ because `loadProject` refuses a manifest naming a definition that is not loaded.
 A subclass says only which list it reads, how one file is registered, and how
 one is described for a picker (ADR-0024, ADR-0035, ADR-0036).
 
+Every screen that authors a definition holds it in a **draft set**
+(`apps/web/src/app/editing/draft-set.ts`): the drafts it has read, which one is
+open, which owe the disk a write, and the load and save choreography. Six
+screens share it — character, decoration, object, settings, title screen and
+character creation — and a single-document screen is one whose list happens to
+be length 1.
+
+It is the one thing that decides what *unsaved* means, and the answer has two
+halves: a draft is dirty when its definition differs from its file **or** when
+an image it owns has unwritten pixels. `SpriteDocument.unsaved` is therefore an
+input to that question rather than a second answer to it. A painted buffer that
+no draft names any more is a different question, asked only by the unload guard.
+
+What each *kind* means by reading, validating, serialising, writing and
+declaring is behind `DraftSource`
+(`apps/web/src/app/editing/draft-source.ts`), which the screen supplies.
+Saving is a fixed pipeline in the draft set — validate, bail, write the file,
+adopt it, write the images, declare it, rewrite the manifest if the manifest
+moved, create the locale keys the file names — because *a draft with validation
+errors is never written* is an invariant of the session and not a promise each
+kind makes separately (ADR-0012). A kind whose file lives at a fixed path
+declares nothing and never rewrites `project.json` (ADR-0015).
+
+`ContentLibrary` is a peer of the draft set and not a part of it: a running
+game holds libraries and no drafts. An adapter calls one to adopt and forget
+definitions; the library goes on doing its own job for callers with no drafts
+at all.
+
+Two editors are deliberately **not** draft sets. `tile-workspace.ts` edits its
+working copy in place over a lazy overlay on `ProjectStoreService`, and
+`locale-editor-page.ts` has no draft at all — `LocaleAuthoringService` already
+owns the entries, the dirty flag and the write.
+
 The editor holds **one document per map**, not one document
 (`ProjectStoreService`, `apps/web/src/app/services/project-store.service.ts`),
 together with the manifest and the loaded tile sets. Map links require it: a

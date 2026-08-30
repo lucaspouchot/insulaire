@@ -236,8 +236,6 @@ export class CharacterCreationEditorPage {
       messages: {
         invalid: 'ui.editor.creation.invalid',
         saved: 'ui.editor.creation.saved',
-        spritesSaved: '',
-        savedManifest: '',
       },
       prepare: async () => {
         await this.engine.ready();

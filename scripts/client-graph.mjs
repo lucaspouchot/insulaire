@@ -29,8 +29,8 @@ export const DELIVER_REPLACEMENTS = Object.freeze({
  * Directories only the editor may reach.
  *
  * `app/editing/` is the editing session and everything behind it. A client
- * plays a game; it never holds a draft of one
- * (`.scratch/module-depth/issues/04-one-editing-session-for-the-workspaces.md`).
+ * plays a game; it never holds a draft of one — the directory table in
+ * `docs/adr/ADR-0015-client-delivery-build.md` is what this enforces.
  */
 export const EDITOR_ONLY = Object.freeze(['src/app/editing/']);
 

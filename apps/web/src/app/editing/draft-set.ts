@@ -160,8 +160,8 @@ export class DraftSet<TDraft extends Draft> {
     }
   }
 
-  /** Opens another draft. */
-  select(id: string): void {
+  /** Opens another draft, or nothing. */
+  select(id: string | null): void {
     this.openIdSignal.set(id);
     this.messageSignal.set(null);
     this.refresh();
@@ -225,7 +225,7 @@ export class DraftSet<TDraft extends Draft> {
     this.source.undeclare(id);
     this.source.forget(id);
     this.changed.update((ids) => ids.filter((held) => held !== id));
-    this.select(this.all()[0]?.id ?? '');
+    this.select(this.all()[0]?.id ?? null);
   }
 
   /** Tells the session that pixels moved, so dirtiness is re-read. */
@@ -240,7 +240,12 @@ export class DraftSet<TDraft extends Draft> {
 
   /** Reports a failure a kind-specific action ran into. */
   fail(cause: unknown): void {
-    this.errorSignal.set(cause === null ? null : describeError(cause));
+    this.errorSignal.set(describeError(cause));
+  }
+
+  /** Takes the last failure off the screen — what an action does before trying. */
+  clearError(): void {
+    this.errorSignal.set(null);
   }
 
   /** Whether a write is in flight, for actions outside the save pipeline. */
@@ -309,8 +314,9 @@ export class DraftSet<TDraft extends Draft> {
       // The art goes with the definition. An author who painted and pressed
       // Save meant both, and a sprite left only in a tab is a sprite lost.
       const written = await this.source.writeSprites(draft);
-      if (written > 0) {
-        parts.push(i18n.t(this.source.messages.spritesSaved, { count: written }));
+      const spritesSaved = this.source.messages.spritesSaved;
+      if (written > 0 && spritesSaved !== undefined) {
+        parts.push(i18n.t(spritesSaved, { count: written }));
       }
 
       // A definition nobody lists is a definition nobody loads. A kind whose
@@ -321,7 +327,10 @@ export class DraftSet<TDraft extends Draft> {
         if (manifest.manifestNeedsWriting()) {
           await workspace.writeJson('project.json', manifest.projectJson());
           manifest.markManifestWritten();
-          parts.push(i18n.t(this.source.messages.savedManifest));
+          const savedManifest = this.source.messages.savedManifest;
+          if (savedManifest !== undefined) {
+            parts.push(i18n.t(savedManifest));
+          }
         }
       }
       manifest.refreshDirty();

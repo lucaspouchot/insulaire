@@ -91,10 +91,17 @@ What tile *does* share and has already taken from 04: `describeError`,
 
 ## What this ticket is
 
-Two things, and the first is small:
+Two things. The first is done: 04's seam table now shows the `locale` row
+struck through, with the reason above, and `spec.md`'s Order says so.
 
-1. **Delete the `locale` row** from 04's seam table in the spec, with the
-   reason above. No code.
+1. **Character's playback clock.** `character-workspace.ts:697` still
+   hand-rolls `startClock`/`stopClock`, where decoration and object now hold a
+   `FlipbookClock`. It is a genuine misfit — a skeleton animation has a
+   playback *speed* and a frame *count*, and is not a flipbook — so it was left
+   alone, and this records that rather than leaving it unexplained. The
+   deepening, if one is wanted, is a clock over `Animation` rather than over
+   `Flipbook`; the two would share the ticker and the play/pause, not the
+   frame arithmetic.
 2. **After [05](05-close-the-project-store-read-side.md) lands**, move
    `tile-workspace.ts` onto `DraftSet` with a store-backed `DraftSource`,
    converting its thirty mutate-then-touch sites to `edit(mutate)` in the same
@@ -104,7 +111,8 @@ Two things, and the first is small:
 
 ## Done when
 
-- The spec no longer proposes a locale adapter.
+- `character-workspace.ts` either holds a clock module or says in one comment
+  why it holds its own.
 - `tile-workspace.ts` holds no `load`/`save` choreography of its own.
 - Its dirtiness is the session's, not a hand-rolled boolean.
 - `npm run check` and the smoke run pass, with unchanged screenshots.
