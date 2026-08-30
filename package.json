@@ -1,6 +1,6 @@
 {
   "name": "insulaire",
-  "version": "0.25.0",
+  "version": "0.26.0",
   "private": true,
   "description": "Browser-based turn-based hex engine: Angular UI/editor + Rust/WASM simulation.",
   "workspaces": [
