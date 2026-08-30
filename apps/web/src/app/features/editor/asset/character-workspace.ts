@@ -94,9 +94,7 @@ import {
 } from '../../../../content/content-types';
 import { serializeCharacter } from '../../../../content/character-serializer';
 import { PALETTE_SIZE, SpriteDocument } from '../../../../content/sprite-document';
-import { ValidationReport } from '../../../../engine/engine.types';
 import { assetUrl } from '../../../../core/asset-url';
-import { describeError } from '../../../../core/errors';
 import { isEditableTarget } from '../../../../core/keyboard-shortcuts';
 import {
   CharacterBox,
@@ -117,6 +115,8 @@ import { CharacterPose, EngineService } from '../../../services/engine.service';
 import { LocaleAuthoringService } from '../../../services/locale-authoring.service';
 import { CharacterLibraryService } from '../../../services/character-library.service';
 import { CONTENT_ROOT, ProjectStoreService } from '../../../services/project-store.service';
+import { DraftSet } from '../../../editing/draft-set';
+import { DraftSource } from '../../../editing/draft-source';
 import { freeId } from '../../../editing/ids';
 import { zoomBy } from '../../../../renderer/canvas-surface';
 
@@ -211,20 +211,26 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
   private readonly canvasRef = viewChild<ElementRef<HTMLCanvasElement>>('stage');
   private readonly frameRef = viewChild<ElementRef<HTMLElement>>('frame');
 
-  /** Every definition the project holds, by id, as edited. */
-  private readonly documentsSignal = signal<readonly CharacterDefinition[]>([]);
-  /** Id of the definition open in the form. */
-  private readonly openIdSignal = signal<string | null>(null);
-  /** Ids of the definitions whose file no longer matches the document. */
-  private readonly unsaved = signal<readonly string[]>([]);
+  /**
+   * The editing session: what is held, what is open, what is unwritten.
+   *
+   * The whole of load and save, which this screen only supplies the
+   * character's half of (`app/editing/draft-set.ts`).
+   */
+  private readonly drafts = new DraftSet<CharacterDefinition>(this.draftSource(), {
+    i18n: this.i18n,
+    workspace: this.workspace,
+    manifest: this.store,
+    locales: this.locales,
+  });
 
-  protected readonly report = signal<ValidationReport | null>(null);
-  protected readonly message = signal<string | null>(null);
-  protected readonly error = signal<string | null>(null);
-  protected readonly busy = signal(false);
-  protected readonly loading = signal(true);
+  protected readonly report = this.drafts.report;
+  protected readonly message = this.drafts.message;
+  protected readonly error = this.drafts.error;
+  protected readonly busy = this.drafts.busy;
+  protected readonly loading = this.drafts.loading;
   /** Paths the manifest declares that could not be read. */
-  protected readonly unreadable = signal<readonly string[]>([]);
+  protected readonly unreadable = this.drafts.unreadable;
 
   /** The customisation the preview is showing. */
   protected readonly values = signal<CharacterValues>({});
@@ -348,14 +354,10 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
   private resizeObserver: ResizeObserver | null = null;
 
   /** Every definition, in project order. */
-  protected readonly documents = this.documentsSignal.asReadonly();
+  protected readonly documents = this.drafts.drafts;
 
   /** The definition being edited, or `null` when the project has none. */
-  protected readonly document = computed<CharacterDefinition | null>(() => {
-    const documents = this.documentsSignal();
-    const id = this.openIdSignal();
-    return documents.find((candidate) => candidate.id === id) ?? documents.at(0) ?? null;
-  });
+  protected readonly document = this.drafts.open;
 
   /** Path this definition's file has, declared or by convention. */
   protected readonly path = computed(() => {
@@ -363,11 +365,8 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
     return document === null ? '' : this.store.characterPath(document.id);
   });
 
-  /** `true` when the open definition differs from its file. */
-  protected readonly dirty = computed(() => {
-    const document = this.document();
-    return document !== null && this.unsaved().includes(document.id);
-  });
+  /** `true` when the open definition, or a sprite it owns, differs from disk. */
+  protected readonly dirty = this.drafts.dirty;
 
   /** `true` when files can actually be written — the editor is honest about it. */
   protected readonly writable = computed(() => this.workspace.status() !== null);
@@ -623,9 +622,14 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
     (this.report()?.issues ?? []).filter((issue) => issue.code === 'locale.unknownKey'),
   );
 
-  protected readonly errorCount = computed(
-    () => this.blocking().filter((issue) => issue.severity === 'error').length,
-  );
+  /**
+   * How many issues stop a write.
+   *
+   * The session's count, and it is the same number {@link blocking} would give:
+   * `locale.unknownKey` is a warning, so filtering it out never took an error
+   * with it (`docs/adr/ADR-0020-localised-content-keys.md`).
+   */
+  protected readonly errorCount = this.drafts.errorCount;
 
   constructor() {
     // Redrawing is a side effect of the resolved character changing, whatever
@@ -661,7 +665,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
         this.stopClock();
       }
     });
-    void this.load();
+    void this.drafts.load();
   }
 
   ngAfterViewInit(): void {
@@ -772,34 +776,49 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
     });
   }
 
-  private async load(): Promise<void> {
-    try {
-      await this.engine.ready();
-      await this.i18n.ensureAdopted();
-      await this.store.ensureLoaded();
-      await this.workspace.ensureProbed();
-      await this.locales.ensureLoaded();
-      // Registered as well as fetched: the *runtime* holds these, and this
-      // screen is about to replace one of them.
-      await this.library.ensureLoaded();
-      await this.refreshFiles();
-
-      const declared = this.store.project()?.characters ?? [];
-      const documents = await Promise.all(declared.map((entry) => this.fetchCharacter(entry)));
-      this.documentsSignal.set(documents.filter((document) => document !== null));
-      // A declared character that will not open used to vanish without a word,
-      // which is indistinguishable from one that was never declared — and it is
-      // the editor, not the author, that knows the difference.
-      this.unreadable.set(
-        declared.filter((_entry, index) => documents[index] === null).map((entry) => entry.path),
-      );
-      this.openIdSignal.set(this.documentsSignal()[0]?.id ?? null);
-      this.refresh();
-    } catch (cause) {
-      this.error.set(describeError(cause));
-    } finally {
-      this.loading.set(false);
-    }
+  /**
+   * What a *character* means by reading, validating, writing and declaring.
+   *
+   * Everything else about the session — the order of the steps, the bail-out on
+   * a failing verdict, what a rename takes with it — is `DraftSet`'s.
+   */
+  private draftSource(): DraftSource<CharacterDefinition> {
+    return {
+      messages: {
+        invalid: 'ui.editor.character.invalid',
+        saved: 'ui.editor.character.saved',
+        spritesSaved: 'ui.editor.character.spritesSaved',
+        savedManifest: 'ui.editor.character.savedManifest',
+      },
+      prepare: async () => {
+        await this.engine.ready();
+        await this.i18n.ensureAdopted();
+        await this.store.ensureLoaded();
+        await this.workspace.ensureProbed();
+        await this.locales.ensureLoaded();
+        // Registered as well as fetched: the *runtime* holds these, and this
+        // screen is about to replace one of them.
+        await this.library.ensureLoaded();
+        await this.refreshFiles();
+      },
+      declared: () => this.store.project()?.characters ?? [],
+      read: (entry) => this.fetchCharacter(entry),
+      pathOf: (id) => this.store.characterPath(id),
+      serialize: (document) => serializeCharacter(document),
+      validate: (_document, json) => this.engine.validateCharacter(json),
+      adopt: (id, json) => this.library.adopt(id, json),
+      forget: (id) => this.library.forget(id),
+      declare: (id, path) => this.store.declareCharacter(id, path),
+      undeclare: (id) => this.store.undeclareCharacter(id),
+      dirtySprites: (document) => {
+        this.strokes();
+        return spriteAssets(document).filter((asset) => this.sessions.get(asset)?.unsaved === true);
+      },
+      writeSprites: () => this.writeSprites(),
+      keysOf: (document) => referencedKeys(document),
+      removed: () => {},
+      refresh: () => this.repose(),
+    };
   }
 
   /**
@@ -847,44 +866,13 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
    * `OnPush` only redraws what changed identity.
    */
   private edit(mutate: (draft: CharacterDefinition) => void): void {
-    const current = this.document();
-    if (current === null) {
-      return;
-    }
-    const draft = structuredClone(current) as CharacterDefinition;
-    mutate(draft);
-
-    this.documentsSignal.update((documents) =>
-      documents.map((document) => (document.id === current.id ? draft : document)),
-    );
-    if (this.openIdSignal() === current.id) {
-      this.openIdSignal.set(draft.id);
-    }
-    if (draft.id === current.id) {
-      this.markUnsaved(current.id);
-    } else {
-      // A rename takes the manifest entry with it. The old *file* is left on
-      // disk — deleting content is the author's decision — but a manifest that
-      // still listed the old id would name a definition nothing writes any more.
-      this.store.undeclareCharacter(current.id);
-      this.library.forget(current.id);
-      this.unsaved.update((ids) => ids.filter((id) => id !== current.id));
-      this.markUnsaved(draft.id);
-    }
-    this.message.set(null);
-    this.refresh();
-  }
-
-  private markUnsaved(id: string): void {
-    this.unsaved.update((ids) => (ids.includes(id) ? ids : [...ids, id]));
+    this.drafts.edit(mutate);
   }
 
   protected open(id: string): void {
-    this.openIdSignal.set(id);
+    this.drafts.select(id);
     this.layerIdSignal.set(null);
     this.resetChoices();
-    this.message.set(null);
-    this.refresh();
   }
 
   /**
@@ -898,7 +886,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
   protected addCharacter(): void {
     const id = freeId(
       'character',
-      this.documentsSignal().map((document) => document.id),
+      this.documents().map((document) => document.id),
     );
     const document: CharacterDefinition = {
       id,
@@ -919,9 +907,9 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
       ],
     };
 
-    this.documentsSignal.update((documents) => [...documents, document]);
-    this.markUnsaved(id);
-    this.open(id);
+    this.drafts.add(document);
+    this.layerIdSignal.set(null);
+    this.resetChoices();
   }
 
   /**
@@ -933,16 +921,11 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
    */
   protected removeCharacter(): void {
     const document = this.document();
-    if (document === null) {
-      return;
+    if (document !== null) {
+      this.drafts.remove(document.id);
+      this.layerIdSignal.set(null);
+      this.resetChoices();
     }
-    this.documentsSignal.update((documents) =>
-      documents.filter((candidate) => candidate.id !== document.id),
-    );
-    this.store.undeclareCharacter(document.id);
-    this.library.forget(document.id);
-    this.unsaved.update((ids) => ids.filter((id) => id !== document.id));
-    this.open(this.documentsSignal()[0]?.id ?? '');
   }
 
   protected setId(id: string): void {
@@ -1531,8 +1514,8 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
     }
     input.value = '';
 
-    this.busy.set(true);
-    this.error.set(null);
+    this.drafts.setBusy(true);
+    this.drafts.fail(null);
     try {
       const path = `${ASSET_DIR}/${file.name}`;
       await this.workspace.write(path, file);
@@ -1541,11 +1524,11 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
       // draw, and the file on disk has just changed under it either way.
       this.sprites.clear();
       this.setAsset(index, path);
-      this.message.set(this.i18n.t('ui.editor.character.uploaded', { file: path }));
+      this.drafts.announce(this.i18n.t('ui.editor.character.uploaded', { file: path }));
     } catch (cause) {
-      this.error.set(describeError(cause));
+      this.drafts.fail(cause);
     } finally {
-      this.busy.set(false);
+      this.drafts.setBusy(false);
     }
   }
 
@@ -1723,19 +1706,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
    * is this screen's opinion (ADR-0012, ADR-0024).
    */
   protected refresh(): void {
-    const document = this.document();
-    if (document === null || !this.engine.isReady) {
-      this.report.set(null);
-      this.resolved.set(null);
-      return;
-    }
-    try {
-      this.report.set(this.engine.validateCharacter(serializeCharacter(document)));
-      this.resolved.set(this.engine.previewCharacter(document, this.values(), this.pose()));
-      this.error.set(null);
-    } catch (cause) {
-      this.error.set(describeError(cause));
-    }
+    this.drafts.refresh();
   }
 
   /**
@@ -1748,87 +1719,19 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
   private repose(): void {
     const document = this.document();
     if (document === null || !this.engine.isReady) {
+      this.resolved.set(null);
       return;
     }
     try {
       this.resolved.set(this.engine.previewCharacter(document, this.values(), this.pose()));
     } catch (cause) {
-      this.error.set(describeError(cause));
+      this.drafts.fail(cause);
     }
   }
 
   /** Writes the open definition into the content directory. */
-  protected async save(): Promise<void> {
-    const document = this.document();
-    if (document === null) {
-      return;
-    }
-    this.busy.set(true);
-    this.error.set(null);
-    this.message.set(null);
-
-    try {
-      const json = serializeCharacter(document);
-      this.report.set(this.engine.validateCharacter(json));
-      if (this.errorCount() > 0) {
-        this.error.set(this.i18n.t('ui.editor.character.invalid'));
-        return;
-      }
-
-      const path = this.store.characterPath(document.id);
-      await this.workspace.writeJson(path, json);
-      // Adopting it is what makes the *runtime* agree with the file from here
-      // on, without a reload — and what a later content reset puts back.
-      this.library.adopt(document.id, json);
-
-      // A definition nobody lists is a definition nobody loads, so saving one
-      // declares it — and writes the manifest that now names it.
-      const parts = [this.i18n.t('ui.editor.character.saved', { file: path })];
-
-      // The art goes with the definition. An author who painted and pressed
-      // Save meant both, and a sprite left only in a tab is a sprite lost.
-      const written = await this.writeSprites();
-      if (written > 0) {
-        parts.push(this.i18n.t('ui.editor.character.spritesSaved', { count: written }));
-      }
-
-      this.store.declareCharacter(document.id, path);
-      if (this.store.manifestNeedsWriting()) {
-        await this.workspace.writeJson('project.json', this.store.projectJson());
-        this.store.markManifestWritten();
-        parts.push(this.i18n.t('ui.editor.character.savedManifest'));
-      }
-      this.store.refreshDirty();
-
-      // Every label this file names now exists as a key, in every language, so
-      // the Languages tab lists it and a translator can fill it in.
-      const created = await this.createMissingKeys(document);
-      if (created > 0) {
-        parts.push(this.i18n.t('ui.editor.locale.created', { count: created }));
-      }
-
-      this.unsaved.update((ids) => ids.filter((id) => id !== document.id));
-      this.refresh();
-      this.message.set(parts.join(' · '));
-    } catch (cause) {
-      this.error.set(describeError(cause));
-    } finally {
-      this.busy.set(false);
-    }
-  }
-
-  /**
-   * Creates every key this definition names that no language has yet.
-   *
-   * @returns how many keys were created
-   */
-  private async createMissingKeys(document: CharacterDefinition): Promise<number> {
-    const created = this.locales.ensureKeys(referencedKeys(document));
-    if (created.length === 0) {
-      return 0;
-    }
-    await this.locales.save();
-    return created.length;
+  protected save(): Promise<void> {
+    return this.drafts.save();
   }
 
   // ------------------------------------------------------------------ pixels
@@ -2121,7 +2024,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
 
   /** Asks the browser to confirm before pixels nobody has written are lost. */
   protected onUnload(event: BeforeUnloadEvent): void {
-    if (this.unsavedSprites().length > 0) {
+    if (this.drafts.anyUnsaved() || this.unsavedSprites().length > 0) {
       event.preventDefault();
     }
   }
@@ -2170,16 +2073,16 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
 
   /** Writes every edited sprite into the content directory. */
   protected async saveSprites(): Promise<void> {
-    this.busy.set(true);
-    this.error.set(null);
-    this.message.set(null);
+    this.drafts.setBusy(true);
+    this.drafts.fail(null);
+    this.drafts.announce(null);
     try {
       const written = await this.writeSprites();
-      this.message.set(this.i18n.t('ui.editor.character.spritesSaved', { count: written }));
+      this.drafts.announce(this.i18n.t('ui.editor.character.spritesSaved', { count: written }));
     } catch (cause) {
-      this.error.set(describeError(cause));
+      this.drafts.fail(cause);
     } finally {
-      this.busy.set(false);
+      this.drafts.setBusy(false);
     }
   }
 
@@ -2239,6 +2142,8 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
   /** Tells the view that the pixels moved. */
   private touchSprites(): void {
     this.strokes.update((count) => count + 1);
+    // The session decides what "unsaved" means, and a stroke is half of it.
+    this.drafts.touchSprites();
   }
 
   /**
@@ -2621,6 +2526,26 @@ function dropTint(draft: CharacterDefinition, parameterId: string): void {
       }
     }
   }
+}
+
+/**
+ * Every image a character definition names, once each.
+ *
+ * What the session asks for when it wants to know whether this draft owes the
+ * disk any pixels: a sprite is only *this* character's if one of its layers
+ * points at it.
+ */
+function spriteAssets(document: CharacterDefinition): string[] {
+  const assets = new Set<string>();
+  for (const layer of document.layers ?? []) {
+    for (const variant of layer.variants ?? []) {
+      const asset = variant.sprite?.asset ?? '';
+      if (asset.length > 0) {
+        assets.add(asset);
+      }
+    }
+  }
+  return [...assets];
 }
 
 /**

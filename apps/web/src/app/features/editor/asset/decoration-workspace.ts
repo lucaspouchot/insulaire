@@ -63,12 +63,9 @@ import {
   tileArtGeometry,
 } from '../../../../content/content-types';
 import { serializeDecoration } from '../../../../content/decoration-serializer';
-import { frameAt, frameDurationOf } from '../../../../content/flipbook';
 import { SpriteDocument } from '../../../../content/sprite-document';
-import { ValidationReport } from '../../../../engine/engine.types';
 import { assetUrl } from '../../../../core/asset-url';
 import { Point } from '../../../../core/hex/hex-layout';
-import { describeError } from '../../../../core/errors';
 import { zoomBy } from '../../../../renderer/canvas-surface';
 import { SpriteCache, drawCharacter } from '../../../../renderer/character-renderer';
 import { flatHexagon, surfaceHexagon } from '../../../../renderer/tile-preview';
@@ -81,10 +78,14 @@ import {
 import { CharacterLibraryService } from '../../../services/character-library.service';
 import { DecorationLibraryService } from '../../../services/decoration-library.service';
 import { EngineService } from '../../../services/engine.service';
+import { LocaleAuthoringService } from '../../../services/locale-authoring.service';
 import { CONTENT_ROOT, ProjectStoreService } from '../../../services/project-store.service';
 import { AssetWorkspace } from './asset-workspace';
 import { clampResolution, move } from './asset-editing';
 import { PixelEditor } from './pixel-editor';
+import { DraftSet } from '../../../editing/draft-set';
+import { DraftSource } from '../../../editing/draft-source';
+import { FlipbookClock } from '../../../editing/flipbook-clock';
 import { freeId } from '../../../editing/ids';
 
 /** The categories the picker offers, in the order it shows them. */
@@ -163,24 +164,31 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
    * (`docs/adr/ADR-0031-map-entity-presentation.md`).
    */
   private readonly characters = inject(CharacterLibraryService);
+  private readonly locales = inject(LocaleAuthoringService);
 
   private readonly canvasRef = viewChild<ElementRef<HTMLCanvasElement>>('stage');
   private readonly frameRef = viewChild<ElementRef<HTMLElement>>('frame');
 
-  /** Every definition the project holds, by id, as edited. */
-  private readonly documentsSignal = signal<readonly DecorationDefinition[]>([]);
-  /** Id of the definition open in the form. */
-  private readonly openIdSignal = signal<string | null>(null);
-  /** Ids of the definitions whose file no longer matches the document. */
-  private readonly unsaved = signal<readonly string[]>([]);
+  /**
+   * The editing session: what is held, what is open, what is unwritten.
+   *
+   * The whole of load and save, which this screen only supplies the
+   * decoration's half of (`app/editing/draft-set.ts`).
+   */
+  private readonly drafts = new DraftSet<DecorationDefinition>(this.draftSource(), {
+    i18n: this.i18n,
+    workspace: this.workspace,
+    manifest: this.store,
+    locales: this.locales,
+  });
 
-  protected readonly report = signal<ValidationReport | null>(null);
-  protected readonly message = signal<string | null>(null);
-  protected readonly error = signal<string | null>(null);
-  protected readonly busy = signal(false);
-  protected readonly loading = signal(true);
+  protected readonly report = this.drafts.report;
+  protected readonly message = this.drafts.message;
+  protected readonly error = this.drafts.error;
+  protected readonly busy = this.drafts.busy;
+  protected readonly loading = this.drafts.loading;
   /** Paths the manifest declares that could not be read. */
-  protected readonly unreadable = signal<readonly string[]>([]);
+  protected readonly unreadable = this.drafts.unreadable;
   /** Content files the workspace holds, for the frame picker. */
   protected readonly files = signal<readonly WorkspaceFile[]>([]);
 
@@ -206,11 +214,19 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
 
   /** Id of the animation being edited and played. */
   private readonly animationIdSignal = signal<string | null>(null);
-  /** Which frame of it the author has scrubbed to. */
-  private readonly frameIndexSignal = signal(0);
-  protected readonly playing = signal(false);
-  /** Where in the animation the preview is, in milliseconds. */
-  private readonly timeMs = signal(0);
+
+  /**
+   * Play, pause and scrub, over the open animation.
+   *
+   * Which frame that is, is `content/flipbook.ts`'s answer — the same one the
+   * Rust resolver gives, so the readout and the picture cannot disagree.
+   */
+  private readonly clock = new FlipbookClock(
+    () => this.animation(),
+    () => this.repose(),
+  );
+
+  protected readonly playing = this.clock.playing;
   /** What the resolver made of the open definition at that moment. */
   protected readonly resolved = signal<ResolvedDecoration | null>(null);
 
@@ -231,10 +247,6 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
     () => this.draw(),
   );
 
-  /** The running playback loop, if any. */
-  private clock: number | null = null;
-  /** When the loop last advanced, so a dropped frame does not skip time. */
-  private lastTick = 0;
   /** A drag on the hex stage, and where it started. */
   private dragging: { x: number; y: number; anchor: [number, number] } | null = null;
   private resizeObserver: ResizeObserver | null = null;
@@ -244,14 +256,10 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
   protected readonly maxFrames = MAX_FLIPBOOK_FRAMES;
 
   /** Every definition, in project order. */
-  protected readonly documents = this.documentsSignal.asReadonly();
+  protected readonly documents = this.drafts.drafts;
 
   /** The definition being edited, or `null` when the project has none. */
-  protected readonly document = computed<DecorationDefinition | null>(() => {
-    const id = this.openIdSignal();
-    const documents = this.documentsSignal();
-    return documents.find((entry) => entry.id === id) ?? documents[0] ?? null;
-  });
+  protected readonly document = this.drafts.open;
 
   /** Path this definition's file has, declared or by convention. */
   protected readonly path = computed(() => {
@@ -259,11 +267,8 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
     return document === null ? '' : this.store.decorationPath(document.id);
   });
 
-  /** `true` when the open definition differs from its file. */
-  protected readonly dirty = computed(() => {
-    const document = this.document();
-    return document !== null && this.unsaved().includes(document.id);
-  });
+  /** `true` when the open definition, or a frame it owns, differs from disk. */
+  protected readonly dirty = this.drafts.dirty;
 
   /** `true` when files can actually be written — the editor is honest about it. */
   protected readonly writable = computed(() => this.workspace.status() !== null);
@@ -343,11 +348,8 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
 
   protected readonly frames = computed<readonly string[]>(() => this.animation()?.frames ?? []);
 
-  /** Which frame the author is on, kept inside the animation it belongs to. */
-  protected readonly frameIndex = computed(() => {
-    const count = this.frames().length;
-    return count === 0 ? 0 : Math.min(this.frameIndexSignal(), count - 1);
-  });
+  /** Which frame the author is on — the clock's answer, running or parked. */
+  protected readonly frameIndex = this.clock.frame;
 
   /** The image that frame names, empty when it names none. */
   protected readonly openAsset = computed(() => this.frames()[this.frameIndex()] ?? '');
@@ -365,12 +367,10 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
     return [...this.sessions].filter(([, sprite]) => sprite.unsaved).map(([asset]) => asset);
   });
 
-  protected readonly errorCount = computed(
-    () => this.report()?.issues.filter((issue) => issue.severity === 'error').length ?? 0,
-  );
+  protected readonly errorCount = this.drafts.errorCount;
 
   constructor() {
-    void this.load();
+    void this.drafts.load();
 
     // Everything the stage draws from, in one place: reading them here is what
     // makes the canvas repaint when any of them moves.
@@ -408,43 +408,66 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
-    this.stopClock();
+    this.clock.stop();
     this.resizeObserver?.disconnect();
     this.sessions.clear();
   }
 
-  // ------------------------------------------------------------------- load
+  // ----------------------------------------------------------------- source
 
-  private async load(): Promise<void> {
-    try {
-      await this.engine.ready();
-      await this.i18n.ensureAdopted();
-      await this.store.ensureLoaded();
-      await this.workspace.ensureProbed();
-      // Registered as well as fetched: the *runtime* holds these, and this
-      // screen is about to replace one of them.
-      await this.library.ensureLoaded();
-      // The figure is a real character, so the library it comes from has to be
-      // in the engine before the stage asks for one.
-      await this.characters.ensureLoaded();
-      // The first real character the project ships, or the plain silhouette
-      // when it ships none: the hex is judged against *something* by default.
-      this.figureId.set(this.characters.choices()[0]?.id ?? GENERIC_FIGURE);
-      await this.refreshFiles();
-
-      const declared = this.store.project()?.decorations ?? [];
-      const documents = await Promise.all(declared.map((entry) => this.fetchDecoration(entry)));
-      this.documentsSignal.set(documents.filter((document) => document !== null));
-      this.unreadable.set(
-        declared.filter((_entry, index) => documents[index] === null).map((entry) => entry.path),
-      );
-      this.openIdSignal.set(this.documentsSignal()[0]?.id ?? null);
-      this.refresh();
-    } catch (cause) {
-      this.error.set(describeError(cause));
-    } finally {
-      this.loading.set(false);
-    }
+  /**
+   * What a *decoration* means by reading, validating, writing and declaring.
+   *
+   * Everything else about the session — the order of the steps, the bail-out on
+   * a failing verdict, what a rename takes with it — is `DraftSet`'s.
+   */
+  private draftSource(): DraftSource<DecorationDefinition> {
+    return {
+      messages: {
+        invalid: 'ui.editor.decoration.invalid',
+        saved: 'ui.editor.decoration.saved',
+        spritesSaved: 'ui.editor.decoration.framesSaved',
+        savedManifest: 'ui.editor.decoration.savedManifest',
+      },
+      prepare: async () => {
+        await this.engine.ready();
+        await this.i18n.ensureAdopted();
+        await this.store.ensureLoaded();
+        await this.workspace.ensureProbed();
+        // Registered as well as fetched: the *runtime* holds these, and this
+        // screen is about to replace one of them.
+        await this.library.ensureLoaded();
+        // The figure is a real character, so the library it comes from has to
+        // be in the engine before the stage asks for one.
+        await this.characters.ensureLoaded();
+        // The first real character the project ships, or the plain silhouette
+        // when it ships none: the hex is judged against *something* by default.
+        this.figureId.set(this.characters.choices()[0]?.id ?? GENERIC_FIGURE);
+        await this.refreshFiles();
+      },
+      declared: () => this.store.project()?.decorations ?? [],
+      read: (entry) => this.fetchDecoration(entry),
+      pathOf: (id) => this.store.decorationPath(id),
+      serialize: (document) => serializeDecoration(document),
+      // The project's own grid goes with it: `decoration.overflowsCell` is the
+      // one check that needs to know what a hex is.
+      validate: (_document, json) => this.engine.validateDecoration(json, this.geometry()),
+      adopt: (id, json) => this.library.adopt(id, json),
+      forget: (id) => this.library.forget(id),
+      declare: (id, path) => this.store.declareDecoration(id, path),
+      undeclare: (id) => this.store.undeclareDecoration(id),
+      dirtySprites: (document) => {
+        this.strokes();
+        return (document.animations ?? [])
+          .flatMap((animation) => animation.frames)
+          .filter((asset) => this.sessions.get(asset)?.unsaved === true);
+      },
+      writeSprites: () => this.writeSprites(),
+      // A decoration is not player-facing text: it names no locale keys.
+      keysOf: () => [],
+      removed: () => {},
+      refresh: () => this.repose(),
+    };
   }
 
   private async refreshFiles(): Promise<void> {
@@ -478,39 +501,8 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
 
   // ------------------------------------------------------------------ edits
 
-  /**
-   * Applies a change to the open definition, then re-validates and re-resolves.
-   *
-   * A copy per edit, not a mutation: the form is a tree of nested arrays, and
-   * `OnPush` only redraws what changed identity.
-   */
   private edit(mutate: (draft: DecorationDefinition) => void): void {
-    const current = this.document();
-    if (current === null) {
-      return;
-    }
-    const draft = structuredClone(current) as DecorationDefinition;
-    mutate(draft);
-
-    this.documentsSignal.update((documents) =>
-      documents.map((document) => (document.id === current.id ? draft : document)),
-    );
-    if (this.openIdSignal() === current.id) {
-      this.openIdSignal.set(draft.id);
-    }
-    if (draft.id === current.id) {
-      this.markUnsaved(current.id);
-    } else {
-      // A rename takes the manifest entry with it. The old *file* is left on
-      // disk — deleting content is the author's decision — but a manifest that
-      // still listed the old id would name a definition nothing writes any more.
-      this.store.undeclareDecoration(current.id);
-      this.library.forget(current.id);
-      this.unsaved.update((ids) => ids.filter((id) => id !== current.id));
-      this.markUnsaved(draft.id);
-    }
-    this.message.set(null);
-    this.refresh();
+    this.drafts.edit(mutate);
   }
 
   /** Applies a change to the open animation. */
@@ -527,18 +519,10 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
     });
   }
 
-  private markUnsaved(id: string): void {
-    this.unsaved.update((ids) => (ids.includes(id) ? ids : [...ids, id]));
-  }
-
   protected open(id: string): void {
-    this.openIdSignal.set(id);
+    this.drafts.select(id);
     this.animationIdSignal.set(null);
-    this.frameIndexSignal.set(0);
-    this.timeMs.set(0);
-    this.playing.set(false);
-    this.message.set(null);
-    this.refresh();
+    this.clock.seek(0);
   }
 
   /**
@@ -556,7 +540,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
   protected addDecoration(): void {
     const id = freeId(
       'decoration',
-      this.documentsSignal().map((document) => document.id),
+      this.documents().map((document) => document.id),
     );
     // The canvas a new decoration starts on is **this project's hex**, not the
     // schema's fallback: a prop is drawn against the tiles it will stand on,
@@ -583,9 +567,9 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
       animations: [{ id: 'idle', frames: [''] }],
     };
 
-    this.documentsSignal.update((documents) => [...documents, document]);
-    this.markUnsaved(id);
-    this.open(id);
+    this.drafts.add(document);
+    this.animationIdSignal.set(null);
+    this.clock.seek(0);
   }
 
   /**
@@ -597,16 +581,11 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
    */
   protected removeDecoration(): void {
     const document = this.document();
-    if (document === null) {
-      return;
+    if (document !== null) {
+      this.drafts.remove(document.id);
+      this.animationIdSignal.set(null);
+      this.clock.seek(0);
     }
-    this.documentsSignal.update((documents) =>
-      documents.filter((candidate) => candidate.id !== document.id),
-    );
-    this.store.undeclareDecoration(document.id);
-    this.library.forget(document.id);
-    this.unsaved.update((ids) => ids.filter((id) => id !== document.id));
-    this.open(this.documentsSignal()[0]?.id ?? '');
   }
 
   protected setId(id: string): void {
@@ -694,9 +673,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
 
   protected openAnimation(id: string): void {
     this.animationIdSignal.set(id);
-    this.frameIndexSignal.set(0);
-    this.timeMs.set(0);
-    this.playing.set(false);
+    this.clock.seek(0);
     this.repose();
   }
 
@@ -719,7 +696,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
       }
     });
     this.animationIdSignal.set(null);
-    this.frameIndexSignal.set(0);
+    this.clock.seek(0);
   }
 
   protected setAnimationId(id: string): void {
@@ -769,9 +746,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
   // ----------------------------------------------------------------- frames
 
   protected selectFrame(index: number): void {
-    this.playing.set(false);
-    this.frameIndexSignal.set(Math.max(0, index));
-    this.timeMs.set(index * frameDurationOf(this.animation()));
+    this.clock.seek(index);
     this.repose();
   }
 
@@ -844,8 +819,8 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
     }
     input.value = '';
 
-    this.busy.set(true);
-    this.error.set(null);
+    this.drafts.setBusy(true);
+    this.drafts.fail(null);
     try {
       const path = `${ASSET_DIR}/${file.name}`;
       await this.workspace.write(path, file);
@@ -853,82 +828,25 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
       // The decoded copies hold the bytes this path used to have.
       this.forgetImage(path);
       this.setFrame(index, path);
-      this.message.set(this.i18n.t('ui.editor.decoration.uploaded', { file: path }));
+      this.drafts.announce(this.i18n.t('ui.editor.decoration.uploaded', { file: path }));
     } catch (cause) {
-      this.error.set(describeError(cause));
+      this.drafts.fail(cause);
     } finally {
-      this.busy.set(false);
+      this.drafts.setBusy(false);
     }
   }
 
   // -------------------------------------------------------------- playback
 
   protected togglePlay(): void {
-    this.playing.update((on) => !on);
-    if (this.playing()) {
-      this.startClock();
-    } else {
-      this.stopClock();
-    }
-  }
-
-  private startClock(): void {
-    if (this.clock !== null) {
-      return;
-    }
-    this.lastTick = performance.now();
-    const step = (now: number): void => {
-      const animation = this.animation();
-      if (!this.playing() || animation === null) {
-        this.stopClock();
-        return;
-      }
-      this.timeMs.update((time) => time + (now - this.lastTick));
-      this.lastTick = now;
-      // The frame readout follows the clock, so scrubbing after a pause starts
-      // from where playback stopped rather than from where it was clicked.
-      this.frameIndexSignal.set(frameAt(animation, this.timeMs()));
-      this.repose();
-      this.clock = requestAnimationFrame(step);
-    };
-    this.clock = requestAnimationFrame(step);
-  }
-
-  private stopClock(): void {
-    if (this.clock !== null) {
-      cancelAnimationFrame(this.clock);
-      this.clock = null;
-    }
+    this.clock.togglePlay();
   }
 
   // --------------------------------------------------------------- validate
 
-  /**
-   * Re-validates and re-resolves the open definition.
-   *
-   * Both go through Rust: the validator is the runtime's own and the resolver
-   * is the one a map will place a tree with, so neither the verdict nor the
-   * position is this screen's opinion
-   * (`docs/adr/ADR-0012-shared-content-validation.md`).
-   */
+  /** Re-validates and re-resolves the open definition. */
   protected refresh(): void {
-    const document = this.document();
-    if (document === null || !this.engine.isReady) {
-      this.report.set(null);
-      this.resolved.set(null);
-      return;
-    }
-    try {
-      // The project's own grid goes with it: `decoration.overflowsCell` is the
-      // one check that needs to know what a hex is.
-      this.report.set(
-        this.engine.validateDecoration(serializeDecoration(document), this.geometry()),
-      );
-      this.error.set(null);
-    } catch (cause) {
-      this.error.set(describeError(cause));
-    }
-    this.repose();
+    this.drafts.refresh();
   }
 
   /**
@@ -941,71 +859,26 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
   private repose(): void {
     const document = this.document();
     if (document === null || !this.engine.isReady) {
+      this.resolved.set(null);
       return;
     }
     try {
       this.resolved.set(
-        this.engine.previewDecoration(document, this.animation()?.id, this.timeMs()),
+        this.engine.previewDecoration(document, this.animation()?.id, this.clock.timeMs()),
       );
     } catch (cause) {
-      this.error.set(describeError(cause));
+      this.drafts.fail(cause);
     }
   }
 
   /** Writes the open definition into the content directory. */
-  protected async save(): Promise<void> {
-    const document = this.document();
-    if (document === null) {
-      return;
-    }
-    this.busy.set(true);
-    this.error.set(null);
-    this.message.set(null);
-
-    try {
-      const json = serializeDecoration(document);
-      this.report.set(this.engine.validateDecoration(json, this.geometry()));
-      if (this.errorCount() > 0) {
-        this.error.set(this.i18n.t('ui.editor.decoration.invalid'));
-        return;
-      }
-
-      const path = this.store.decorationPath(document.id);
-      await this.workspace.writeJson(path, json);
-      // Adopting it is what makes the *runtime* agree with the file from here
-      // on, without a reload — and what a later content reset puts back.
-      this.library.adopt(document.id, json);
-
-      const parts = [this.i18n.t('ui.editor.decoration.saved', { file: path })];
-
-      // The art goes with the definition. An author who painted and pressed
-      // Save meant both, and a frame left only in a tab is a frame lost.
-      const written = await this.writeSprites();
-      if (written > 0) {
-        parts.push(this.i18n.t('ui.editor.decoration.framesSaved', { count: written }));
-      }
-
-      this.store.declareDecoration(document.id, path);
-      if (this.store.manifestNeedsWriting()) {
-        await this.workspace.writeJson('project.json', this.store.projectJson());
-        this.store.markManifestWritten();
-        parts.push(this.i18n.t('ui.editor.decoration.savedManifest'));
-      }
-      this.store.refreshDirty();
-
-      this.unsaved.update((ids) => ids.filter((id) => id !== document.id));
-      this.refresh();
-      this.message.set(parts.join(' · '));
-    } catch (cause) {
-      this.error.set(describeError(cause));
-    } finally {
-      this.busy.set(false);
-    }
+  protected save(): Promise<void> {
+    return this.drafts.save();
   }
 
   /** Pixels and definitions both live in memory until they are written. */
   protected onUnload(event: BeforeUnloadEvent): void {
-    if (this.unsaved().length > 0 || this.unsavedSprites().length > 0) {
+    if (this.drafts.anyUnsaved() || this.unsavedSprites().length > 0) {
       event.preventDefault();
     }
   }
@@ -1076,6 +949,8 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
   /** Tells the view that the pixels moved. */
   private touchSprites(): void {
     this.strokes.update((count) => count + 1);
+    // The session decides what "unsaved" means, and a stroke is half of it.
+    this.drafts.touchSprites();
   }
 
   // -------------------------------------------------------------- the stage

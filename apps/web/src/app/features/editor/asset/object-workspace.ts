@@ -44,11 +44,9 @@ import {
   SpriteResolution,
 } from '../../../../content/content-types';
 import { serializeObject } from '../../../../content/object-serializer';
-import { frameDurationOf } from '../../../../content/flipbook';
 import { SpriteDocument } from '../../../../content/sprite-document';
-import { ValidationReport } from '../../../../engine/engine.types';
+import { zoomBy } from '../../../../renderer/canvas-surface';
 import { assetUrl } from '../../../../core/asset-url';
-import { describeError } from '../../../../core/errors';
 import { I18nService } from '../../../i18n/i18n.service';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
 import {
@@ -62,8 +60,10 @@ import { CONTENT_ROOT, ProjectStoreService } from '../../../services/project-sto
 import { AssetWorkspace } from './asset-workspace';
 import { clampResolution, move } from './asset-editing';
 import { PixelEditor } from './pixel-editor';
+import { DraftSet } from '../../../editing/draft-set';
+import { DraftSource } from '../../../editing/draft-source';
+import { FlipbookClock } from '../../../editing/flipbook-clock';
 import { freeId } from '../../../editing/ids';
-import { zoomBy } from '../../../../renderer/canvas-surface';
 
 /** The kinds the picker offers, in the order it shows them. */
 const KINDS: readonly ObjectKind[] = ['consumable', 'equipment', 'quest', 'material', 'other'];
@@ -90,35 +90,13 @@ export class ObjectWorkspace implements OnDestroy {
   private readonly locales = inject(LocaleAuthoringService);
   private readonly library = inject(ObjectLibraryService);
 
-  /** Every definition the project holds, by id, as edited. */
-  private readonly documentsSignal = signal<readonly ObjectDefinition[]>([]);
-  /** Id of the definition open in the form. */
-  private readonly openIdSignal = signal<string | null>(null);
-  /** Ids of the definitions whose file no longer matches the document. */
-  private readonly unsaved = signal<readonly string[]>([]);
-  /** Which frame of the icon is being painted. */
-  private readonly frameIndexSignal = signal(0);
-
-  protected readonly report = signal<ValidationReport | null>(null);
-  /** What the engine says is on screen at {@link timeMs}. */
+  /** What the engine says is on screen at the clock's time. */
   protected readonly resolved = signal<ResolvedObject | null>(null);
-  protected readonly message = signal<string | null>(null);
-  protected readonly error = signal<string | null>(null);
-  protected readonly busy = signal(false);
-  protected readonly loading = signal(true);
-  /** Paths the manifest declares that could not be read. */
-  protected readonly unreadable = signal<readonly string[]>([]);
 
   /** Content files the workspace holds, for the frame picker. */
   protected readonly files = signal<readonly WorkspaceFile[]>([]);
   protected readonly zoom = signal(DEFAULT_ZOOM);
   protected readonly showGrid = signal(true);
-
-  /** Playback, which only moves which frame is selected. */
-  protected readonly playing = signal(false);
-  private readonly timeMs = signal(0);
-  private clock: number | null = null;
-  private lastTick = 0;
 
   /** The frames open for editing, by content path. */
   private readonly sessions = new Map<string, SpriteDocument>();
@@ -132,15 +110,45 @@ export class ObjectWorkspace implements OnDestroy {
   protected readonly maxFrames = MAX_FLIPBOOK_FRAMES;
   protected readonly defaultFrameDuration = DEFAULT_FRAME_DURATION_MS;
 
+  /**
+   * The editing session: what is held, what is open, what is unwritten.
+   *
+   * The whole of load and save, which this screen only supplies the object's
+   * half of (`app/editing/draft-set.ts`).
+   */
+  private readonly drafts = new DraftSet<ObjectDefinition>(this.draftSource(), {
+    i18n: this.i18n,
+    workspace: this.workspace,
+    manifest: this.store,
+    locales: this.locales,
+  });
+
+  /**
+   * Playback, which only moves which frame is on the surface.
+   *
+   * Which frame that is, is `content/flipbook.ts`'s answer — the same one the
+   * Rust resolver gives, so the readout and the picture cannot disagree.
+   */
+  private readonly clock = new FlipbookClock(
+    () => this.document(),
+    () => this.repose(),
+  );
+
+  protected readonly playing = this.clock.playing;
+
+  protected readonly report = this.drafts.report;
+  protected readonly message = this.drafts.message;
+  protected readonly error = this.drafts.error;
+  protected readonly busy = this.drafts.busy;
+  protected readonly loading = this.drafts.loading;
+  /** Paths the manifest declares that could not be read. */
+  protected readonly unreadable = this.drafts.unreadable;
+
   /** Every definition, in project order. */
-  protected readonly documents = this.documentsSignal.asReadonly();
+  protected readonly documents = this.drafts.drafts;
 
   /** The definition being edited, or `null` when the project has none. */
-  protected readonly document = computed<ObjectDefinition | null>(() => {
-    const id = this.openIdSignal();
-    const documents = this.documentsSignal();
-    return documents.find((entry) => entry.id === id) ?? documents[0] ?? null;
-  });
+  protected readonly document = this.drafts.open;
 
   /** Path this definition's file has, declared or by convention. */
   protected readonly path = computed(() => {
@@ -148,11 +156,8 @@ export class ObjectWorkspace implements OnDestroy {
     return document === null ? '' : this.store.objectPath(document.id);
   });
 
-  /** `true` when the open definition differs from its file. */
-  protected readonly dirty = computed(() => {
-    const document = this.document();
-    return document !== null && this.unsaved().includes(document.id);
-  });
+  /** `true` when the open definition, or a frame it owns, differs from disk. */
+  protected readonly dirty = this.drafts.dirty;
 
   /** `true` when files can actually be written — the editor is honest about it. */
   protected readonly writable = computed(() => this.workspace.status() !== null);
@@ -174,10 +179,8 @@ export class ObjectWorkspace implements OnDestroy {
   /** The frames of the open icon, in play order. */
   protected readonly frames = computed<readonly string[]>(() => this.document()?.frames ?? []);
 
-  /** Which frame is selected, clamped to what the icon still has. */
-  protected readonly frameIndex = computed(() =>
-    Math.min(this.frameIndexSignal(), Math.max(0, this.frames().length - 1)),
-  );
+  /** Which frame is selected — the clock's answer, running or parked. */
+  protected readonly frameIndex = this.clock.frame;
 
   /** The path of the selected frame; `''` when it names none. */
   protected readonly frame = computed(() => this.frames()[this.frameIndex()] ?? '');
@@ -200,9 +203,7 @@ export class ObjectWorkspace implements OnDestroy {
     return [...this.sessions].filter(([, sprite]) => sprite.unsaved).map(([asset]) => asset);
   });
 
-  protected readonly errorCount = computed(
-    () => this.report()?.issues.filter((issue) => issue.severity === 'error').length ?? 0,
-  );
+  protected readonly errorCount = this.drafts.errorCount;
 
   /** Keys this file names that no language gives text to yet. */
   protected readonly untranslated = computed(
@@ -210,7 +211,7 @@ export class ObjectWorkspace implements OnDestroy {
   );
 
   constructor() {
-    void this.load();
+    void this.drafts.load();
 
     // The frame being painted is decoded on demand: a frame the author has not
     // selected costs nothing.
@@ -223,37 +224,57 @@ export class ObjectWorkspace implements OnDestroy {
   }
 
   ngOnDestroy(): void {
-    this.stopClock();
+    this.clock.stop();
     this.sessions.clear();
   }
 
-  // ------------------------------------------------------------------- load
+  // ----------------------------------------------------------------- source
 
-  private async load(): Promise<void> {
-    try {
-      await this.engine.ready();
-      await this.i18n.ensureAdopted();
-      await this.store.ensureLoaded();
-      await this.workspace.ensureProbed();
-      await this.locales.ensureLoaded();
-      // Registered as well as fetched: the *runtime* holds these, and this
-      // screen is about to replace one of them.
-      await this.library.ensureLoaded();
-      await this.refreshFiles();
-
-      const declared = this.store.project()?.objects ?? [];
-      const documents = await Promise.all(declared.map((entry) => this.fetchObject(entry)));
-      this.documentsSignal.set(documents.filter((document) => document !== null));
-      this.unreadable.set(
-        declared.filter((_entry, index) => documents[index] === null).map((entry) => entry.path),
-      );
-      this.openIdSignal.set(this.documentsSignal()[0]?.id ?? null);
-      this.refresh();
-    } catch (cause) {
-      this.error.set(describeError(cause));
-    } finally {
-      this.loading.set(false);
-    }
+  /**
+   * What an *object* means by reading, validating, writing and declaring.
+   *
+   * Everything else about the session — the order of the steps, the bail-out on
+   * a failing verdict, what a rename takes with it — is `DraftSet`'s.
+   */
+  private draftSource(): DraftSource<ObjectDefinition> {
+    return {
+      messages: {
+        invalid: 'ui.editor.object.invalid',
+        saved: 'ui.editor.object.saved',
+        spritesSaved: 'ui.editor.object.framesSaved',
+        savedManifest: 'ui.editor.object.savedManifest',
+      },
+      prepare: async () => {
+        await this.engine.ready();
+        await this.i18n.ensureAdopted();
+        await this.store.ensureLoaded();
+        await this.workspace.ensureProbed();
+        await this.locales.ensureLoaded();
+        // Registered as well as fetched: the *runtime* holds these, and this
+        // screen is about to replace one of them.
+        await this.library.ensureLoaded();
+        await this.refreshFiles();
+      },
+      declared: () => this.store.project()?.objects ?? [],
+      read: (entry) => this.fetchObject(entry),
+      pathOf: (id) => this.store.objectPath(id),
+      serialize: (document) => serializeObject(document),
+      validate: (_document, json) => this.engine.validateObject(json),
+      adopt: (id, json) => this.library.adopt(id, json),
+      forget: (id) => this.library.forget(id),
+      declare: (id, path) => this.store.declareObject(id, path),
+      undeclare: (id) => this.store.undeclareObject(id),
+      dirtySprites: (document) => {
+        this.strokes();
+        return (document.frames ?? []).filter(
+          (asset) => this.sessions.get(asset)?.unsaved === true,
+        );
+      },
+      writeSprites: () => this.writeSprites(),
+      keysOf: (document) => referencedKeys(document),
+      removed: (document) => this.forgetFrames(document),
+      refresh: () => this.repose(),
+    };
   }
 
   private async refreshFiles(): Promise<void> {
@@ -287,50 +308,13 @@ export class ObjectWorkspace implements OnDestroy {
 
   // ------------------------------------------------------------------ edits
 
-  /**
-   * Applies a change to the open definition, then re-validates.
-   *
-   * A copy per edit, not a mutation: `OnPush` only redraws what changed
-   * identity.
-   */
   private edit(mutate: (draft: ObjectDefinition) => void): void {
-    const current = this.document();
-    if (current === null) {
-      return;
-    }
-    const draft = structuredClone(current) as ObjectDefinition;
-    mutate(draft);
-
-    this.documentsSignal.update((documents) =>
-      documents.map((document) => (document.id === current.id ? draft : document)),
-    );
-    if (this.openIdSignal() === current.id) {
-      this.openIdSignal.set(draft.id);
-    }
-    if (draft.id === current.id) {
-      this.markUnsaved(current.id);
-    } else {
-      // A rename takes the manifest entry with it. The old *file* is left on
-      // disk — deleting content is the author's decision — but a manifest that
-      // still listed the old id would name a definition nothing writes any more.
-      this.store.undeclareObject(current.id);
-      this.library.forget(current.id);
-      this.unsaved.update((ids) => ids.filter((id) => id !== current.id));
-      this.markUnsaved(draft.id);
-    }
-    this.message.set(null);
-    this.refresh();
-  }
-
-  private markUnsaved(id: string): void {
-    this.unsaved.update((ids) => (ids.includes(id) ? ids : [...ids, id]));
+    this.drafts.edit(mutate);
   }
 
   protected open(id: string): void {
-    this.openIdSignal.set(id);
+    this.drafts.select(id);
     this.selectFrame(0);
-    this.message.set(null);
-    this.refresh();
   }
 
   /**
@@ -344,9 +328,9 @@ export class ObjectWorkspace implements OnDestroy {
   protected addObject(): void {
     const id = freeId(
       'object',
-      this.documentsSignal().map((document) => document.id),
+      this.documents().map((document) => document.id),
     );
-    const document: ObjectDefinition = {
+    this.drafts.add({
       id,
       schemaVersion: OBJECT_SCHEMA_VERSION,
       name: id,
@@ -354,11 +338,8 @@ export class ObjectWorkspace implements OnDestroy {
       nameKey: `game.object.${id}.name`,
       frames: [],
       resolution: { ...DEFAULT_ICON_RESOLUTION },
-    };
-
-    this.documentsSignal.update((documents) => [...documents, document]);
-    this.markUnsaved(id);
-    this.open(id);
+    });
+    this.selectFrame(0);
   }
 
   /**
@@ -370,17 +351,10 @@ export class ObjectWorkspace implements OnDestroy {
    */
   protected removeObject(): void {
     const document = this.document();
-    if (document === null) {
-      return;
+    if (document !== null) {
+      this.drafts.remove(document.id);
+      this.selectFrame(0);
     }
-    this.documentsSignal.update((documents) =>
-      documents.filter((candidate) => candidate.id !== document.id),
-    );
-    this.forgetFrames(document);
-    this.store.undeclareObject(document.id);
-    this.library.forget(document.id);
-    this.unsaved.update((ids) => ids.filter((id) => id !== document.id));
-    this.open(this.documentsSignal()[0]?.id ?? '');
   }
 
   /**
@@ -391,7 +365,11 @@ export class ObjectWorkspace implements OnDestroy {
    * exists. A path another object still names is kept, because that one does.
    */
   private forgetFrames(removed: ObjectDefinition): void {
-    const kept = new Set(this.documentsSignal().flatMap((document) => document.frames ?? []));
+    const kept = new Set(
+      this.documents()
+        .filter((document) => document.id !== removed.id)
+        .flatMap((document) => document.frames ?? []),
+    );
     for (const asset of removed.frames ?? []) {
       if (!kept.has(asset)) {
         this.sessions.delete(asset);
@@ -468,10 +446,7 @@ export class ObjectWorkspace implements OnDestroy {
   // ----------------------------------------------------------------- frames
 
   protected selectFrame(index: number): void {
-    this.playing.set(false);
-    this.stopClock();
-    this.frameIndexSignal.set(Math.max(0, index));
-    this.timeMs.set(index * frameDurationOf(this.document()));
+    this.clock.seek(index);
     this.repose();
   }
 
@@ -516,7 +491,7 @@ export class ObjectWorkspace implements OnDestroy {
       }
       draft.frames = frames;
     });
-    this.frameIndexSignal.set(index);
+    this.clock.seek(index);
     this.requireSprite(path);
   }
 
@@ -575,8 +550,8 @@ export class ObjectWorkspace implements OnDestroy {
     }
     input.value = '';
 
-    this.busy.set(true);
-    this.error.set(null);
+    this.drafts.setBusy(true);
+    this.drafts.fail(null);
     try {
       const path = `${ASSET_DIR}/${file.name}`;
       await this.workspace.write(path, file);
@@ -584,11 +559,11 @@ export class ObjectWorkspace implements OnDestroy {
       // The decoded copy holds the bytes this path used to have.
       this.sessions.delete(path);
       this.setFrame(index, path);
-      this.message.set(this.i18n.t('ui.editor.object.uploaded', { file: path }));
+      this.drafts.announce(this.i18n.t('ui.editor.object.uploaded', { file: path }));
     } catch (cause) {
-      this.error.set(describeError(cause));
+      this.drafts.fail(cause);
     } finally {
-      this.busy.set(false);
+      this.drafts.setBusy(false);
     }
   }
 
@@ -609,39 +584,7 @@ export class ObjectWorkspace implements OnDestroy {
 
   /** Plays the icon, which only moves which frame is on the surface. */
   protected togglePlay(): void {
-    this.playing.update((on) => !on);
-    if (this.playing()) {
-      this.startClock();
-    } else {
-      this.stopClock();
-    }
-  }
-
-  private startClock(): void {
-    if (this.clock !== null) {
-      return;
-    }
-    this.lastTick = performance.now();
-    const step = (now: number): void => {
-      if (!this.playing() || this.frames().length < 2) {
-        this.stopClock();
-        return;
-      }
-      this.timeMs.update((time) => time + (now - this.lastTick));
-      this.lastTick = now;
-      // Which frame that is, is Rust's answer, not this screen's.
-      this.repose();
-      this.frameIndexSignal.set(this.resolved()?.frame ?? this.frameIndexSignal());
-      this.clock = requestAnimationFrame(step);
-    };
-    this.clock = requestAnimationFrame(step);
-  }
-
-  private stopClock(): void {
-    if (this.clock !== null) {
-      cancelAnimationFrame(this.clock);
-      this.clock = null;
-    }
+    this.clock.togglePlay();
   }
 
   protected onPainted(): void {
@@ -684,6 +627,8 @@ export class ObjectWorkspace implements OnDestroy {
   /** Tells the view that the pixels moved. */
   private touchSprites(): void {
     this.strokes.update((count) => count + 1);
+    // The session decides what "unsaved" means, and a stroke is half of it.
+    this.drafts.touchSprites();
   }
 
   /**
@@ -706,40 +651,28 @@ export class ObjectWorkspace implements OnDestroy {
 
   // --------------------------------------------------------------- validate
 
+  /** Re-validates and re-resolves the open definition. */
+  protected refresh(): void {
+    this.drafts.refresh();
+  }
+
   /**
-   * Re-validates and re-resolves the open definition.
+   * Re-resolves the icon at the clock's time.
    *
-   * Both go through Rust: the validator is the runtime's own and the resolver
-   * is the one an inventory panel will draw with, so neither the verdict nor
-   * the frame is this screen's opinion
+   * Through Rust: the resolver is the one an inventory panel will draw with, so
+   * the frame on screen is not this screen's opinion
    * (`docs/adr/ADR-0012-shared-content-validation.md`).
    */
-  protected refresh(): void {
+  private repose(): void {
     const document = this.document();
     if (document === null || !this.engine.isReady) {
-      this.report.set(null);
       this.resolved.set(null);
       return;
     }
     try {
-      this.report.set(this.engine.validateObject(serializeObject(document)));
-      this.resolved.set(this.engine.previewObject(document, this.timeMs()));
-      this.error.set(null);
-    } catch (cause) {
-      this.error.set(describeError(cause));
-    }
-  }
-
-  /** Re-resolves alone, for the frames playback moves through. */
-  private repose(): void {
-    const document = this.document();
-    if (document === null || !this.engine.isReady) {
-      return;
-    }
-    try {
-      this.resolved.set(this.engine.previewObject(document, this.timeMs()));
+      this.resolved.set(this.engine.previewObject(document, this.clock.timeMs()));
     } catch {
-      // A definition being typed into may not parse; `refresh` reports it.
+      // A definition being typed into may not parse; the verdict reports it.
     }
   }
 
@@ -754,67 +687,13 @@ export class ObjectWorkspace implements OnDestroy {
   }
 
   /** Writes the open definition into the content directory. */
-  protected async save(): Promise<void> {
-    const document = this.document();
-    if (document === null) {
-      return;
-    }
-    this.busy.set(true);
-    this.error.set(null);
-    this.message.set(null);
-
-    try {
-      const json = serializeObject(document);
-      this.report.set(this.engine.validateObject(json));
-      if (this.errorCount() > 0) {
-        this.error.set(this.i18n.t('ui.editor.object.invalid'));
-        return;
-      }
-
-      const path = this.store.objectPath(document.id);
-      await this.workspace.writeJson(path, json);
-      // Adopting it is what makes the *runtime* agree with the file from here
-      // on, without a reload — and what a later content reset puts back.
-      this.library.adopt(document.id, json);
-
-      const parts = [this.i18n.t('ui.editor.object.saved', { file: path })];
-
-      // The art goes with the definition. An author who painted and pressed
-      // Save meant both, and a frame left only in a tab is a frame lost.
-      const written = await this.writeSprites();
-      if (written > 0) {
-        parts.push(this.i18n.t('ui.editor.object.framesSaved', { count: written }));
-      }
-
-      this.store.declareObject(document.id, path);
-      if (this.store.manifestNeedsWriting()) {
-        await this.workspace.writeJson('project.json', this.store.projectJson());
-        this.store.markManifestWritten();
-        parts.push(this.i18n.t('ui.editor.object.savedManifest'));
-      }
-      this.store.refreshDirty();
-
-      // Every label this file names now exists as a key, in every language, so
-      // the Languages tab lists it and a translator can fill it in.
-      const created = this.locales.ensureKeys(referencedKeys(document));
-      if (created.length > 0) {
-        await this.locales.save();
-        parts.push(this.i18n.t('ui.editor.locale.created', { count: created.length }));
-      }
-
-      this.unsaved.update((ids) => ids.filter((id) => id !== document.id));
-      this.refresh();
-      this.message.set(parts.join(' · '));
-    } catch (cause) {
-      this.error.set(describeError(cause));
-    } finally {
-      this.busy.set(false);
-    }
+  protected save(): Promise<void> {
+    return this.drafts.save();
   }
 
   /** Pixels and definitions both live in memory until they are written. */
   protected onUnload(event: BeforeUnloadEvent): void {
-    if (this.unsaved().length > 0 || this.unsavedSprites().length > 0) {
+    if (this.drafts.anyUnsaved() || this.unsavedSprites().length > 0) {
       event.preventDefault();
     }
   }
