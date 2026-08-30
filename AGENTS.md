@@ -13,8 +13,9 @@ brief in this file.
   bridge for environments where `.agents/skills` is unavailable.
   Where `.agents` is writable, run `node scripts/setup-codex-skills.mjs` once
   after cloning to enable Codex's native skill discovery as well.
-- `commit-and-push` — for a request to commit and push verified work: read
-  `.claude/skills/commit-and-push/SKILL.md`.
+- `commit-and-push` — for a request to commit and/or push: read
+  `.claude/skills/commit-and-push/SKILL.md`. It commits, bumps and pushes; it
+  never runs a test or a gate.
 - `generate-images-with-pixellab` — for every request to generate, draw,
   illustrate or edit an image: read
   `.claude/skills/generate-images-with-pixellab/SKILL.md`. PixelLab is required
@@ -26,10 +27,6 @@ brief in this file.
   explicitly requested: read
   `.claude/skills/create-architectural-decision-record/SKILL.md`. For this
   repository, `create-adr` below takes precedence.
-- `maintain-project-specs` — do not use for Insulaire. The project-specific
-  rule below supersedes
-  `.claude/skills/maintain-project-specs/SKILL.md` because this repository has
-  no `docs/spec/`.
 - For a Rust change, read and follow `.claude/rules/rust.md`.
 - For a change to Rust behaviour, TypeScript engine behaviour, or content
   JSON, read and follow `.claude/rules/specs.md` before editing. It determines

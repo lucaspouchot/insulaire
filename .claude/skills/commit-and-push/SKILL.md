@@ -1,79 +1,129 @@
 ---
-description: Commit the verified working tree and push it — review the diff, check the docs/ADRs that the change owes, bump the patch or minor version when shipped code changed, write the message in this repo's style, push to origin and report the SHA.
+description: Commit the working tree and push it — read the diff and the session, split it into coherent commits, write the messages in this repo's style, bump the version last, push to origin and report the SHAs. Runs no tests, ever.
 name: commit-and-push
 ---
 
 # Commit and push
 
-Turns an **already verified** tree into a pushed commit, plus a version bump when
-shipped code moved. It does not re-prove the work: verification happened when the
-change was made, and the user has reviewed it since.
+Four steps, in this order: **read the changes → commit them → bump the version →
+push.** Nothing else.
 
-## 1. Confirm it was verified — do not re-verify
+## This skill never runs tests
 
-By the time this skill runs, [verify-no-regression](../verify-no-regression/SKILL.md)
-has normally already run on this exact tree. **Trust that run.** Re-running the
-gates and the smoke harness on an unchanged tree costs minutes and a lot of
-context to reprint a verdict that is already known.
+Do not run `npm run check`, `npm test`, `cargo test`, `cargo clippy`, `cargo
+fmt`, `npm run test:web`, `npm run test:scripts`, the smoke harness, a build, or
+any other gate. Not to "confirm", not "just the fast one", not because the diff
+looks risky, not because the tree has not been verified.
 
-Re-run it only when one of these is true:
+Verifying is [verify-no-regression](../verify-no-regression/SKILL.md)'s job, and
+it belongs to the moment the change was made — not to the moment it is
+committed. Re-proving a tree here costs minutes and a great deal of context to
+reprint a verdict that is either already known or deliberately not wanted.
 
-- it never ran on this change;
-- files changed after it ran (you kept editing, or the user did);
-- the last verdict was `regression`, or a gate was red.
+If you know nothing was verified, commit anyway and **say so in the report**. It
+is the user's call, not this skill's.
 
-The objective check, when unsure:
+The only thing worth checking is that git itself is not mid-operation — a rebase
+or merge in progress means stop and say so:
 
 ```bash
-git status --porcelain -uall            # what is dirty
-stat -c '%Y %n' .smoke/current/report.json
+git status --short
 ```
 
-Report newer than every file you are about to commit → it covers this tree.
-
-If the verdict was `regression` or a gate is red → **stop**, say what is red.
-Commit red work only if the user asks, and say so in the message. A
-`no-baseline` verdict is acceptable — mention that nothing was compared.
-
-## 2. Review what is about to be committed
+## 1. Read what changed, and why
 
 ```bash
 git status --short
 git diff
 git diff --cached
+git log --oneline -10        # the message style you are about to match
 ```
 
-- **Nothing incidental**: `.smoke/`, `deliveries/`, `dist/`, `target/`,
-  `public/wasm/`, `public/content/` are gitignored — one showing up means the
-  ignore rules are wrong; fix those instead of committing the file.
-- **No leftovers**: `console.log`, `dbg!`, `todo!()`, commented-out blocks,
-  `it.only` / `#[ignore]`, local paths, a seed or port switched for a one-off.
-- **No secrets**, no absolute home paths.
-- **Only this change**: leave unrelated dirty files out, and say you left them.
+Two sources tell you what the change *is*:
 
-## 3. Pay what the change owes
+- **the diff** — what actually moved;
+- **the session**, when there is one — what the user asked for, the problem that
+  started it, the decision taken along the way. That is where the *why* comes
+  from, and a body written from the diff alone can only restate the *what*.
 
-Per `CLAUDE.md`, write the missing one *before* committing, not after:
+While reading, keep three things out of the commit:
 
-- architecture decision changed or added → an ADR in `docs/adr/` (skill:
-  `create-adr`), and the ADRs it supersedes updated;
-- user-visible behaviour → the specs, per `maintain-project-specs`;
-- engine boundary → `docs/wasm-api.md` + `apps/web/src/engine/engine.types.ts`;
-- content schema → `docs/content-format.md` + the files under `content/`;
-- a feature the smoke run would not notice → a step or page in the scenario.
+- **incidental files**: `.smoke/`, `deliveries/`, `dist/`, `target/`,
+  `public/wasm/`, `public/content/` are gitignored — one appearing means the
+  ignore rules are wrong; fix those rather than commit the file;
+- **leftovers**: `console.log`, `dbg!`, `todo!()`, `it.only`, `#[ignore]`,
+  commented-out blocks, a local path, a seed or port switched for a one-off;
+- **secrets** and absolute home paths.
 
-## 4. Bump the version
+Unrelated dirty files stay out of the commit — leave them, and say so in the
+report.
+
+If the change owes a doc under `.claude/rules/specs.md` (a boundary change owes
+`docs/wasm-api.md`, a schema change owes `docs/content-format.md`, an
+architectural decision owes an ADR), note it in the report. Do not stop, and do
+not write it here unless the user asks — this skill commits, it does not author.
+
+## 2. Commit — one commit per coherent change
+
+A tree often holds one change, and then it is one commit. When it holds several
+unrelated ones, **split them**: a fix and a refactor that happen to share a
+morning are two commits, and a reviewer reading `git log` later should see one
+idea per line.
+
+Split by what the change *is*, not by file type or directory. If two paths only
+make sense together — a Rust type and the TypeScript mirror that must not drift
+— they are one commit. Order them so the tree makes sense at each step.
+
+Stage path by path, **never `git add -A`**, then confirm what is staged is
+exactly what you reviewed:
+
+```bash
+git add <path> <path> …
+git status --short
+```
+
+### The message
+
+Subjects here are short, lowercase and imperative — `add isometric view`,
+`fix raise and down tile`, `see through relief to reach a hidden hex`. No
+`feat:`/`chore:` prefix, no trailing period, 60 characters at most.
+
+Add a body when the subject cannot carry it: wrapped at 72 columns, saying
+**why** rather than restating the diff, and naming the ADR or doc the change
+follows. Per `CLAUDE.md` ("Versioning"), a breaking change says plainly what
+breaks and what is discarded, so it stays legible later.
+
+```bash
+git commit -F - <<'EOF'
+paint elevation with the raise tool
+
+The tool wrote the terrain index instead of the elevation byte, so a raised
+hex rendered flat (docs/adr/ADR-0013-isometric-projection.md).
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+EOF
+```
+
+Both trailers go on every commit, the session URL when the session has one:
+
+```text
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_<id>
+```
+
+## 3. Bump the version — last, just before the push
 
 **A push that changes shipped code carries a bump.** The unit is the push, not
-the commit: one bump covers everything going out.
+the commit: one bump covers everything going out, so this happens once, after
+every other commit is written.
 
 ```bash
 git diff --name-only @{u}...HEAD        # everything since the last push
 ```
 
 Only `docs/**`, `README.md`, `CLAUDE.md`, `LICENSE`, `.claude/**` moved → **no
-bump**, say so. Anything else (`crates/**`, `apps/**`, `content/**`,
-`scripts/**`, the manifests) is shipped code and gets one.
+bump**, and say so in the report. Anything else (`crates/**`, `apps/**`,
+`content/**`, `scripts/**`, the manifests) is shipped code and gets one.
 
 | Bump | The push… |
 |---|---|
@@ -93,65 +143,44 @@ node .claude/skills/commit-and-push/scripts/bump-version.mjs patch    # or: mino
 ```
 
 It refuses to run when the sites disagree, and re-reads each file after writing
-it — that *is* the verification of the bump. **Do not rebuild, re-run the gates
-or re-run the smoke harness afterwards**: a version string is not behaviour, and
-the harness reports `engine.version` as a note rather than a diff
-(`NOT_BEHAVIOUR` in `smoke.mjs`), so there is nothing left to accept.
+it — that *is* the verification of the bump. Nothing else is needed: a version
+string is not behaviour, so **do not rebuild and do not run a gate afterwards**.
 
-The bump is its own commit, last, just before the push:
+The bump is its own commit:
 
 ```bash
 git add package.json package-lock.json Cargo.toml Cargo.lock \
         apps/desktop/Cargo.toml apps/desktop/Cargo.lock apps/desktop/tauri.conf.json
-git commit -m "$(cat <<'EOF'
+git commit -F - <<'EOF'
 bump version to 0.1.1
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 EOF
-)"
 ```
 
-## 5. Stage, then write the message in this repo's style
+## 4. Push
 
-`git add <path> …` path by path — never `git add -A` — then check
-`git status --short` shows exactly what you reviewed.
-
-Subjects here are short, lowercase and imperative (`git log --oneline -10`):
-`add isometric view`, `fix raise and down tile`. No `feat:`/`chore:` prefix, no
-trailing period, ≤ 60 characters. A body only when the subject cannot carry it:
-wrapped at 72 columns, saying **why**, naming the ADR or doc the change follows.
-One commit = one coherent change.
-
-```bash
-git commit -m "$(cat <<'EOF'
-paint elevation with the raise tool
-
-The tool wrote the terrain index instead of the elevation byte, so a raised
-hex rendered flat (docs/adr/ADR-0013-isometric-projection.md).
-
-Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
-EOF
-)"
-```
-
-## 6. Push
-
-Trunk-based: `main` is the branch and what `origin` tracks. `git push` as is —
-a branch and a PR only when the user asks.
+Trunk-based: `main` is the branch and what `origin` tracks. `git push` as is — a
+branch and a PR only when the user asks.
 
 - No upstream → `git push -u origin <branch>`.
-- Non-fast-forward → `git pull --rebase`; re-run `verify-no-regression` only if
-  the rebase brought in someone else's commits, then push again.
+- Non-fast-forward → `git pull --rebase`, then push again. If the rebase brought
+  in someone else's commits, say so in the report — whether that needs
+  re-verifying is the user's call, and still not this skill's job.
 - **Never** force-push `main` or rewrite a pushed commit unless asked.
 - Hook or CI rejection → report the reason, do not work around it.
 
-## 7. Report
+## 5. Report
 
-```
-verified   reused the run from this session — check passed · smoke clean
+```text
 commit     0e9e783 paint elevation with the raise tool
            a71c204 bump version to 0.1.1
 version    0.1.0 → 0.1.1 (patch — a rendering fix, nothing new)
 pushed     origin/main
+not run    no gate and no smoke run — this skill does not verify
 left out   apps/web/src/styles.css (unrelated local edit)
+owed       none
 ```
+
+`not run` is always present: it is what tells the user the tree went out
+unproven by this step.
