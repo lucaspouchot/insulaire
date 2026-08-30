@@ -44,6 +44,7 @@ import {
   SpriteResolution,
 } from '../../../../content/content-types';
 import { serializeObject } from '../../../../content/object-serializer';
+import { frameDurationOf } from '../../../../content/flipbook';
 import { SpriteDocument } from '../../../../content/sprite-document';
 import { ValidationReport } from '../../../../engine/engine.types';
 import { assetUrl } from '../../../../core/asset-url';
@@ -469,7 +470,7 @@ export class ObjectWorkspace implements OnDestroy {
     this.playing.set(false);
     this.stopClock();
     this.frameIndexSignal.set(Math.max(0, index));
-    this.timeMs.set(index * this.frameDuration());
+    this.timeMs.set(index * frameDurationOf(this.document()));
     this.repose();
   }
 
@@ -591,11 +592,6 @@ export class ObjectWorkspace implements OnDestroy {
   }
 
   // --------------------------------------------------------------- playback
-
-  /** How long one frame lasts, defaults filled in. */
-  protected frameDuration(): number {
-    return this.document()?.frameDurationMs ?? DEFAULT_FRAME_DURATION_MS;
-  }
 
   protected setFrameDuration(raw: string): void {
     const value = Number.parseInt(raw, 10);

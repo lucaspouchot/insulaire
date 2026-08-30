@@ -49,7 +49,6 @@ import {
   DECORATION_SCHEMA_VERSION,
   DEFAULT_CHARACTER_HEIGHT_TILES,
   DEFAULT_DECORATION_RESOLUTION,
-  DEFAULT_FRAME_DURATION_MS,
   DecorationAnimation,
   DecorationCategory,
   DecorationDefinition,
@@ -64,6 +63,7 @@ import {
   tileArtGeometry,
 } from '../../../../content/content-types';
 import { serializeDecoration } from '../../../../content/decoration-serializer';
+import { frameAt, frameDurationOf } from '../../../../content/flipbook';
 import { SpriteDocument } from '../../../../content/sprite-document';
 import { ValidationReport } from '../../../../engine/engine.types';
 import { assetUrl } from '../../../../core/asset-url';
@@ -770,7 +770,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
   protected selectFrame(index: number): void {
     this.playing.set(false);
     this.frameIndexSignal.set(Math.max(0, index));
-    this.timeMs.set(index * this.durationOf(this.animation()));
+    this.timeMs.set(index * frameDurationOf(this.animation()));
     this.repose();
   }
 
@@ -886,7 +886,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
       this.lastTick = now;
       // The frame readout follows the clock, so scrubbing after a pause starts
       // from where playback stopped rather than from where it was clicked.
-      this.frameIndexSignal.set(this.frameOf(animation, this.timeMs()));
+      this.frameIndexSignal.set(frameAt(animation, this.timeMs()));
       this.repose();
       this.clock = requestAnimationFrame(step);
     };
@@ -898,27 +898,6 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
       cancelAnimationFrame(this.clock);
       this.clock = null;
     }
-  }
-
-  /** How long one frame of this animation lasts. */
-  private durationOf(animation: DecorationAnimation | null): number {
-    return Math.max(1, animation?.frameDurationMs ?? DEFAULT_FRAME_DURATION_MS);
-  }
-
-  /**
-   * Which frame a time falls in.
-   *
-   * The readout only; **what is drawn** comes from the Rust resolver, so the
-   * two cannot drift on the thing that matters
-   * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
-   */
-  private frameOf(animation: DecorationAnimation, timeMs: number): number {
-    const count = animation.frames.length;
-    if (count === 0) {
-      return 0;
-    }
-    const index = Math.floor(timeMs / this.durationOf(animation));
-    return animation.looping === true ? index % count : Math.min(index, count - 1);
   }
 
   // --------------------------------------------------------------- validate
