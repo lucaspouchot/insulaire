@@ -34,6 +34,7 @@
 
 import { ResolvedCharacter, ResolvedLayer, SpriteResolution } from '../content/content-types';
 import { unpackSpriteBundle } from '../content/sprite-bundle';
+import { fitZoom } from './canvas-surface';
 
 /** What a cache holds for one asset: a fetched file, or a slice of a bundle. */
 type SpriteImage = HTMLImageElement | ImageBitmap;
@@ -95,10 +96,7 @@ export function placement(
   resolution: SpriteResolution,
   box: CharacterBox,
 ): { zoom: number; originX: number; originY: number } {
-  const zoom = Math.max(
-    1,
-    Math.floor(Math.min(box.width / resolution.width, box.height / resolution.height)),
-  );
+  const zoom = fitZoom(resolution, box);
   return {
     zoom,
     originX: Math.round(box.x + (box.width - resolution.width * zoom) / 2),

@@ -85,7 +85,7 @@ import {
 import { clampResolution, move } from './asset-editing';
 import { AssetWorkspace } from './asset-workspace';
 import { CharacterAnimator } from './character-animator';
-import { PixelEditor, steppedZoom } from './pixel-editor';
+import { PixelEditor } from './pixel-editor';
 import { PixelTool, PixelTools } from './pixel-tools';
 import {
   CHARACTER_SCHEMA_VERSION,
@@ -118,6 +118,7 @@ import { LocaleAuthoringService } from '../../../services/locale-authoring.servi
 import { CharacterLibraryService } from '../../../services/character-library.service';
 import { CONTENT_ROOT, ProjectStoreService } from '../../../services/project-store.service';
 import { freeId } from '../../../editing/ids';
+import { zoomBy } from '../../../../renderer/canvas-surface';
 
 /**
  * Smallest drawing box the fit will work with, in CSS pixels.
@@ -1869,7 +1870,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
    */
   protected zoomBy(delta: number): void {
     if (this.scene() === 'flat') {
-      this.flatZoom.set(steppedZoom(this.flatZoom(), delta));
+      this.flatZoom.set(zoomBy(this.flatZoom(), delta));
       return;
     }
     const steps = this.zoomSteps();

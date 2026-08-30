@@ -45,20 +45,12 @@ import {
 
 import { TileArtGeometry } from '../../../../content/content-types';
 import { PALETTE_SIZE, SpriteDocument } from '../../../../content/sprite-document';
+import { PIXEL_ZOOMS, zoomBy } from '../../../../renderer/canvas-surface';
 import { ImageKind, drawChecker, drawGuides } from '../../../../renderer/tile-preview';
 import { isEditableTarget } from '../../../../core/keyboard-shortcuts';
 import { I18nService } from '../../../i18n/i18n.service';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
 import { PixelTool, PixelTools } from './pixel-tools';
-
-/**
- * The zooms the editor steps through, in screen pixels per authored pixel.
- *
- * Whole numbers, for the reason every zoom in this project is one: a pixel is
- * a square block of screen pixels or it is a smear
- * (`docs/adr/ADR-0024-character-definitions.md`).
- */
-export const PIXEL_ZOOMS: readonly number[] = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32];
 
 /** Below this zoom a pixel grid is more noise than help. */
 const GRID_ZOOM = 6;
@@ -222,7 +214,7 @@ export class PixelEditor implements AfterViewInit, OnDestroy {
   }
 
   protected stepZoom(by: number): void {
-    this.zoom.set(steppedZoom(this.zoom(), by));
+    this.zoom.set(zoomBy(this.zoom(), by));
   }
 
   protected toggleGrid(): void {
@@ -444,26 +436,4 @@ export class PixelEditor implements AfterViewInit, OnDestroy {
       });
     }
   }
-}
-
-/**
- * The next zoom up or down the ladder.
- *
- * Shared, because the file bar steps the zoom of whichever surface is open and
- * they all step through the same numbers
- * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
- */
-export function steppedZoom(from: number, by: number): number {
-  const first = PIXEL_ZOOMS[0] ?? 1;
-  const last = PIXEL_ZOOMS[PIXEL_ZOOMS.length - 1] ?? 1;
-  const exact = PIXEL_ZOOMS.indexOf(from);
-  if (exact >= 0) {
-    return PIXEL_ZOOMS[Math.max(0, Math.min(PIXEL_ZOOMS.length - 1, exact + by))] ?? from;
-  }
-  // Off the ladder — a *fitted* zoom is whatever the panel worked out — so the
-  // first step in the direction asked, rather than index arithmetic that would
-  // skip one on the way up.
-  return by > 0
-    ? (PIXEL_ZOOMS.find((step) => step > from) ?? last)
-    : ([...PIXEL_ZOOMS].reverse().find((step) => step < from) ?? first);
 }

@@ -62,6 +62,7 @@ import {
 import { SpriteDocument } from '../../../../content/sprite-document';
 import { serializeTileSet } from '../../../../content/tile-set-serializer';
 import { ValidationReport } from '../../../../engine/engine.types';
+import { zoomBy } from '../../../../renderer/canvas-surface';
 import { SpriteCache, SpriteSource } from '../../../../renderer/character-renderer';
 import { CellArt } from '../../../../renderer/tile-art';
 import {
@@ -82,7 +83,6 @@ import {
   contentUrl,
 } from '../../../services/project-store.service';
 import { AssetWorkspace } from './asset-workspace';
-import { steppedZoom } from './pixel-editor';
 import { PixelTool, PixelTools } from './pixel-tools';
 import {
   ImageTarget,
@@ -956,7 +956,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
   }
 
   protected zoomBy(delta: number): void {
-    this.previewZoom.set(steppedZoom(this.previewZoom() ?? this.fitted() ?? 1, delta));
+    this.previewZoom.set(zoomBy(this.previewZoom() ?? this.fitted() ?? 1, delta));
     this.schedulePreview();
   }
 

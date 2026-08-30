@@ -69,6 +69,7 @@ import { ValidationReport } from '../../../../engine/engine.types';
 import { assetUrl } from '../../../../core/asset-url';
 import { Point } from '../../../../core/hex/hex-layout';
 import { describeError } from '../../../../core/errors';
+import { zoomBy } from '../../../../renderer/canvas-surface';
 import { SpriteCache, drawCharacter } from '../../../../renderer/character-renderer';
 import { flatHexagon, surfaceHexagon } from '../../../../renderer/tile-preview';
 import { I18nService } from '../../../i18n/i18n.service';
@@ -83,7 +84,7 @@ import { EngineService } from '../../../services/engine.service';
 import { CONTENT_ROOT, ProjectStoreService } from '../../../services/project-store.service';
 import { AssetWorkspace } from './asset-workspace';
 import { clampResolution, move } from './asset-editing';
-import { PixelEditor, steppedZoom } from './pixel-editor';
+import { PixelEditor } from './pixel-editor';
 import { freeId } from '../../../editing/ids';
 
 /** The categories the picker offers, in the order it shows them. */
@@ -1081,10 +1082,10 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
 
   protected zoomBy(delta: number): void {
     if (this.scene() === 'flat') {
-      this.flatZoom.set(steppedZoom(this.flatZoom(), delta));
+      this.flatZoom.set(zoomBy(this.flatZoom(), delta));
       return;
     }
-    this.hexZoom.set(steppedZoom(this.shownZoom(), delta));
+    this.hexZoom.set(zoomBy(this.shownZoom(), delta));
   }
 
   protected fitZoom(): void {

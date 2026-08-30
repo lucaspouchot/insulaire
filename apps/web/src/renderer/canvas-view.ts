@@ -12,6 +12,7 @@
 import { Offset, sameOffset } from '../core/hex/hex-coords';
 import { Point } from '../core/hex/hex-layout';
 import { isEditableTarget } from '../core/keyboard-shortcuts';
+import { surfaceDensity } from './canvas-surface';
 import { HexMapRenderer } from './hex-map-renderer';
 
 /** How far the pointer may travel during a press and still count as a click. */
@@ -211,7 +212,14 @@ export class CanvasView {
    * Resizes the backing store to the device pixel ratio.
    *
    * The canvas is sized in device pixels but the renderer draws in CSS pixels;
-   * the DPR scale below bridges the two so lines stay crisp on retina screens.
+   * the density bridges the two so lines stay crisp on retina screens, and it
+   * is `canvas-surface.ts`'s answer rather than this class's — one policy, so
+   * a map and a sprite preview cannot render at two resolutions on one screen.
+   *
+   * The element's own CSS size is deliberately *not* set here, which is why
+   * this is the one caller that reads the policy rather than calling
+   * `prepareSurface`: the map canvas is laid out by CSS, and writing a pixel
+   * width onto it would freeze it at whatever it measured first.
    *
    * The camera is re-anchored on the viewport centre rather than left alone: a
    * dock opening beside the canvas takes its width off one side only, and a
@@ -222,7 +230,7 @@ export class CanvasView {
     const rect = this.canvas.getBoundingClientRect();
     const width = Math.max(1, Math.floor(rect.width));
     const height = Math.max(1, Math.floor(rect.height));
-    const ratio = Math.min(window.devicePixelRatio || 1, 3);
+    const ratio = surfaceDensity({ width, height });
 
     this.canvas.width = Math.floor(width * ratio);
     this.canvas.height = Math.floor(height * ratio);

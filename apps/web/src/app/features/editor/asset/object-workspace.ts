@@ -61,8 +61,9 @@ import { ObjectLibraryService } from '../../../services/object-library.service';
 import { CONTENT_ROOT, ProjectStoreService } from '../../../services/project-store.service';
 import { AssetWorkspace } from './asset-workspace';
 import { clampResolution, move } from './asset-editing';
-import { PixelEditor, steppedZoom } from './pixel-editor';
+import { PixelEditor } from './pixel-editor';
 import { freeId } from '../../../editing/ids';
+import { zoomBy } from '../../../../renderer/canvas-surface';
 
 /** The kinds the picker offers, in the order it shows them. */
 const KINDS: readonly ObjectKind[] = ['consumable', 'equipment', 'quest', 'material', 'other'];
@@ -648,7 +649,7 @@ export class ObjectWorkspace implements OnDestroy {
   }
 
   protected zoomBy(delta: number): void {
-    this.zoom.set(steppedZoom(this.zoom(), delta));
+    this.zoom.set(zoomBy(this.zoom(), delta));
   }
 
   /** Back to the zoom a 32-pixel icon is workable at. */
