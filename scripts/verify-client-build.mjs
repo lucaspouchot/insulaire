@@ -14,13 +14,16 @@
  * an executable (ADR-0017): the shell changed, the thing to prove did not.
  */
 
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { EDITOR_ONLY, editorOnlyReached } from './client-graph.mjs';
+
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const buildDir = join(repoRoot, 'apps', 'web', 'dist', 'web', 'browser');
+const webRoot = join(repoRoot, 'apps', 'web');
 
 /**
  * Without these, the game cannot start at all — or starts far slower than it
@@ -72,6 +75,29 @@ for (const script of scripts) {
   }
 }
 
+/**
+ * The editor-only *modules*, checked in the source graph rather than in the
+ * emitted chunks.
+ *
+ * A selector is a string literal minification cannot rename, which is why the
+ * loop above works. `app/editing/` holds pure functions and leaves no such
+ * literal, so grepping the chunks for it would report success for the wrong
+ * reason. `client-graph.mjs` walks the imports from `main.ts` with the deliver
+ * build's own file replacements applied, which has no blind spot
+ * (`docs/adr/ADR-0015-client-delivery-build.md`).
+ */
+const readSource = (path) => {
+  try {
+    return readFileSync(join(webRoot, path), 'utf8');
+  } catch {
+    return null;
+  }
+};
+
+for (const reached of editorOnlyReached('src/main.ts', readSource)) {
+  problems.push(`${reached} is editor-only and the client build reaches it`);
+}
+
 if (problems.length > 0) {
   console.error('[verify] the build is not deliverable:');
   for (const problem of problems) {
@@ -80,4 +106,7 @@ if (problems.length > 0) {
   process.exit(1);
 }
 
-console.log(`[verify] ${scripts.length} script(s) checked: no editor, engine and content present`);
+console.log(
+  `[verify] ${scripts.length} script(s) checked: no editor, engine and content present`,
+);
+console.log(`[verify] client import graph reaches nothing under ${EDITOR_ONLY.join(', ')}`);

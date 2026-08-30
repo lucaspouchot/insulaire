@@ -48,6 +48,24 @@ engine, calls `loadProject` — which validates the manifest against what is
 actually loaded — and starts on the start world. No editor state is involved, so
 both builds play identical content by construction.
 
+**A directory says which build may reach it.** File replacement answers where
+the editor is *entered*; it does not answer where a module shared between the
+two builds may live, and a module that straddles walks straight past a check
+that greps for component selectors. The answer is the directory:
+
+| directory | reached by | may hold |
+|---|---|---|
+| `core/`, `content/`, `renderer/` | both builds | framework-free logic, no Angular signals |
+| `app/editing/` | the editor only | the editing session and everything behind it |
+| `app/features/editor/` | the editor only | the screens |
+
+The dependency arrow points editor → shared, never back. A running game
+animates decorations and objects and draws on a canvas, so the *pure cores* of
+those — which frame a flipbook is on, how dense a canvas is, the zoom a drawing
+fits at — belong in `content/` and `renderer/`, where they carry no signals. A
+client plays a game; it never holds a draft of one, so the draft set, the draft
+source, the playback clock and the id proposal are `app/editing/`.
+
 **Assets resolve against `document.baseURI`.** The `deliver` configuration sets
 `baseHref: "./"`, and `assetUrl()` resolves content and WASM paths against the
 base rather than the site root, so an unzipped bundle works from any
@@ -65,8 +83,18 @@ which now catches a developer opening a `dist/` build by hand.
 around it, then `scripts/verify-client-build.mjs`, then `deliveries/`. That
 verification is what survived the packaging script: the executable embeds this
 bundle verbatim, so it fails if `index.html`, the `.wasm` or
-`content/project.json` is missing, or if any emitted chunk still contains an
-editor component — the last gate before a client sees anything.
+`content/project.json` is missing — the last gate before a client sees anything.
+
+It checks for the editor **two ways**, because neither alone is enough. It
+greps the emitted chunks for the editor's component selectors, which works
+because a selector is a string literal minification cannot rename. And it walks
+the import graph from `src/main.ts` in the source tree, with this
+configuration's own file replacements applied, and fails if that graph reaches
+anything under `app/editing/` (`scripts/client-graph.mjs`). The second check
+exists because the first has a blind spot exactly where the table above draws
+its line: a module of pure functions leaves no literal behind, so grepping for
+one would mean planting a marker string in every editor-only file and hoping
+nobody shakes it out — a check that reports success for the wrong reason.
 
 ## Consequences
 
@@ -87,12 +115,19 @@ Negative:
   hand, and only the packaging check would catch a divergence;
 - every editor-only feature must live behind the routes file or `BUILD_FEATURES`,
   or it will leak into the client bundle;
-- the editor check is a string search over emitted chunks: it proves the two
-  known editor components are absent, not that nothing editor-shaped ever leaks;
+- the graph check knows one editor-only directory, `app/editing/`. Editor code
+  that leaks from anywhere else — a helper left in `content/`, a service the
+  client build's routes reach — is still only caught by the selector grep, and
+  only if it carries a selector. Widening the list is one line;
+- the graph check resolves relative specifiers only, which is what this tree
+  writes. A path alias or a barrel re-export from a package specifier would be
+  invisible to it, and the fix would be in `scripts/client-graph.mjs`;
 - `deliveries/` accumulates builds until someone deletes them.
 
 ## Rule
 
 The editor may only be reached through `app.routes.ts`; anything a client build
 must not contain has to be absent from `app.routes.deliver.ts`'s import graph,
-not merely hidden behind `BUILD_FEATURES`.
+not merely hidden behind `BUILD_FEATURES`. A module both builds share carries no
+Angular signals and lives in `core/`, `content/` or `renderer/`; a module only
+the editor may reach lives in `app/editing/`.

@@ -381,11 +381,15 @@ crates/
   wasm/            wasm-bindgen pass-through (no logic)
 
 apps/web/src/
-  core/hex/        offset ↔ axial transforms, pointy-top pixel layout
-  content/         authored document model + canonical serialiser
-  renderer/        framework-free Canvas renderer, camera, sprite registry
+  core/            framework-free helpers both builds may use: hex transforms,
+                   keyboard shortcuts, error text
+  content/         authored document model + canonical serialiser + flipbook
+  renderer/        framework-free Canvas renderer, camera, sprite registry,
+                   and one canvas density/fit/zoom policy
   engine/          boundary types + runtime WASM loader
   app/             Angular shell, services, editor modules, play page
+    editing/          the editing session: draft set, draft source, flipbook
+                      clock, id proposal — editor only (ADR-0015)
     features/editor/  shell + map, title, settings, locale and resource
                       editors, and one placeholder page (ADR-0016, ADR-0028)
     build-features*.ts, app.routes*.ts   dev vs client build seam (ADR-0015)
@@ -394,6 +398,8 @@ content/
   project.json     which files make one game, and where it starts
   tilesets/        mvp_terrain.json
   worlds/          demo_world.json, demo_refuge.json
+
+CONTEXT.md          the vocabulary, and the two words this project reserves
 
 docs/
   content-format.md   the authored file schema
@@ -411,6 +417,7 @@ scripts/
   content-dir.mjs          resolves which content directory this run works on
   content-server.mjs       serves and writes it, in development only
   content-paths.mjs        the path and file-type rules that server enforces
+  client-graph.mjs         which source files a client build can actually reach
   dev.mjs                  starts the content server, then `ng serve` in front of it
   sync-content.mjs         mirrors the content directory into apps/web/public/ for a build
   tauri.mjs                runs the Tauri CLI on apps/desktop (and fixes WSL's PATH)
@@ -534,9 +541,10 @@ and collects the result into `deliveries/` (git-ignored).
 
 That build is the **game only**: `app.routes.deliver.ts` replaces
 `app.routes.ts`, so the editor is not merely hidden — it is absent from the
-bundle, and `scripts/verify-client-build.mjs` fails the delivery if any chunk
-still contains it (ADR-0015). The app starts on `/play`, loads
-`content/project.json` and begins on its `startWorld`.
+bundle. `scripts/verify-client-build.mjs` fails the delivery if any emitted
+chunk still contains an editor component, or if the import graph from
+`src/main.ts` reaches anything under `app/editing/` (ADR-0015). The app starts
+on `/play`, loads `content/project.json` and begins on its `startWorld`.
 
 **One platform per machine.** Tauri cannot cross-compile, so `just deliver`
 produces what the machine it runs on can produce:
