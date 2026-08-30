@@ -2,9 +2,10 @@
  * The pixel editor: one image, flat, edited a pixel at a time.
  *
  * A retouching tool. `sprite-document.ts` holds the buffer, the stroke, the
- * undo history and the palette (`docs/adr/ADR-0030-the-editor-paints-its-
- * sprites.md`); this puts a canvas, a zoom and the guides around them, with an
- * alpha for art that is blitted as it stands
+ * undo history and the palette
+ * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`); this puts a canvas,
+ * a zoom and the guides around them, with an alpha for art that is blitted as
+ * it stands
  * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
  *
  * It is deliberately not a drawing application: three tools, no sub-layers, no

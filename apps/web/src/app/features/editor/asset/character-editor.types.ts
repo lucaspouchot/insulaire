@@ -5,8 +5,8 @@
  * The model itself is `crates/world/src/character.rs`, mirrored in
  * `content-types.ts`; what lives here is only which categories the picker
  * offers, and what a freshly added parameter, layer or variant should look like
- * so that it validates the moment it exists (`docs/adr/ADR-0024-character-
- * definitions.md`, `docs/adr/ADR-0024-character-definitions.md`).
+ * so that it validates the moment it exists
+ * (`docs/adr/ADR-0024-character-definitions.md`).
  *
  * The animation half is the same kind of knowledge: what a new animation should
  * look like, how the layer tree flattens into rows a list can render, whether a

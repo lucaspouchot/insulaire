@@ -93,7 +93,11 @@ Only when two files genuinely describe one decision:
    appear in Rust doc comments, TypeScript comments, `scripts/`, `docs/` and the
    README — to point at the survivor, and collapse any duplicate reference the
    rewrite creates.
-4. Verify that no `ADR-NNNN` anywhere in the repository fails to resolve.
+4. Run `npm run check:adr`. It resolves every citation in the repository,
+   including the ones a comment wrapper broke across two lines, and checks the
+   README index against the corpus both ways. This step used to be a promise;
+   it is now enforced, because when 51 ADRs became 36 the wrapped citations
+   were the ones that silently kept pointing at deleted files.
 5. Choose the survivor's number to be whichever of the two is cited more, so the
    rewrite is as small as possible.
 
@@ -108,6 +112,28 @@ docs/adr/ADR-NNNN-<title-slug>.md
   title.
 - **A slug never changes once it is committed**, because it is cited by path
   across the codebase. A title may be rewritten freely; the filename may not.
+
+**A citation never wraps.** Cite an ADR by its full path and keep that path on
+one line, even where doing so breaks the comment column:
+
+```rust
+/// `3` adds the flat view of
+/// `docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`: a tile
+/// may carry images for a top-down world.
+```
+
+not:
+
+```rust
+/// `3` adds the flat view of `docs/adr/ADR-0026-tile-art-is-authored-and-
+/// resolved-by-level.md`: a tile may carry images for a top-down world.
+```
+
+Every path in this corpus fits inside 80 columns when it begins a line, so the
+rule costs a reflow and nothing else. A wrapped citation is invisible to `grep`,
+which is how three of them survived the consolidation at 0.25.0 pointing at
+files that no longer existed. `npm run check:adr` catches one now; keeping them
+unwrapped is what keeps them findable by hand.
 
 ## Template
 

@@ -2,9 +2,10 @@
  * The pixels of one sprite, editable in memory.
  *
  * A character is drawn from small PNGs — a body, a cape, hair, boots — placed
- * on a declared pixel canvas (`docs/adr/ADR-0029-characters-are-composed-
- * sprites.md`). This is the other half of authoring one: the image itself,
- * opened as a buffer, painted a pixel at a time, and written back as a PNG
+ * on a declared pixel canvas
+ * (`docs/adr/ADR-0024-character-definitions.md`). This is the other half of
+ * authoring one: the image itself, opened as a buffer, painted a pixel at a
+ * time, and written back as a PNG
  * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
  *
  * It is framework-free, like the serialisers next to it, and its core is plain
@@ -166,10 +167,10 @@ export class SpriteDocument {
    *
    * `alpha` is `0..255` and defaults to opaque, which is what a pencil does
    * unless the author asks otherwise. Both kinds of art may ask: a tile is
-   * blitted as it stands (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-
-   * by-level.md`), and a character's tint multiplies the colour per pixel and
-   * leaves the alpha alone (`docs/adr/ADR-0028-one-editor-for-everything-
-   * drawn.md`, amending `docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
+   * blitted as it stands
+   * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`), and a
+   * character's tint multiplies the colour per pixel and leaves the alpha alone
+   * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
    *
    * @returns whether the pixel actually changed
    */
