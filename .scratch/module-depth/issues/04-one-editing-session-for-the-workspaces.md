@@ -1,6 +1,6 @@
 # 04 — Give the asset workspaces one editing session
 
-Status: ready-for-agent
+Status: done
 Strength: strong
 Blocked by: —
 
@@ -8,6 +8,12 @@ Blocked by: —
 
 Design settled by grilling — see `## Decisions`. Sub-tickets 04a–04f are the
 commit order; this file is the parent.
+
+**Landed** as seven commits (04a–04f plus the documentation and its guard), with
+the deviations recorded inline below: `frameDurationOf` rather than `durationOf`,
+an amendment to ADR-0015 rather than a new ADR, an import-graph check rather than
+a chunk grep, and the locale row withdrawn. Tile and the language table did not
+fit and are [09](09-tile-and-locale-do-not-fit-the-draft-set.md).
 
 ## Problem
 

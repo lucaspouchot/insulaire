@@ -45,7 +45,7 @@ these tickets remove.
 | [01](issues/01-declare-the-engine-seam-once.md) | Declare the engine seam once | Strong |
 | [02](issues/02-content-kind-is-a-module.md) | Make the content kind a module | Strong |
 | [03](issues/03-derive-content-types-from-definitions.md) | Derive the content types from the definitions | Strong |
-| [04](issues/04-one-editing-session-for-the-workspaces.md) | Give the asset workspaces one editing session | Strong |
+| [04](issues/04-one-editing-session-for-the-workspaces.md) | Give the asset workspaces one editing session | Strong · **done** |
 | [05](issues/05-close-the-project-store-read-side.md) | Close the project store's read side | Strong |
 | [06](issues/06-one-canonical-writer.md) | One canonical writer, not seven | Worth exploring |
 | [07](issues/07-lift-the-session-presentation.md) | Lift the session presentation out of the play page | Worth exploring |
