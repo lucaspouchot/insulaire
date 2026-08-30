@@ -255,7 +255,7 @@ direction.
 | 04b | `content/flipbook.ts` + spec, test-first | 72 unchanged |
 | 04c | `renderer/canvas-surface.ts` + spec; `CanvasView` adopts | 72 unchanged |
 | 04d | `DraftSet` + `DraftSource` + specs; three workspaces move | 72 unchanged |
-| 04e | tile and the four single-document pages move | 72 unchanged |
+| 04e | the three single-document pages move; tile and locale split out to [09](09-tile-and-locale-do-not-fit-the-draft-set.md) | 72 unchanged |
 | 04f | density unified · one undo listener · tile gains Ctrl+Z | **moves, reviewed by eye** |
 
 Specs are written **test-first**, with each module, in the commit that creates
@@ -271,6 +271,13 @@ it is the one place a pure module already exists and is silently unverified.
 measured across character/decoration/object, not across settings/title/
 character-creation. If those three do not fit the pipeline cleanly, stop and
 ticket them separately rather than bending `DraftSet` to fit.
+
+**Outcome.** The three named here fit, and needed two hooks that turned out to
+be shared concepts rather than accommodations: `blank()` and
+`declaredInManifest`. The two that did not fit were the two this clause did not
+name — `tile-workspace.ts` and `locale-editor-page.ts` — and they are
+[09](09-tile-and-locale-do-not-fit-the-draft-set.md), with the reasons written
+down there.
 
 ## Done when
 

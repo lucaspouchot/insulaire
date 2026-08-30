@@ -53,8 +53,30 @@ export interface DraftSource<TDraft extends Draft> {
    */
   prepare(): Promise<void>;
 
+  /**
+   * Whether saving this kind can move the manifest.
+   *
+   * `true` for a kind the manifest lists one entry per draft of — saving a new
+   * character adds a line to `project.json` and the file has to be rewritten.
+   * `false` for a kind whose file is at a fixed path: nothing about saving it
+   * changes the manifest, so it must not write one, and in particular must not
+   * flush a manifest another screen has left half-edited.
+   */
+  readonly declaredInManifest: boolean;
+
   /** The manifest list this kind is declared in, in project order. */
   declared(): readonly ContentRef[];
+
+  /**
+   * What to open when the project declares nothing at all.
+   *
+   * A single-document kind starts from something that already validates rather
+   * than from an empty screen — there is no "add" button for the settings
+   * file, so the blank *is* the way to author the first one, and it owes the
+   * disk a write from the moment it appears. `null` for a kind that is a list:
+   * a project shipping no decorations opens on an empty list, which is honest.
+   */
+  blank(): TDraft | null;
 
   /**
    * Reads one declared draft.

@@ -60,6 +60,10 @@ function report(errors: number, warnings = 0): ValidationReport {
 interface Faults {
   readonly prepare?: string;
   readonly writeJson?: string;
+  /** What to open when nothing is declared, for a single-document kind. */
+  readonly blank?: Thing;
+  /** Whether saving this kind may rewrite the manifest. Defaults to true. */
+  readonly declaredInManifest?: boolean;
 }
 
 function harness(
@@ -84,6 +88,8 @@ function harness(
   const strokes = signal(0);
 
   const source: DraftSource<Thing> = {
+    declaredInManifest: faults.declaredInManifest ?? true,
+    blank: () => faults.blank ?? null,
     messages: {
       invalid: 'thing.invalid',
       saved: 'thing.saved',
@@ -228,13 +234,31 @@ describe('DraftSet load', () => {
     expect(held.set.unreadable()).toEqual(['things/b.json']);
   });
 
-  it('opens nothing when the project declares nothing', async () => {
+  it('opens nothing when the project declares nothing and the kind is a list', async () => {
     const held = harness([]);
 
     await held.set.load();
 
     expect(held.set.open()).toBeNull();
     expect(held.set.openId()).toBeNull();
+  });
+
+  it('opens a blank for a single-document kind, already owing the disk a write', async () => {
+    const held = harness([], { blank: { id: 'settings', name: 'Settings' } });
+
+    await held.set.load();
+
+    expect(held.set.open()?.id).toBe('settings');
+    expect(held.set.dirty()).toBe(true);
+  });
+
+  it('does not reach for the blank when the project declared something', async () => {
+    const held = harness(undefined, { blank: { id: 'settings', name: 'Settings' } });
+
+    await held.set.load();
+
+    expect(held.set.drafts().map((draft) => draft.id)).toEqual(['a', 'b']);
+    expect(held.set.dirty()).toBe(false);
   });
 
   it('reports a failure to prepare and still stops loading', async () => {
@@ -418,6 +442,21 @@ describe('DraftSet save', () => {
     await held.set.save();
 
     expect(held.trace).not.toContain('writeJson project.json');
+  });
+
+  it('never touches the manifest for a kind whose file is at a fixed path', async () => {
+    // Even with a manifest another screen has left half-edited: flushing it
+    // would publish a change this save had nothing to do with.
+    const fixed = harness(undefined, { declaredInManifest: false });
+    await fixed.set.load();
+    fixed.manifestDirty.value = true;
+    fixed.trace.length = 0;
+
+    await fixed.set.save();
+
+    expect(fixed.trace).not.toContain('writeJson project.json');
+    expect(fixed.trace).not.toContain('declare a');
+    expect(fixed.trace).toContain('writeJson things/a.json');
   });
 
   it('says what it did, in one line', async () => {

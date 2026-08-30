@@ -26,7 +26,6 @@ import {
   ScreenTransition,
   SettingValue,
 } from '../../../../content/content-types';
-import { ValidationReport } from '../../../../engine/engine.types';
 import { SpriteCache, drawCharacter } from '../../../../renderer/character-renderer';
 import { I18nService } from '../../../i18n/i18n.service';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
@@ -36,15 +35,20 @@ import { CharacterLibraryService } from '../../../services/character-library.ser
 import { ContentWorkspaceService } from '../../../services/content-workspace.service';
 import { EngineService } from '../../../services/engine.service';
 import { LocaleAuthoringService } from '../../../services/locale-authoring.service';
-import { CONTENT_ROOT, ProjectStoreService, contentUrl } from '../../../services/project-store.service';
+import {
+  CONTENT_ROOT,
+  ProjectStoreService,
+  contentUrl,
+} from '../../../services/project-store.service';
 import {
   CONTROL_KINDS,
   defaultFor,
   isNumeric,
   usesOptions,
 } from '../settings/settings-editor.types';
+import { DraftSet } from '../../../editing/draft-set';
+import { DraftSource } from '../../../editing/draft-source';
 import { freeId } from '../../../editing/ids';
-import { describeError } from '../../../../core/errors';
 
 type EditorTab = 'choices' | 'characteristics' | 'workflow';
 
@@ -79,12 +83,26 @@ export class CharacterCreationEditorPage {
     () => this.drawPreview(),
   );
 
-  protected readonly document = signal<CharacterCreationDefinition | null>(null);
-  protected readonly report = signal<ValidationReport | null>(null);
-  protected readonly error = signal<string | null>(null);
-  protected readonly message = signal<string | null>(null);
-  protected readonly dirty = signal(false);
-  protected readonly busy = signal(false);
+  /**
+   * The editing session, holding exactly one draft.
+   *
+   * A creation declaration is a list of length one: the manifest names one
+   * path and there is no "add" button, so what is left of the session is the
+   * load and save choreography (`app/editing/draft-set.ts`).
+   */
+  private readonly drafts = new DraftSet<CharacterCreationDefinition>(this.draftSource(), {
+    i18n: this.i18n,
+    workspace: this.workspace,
+    manifest: this.store,
+    locales: this.locales,
+  });
+
+  protected readonly document = this.drafts.open;
+  protected readonly report = this.drafts.report;
+  protected readonly error = this.drafts.error;
+  protected readonly message = this.drafts.message;
+  protected readonly dirty = this.drafts.dirty;
+  protected readonly busy = this.drafts.busy;
   protected readonly tab = signal<EditorTab>('choices');
   protected readonly choiceId = signal<string | null>(null);
   protected readonly characteristicId = signal<string | null>(null);
@@ -101,16 +119,17 @@ export class CharacterCreationEditorPage {
 
   protected readonly path = computed(() => this.store.characterCreationPath());
   protected readonly writable = computed(() => this.workspace.status() !== null);
-  protected readonly unlisted = computed(() => this.store.project()?.characterCreation === undefined);
-  protected readonly errorCount = computed(
-    () => this.report()?.issues.filter((issue) => issue.severity === 'error').length ?? 0,
+  protected readonly unlisted = computed(
+    () => this.store.project()?.characterCreation === undefined,
   );
+  protected readonly errorCount = this.drafts.errorCount;
   protected readonly choices = computed(() => this.document()?.choices ?? []);
   protected readonly characteristics = computed(() => this.document()?.characteristics ?? []);
   protected readonly screens = computed(() => this.document()?.screens ?? []);
 
   protected readonly choice = computed(
-    () => this.choices().find((choice) => choice.id === this.choiceId()) ?? this.choices()[0] ?? null,
+    () =>
+      this.choices().find((choice) => choice.id === this.choiceId()) ?? this.choices()[0] ?? null,
   );
   protected readonly characteristic = computed(
     () =>
@@ -123,7 +142,8 @@ export class CharacterCreationEditorPage {
       this.screens().find((screen) => screen.id === this.screenId()) ?? this.screens()[0] ?? null,
   );
   protected readonly previewScreen = computed(
-    () => this.screens()[Math.min(this.previewIndex(), Math.max(0, this.screens().length - 1))] ?? null,
+    () =>
+      this.screens()[Math.min(this.previewIndex(), Math.max(0, this.screens().length - 1))] ?? null,
   );
 
   /** Character definitions the resource editor currently exposes. */
@@ -196,46 +216,66 @@ export class CharacterCreationEditorPage {
       void this.sprites.preload(resolved.layers.map((layer) => layer.asset));
       queueMicrotask(() => this.drawPreview());
     });
-    void this.load();
+    // The preview starts on the declared defaults, once the document is in.
+    void this.drafts.load().then(() => this.resetPreview());
   }
 
-  private async load(): Promise<void> {
-    try {
-      await this.engine.ready();
-      await this.store.ensureLoaded();
-      await this.library.ensureLoaded();
-      await this.locales.ensureLoaded();
-      await this.workspace.ensureProbed();
-
-      const declared = this.store.project()?.characterCreation;
-      if (declared === undefined) {
-        this.document.set(blankCreation(this.characterIds()[0] ?? ''));
-        this.dirty.set(true);
-      } else {
-        const response = await fetch(contentUrl(declared.path));
+  /**
+   * What a *creation declaration* means by reading, validating and writing.
+   *
+   * Everything else about the session is `DraftSet`'s. Unlike the settings and
+   * title screens, this one *is* listed in the manifest — saving the first one
+   * is what puts `characterCreation` into `project.json`.
+   */
+  private draftSource(): DraftSource<CharacterCreationDefinition> {
+    return {
+      declaredInManifest: true,
+      // Nothing authored yet: start from a declaration that already validates.
+      blank: () => blankCreation(this.characterIds()[0] ?? ''),
+      messages: {
+        invalid: 'ui.editor.creation.invalid',
+        saved: 'ui.editor.creation.saved',
+        spritesSaved: '',
+        savedManifest: '',
+      },
+      prepare: async () => {
+        await this.engine.ready();
+        await this.store.ensureLoaded();
+        await this.library.ensureLoaded();
+        await this.locales.ensureLoaded();
+        await this.workspace.ensureProbed();
+      },
+      declared: () => {
+        const declared = this.store.project()?.characterCreation;
+        return declared === undefined ? [] : [declared];
+      },
+      read: async (entry) => {
+        const response = await fetch(contentUrl(entry.path));
         if (!response.ok) {
-          throw new Error(`Could not load ${declared.path} (HTTP ${response.status}).`);
+          throw new Error(`Could not load ${entry.path} (HTTP ${response.status}).`);
         }
-        this.document.set((await response.json()) as CharacterCreationDefinition);
-      }
-      this.resetPreview();
-      this.validate();
-    } catch (cause) {
-      this.error.set(describeError(cause));
-    }
+        return (await response.json()) as CharacterCreationDefinition;
+      },
+      pathOf: () => this.path(),
+      serialize: (document) => serializeCharacterCreation(document),
+      validate: (_document, json) => this.engine.validateCharacterCreation(json),
+      adopt: (_id, json) => this.creation.adopt(json),
+      forget: () => {},
+      declare: (id) => this.store.declareCharacterCreation(id, this.path()),
+      undeclare: () => {},
+      dirtySprites: () => [],
+      writeSprites: async () => 0,
+      keysOf: (document) => referencedKeys(document),
+      removed: () => {},
+      // Nothing to redraw per edit: the preview's own choices belong to the
+      // author, and resetting them to the declared defaults on every keystroke
+      // would throw away what they had picked.
+      refresh: () => {},
+    };
   }
 
   private edit(mutate: (draft: CharacterCreationDefinition) => void): void {
-    const current = this.document();
-    if (current === null) {
-      return;
-    }
-    const draft = structuredClone(current) as CharacterCreationDefinition;
-    mutate(draft);
-    this.document.set(draft);
-    this.dirty.set(true);
-    this.message.set(null);
-    this.validate();
+    this.drafts.edit(mutate);
   }
 
   protected setId(id: string): void {
@@ -344,7 +384,10 @@ export class CharacterCreationEditorPage {
     }
     this.patchChoice({
       control,
-      default: defaultFor(control, (choice.options ?? []).map((option) => option.value)),
+      default: defaultFor(
+        control,
+        (choice.options ?? []).map((option) => option.value),
+      ),
       options: usesOptions(control) ? (choice.options ?? []) : undefined,
       min: isNumeric(control) ? choice.min : undefined,
       max: isNumeric(control) ? choice.max : undefined,
@@ -396,7 +439,10 @@ export class CharacterCreationEditorPage {
     if (choice === null) {
       return;
     }
-    const value = freeId('option', (choice.options ?? []).map((option) => option.value));
+    const value = freeId(
+      'option',
+      (choice.options ?? []).map((option) => option.value),
+    );
     this.patchChoice({
       options: [...(choice.options ?? []), { value, labelKey: `game.creation.${value}` }],
     });
@@ -419,7 +465,8 @@ export class CharacterCreationEditorPage {
     Object.assign(option, change);
     this.patchChoice({
       options,
-      default: choice.default === previous && change.value !== undefined ? change.value : choice.default,
+      default:
+        choice.default === previous && change.value !== undefined ? change.value : choice.default,
     });
     this.resetPreview();
   }
@@ -528,7 +575,10 @@ export class CharacterCreationEditorPage {
   }
 
   protected setNullable(nullable: boolean): void {
-    this.patchCharacteristic({ nullable, default: nullable ? null : defaultFor(this.characteristic()?.control ?? 'text') });
+    this.patchCharacteristic({
+      nullable,
+      default: nullable ? null : defaultFor(this.characteristic()?.control ?? 'text'),
+    });
     this.resetPreview();
   }
 
@@ -537,12 +587,19 @@ export class CharacterCreationEditorPage {
     if (field === null) {
       return;
     }
-    const value = freeId('value', (field.options ?? []).map((option) => option.value));
+    const value = freeId(
+      'value',
+      (field.options ?? []).map((option) => option.value),
+    );
     const options = [...(field.options ?? []), { value, labelKey: `game.creation.${value}` }];
     this.patchCharacteristic({ options, default: field.default ?? options[0]?.value ?? '' });
   }
 
-  protected patchCharacteristicOption(index: number, key: 'value' | 'labelKey', value: string): void {
+  protected patchCharacteristicOption(
+    index: number,
+    key: 'value' | 'labelKey',
+    value: string,
+  ): void {
     const field = this.characteristic();
     if (field === null) {
       return;
@@ -562,7 +619,9 @@ export class CharacterCreationEditorPage {
   protected removeCharacteristicOption(index: number): void {
     const field = this.characteristic();
     if (field !== null) {
-      this.patchCharacteristic({ options: (field.options ?? []).filter((_option, at) => at !== index) });
+      this.patchCharacteristic({
+        options: (field.options ?? []).filter((_option, at) => at !== index),
+      });
     }
   }
 
@@ -591,7 +650,10 @@ export class CharacterCreationEditorPage {
   }
 
   protected addScreen(): void {
-    const id = freeId('screen', this.screens().map((screen) => screen.id));
+    const id = freeId(
+      'screen',
+      this.screens().map((screen) => screen.id),
+    );
     this.edit((draft) => {
       draft.screens = [
         ...(draft.screens ?? []),
@@ -655,7 +717,9 @@ export class CharacterCreationEditorPage {
   }
 
   protected removeBlock(index: number): void {
-    this.patchScreen({ blocks: (this.screen()?.blocks ?? []).filter((_block, at) => at !== index) });
+    this.patchScreen({
+      blocks: (this.screen()?.blocks ?? []).filter((_block, at) => at !== index),
+    });
   }
 
   protected moveBlock(index: number, delta: number): void {
@@ -669,7 +733,7 @@ export class CharacterCreationEditorPage {
       const value = JSON.parse(raw) as Record<string, SettingValue>;
       this.patchBlock(index, { parameters: value });
     } catch {
-      this.error.set(this.i18n.t('ui.editor.creation.invalidJson'));
+      this.drafts.fail(this.i18n.t('ui.editor.creation.invalidJson'));
     }
   }
 
@@ -688,7 +752,9 @@ export class CharacterCreationEditorPage {
     if (condition === undefined || condition === null) {
       return true;
     }
-    return JSON.stringify(this.choiceValues()[condition.field]) === JSON.stringify(condition.equals);
+    return (
+      JSON.stringify(this.choiceValues()[condition.field]) === JSON.stringify(condition.equals)
+    );
   }
 
   protected setChoiceValue(id: string, value: SettingValue): void {
@@ -703,7 +769,9 @@ export class CharacterCreationEditorPage {
     const field = this.characteristics().find((field) => field.id === id);
     this.characteristicValues.update((values) => ({
       ...values,
-      [id]: nullable ? null : ((field?.default ?? defaultFor(field?.control ?? 'text')) as SettingValue),
+      [id]: nullable
+        ? null
+        : ((field?.default ?? defaultFor(field?.control ?? 'text')) as SettingValue),
     }));
   }
 
@@ -714,7 +782,10 @@ export class CharacterCreationEditorPage {
   protected characteristicValue(field: CharacteristicDefinition): SettingValue {
     const value = this.characteristicValues()[field.id];
     return value === null || value === undefined
-      ? defaultFor(field.control, (field.options ?? []).map((option) => option.value))
+      ? defaultFor(
+          field.control,
+          (field.options ?? []).map((option) => option.value),
+        )
       : value;
   }
 
@@ -740,7 +811,9 @@ export class CharacterCreationEditorPage {
 
   private resetPreview(): void {
     this.choiceValues.set(
-      Object.fromEntries(this.choices().map((choice) => [choice.id, structuredClone(choice.default)])),
+      Object.fromEntries(
+        this.choices().map((choice) => [choice.id, structuredClone(choice.default)]),
+      ),
     );
     this.characteristicValues.set(
       Object.fromEntries(
@@ -768,56 +841,22 @@ export class CharacterCreationEditorPage {
     context.clearRect(0, 0, width, height);
     context.fillStyle = '#101820';
     context.fillRect(0, 0, width, height);
-    drawCharacter(context, resolved, { x: 12, y: 12, width: width - 24, height: height - 24 }, this.sprites);
+    drawCharacter(
+      context,
+      resolved,
+      { x: 12, y: 12, width: width - 24, height: height - 24 },
+      this.sprites,
+    );
   }
 
   // ------------------------------------------------------------- validation
 
   protected validate(): void {
-    const document = this.document();
-    if (document === null || !this.engine.isReady) {
-      return;
-    }
-    try {
-      this.report.set(this.engine.validateCharacterCreation(serializeCharacterCreation(document)));
-    } catch (cause) {
-      this.error.set(describeError(cause));
-    }
+    this.drafts.refresh();
   }
 
-  protected async save(): Promise<void> {
-    const document = this.document();
-    if (document === null) {
-      return;
-    }
-    this.busy.set(true);
-    this.error.set(null);
-    this.message.set(null);
-    try {
-      const json = serializeCharacterCreation(document);
-      const report = this.engine.validateCharacterCreation(json);
-      this.report.set(report);
-      if (!report.valid) {
-        this.error.set(this.i18n.t('ui.editor.creation.invalid'));
-        return;
-      }
-      await this.workspace.writeJson(this.path(), json);
-      this.store.declareCharacterCreation(document.id, this.path());
-      await this.workspace.writeJson('project.json', this.store.projectJson());
-      this.store.markManifestWritten();
-      this.creation.adopt(json);
-
-      const created = this.locales.ensureKeys(referencedKeys(document));
-      if (created.length > 0) {
-        await this.locales.save();
-      }
-      this.dirty.set(false);
-      this.message.set(this.i18n.t('ui.editor.creation.saved', { file: this.path() }));
-    } catch (cause) {
-      this.error.set(describeError(cause));
-    } finally {
-      this.busy.set(false);
-    }
+  protected save(): Promise<void> {
+    return this.drafts.save();
   }
 
   protected setBound(
@@ -903,8 +942,16 @@ function moveAt<T>(items: T[], index: number, delta: number): void {
   if (item !== undefined) items.splice(to, 0, item);
 }
 
-function moveById<T extends { id: string }>(items: T[], id: string | undefined, delta: number): void {
-  moveAt(items, items.findIndex((item) => item.id === id), delta);
+function moveById<T extends { id: string }>(
+  items: T[],
+  id: string | undefined,
+  delta: number,
+): void {
+  moveAt(
+    items,
+    items.findIndex((item) => item.id === id),
+    delta,
+  );
 }
 
 function referencedKeys(document: CharacterCreationDefinition): string[] {

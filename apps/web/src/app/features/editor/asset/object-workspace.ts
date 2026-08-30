@@ -238,6 +238,9 @@ export class ObjectWorkspace implements OnDestroy {
    */
   private draftSource(): DraftSource<ObjectDefinition> {
     return {
+      declaredInManifest: true,
+      // A list: a project shipping no objects opens on an empty list.
+      blank: () => null,
       messages: {
         invalid: 'ui.editor.object.invalid',
         saved: 'ui.editor.object.saved',

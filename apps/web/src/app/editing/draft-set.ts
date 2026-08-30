@@ -142,6 +142,15 @@ export class DraftSet<TDraft extends Draft> {
       this.unreadableSignal.set(
         declared.filter((_entry, index) => read[index] === null).map((entry) => entry.path),
       );
+
+      // Nothing authored yet: a single-document kind starts from a blank that
+      // already validates, and owes the disk a write straight away.
+      const blank = this.all().length === 0 ? this.source.blank() : null;
+      if (blank !== null) {
+        this.all.set([blank]);
+        this.markChanged(blank.id);
+      }
+
       this.openIdSignal.set(this.all()[0]?.id ?? null);
       this.refresh();
     } catch (cause) {
@@ -304,12 +313,16 @@ export class DraftSet<TDraft extends Draft> {
         parts.push(i18n.t(this.source.messages.spritesSaved, { count: written }));
       }
 
-      // A definition nobody lists is a definition nobody loads.
-      this.source.declare(draft.id, path);
-      if (manifest.manifestNeedsWriting()) {
-        await workspace.writeJson('project.json', manifest.projectJson());
-        manifest.markManifestWritten();
-        parts.push(i18n.t(this.source.messages.savedManifest));
+      // A definition nobody lists is a definition nobody loads. A kind whose
+      // file is at a fixed path lists nothing, and leaves the manifest alone
+      // rather than flushing an edit another screen has not finished.
+      if (this.source.declaredInManifest) {
+        this.source.declare(draft.id, path);
+        if (manifest.manifestNeedsWriting()) {
+          await workspace.writeJson('project.json', manifest.projectJson());
+          manifest.markManifestWritten();
+          parts.push(i18n.t(this.source.messages.savedManifest));
+        }
       }
       manifest.refreshDirty();
 

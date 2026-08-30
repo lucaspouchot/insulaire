@@ -50,6 +50,7 @@ these tickets remove.
 | [06](issues/06-one-canonical-writer.md) | One canonical writer, not seven | Worth exploring |
 | [07](issues/07-lift-the-session-presentation.md) | Lift the session presentation out of the play page | Worth exploring |
 | [08](issues/08-adr-references-must-resolve.md) | ADR references must resolve, and be checkable | Strong · **done** |
+| [09](issues/09-tile-and-locale-do-not-fit-the-draft-set.md) | Tile and locale do not fit the draft set | Strong · split out of 04 |
 
 ## Order
 
@@ -57,15 +58,20 @@ these tickets remove.
 wrong rather than structurally weak, and it guards every ADR citation the other
 seven will write — 02 and 03 especially, since they touch every content kind.
 
-**Then 04.** It is the only one where the cost has already been paid: the four
-copies have drifted, and three preview panes render at three different
-resolutions on the same screen. It is the largest untested surface in the
-repository, it stays inside one language, and the interface did not need
-designing — `ContentLibrary` and `HexMapRenderer` both demonstrate the shape
-already. **Its design is settled**; see `## Decisions` in the ticket, and 04a–04f
+**Then 04, and done** — except for the two screens [09](issues/09-tile-and-locale-do-not-fit-the-draft-set.md)
+carries. It was the only one where the cost had already been paid: the four
+copies had drifted, and three preview panes rendered at three different
+resolutions on the same screen. It was the largest untested surface in the
+repository, it stayed inside one language, and the interface did not need
+designing — `ContentLibrary` and `HexMapRenderer` both demonstrated the shape
+already. Its design was settled; see `## Decisions` in the ticket, and 04a–04f
 for the commit order.
 
-Then **05**, which gives 02 somewhere to land. Then **02**, with **01** falling
+**Then 09's first half**, which is a line in this spec and no code: the locale
+adapter 04 proposed does not survive contact with `locale-editor-page.ts`, and
+the row should go. Its second half waits on 05.
+
+Then **05**, which gives 02 somewhere to land, and unblocks 09's tile half. Then **02**, with **01** falling
 out of it as the mechanical half. **03** and **06** sequence together: the
 default table 06 needs is the fact 03 generates. **07** is independent and can
 go at any point.

@@ -17,23 +17,30 @@
  * `docs/adr/ADR-0020-localised-content-keys.md`).
  */
 
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-
 import {
-  TitleAction,
-  TitleScreenDefinition,
-  ValidationReportLike,
-} from './title-editor.types';
+  ChangeDetectionStrategy,
+  Component,
+  Signal,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
+
+import { TitleAction, TitleScreenDefinition, ValidationReportLike } from './title-editor.types';
 import { I18nService } from '../../../i18n/i18n.service';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
-import { ContentWorkspaceService, WorkspaceFile } from '../../../services/content-workspace.service';
+import {
+  ContentWorkspaceService,
+  WorkspaceFile,
+} from '../../../services/content-workspace.service';
 import { EngineService } from '../../../services/engine.service';
 import { LocaleAuthoringService } from '../../../services/locale-authoring.service';
 import { CONTENT_ROOT, ProjectStoreService } from '../../../services/project-store.service';
 import { assetUrl } from '../../../../core/asset-url';
-import { describeError } from '../../../../core/errors';
 import { TitleScreenService } from '../../../services/title-screen.service';
 import { TitlePage } from '../../title/title-page';
+import { DraftSet } from '../../../editing/draft-set';
+import { DraftSource } from '../../../editing/draft-source';
 
 /** Where an uploaded file goes, by kind. */
 const UPLOAD_DIR = { image: 'assets/images', audio: 'assets/audio' } as const;
@@ -56,14 +63,29 @@ export class TitleEditorPage {
   private readonly titleScreen = inject(TitleScreenService);
   private readonly locales = inject(LocaleAuthoringService);
 
+  /**
+   * The editing session, holding exactly one draft.
+   *
+   * A title screen is a list of length one: the manifest names one path and
+   * there is no "add" button, so what is left of the session is the load and
+   * save choreography — which is the whole of what was copied
+   * (`app/editing/draft-set.ts`).
+   */
+  private readonly drafts = new DraftSet<TitleScreenDefinition>(this.draftSource(), {
+    i18n: this.i18n,
+    workspace: this.workspace,
+    manifest: this.store,
+    locales: this.locales,
+  });
+
   /** The document being edited. */
-  protected readonly screen = signal<TitleScreenDefinition | null>(null);
+  protected readonly screen = this.drafts.open;
   /** What the Rust validator says about it. */
-  protected readonly report = signal<ValidationReportLike | null>(null);
-  protected readonly message = signal<string | null>(null);
-  protected readonly error = signal<string | null>(null);
-  protected readonly dirty = signal(false);
-  protected readonly busy = signal(false);
+  protected readonly report: Signal<ValidationReportLike | null> = this.drafts.report;
+  protected readonly message = this.drafts.message;
+  protected readonly error = this.drafts.error;
+  protected readonly dirty = this.drafts.dirty;
+  protected readonly busy = this.drafts.busy;
   /** Content files that can be picked as an image or a track. */
   protected readonly files = signal<readonly WorkspaceFile[]>([]);
   /** Bumped to force the preview to re-read the document. */
@@ -87,32 +109,59 @@ export class TitleEditorPage {
   protected readonly writable = computed(() => this.workspace.status() !== null);
 
   constructor() {
-    void this.load();
+    void this.drafts.load();
   }
 
-  private async load(): Promise<void> {
-    try {
-      await this.i18n.ensureAdopted();
-      await this.workspace.ensureProbed();
-      await this.locales.ensureLoaded();
-      await this.refreshFiles();
-
-      const declared = this.store.project()?.titleScreen;
-      if (declared === undefined) {
-        // Nothing authored yet: start from a screen that already validates.
-        this.screen.set(blankScreen());
-        this.dirty.set(true);
-        return;
-      }
-
-      const response = await fetch(assetUrl(`${CONTENT_ROOT}/${declared.path}`));
-      const json = await response.text();
-      this.engine.loadTitleScreen(json);
-      this.screen.set(this.engine.titleScreen() as TitleScreenDefinition);
-      this.validate();
-    } catch (cause) {
-      this.error.set(describeError(cause));
-    }
+  /**
+   * What the *title screen* means by reading, validating and writing.
+   *
+   * Everything else about the session is `DraftSet`'s. There is no manifest
+   * entry to add and no art to write: the file is at one path, so saving it
+   * cannot move `project.json`.
+   */
+  private draftSource(): DraftSource<TitleScreenDefinition> {
+    return {
+      declaredInManifest: false,
+      // Nothing authored yet: start from a screen that already validates.
+      blank: () => blankScreen(),
+      messages: {
+        invalid: 'ui.editor.title.invalid',
+        saved: 'ui.editor.title.saved',
+        spritesSaved: '',
+        savedManifest: '',
+      },
+      prepare: async () => {
+        await this.i18n.ensureAdopted();
+        await this.workspace.ensureProbed();
+        await this.locales.ensureLoaded();
+        await this.refreshFiles();
+      },
+      declared: () => {
+        const declared = this.store.project()?.titleScreen;
+        return declared === undefined ? [] : [declared];
+      },
+      read: async (entry) => {
+        const response = await fetch(assetUrl(`${CONTENT_ROOT}/${entry.path}`));
+        const json = await response.text();
+        this.engine.loadTitleScreen(json);
+        return this.engine.titleScreen() as TitleScreenDefinition;
+      },
+      pathOf: () => this.path(),
+      // Two spaces and a trailing newline: this file is read by people.
+      serialize: (screen) => `${JSON.stringify(screen, null, 2)}\n`,
+      validate: (screen) => this.engine.validateTitleScreen(JSON.stringify(screen)),
+      // Adopting it is what makes the preview and the real title screen agree
+      // from here on — and what a later content reset puts back.
+      adopt: (_id, json) => this.titleScreen.adopt(json),
+      forget: () => {},
+      declare: () => {},
+      undeclare: () => {},
+      dirtySprites: () => [],
+      writeSprites: async () => 0,
+      keysOf: (screen) => referencedKeys(screen),
+      removed: () => {},
+      refresh: () => {},
+    };
   }
 
   private async refreshFiles(): Promise<void> {
@@ -126,18 +175,14 @@ export class TitleEditorPage {
 
   /** Applies a change to the document and re-validates it. */
   protected patch(change: Partial<TitleScreenDefinition>): void {
-    const screen = this.screen();
-    if (screen === null) {
-      return;
-    }
-    this.screen.set({ ...screen, ...change });
-    this.dirty.set(true);
-    this.message.set(null);
+    this.drafts.edit((draft) => Object.assign(draft, change));
     this.previewRevision.update((value) => value + 1);
-    this.validate();
   }
 
-  protected patchButton(index: number, change: Partial<TitleScreenDefinition['buttons'][number]>): void {
+  protected patchButton(
+    index: number,
+    change: Partial<TitleScreenDefinition['buttons'][number]>,
+  ): void {
     const screen = this.screen();
     if (screen === null) {
       return;
@@ -196,7 +241,11 @@ export class TitleEditorPage {
    * The path is `assets/images/<name>` or `assets/audio/<name>`: a convention,
    * not a rule — the content server accepts any path inside the directory.
    */
-  protected async upload(event: Event, kind: 'image' | 'audio', apply: (path: string) => void): Promise<void> {
+  protected async upload(
+    event: Event,
+    kind: 'image' | 'audio',
+    apply: (path: string) => void,
+  ): Promise<void> {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
     if (file === undefined) {
@@ -204,18 +253,18 @@ export class TitleEditorPage {
     }
     input.value = '';
 
-    this.busy.set(true);
-    this.error.set(null);
+    this.drafts.setBusy(true);
+    this.drafts.fail(null);
     try {
       const path = `${UPLOAD_DIR[kind]}/${file.name}`;
       await this.workspace.write(path, file);
       await this.refreshFiles();
       apply(path);
-      this.message.set(this.i18n.t('ui.editor.title.uploaded', { file: path }));
+      this.drafts.announce(this.i18n.t('ui.editor.title.uploaded', { file: path }));
     } catch (cause) {
-      this.error.set(describeError(cause));
+      this.drafts.fail(cause);
     } finally {
-      this.busy.set(false);
+      this.drafts.setBusy(false);
     }
   }
 
@@ -223,61 +272,12 @@ export class TitleEditorPage {
 
   /** Asks Rust whether this document is usable — the same check the runtime runs. */
   protected validate(): void {
-    const screen = this.screen();
-    if (screen === null || !this.engine.isReady) {
-      return;
-    }
-    try {
-      this.report.set(this.engine.validateTitleScreen(JSON.stringify(screen)));
-    } catch (cause) {
-      this.error.set(describeError(cause));
-    }
+    this.drafts.refresh();
   }
 
   /** Writes the document into the content directory. */
-  protected async save(): Promise<void> {
-    const screen = this.screen();
-    if (screen === null) {
-      return;
-    }
-    this.busy.set(true);
-    this.error.set(null);
-    this.message.set(null);
-
-    try {
-      const report = this.engine.validateTitleScreen(JSON.stringify(screen));
-      this.report.set(report);
-      if (!report.valid) {
-        this.error.set(this.i18n.t('ui.editor.title.invalid'));
-        return;
-      }
-
-      const json = `${JSON.stringify(screen, null, 2)}\n`;
-      await this.workspace.writeJson(this.path(), json);
-      // Adopting it is what makes the preview and the real title screen agree
-      // from here on — and what a later content reset puts back.
-      this.titleScreen.adopt(json);
-
-      // Every label this screen names now exists as a key, in every language,
-      // for the Languages tab to fill in; until then it shows as itself.
-      const created = this.locales.ensureKeys(referencedKeys(screen));
-      if (created.length > 0) {
-        await this.locales.save();
-      }
-
-      this.dirty.set(false);
-      this.validate();
-      this.message.set(
-        this.i18n.t('ui.editor.title.saved', { file: this.path() }) +
-          (created.length === 0
-            ? ''
-            : ` · ${this.i18n.t('ui.editor.locale.created', { count: created.length })}`),
-      );
-    } catch (cause) {
-      this.error.set(describeError(cause));
-    } finally {
-      this.busy.set(false);
-    }
+  protected save(): Promise<void> {
+    return this.drafts.save();
   }
 }
 

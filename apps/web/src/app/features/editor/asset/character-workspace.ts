@@ -784,6 +784,9 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
    */
   private draftSource(): DraftSource<CharacterDefinition> {
     return {
+      declaredInManifest: true,
+      // A list: a project shipping no characters opens on an empty list.
+      blank: () => null,
       messages: {
         invalid: 'ui.editor.character.invalid',
         saved: 'ui.editor.character.saved',

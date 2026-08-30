@@ -43,7 +43,6 @@ import {
 } from './settings-editor.types';
 import { SETTINGS_SCHEMA_VERSION } from '../../../../content/content-types';
 import { serializeSettings } from '../../../../content/settings-serializer';
-import { ValidationReport } from '../../../../engine/engine.types';
 import { I18nService } from '../../../i18n/i18n.service';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
 import { ControlField } from '../../../settings/control-field';
@@ -53,7 +52,8 @@ import { LocaleAuthoringService } from '../../../services/locale-authoring.servi
 import { SettingsService } from '../../../settings/settings.service';
 import { CONTENT_ROOT, ProjectStoreService } from '../../../services/project-store.service';
 import { assetUrl } from '../../../../core/asset-url';
-import { describeError } from '../../../../core/errors';
+import { DraftSet } from '../../../editing/draft-set';
+import { DraftSource } from '../../../editing/draft-source';
 import { freeId } from '../../../editing/ids';
 
 /** Where a project's settings live when the manifest names no other path. */
@@ -74,14 +74,29 @@ export class SettingsEditorPage {
   private readonly settings = inject(SettingsService);
   private readonly locales = inject(LocaleAuthoringService);
 
+  /**
+   * The editing session, holding exactly one draft.
+   *
+   * A settings file is a list of length one: the manifest names one path and
+   * there is no "add" button, so what is left of the session is the load and
+   * save choreography — which is the whole of what was copied
+   * (`app/editing/draft-set.ts`).
+   */
+  private readonly drafts = new DraftSet<SettingsDefinition>(this.draftSource(), {
+    i18n: this.i18n,
+    workspace: this.workspace,
+    manifest: this.store,
+    locales: this.locales,
+  });
+
   /** The document being edited. */
-  protected readonly document = signal<SettingsDefinition | null>(null);
+  protected readonly document = this.drafts.open;
   /** What the Rust validator says about it. */
-  protected readonly report = signal<ValidationReport | null>(null);
-  protected readonly message = signal<string | null>(null);
-  protected readonly error = signal<string | null>(null);
-  protected readonly dirty = signal(false);
-  protected readonly busy = signal(false);
+  protected readonly report = this.drafts.report;
+  protected readonly message = this.drafts.message;
+  protected readonly error = this.drafts.error;
+  protected readonly dirty = this.drafts.dirty;
+  protected readonly busy = this.drafts.busy;
 
   /** Which section and group the form is showing; the first, until picked. */
   private readonly sectionId = signal<string | null>(null);
@@ -157,40 +172,70 @@ export class SettingsEditorPage {
     (this.report()?.issues ?? []).filter((issue) => issue.code === 'locale.unknownKey'),
   );
 
-  /** How many issues actually stand in the way, for the toolbar. */
-  protected readonly errorCount = computed(
-    () => this.blocking().filter((issue) => issue.severity === 'error').length,
-  );
+  /**
+   * How many issues actually stand in the way, for the toolbar.
+   *
+   * The session's count, and the same number {@link blocking} would give:
+   * `locale.unknownKey` is a warning, so filtering it out never took an error
+   * with it (`docs/adr/ADR-0020-localised-content-keys.md`).
+   */
+  protected readonly errorCount = this.drafts.errorCount;
 
   constructor() {
-    void this.load();
+    void this.drafts.load();
   }
 
-  private async load(): Promise<void> {
-    try {
-      await this.engine.ready();
-      await this.i18n.ensureAdopted();
-      await this.workspace.ensureProbed();
-      await this.locales.ensureLoaded();
-
-      const declared = this.store.project()?.settings;
-      if (declared === undefined) {
-        // Nothing authored yet: start from a declaration that already validates.
-        this.document.set(blankSettings());
-        this.dirty.set(true);
-        this.validate();
-        return;
-      }
-
-      const json = await fetchText(assetUrl(`${CONTENT_ROOT}/${declared.path}`));
-      // Read back through the engine rather than parsed here, so the form starts
-      // from the same defaults-filled shape the runtime works with.
-      this.engine.loadSettings(json);
-      this.document.set(this.engine.settings());
-      this.validate();
-    } catch (cause) {
-      this.error.set(describeError(cause));
-    }
+  /**
+   * What the *settings declaration* means by reading, validating and writing.
+   *
+   * Everything else about the session is `DraftSet`'s. There is no manifest
+   * entry to add and no art to write: the file is at one path, so saving it
+   * cannot move `project.json`.
+   */
+  private draftSource(): DraftSource<SettingsDefinition> {
+    return {
+      declaredInManifest: false,
+      // Nothing authored yet: start from a declaration that already validates.
+      blank: () => blankSettings(),
+      messages: {
+        invalid: 'ui.editor.settings.invalid',
+        saved: 'ui.editor.settings.saved',
+        spritesSaved: '',
+        savedManifest: '',
+      },
+      prepare: async () => {
+        await this.engine.ready();
+        await this.i18n.ensureAdopted();
+        await this.workspace.ensureProbed();
+        await this.locales.ensureLoaded();
+      },
+      declared: () => {
+        const declared = this.store.project()?.settings;
+        return declared === undefined ? [] : [declared];
+      },
+      read: async (entry) => {
+        const json = await fetchText(assetUrl(`${CONTENT_ROOT}/${entry.path}`));
+        // Read back through the engine rather than parsed here, so the form
+        // starts from the same defaults-filled shape the runtime works with.
+        this.engine.loadSettings(json);
+        return this.engine.settings();
+      },
+      pathOf: () => this.path(),
+      serialize: (document) => serializeSettings(document),
+      validate: (_document, json) => this.engine.validateSettings(json),
+      // Adopting it is what makes the player's settings screen agree with the
+      // file from here on, without a reload — and what a later content reset
+      // puts back.
+      adopt: (_id, json) => this.settings.adopt(json),
+      forget: () => {},
+      declare: () => {},
+      undeclare: () => {},
+      dirtySprites: () => [],
+      writeSprites: async () => 0,
+      keysOf: (document) => referencedKeys(document),
+      removed: () => {},
+      refresh: () => {},
+    };
   }
 
   // ------------------------------------------------------------------ edits
@@ -202,16 +247,7 @@ export class SettingsEditorPage {
    * `OnPush` only redraws what changed identity.
    */
   private edit(mutate: (draft: SettingsDefinition) => void): void {
-    const current = this.document();
-    if (current === null) {
-      return;
-    }
-    const draft = structuredClone(current) as SettingsDefinition;
-    mutate(draft);
-    this.document.set(draft);
-    this.dirty.set(true);
-    this.message.set(null);
-    this.validate();
+    this.drafts.edit(mutate);
   }
 
   protected setId(id: string): void {
@@ -533,71 +569,12 @@ export class SettingsEditorPage {
 
   /** Asks Rust whether this declaration is usable — the runtime's own check. */
   protected validate(): void {
-    const document = this.document();
-    if (document === null || !this.engine.isReady) {
-      return;
-    }
-    try {
-      this.report.set(this.engine.validateSettings(serializeSettings(document)));
-    } catch (cause) {
-      this.error.set(describeError(cause));
-    }
+    this.drafts.refresh();
   }
 
   /** Writes the declaration into the content directory. */
-  protected async save(): Promise<void> {
-    const document = this.document();
-    if (document === null) {
-      return;
-    }
-    this.busy.set(true);
-    this.error.set(null);
-    this.message.set(null);
-
-    try {
-      const json = serializeSettings(document);
-      this.report.set(this.engine.validateSettings(json));
-      if (this.errorCount() > 0) {
-        this.error.set(this.i18n.t('ui.editor.settings.invalid'));
-        return;
-      }
-
-      await this.workspace.writeJson(this.path(), json);
-      // Adopting it is what makes the player's settings screen agree with the
-      // file from here on, without a reload — and what a later content reset
-      // puts back.
-      this.settings.adopt(json);
-
-      // Every label this file names now exists as a key, in every language, so
-      // the Languages tab lists it and a translator can fill it in. Until then
-      // it shows as itself, which is what an untranslated key has always done.
-      const created = await this.createMissingKeys(document);
-
-      this.dirty.set(false);
-      this.validate();
-      this.message.set(
-        this.i18n.t('ui.editor.settings.saved', { file: this.path() }) +
-          (created === 0 ? '' : ` · ${this.i18n.t('ui.editor.locale.created', { count: created })}`),
-      );
-    } catch (cause) {
-      this.error.set(describeError(cause));
-    } finally {
-      this.busy.set(false);
-    }
-  }
-
-  /**
-   * Creates every key this declaration names that no language has yet.
-   *
-   * @returns how many keys were created
-   */
-  private async createMissingKeys(document: SettingsDefinition): Promise<number> {
-    const created = this.locales.ensureKeys(referencedKeys(document));
-    if (created.length === 0) {
-      return 0;
-    }
-    await this.locales.save();
-    return created.length;
+  protected save(): Promise<void> {
+    return this.drafts.save();
   }
 
   // ----------------------------------------------------------------- plumbing

@@ -423,6 +423,9 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
    */
   private draftSource(): DraftSource<DecorationDefinition> {
     return {
+      declaredInManifest: true,
+      // A list: a project shipping no decorations opens on an empty list.
+      blank: () => null,
       messages: {
         invalid: 'ui.editor.decoration.invalid',
         saved: 'ui.editor.decoration.saved',
