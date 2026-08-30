@@ -173,3 +173,17 @@ Desktop packaging **was** on this list; the requirement is now explicit and it i
 lifted. The client delivery is a Tauri 2 executable (ADR-0020). It hosts the same
 web bundle and the same WASM engine — the shell owns the window and native
 services only, never a game rule. Electron remains excluded.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live as markdown files under `.scratch/<feature-slug>/` in this repo. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical triage roles, used verbatim as label strings. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` at the root plus `docs/adr/`. See `docs/agents/domain.md`.
