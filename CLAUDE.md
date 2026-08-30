@@ -136,6 +136,10 @@ Every push that changes shipped code carries a **patch or minor** bump; the
 `commit-and-push` skill owns that step and its script writes all nine version
 sites at once. **Major bumps are the author's, by hand** — never bump it.
 
+## Language Rules
+- Write all source code, code comments, variable names, and git commit messages in **English**.
+- Converse, answer questions, and explain thoughts during the session in language describe in env AGENT_LANG=<lang> in .env, default to **en** for english
+
 ## Rules for Claude
 
 Before changing an architectural decision:
