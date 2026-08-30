@@ -82,7 +82,7 @@ import {
   usesOptions,
   wouldLoop,
 } from './character-editor.types';
-import { clampResolution, freeId, move } from './asset-editing';
+import { clampResolution, move } from './asset-editing';
 import { AssetWorkspace } from './asset-workspace';
 import { CharacterAnimator } from './character-animator';
 import { PixelEditor, steppedZoom } from './pixel-editor';
@@ -96,6 +96,8 @@ import { serializeCharacter } from '../../../../content/character-serializer';
 import { PALETTE_SIZE, SpriteDocument } from '../../../../content/sprite-document';
 import { ValidationReport } from '../../../../engine/engine.types';
 import { assetUrl } from '../../../../core/asset-url';
+import { describeError } from '../../../../core/errors';
+import { isEditableTarget } from '../../../../core/keyboard-shortcuts';
 import {
   CharacterBox,
   SpriteCache,
@@ -115,6 +117,7 @@ import { CharacterPose, EngineService } from '../../../services/engine.service';
 import { LocaleAuthoringService } from '../../../services/locale-authoring.service';
 import { CharacterLibraryService } from '../../../services/character-library.service';
 import { CONTENT_ROOT, ProjectStoreService } from '../../../services/project-store.service';
+import { freeId } from '../../../editing/ids';
 
 /**
  * Smallest drawing box the fit will work with, in CSS pixels.
@@ -792,7 +795,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
       this.openIdSignal.set(this.documentsSignal()[0]?.id ?? null);
       this.refresh();
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
     } finally {
       this.loading.set(false);
     }
@@ -1539,7 +1542,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
       this.setAsset(index, path);
       this.message.set(this.i18n.t('ui.editor.character.uploaded', { file: path }));
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
     } finally {
       this.busy.set(false);
     }
@@ -1730,7 +1733,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
       this.resolved.set(this.engine.previewCharacter(document, this.values(), this.pose()));
       this.error.set(null);
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
     }
   }
 
@@ -1749,7 +1752,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
     try {
       this.resolved.set(this.engine.previewCharacter(document, this.values(), this.pose()));
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
     }
   }
 
@@ -1807,7 +1810,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
       this.refresh();
       this.message.set(parts.join(' · '));
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
     } finally {
       this.busy.set(false);
     }
@@ -2098,7 +2101,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
 
   /** Undo and redo, wherever the pointer is — but never while typing. */
   protected onKeyDown(event: KeyboardEvent): void {
-    if (isTyping(event.target) || !(event.ctrlKey || event.metaKey)) {
+    if (isEditableTarget(event.target) || !(event.ctrlKey || event.metaKey)) {
       return;
     }
     const key = event.key.toLowerCase();
@@ -2173,7 +2176,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
       const written = await this.writeSprites();
       this.message.set(this.i18n.t('ui.editor.character.spritesSaved', { count: written }));
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
     } finally {
       this.busy.set(false);
     }
@@ -2674,13 +2677,4 @@ function parseValue(raw: string): SettingValue {
     // Not JSON, so it is the text itself.
   }
   return raw;
-}
-
-/** `true` when a keystroke belongs to a form field rather than to the stage. */
-function isTyping(target: EventTarget | null): boolean {
-  return target instanceof HTMLElement && /^(input|textarea|select)$/i.test(target.tagName);
-}
-
-function describe(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
 }

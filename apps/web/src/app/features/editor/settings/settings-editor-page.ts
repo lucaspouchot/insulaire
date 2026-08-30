@@ -53,6 +53,8 @@ import { LocaleAuthoringService } from '../../../services/locale-authoring.servi
 import { SettingsService } from '../../../settings/settings.service';
 import { CONTENT_ROOT, ProjectStoreService } from '../../../services/project-store.service';
 import { assetUrl } from '../../../../core/asset-url';
+import { describeError } from '../../../../core/errors';
+import { freeId } from '../../../editing/ids';
 
 /** Where a project's settings live when the manifest names no other path. */
 const DEFAULT_PATH = 'settings.json';
@@ -187,7 +189,7 @@ export class SettingsEditorPage {
       this.document.set(this.engine.settings());
       this.validate();
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
     }
   }
 
@@ -538,7 +540,7 @@ export class SettingsEditorPage {
     try {
       this.report.set(this.engine.validateSettings(serializeSettings(document)));
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
     }
   }
 
@@ -578,7 +580,7 @@ export class SettingsEditorPage {
           (created === 0 ? '' : ` · ${this.i18n.t('ui.editor.locale.created', { count: created })}`),
       );
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
     } finally {
       this.busy.set(false);
     }
@@ -664,18 +666,6 @@ function blankSettings(): SettingsDefinition {
   };
 }
 
-/** `<stem>`, `<stem>_2`, … — the first one nobody is using. */
-function freeId(stem: string, taken: readonly string[]): string {
-  if (!taken.includes(stem)) {
-    return stem;
-  }
-  let index = 2;
-  while (taken.includes(`${stem}_${index}`)) {
-    index += 1;
-  }
-  return `${stem}_${index}`;
-}
-
 /** Moves one entry of an array, staying inside it. */
 function move<T>(items: T[], index: number, delta: number): void {
   const target = index + delta;
@@ -713,8 +703,4 @@ async function fetchText(url: string): Promise<string> {
     throw new Error(`Could not load ${url} (HTTP ${response.status}).`);
   }
   return response.text();
-}
-
-function describe(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
 }

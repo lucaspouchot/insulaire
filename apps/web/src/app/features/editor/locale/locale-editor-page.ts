@@ -24,6 +24,7 @@ import { APP_DEFAULT_LANGUAGE, APP_STRINGS, flattenStrings } from '../../../i18n
 import { I18nService } from '../../../i18n/i18n.service';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
 import { LocaleAuthoringService, isUsableKey } from '../../../services/locale-authoring.service';
+import { describeError } from '../../../../core/errors';
 
 /** One row of the table: a key and what each language says for it. */
 interface KeyRow {
@@ -129,7 +130,7 @@ export class LocaleEditorPage {
     try {
       await this.locales.ensureLoaded();
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
     }
   }
 
@@ -195,13 +196,9 @@ export class LocaleEditorPage {
         ),
       );
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
     } finally {
       this.saving.set(false);
     }
   }
-}
-
-function describe(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
 }

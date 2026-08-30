@@ -34,6 +34,7 @@ import { Router } from '@angular/router';
 
 import { TitleAction, TitleButton } from '../../../content/content-types';
 import { assetUrl } from '../../../core/asset-url';
+import { describeError } from '../../../core/errors';
 import { I18nService } from '../../i18n/i18n.service';
 import { TranslatePipe } from '../../i18n/translate.pipe';
 import { AudioService } from '../../services/audio.service';
@@ -201,7 +202,7 @@ export class TitlePage implements OnDestroy {
         this.startMusic();
       }
     } catch (cause) {
-      this.error.set(cause instanceof Error ? cause.message : String(cause));
+      this.error.set(describeError(cause));
     } finally {
       this.prepared.set(true);
     }

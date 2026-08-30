@@ -68,6 +68,7 @@ import { SpriteDocument } from '../../../../content/sprite-document';
 import { ValidationReport } from '../../../../engine/engine.types';
 import { assetUrl } from '../../../../core/asset-url';
 import { Point } from '../../../../core/hex/hex-layout';
+import { describeError } from '../../../../core/errors';
 import { SpriteCache, drawCharacter } from '../../../../renderer/character-renderer';
 import { flatHexagon, surfaceHexagon } from '../../../../renderer/tile-preview';
 import { I18nService } from '../../../i18n/i18n.service';
@@ -81,8 +82,9 @@ import { DecorationLibraryService } from '../../../services/decoration-library.s
 import { EngineService } from '../../../services/engine.service';
 import { CONTENT_ROOT, ProjectStoreService } from '../../../services/project-store.service';
 import { AssetWorkspace } from './asset-workspace';
-import { clampResolution, freeId, move } from './asset-editing';
+import { clampResolution, move } from './asset-editing';
 import { PixelEditor, steppedZoom } from './pixel-editor';
+import { freeId } from '../../../editing/ids';
 
 /** The categories the picker offers, in the order it shows them. */
 const CATEGORIES: readonly DecorationCategory[] = [
@@ -438,7 +440,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
       this.openIdSignal.set(this.documentsSignal()[0]?.id ?? null);
       this.refresh();
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
     } finally {
       this.loading.set(false);
     }
@@ -852,7 +854,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
       this.setFrame(index, path);
       this.message.set(this.i18n.t('ui.editor.decoration.uploaded', { file: path }));
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
     } finally {
       this.busy.set(false);
     }
@@ -944,7 +946,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
       );
       this.error.set(null);
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
     }
     this.repose();
   }
@@ -966,7 +968,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
         this.engine.previewDecoration(document, this.animation()?.id, this.timeMs()),
       );
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
     }
   }
 
@@ -1015,7 +1017,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
       this.refresh();
       this.message.set(parts.join(' · '));
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
     } finally {
       this.busy.set(false);
     }
@@ -1411,8 +1413,4 @@ function loadImage(asset: string): Promise<HTMLImageElement | null> {
     image.addEventListener('error', () => resolve(null));
     image.src = assetUrl(`${CONTENT_ROOT}/${asset}`);
   });
-}
-
-function describe(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
 }

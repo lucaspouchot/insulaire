@@ -53,8 +53,8 @@ import {
   poseValue,
   MAX_ANIMATION_FRAMES,
 } from './character-editor.types';
-import { freeId } from './asset-editing';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
+import { freeId } from '../../../editing/ids';
 
 /** The speeds the playback picker offers, as a multiple of real time. */
 const PLAYBACK_SPEEDS: readonly number[] = [0.25, 0.5, 1, 2];

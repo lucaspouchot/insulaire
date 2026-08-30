@@ -125,31 +125,6 @@ export function pruneArt(tile: TileDefinition): void {
   }
 }
 
-/**
- * An id derived from `name` that no member of `taken` already uses.
- *
- * Ids are stable and names are not: renaming a tile must never repoint a map
- * (`docs/adr/ADR-0006-assets-tilesets.md`), so this is only ever used to
- * *propose* one when something is created.
- */
-export function freeId(name: string, taken: Iterable<string>): string {
-  const used = new Set(taken);
-  const base =
-    name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '_')
-      .replace(/^_+|_+$/g, '') || 'tile';
-  if (!used.has(base)) {
-    return base;
-  }
-  for (let suffix = 2; ; suffix += 1) {
-    const candidate = `${base}_${suffix}`;
-    if (!used.has(candidate)) {
-      return candidate;
-    }
-  }
-}
-
 /** `true` when `id` is one a content file may carry. */
 export function isUsableId(id: string): boolean {
   return /^[a-z0-9][a-z0-9_-]*$/.test(id);

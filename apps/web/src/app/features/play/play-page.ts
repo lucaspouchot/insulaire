@@ -67,6 +67,7 @@ import { I18nService } from '../../i18n/i18n.service';
 import { SettingsService } from '../../settings/settings.service';
 import { ENGINE_SHORTCUT, MOVEMENT_SHORTCUTS } from '../../settings/engine-settings.schema';
 import { ignoresGameplayShortcut } from '../../../core/keyboard-shortcuts';
+import { describeError } from '../../../core/errors';
 import { TranslatePipe } from '../../i18n/translate.pipe';
 import { EngineService } from '../../services/engine.service';
 import { ProjectStoreService, contentUrl } from '../../services/project-store.service';
@@ -256,7 +257,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
         this.startGame(this.seed());
       }
     } catch (cause) {
-      this.error.set(cause instanceof Error ? cause.message : String(cause));
+      this.error.set(describeError(cause));
       this.busy.set(false);
     }
   }
@@ -298,7 +299,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       this.pushLog(0, 'ui.play.log.started', 'tick', { world: view.name, seed });
       this.busy.set(false);
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
       this.busy.set(false);
     }
   }
@@ -334,7 +335,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       });
       this.busy.set(false);
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
       this.busy.set(false);
     }
   }
@@ -499,7 +500,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       }
       this.refresh();
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
     }
   }
 
@@ -914,8 +915,4 @@ export class PlayPage implements AfterViewInit, OnDestroy {
     const entry: LogEntry = { id: this.logCounter, tick, key, params, kind };
     this.log.update((entries) => [entry, ...entries].slice(0, MAX_LOG_ENTRIES));
   }
-}
-
-function describe(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
 }

@@ -94,7 +94,6 @@ import {
   artOf,
   blankTile,
   duplicateTile,
-  freeId,
   imagePath,
   isUsableId,
   variantLetter,
@@ -105,6 +104,8 @@ import {
   variantAt,
   variantsOf,
 } from './tile-editor.types';
+import { slugId } from '../../../editing/ids';
+import { describeError } from '../../../../core/errors';
 
 /** The board the multi-tile preview lays out, in offset coordinates. */
 const BOARD_WIDTH = 3;
@@ -457,9 +458,10 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
     if (set === null) {
       return;
     }
-    const id = freeId(
+    const id = slugId(
       'tile',
       set.tiles.map((tile) => tile.id),
+      'tile',
     );
     set.tiles.push(blankTile(id, id));
     this.selectedTileId.set(id);
@@ -473,9 +475,10 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
     if (set === null || tile === null) {
       return;
     }
-    const id = freeId(
+    const id = slugId(
       `${tile.id}_copy`,
       set.tiles.map((entry) => entry.id),
+      'tile',
     );
     set.tiles.push(duplicateTile(tile, id, `${tile.name ?? tile.id} copy`));
     this.selectedTileId.set(id);
@@ -584,9 +587,10 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
     if (list === undefined || list.length >= MAX_TILE_VARIANTS) {
       return;
     }
-    const id = freeId(
+    const id = slugId(
       variantLetter(list.length),
       list.map((entry) => entry.id),
+      'tile',
     );
     const asset = imagePath(tile.id, level, id);
     list.push({ id, asset });
@@ -921,7 +925,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
       this.status.set(written > 0 ? `${path} · ${written}` : path);
       this.revision.update((value) => value + 1);
     } catch (error) {
-      this.failure.set(error instanceof Error ? error.message : String(error));
+      this.failure.set(describeError(error));
     }
   }
 

@@ -31,6 +31,7 @@ import { EngineService } from '../../../services/engine.service';
 import { LocaleAuthoringService } from '../../../services/locale-authoring.service';
 import { CONTENT_ROOT, ProjectStoreService } from '../../../services/project-store.service';
 import { assetUrl } from '../../../../core/asset-url';
+import { describeError } from '../../../../core/errors';
 import { TitleScreenService } from '../../../services/title-screen.service';
 import { TitlePage } from '../../title/title-page';
 
@@ -110,7 +111,7 @@ export class TitleEditorPage {
       this.screen.set(this.engine.titleScreen() as TitleScreenDefinition);
       this.validate();
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
     }
   }
 
@@ -212,7 +213,7 @@ export class TitleEditorPage {
       apply(path);
       this.message.set(this.i18n.t('ui.editor.title.uploaded', { file: path }));
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
     } finally {
       this.busy.set(false);
     }
@@ -229,7 +230,7 @@ export class TitleEditorPage {
     try {
       this.report.set(this.engine.validateTitleScreen(JSON.stringify(screen)));
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
     }
   }
 
@@ -273,7 +274,7 @@ export class TitleEditorPage {
             : ` · ${this.i18n.t('ui.editor.locale.created', { count: created.length })}`),
       );
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
     } finally {
       this.busy.set(false);
     }
@@ -312,8 +313,4 @@ function blankScreen(): TitleScreenDefinition {
       { action: 'settings', labelKey: 'menu.buttons.settings', hidden: false },
     ],
   };
-}
-
-function describe(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
 }

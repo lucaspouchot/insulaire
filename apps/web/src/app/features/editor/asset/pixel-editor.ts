@@ -46,6 +46,7 @@ import {
 import { TileArtGeometry } from '../../../../content/content-types';
 import { PALETTE_SIZE, SpriteDocument } from '../../../../content/sprite-document';
 import { ImageKind, drawChecker, drawGuides } from '../../../../renderer/tile-preview';
+import { isEditableTarget } from '../../../../core/keyboard-shortcuts';
 import { I18nService } from '../../../i18n/i18n.service';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
 import { PixelTool, PixelTools } from './pixel-tools';
@@ -337,7 +338,7 @@ export class PixelEditor implements AfterViewInit, OnDestroy {
   }
 
   private handleKey(event: KeyboardEvent): void {
-    if (isTyping(event.target)) {
+    if (isEditableTarget(event.target)) {
       return;
     }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
@@ -443,11 +444,6 @@ export class PixelEditor implements AfterViewInit, OnDestroy {
       });
     }
   }
-}
-
-function isTyping(target: EventTarget | null): boolean {
-  const tag = (target as HTMLElement | null)?.tagName;
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 }
 
 /**

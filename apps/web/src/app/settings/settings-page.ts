@@ -27,6 +27,7 @@ import { EngineService } from '../services/engine.service';
 import { ControlField } from './control-field';
 import { ENGINE_SHORTCUT } from './engine-settings.schema';
 import { SettingsService } from './settings.service';
+import { describeError } from '../../core/errors';
 
 const MOVEMENT_SLOT: Readonly<Record<string, string>> = {
   [ENGINE_SHORTCUT.moveNorthWest]: 'north-west',
@@ -87,7 +88,7 @@ export class SettingsPage {
 
   constructor() {
     void this.settings.ensureLoaded().catch((cause: unknown) => {
-      this.error.set(cause instanceof Error ? cause.message : String(cause));
+      this.error.set(describeError(cause));
     });
   }
 

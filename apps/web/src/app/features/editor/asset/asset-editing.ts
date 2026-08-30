@@ -1,9 +1,9 @@
 /**
  * The small arithmetic every asset category's form does.
  *
- * Three functions, and they are here rather than in one category's types file
- * because a tile, a character, a decoration and an object all name things,
- * reorder lists and declare a canvas. Nothing here knows what is being edited
+ * Two functions, and they are here rather than in one category's types file
+ * because a tile, a character, a decoration and an object all reorder lists and
+ * declare a canvas. Nothing here knows what is being edited
  * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
  */
 
@@ -15,18 +15,6 @@ export function clampResolution(value: number): number {
     return 1;
   }
   return Math.min(MAX_SPRITE_RESOLUTION, Math.max(1, Math.round(value)));
-}
-
-/** `<stem>`, `<stem>_2`, … — the first one nobody is using. */
-export function freeId(stem: string, taken: readonly string[]): string {
-  if (!taken.includes(stem)) {
-    return stem;
-  }
-  let index = 2;
-  while (taken.includes(`${stem}_${index}`)) {
-    index += 1;
-  }
-  return `${stem}_${index}`;
 }
 
 /** Moves one entry of an array, staying inside it. */

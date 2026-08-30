@@ -43,6 +43,8 @@ import {
   isNumeric,
   usesOptions,
 } from '../settings/settings-editor.types';
+import { freeId } from '../../../editing/ids';
+import { describeError } from '../../../../core/errors';
 
 type EditorTab = 'choices' | 'characteristics' | 'workflow';
 
@@ -219,7 +221,7 @@ export class CharacterCreationEditorPage {
       this.resetPreview();
       this.validate();
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
     }
   }
 
@@ -779,7 +781,7 @@ export class CharacterCreationEditorPage {
     try {
       this.report.set(this.engine.validateCharacterCreation(serializeCharacterCreation(document)));
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
     }
   }
 
@@ -812,7 +814,7 @@ export class CharacterCreationEditorPage {
       this.dirty.set(false);
       this.message.set(this.i18n.t('ui.editor.creation.saved', { file: this.path() }));
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
     } finally {
       this.busy.set(false);
     }
@@ -894,15 +896,6 @@ function parseValue(raw: string): SettingValue | null {
   return value.length > 0 && Number.isFinite(number) ? number : value;
 }
 
-function freeId(prefix: string, held: readonly string[]): string {
-  const used = new Set(held);
-  if (!used.has(prefix)) return prefix;
-  for (let suffix = 2; ; suffix += 1) {
-    const candidate = `${prefix}_${suffix}`;
-    if (!used.has(candidate)) return candidate;
-  }
-}
-
 function moveAt<T>(items: T[], index: number, delta: number): void {
   const to = index + delta;
   if (index < 0 || index >= items.length || to < 0 || to >= items.length) return;
@@ -929,8 +922,4 @@ function referencedKeys(document: CharacterCreationDefinition): string[] {
     }
   }
   return keys.filter((key) => key.length > 0);
-}
-
-function describe(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
 }

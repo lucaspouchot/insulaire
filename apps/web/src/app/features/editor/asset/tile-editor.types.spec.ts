@@ -7,7 +7,6 @@ import {
   artOf,
   blankTile,
   duplicateTile,
-  freeId,
   imagePath,
   isUsableId,
   matching,
@@ -63,13 +62,6 @@ describe('tile workspace', () => {
     expect(created).toMatchObject({ id: 'grass', name: 'Grass', movementCost: 1 });
     expect(created.visual.visualId).toBe('terrain.grass');
     expect(created.art).toBeUndefined();
-  });
-
-  it('proposes an id nothing else has taken', () => {
-    expect(freeId('Mossy Rock', [])).toBe('mossy_rock');
-    expect(freeId('grass', ['grass'])).toBe('grass_2');
-    expect(freeId('grass', ['grass', 'grass_2'])).toBe('grass_3');
-    expect(freeId('!!!', [])).toBe('tile');
   });
 
   it('refuses an id a content file could not carry', () => {

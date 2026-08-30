@@ -46,6 +46,7 @@ import {
 } from '../../engine/engine.types';
 import { ResolvedTileRender } from '../../renderer/tile-art';
 import { loadEngineModule } from '../../engine/load-engine-module';
+import { describeError } from '../../core/errors';
 
 export type EngineStatus = 'idle' | 'loading' | 'ready' | 'failed';
 
@@ -101,7 +102,7 @@ export class EngineService {
       return engine;
     } catch (cause) {
       this.status.set('failed');
-      this.failure.set(cause instanceof Error ? cause.message : String(cause));
+      this.failure.set(describeError(cause));
       this.initialisation = null;
       throw cause;
     }

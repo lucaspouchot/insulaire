@@ -47,6 +47,7 @@ import { serializeObject } from '../../../../content/object-serializer';
 import { SpriteDocument } from '../../../../content/sprite-document';
 import { ValidationReport } from '../../../../engine/engine.types';
 import { assetUrl } from '../../../../core/asset-url';
+import { describeError } from '../../../../core/errors';
 import { I18nService } from '../../../i18n/i18n.service';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
 import {
@@ -58,8 +59,9 @@ import { LocaleAuthoringService } from '../../../services/locale-authoring.servi
 import { ObjectLibraryService } from '../../../services/object-library.service';
 import { CONTENT_ROOT, ProjectStoreService } from '../../../services/project-store.service';
 import { AssetWorkspace } from './asset-workspace';
-import { clampResolution, freeId, move } from './asset-editing';
+import { clampResolution, move } from './asset-editing';
 import { PixelEditor, steppedZoom } from './pixel-editor';
+import { freeId } from '../../../editing/ids';
 
 /** The kinds the picker offers, in the order it shows them. */
 const KINDS: readonly ObjectKind[] = ['consumable', 'equipment', 'quest', 'material', 'other'];
@@ -246,7 +248,7 @@ export class ObjectWorkspace implements OnDestroy {
       this.openIdSignal.set(this.documentsSignal()[0]?.id ?? null);
       this.refresh();
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
     } finally {
       this.loading.set(false);
     }
@@ -582,7 +584,7 @@ export class ObjectWorkspace implements OnDestroy {
       this.setFrame(index, path);
       this.message.set(this.i18n.t('ui.editor.object.uploaded', { file: path }));
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
     } finally {
       this.busy.set(false);
     }
@@ -727,7 +729,7 @@ export class ObjectWorkspace implements OnDestroy {
       this.resolved.set(this.engine.previewObject(document, this.timeMs()));
       this.error.set(null);
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
     }
   }
 
@@ -807,7 +809,7 @@ export class ObjectWorkspace implements OnDestroy {
       this.refresh();
       this.message.set(parts.join(' · '));
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
     } finally {
       this.busy.set(false);
     }
@@ -836,8 +838,4 @@ function loadImage(asset: string): Promise<HTMLImageElement | null> {
     image.addEventListener('error', () => resolve(null));
     image.src = assetUrl(`${CONTENT_ROOT}/${asset}`);
   });
-}
-
-function describe(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
 }

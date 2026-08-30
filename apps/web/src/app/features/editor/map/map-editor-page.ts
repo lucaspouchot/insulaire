@@ -34,6 +34,7 @@ import {
 
 import { Offset } from '../../../../core/hex/hex-coords';
 import { HexLayout } from '../../../../core/hex/hex-layout';
+import { describeError } from '../../../../core/errors';
 import {
   DEFAULT_GRID_ALPHA,
   DEFAULT_GRID_COLOR,
@@ -80,6 +81,7 @@ import { TitleScreenService } from '../../../services/title-screen.service';
 import { EngineService } from '../../../services/engine.service';
 import { ContentWorkspaceService } from '../../../services/content-workspace.service';
 import { ProjectStoreService, contentUrl } from '../../../services/project-store.service';
+import { slugId } from '../../../editing/ids';
 
 /** Hex circumradius in world pixels. The camera scales from here. */
 const HEX_SIZE = 28;
@@ -596,7 +598,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     try {
       await this.store.ensureLoaded();
     } catch (cause) {
-      this.error.set(cause instanceof Error ? cause.message : String(cause));
+      this.error.set(describeError(cause));
       return;
     }
 
@@ -1050,7 +1052,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
         ),
       );
     } catch (cause) {
-      this.error.set(cause instanceof Error ? cause.message : String(cause));
+      this.error.set(describeError(cause));
     }
   }
 
@@ -1201,7 +1203,11 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     const height = clampDimension(heightInput);
     try {
       const document = WorldDocument.create({
-        id: this.freeId(slugify(name) || 'new_map'),
+        id: slugId(
+          name,
+          this.maps().map((map) => map.id),
+          'new_map',
+        ),
         name: name.trim() || 'New Map',
         width,
         height,
@@ -1220,7 +1226,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       this.rebuild();
       this.view?.fit();
     } catch (cause) {
-      this.error.set(cause instanceof Error ? cause.message : String(cause));
+      this.error.set(describeError(cause));
     }
   }
 
@@ -1257,7 +1263,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     try {
       await this.store.resetToShipped();
     } catch (cause) {
-      this.error.set(this.i18n.t('ui.editor.map.error.reloadFailed', { reason: describe(cause) }));
+      this.error.set(this.i18n.t('ui.editor.map.error.reloadFailed', { reason: describeError(cause) }));
       return;
     }
     this.selected.set(null);
@@ -1290,7 +1296,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       this.report.set(report);
       return report;
     } catch (cause) {
-      this.error.set(cause instanceof Error ? cause.message : String(cause));
+      this.error.set(describeError(cause));
       return null;
     }
   }
@@ -1426,7 +1432,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     try {
       this.message.set(await body());
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
     } finally {
       // Once, at the end: what is still unwritten is a question about every map,
       // and asking it per file would cost a serialisation of the whole project
@@ -1466,7 +1472,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       this.report.set(links);
       return links;
     } catch (cause) {
-      this.error.set(describe(cause));
+      this.error.set(describeError(cause));
       return null;
     }
   }
@@ -1491,7 +1497,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       this.error.set(
         this.i18n.t('ui.editor.map.error.importFailed', {
           file: file.name,
-          reason: describe(cause),
+          reason: describeError(cause),
         }),
       );
     } finally {
@@ -1532,19 +1538,6 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     this.objects.register();
     for (const tileSet of this.store.tileSetDefinitions()) {
       this.engine.loadTileSet(JSON.stringify(tileSet));
-    }
-  }
-
-  private freeId(base: string): string {
-    const taken = new Set(this.maps().map((map) => map.id));
-    if (!taken.has(base)) {
-      return base;
-    }
-    for (let n = 2; ; n += 1) {
-      const candidate = `${base}_${n}`;
-      if (!taken.has(candidate)) {
-        return candidate;
-      }
     }
   }
 
@@ -1841,9 +1834,6 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
 }
 
 /** An unknown failure as a sentence, for the `{reason}` of a message key. */
-function describe(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
-}
 
 function clampDimension(raw: string): number {
   const parsed = Number.parseInt(raw, 10);

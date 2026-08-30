@@ -30,6 +30,7 @@ import { ControlField } from '../../settings/control-field';
 import { CharacterCreationService } from '../../services/character-creation.service';
 import { EngineService } from '../../services/engine.service';
 import { contentUrl } from '../../services/project-store.service';
+import { describeError } from '../../../core/errors';
 
 type PreviewBlock = Extract<CreationBlock, { type: 'preview' }>;
 
@@ -244,7 +245,7 @@ export class CharacterCreationPage implements OnDestroy {
       }
       this.creation.begin();
     } catch (cause) {
-      this.error.set(cause instanceof Error ? cause.message : String(cause));
+      this.error.set(describeError(cause));
     } finally {
       this.busy.set(false);
     }
