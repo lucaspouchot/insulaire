@@ -6,8 +6,8 @@
  * by a registry lookup: a module is declared in `editor-modules.ts` and a
  * category in `asset-categories.ts`, and this page has no business knowing
  * which of the two it is standing in for
- * (`docs/adr/ADR-0019-editor-modules.md`,
- * `docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+ * (`docs/adr/ADR-0016-editor-modules.md`,
+ * `docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
  */
 
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';

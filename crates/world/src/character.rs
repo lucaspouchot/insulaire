@@ -14,7 +14,7 @@
 //! ```
 //!
 //! That is the whole pipeline, and it is the same one for every category
-//! (`docs/adr/ADR-0028-character-definitions.md`). There is no player branch,
+//! (`docs/adr/ADR-0024-character-definitions.md`). There is no player branch,
 //! and the renderer never reads [`CharacterCategory`] — a category is how an
 //! author files a definition, not how it is drawn.
 //!
@@ -24,7 +24,7 @@
 //! authored on, at most [`MAX_SPRITE_RESOLUTION`] on a side. Every layer is
 //! placed on that canvas with an integer [`PixelRect`], because pixel art
 //! placed at a fractional position is pixel art with a seam down the middle
-//! (`docs/adr/ADR-0029-characters-are-composed-sprites.md`).
+//! (`docs/adr/ADR-0024-character-definitions.md`).
 //!
 //! Size differences between *kinds* of character are the canvas, not a scale
 //! factor: a rat is authored at 32×32 and a dragon at 256×256, and the host
@@ -33,7 +33,7 @@
 //! # Parameters are settings
 //!
 //! A parameter *is* a [`ControlDefinition`], the vocabulary the settings screen
-//! already speaks (`docs/adr/ADR-0025-settings.md`). "Hair style" is a
+//! already speaks (`docs/adr/ADR-0022-settings.md`). "Hair style" is a
 //! `select`, "hair colour" is a `color`, and both are rendered by the component
 //! that renders a volume slider. Values are resolved by the same function, so
 //! an unknown option or an out-of-range number means the same thing here as it
@@ -46,7 +46,7 @@
 //! there**. A child's [`LayerVariant::rect`] is measured from the joint it
 //! hangs off, so a sprite drawn to sit exactly on its anchor is `[0, 0, w, h]`
 //! and moving the parent moves everything under it — position and animation
-//! alike (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`). A root has
+//! alike (`docs/adr/ADR-0024-character-definitions.md`). A root has
 //! no joint to hang off, so its box is measured from the canvas.
 //!
 //! The tree is **not** the draw order. Layers are drawn in author order, back
@@ -59,7 +59,7 @@
 //!
 //! Rotation and scale. A [`crate::animation::Transform`] translates in whole
 //! pixels, because rotating or non-integrally scaling pixel art resamples it,
-//! which is the thing ADR-0029 exists to prevent. The shape that leaves room
+//! which is the thing ADR-0024 exists to prevent. The shape that leaves room
 //! for them is the transform itself: a node's local transform is a struct, so
 //! a rotation is a field appearing there rather than a change to what a
 //! keyframe is.
@@ -77,11 +77,10 @@ use crate::settings::{resolve_controls, ControlDefinition};
 ///
 /// `3` places a child layer's box **relative to the attachment point it hangs
 /// off**, so the hierarchy positions the character instead of only animating it
-/// (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`). `2` was
-/// ADR-0029's, where every box was absolute on the canvas; `1` was ADR-0028's,
-/// where a layer could also be a coloured primitive on a unit square. No file
-/// of either survives — pre-1.0, there is no reader for them and none is
-/// coming (`CLAUDE.md`, "Versioning").
+/// (`docs/adr/ADR-0024-character-definitions.md`). In `2` every box was
+/// absolute on the canvas; in `1` a layer could also be a coloured primitive on
+/// a unit square. No file of either survives — pre-1.0, there is no reader for
+/// them and none is coming (`CLAUDE.md`, "Versioning").
 pub const CHARACTER_SCHEMA_VERSION: u32 = 3;
 
 /// Largest sprite canvas a character may declare, on either side.
@@ -285,7 +284,7 @@ pub struct LayerVariant {
     /// A child measures from its parent's [`CharacterLayer::parent_anchor`],
     /// so a sprite drawn to sit on that joint is `[0, 0, width, height]`; a
     /// root measures from the canvas origin, because it hangs off nothing
-    /// (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`).
+    /// (`docs/adr/ADR-0024-character-definitions.md`).
     #[serde(default)]
     pub rect: PixelRect,
     /// Where this variant is drawn in the stack, overriding the author order.
@@ -299,7 +298,7 @@ pub struct LayerVariant {
     /// that is where a condition already lives. A cape that passes in front of
     /// the body when the character is seen from the side is the same `when`
     /// that chose the side-on drawing, with one more field
-    /// (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`).
+    /// (`docs/adr/ADR-0024-character-definitions.md`).
     #[serde(default, skip_serializing_if = "is_zero_order")]
     pub order: i32,
     /// What it draws.
@@ -342,7 +341,7 @@ fn holds(held: &Value, required: &Value) -> bool {
 ///
 /// An attachment point is what a child is **placed from**: a layer naming
 /// `parent` and `parent_anchor` measures its box from that joint
-/// (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`). It is also what
+/// (`docs/adr/ADR-0024-character-definitions.md`). It is also what
 /// lets the editor draw the skeleton through the joints rather than through the
 /// corners of boxes, and it is the pivot a rotation will turn about the day
 /// there is one.
@@ -465,7 +464,7 @@ impl CharacterDefinition {
     ///
     /// The exact role always wins. This lets a two-cycle character cover every
     /// direction while another overrides any or all of the six
-    /// (`docs/adr/ADR-0043-gameplay-selects-character-animations-by-role.md`).
+    /// (`docs/adr/ADR-0030-gameplay-selects-character-animations-by-role.md`).
     #[must_use]
     pub fn animation_for_role(&self, role: AnimationRole) -> Option<&Animation> {
         self.animations
@@ -552,7 +551,7 @@ impl CharacterDefinition {
     ///
     /// An animation therefore chooses *which drawing* through the same
     /// conditions a customisation does, and moves it separately
-    /// (`docs/adr/ADR-0033-animations-set-pose-values.md`). Tints are resolved
+    /// (`docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`). Tints are resolved
     /// from the customisation only: a hair layer tinted from `hairColor` keeps
     /// that colour through every frame, and no animation can repaint it.
     ///
@@ -660,7 +659,7 @@ impl CharacterDefinition {
     /// well as movement: a node's frame is its parent's frame, plus the
     /// attachment point it hangs off, plus its own local transform. Translations compose by adding, so
     /// this is a walk from the node up to its root and back down
-    /// (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`).
+    /// (`docs/adr/ADR-0024-character-definitions.md`).
     ///
     /// The second component is the animation's contribution alone — what the
     /// hierarchy *moved*, with the static placement taken out — because that is
@@ -747,7 +746,7 @@ pub struct ResolvedLayer {
     /// Where this node's local frame ended up on the canvas.
     ///
     /// What the authored box and the layer's anchors were measured from
-    /// (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`). A renderer
+    /// (`docs/adr/ADR-0024-character-definitions.md`). A renderer
     /// ignores it; an editor needs it to turn a click back into the number an
     /// author typed.
     #[serde(default)]
@@ -1341,7 +1340,7 @@ mod tests {
 
     /// A child's box is measured from the joint it hangs off, so the numbers
     /// in the file are a distance from a neck rather than a position on a
-    /// canvas (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`).
+    /// canvas (`docs/adr/ADR-0024-character-definitions.md`).
     #[test]
     fn a_child_is_placed_from_the_anchor_it_hangs_off() {
         let knight = knight();
@@ -1423,7 +1422,7 @@ mod tests {
 
     /// A variant may step out of the author order, and everything sharing an
     /// order keeps the order the file gives it
-    /// (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`).
+    /// (`docs/adr/ADR-0024-character-definitions.md`).
     #[test]
     fn a_variant_may_draw_out_of_the_author_order() {
         let mut knight = knight();

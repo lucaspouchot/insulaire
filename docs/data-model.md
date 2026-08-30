@@ -1,7 +1,7 @@
 # Conceptual Data Model
 
 Definitions describe *authored content*; state describes *a play session*. The
-two are strictly separate (ADR-0003). The wire format for definitions is
+two are strictly separate (ADR-0002). The wire format for definitions is
 specified in `docs/content-format.md`; the boundary DTOs in `docs/wasm-api.md`.
 
 ## WorldDefinition
@@ -11,24 +11,24 @@ An authored world contains at minimum:
 - `id`
 - `schemaVersion`
 - `origin`, `width`, `height` — the **extent**: the rectangle the dense buffers
-  cover, anchored anywhere (ADR-0046)
+  cover, anchored anywhere (ADR-0033)
 - `shape` — which of the extent's cells the map has; absent is the full
   rectangle
 - `orientation`
 - `projection` — presentation only; carried, never interpreted by the engine
 - `characterHeightTiles` — presentation-only map scale; a 128-pixel character
-  spans this many projected tile faces (default `2`, ADR-0044)
+  spans this many projected tile faces (default `2`, ADR-0031)
 - `reveal` — presentation only; how far relief may be seen through around the
   pointer: `radius` rings, and the opacity the relief in front of the pointed
-  hex and of that ring is drawn at (defaults `1`, `0.25`, `0.55`, ADR-0047)
+  hex and of that ring is drawn at (defaults `1`, `0.25`, `0.55`, ADR-0034)
 - `tileSetId`
 - `defaultTile`
 - `tiles`
 - `locations`
 - `entities`
-- `links` — cells that send the player to another map (ADR-0017)
+- `links` — cells that send the player to another map (ADR-0014)
 - `zone` — the group of maps this one is simulated with; resolves to the
-  project's default when absent (ADR-0021)
+  project's default when absent (ADR-0018)
 - `metadata`
 - *(planned)* `scenarioId`
 
@@ -43,15 +43,15 @@ A world knows its tile set and the maps its doors lead to, but nothing in a
 world says which files make up a *game* or where a session starts. That is the
 project manifest (`content/project.json`): `id`, `schemaVersion`, `startWorld`,
 the `zones` its maps are grouped into, and the `tileSets` and `worlds` it ships,
-each as `{ id, path }`. A delivered client build boots from it (ADR-0018); the
+each as `{ id, path }`. A delivered client build boots from it (ADR-0015); the
 editor regenerates it whenever the set of maps or zones changes.
 
 The manifest also lists the project's **characters**, each as `{ id, path }`:
-the definitions that say how a kind of character is drawn (ADR-0028). A project
+the definitions that say how a kind of character is drawn (ADR-0024). A project
 may ship none.
 
 The optional `characterCreation` reference names one generic authored workflow
-(ADR-0042). It does not make race or gender fields of `ProjectDefinition`; it
+(ADR-0029). It does not make race or gender fields of `ProjectDefinition`; it
 points at a separate declaration whose author-owned ids resolve into an existing
 character definition and its parameters.
 
@@ -59,19 +59,19 @@ The manifest also names the game's **settings** declaration
 (`content/settings.json`): sections, groups and fields described with the same
 control vocabulary the application's own settings use. The engine validates and
 resolves them; it never interprets one, and a resolved set travels with the game
-it created (ADR-0025). A `keyBinding` field holds one physical keyboard code:
+it created (ADR-0022). A `keyBinding` field holds one physical keyboard code:
 the application owns its universal action ids, while a game may author
-additional ids in that declaration (ADR-0045).
+additional ids in that declaration (ADR-0032).
 
 The manifest also declares the game's **languages**: `locales.default` and
 `locales.languages[]`, each `{ id, name, files }` where a file's `id` is the
 namespace prefixed to its keys. Text is not a field of any definition — every
 string a screen displays is a key resolved against a language, and the files
-holding them are content like the maps (ADR-0023).
+holding them are content like the maps (ADR-0020).
 
 A `zone` is `{ id, name }` and nothing more: the *first* declared is the default,
 and a world naming no zone belongs to it, so "unzoned" is not a state a map can
-be in (ADR-0021). Zones live here rather than on the maps because a zone has to
+be in (ADR-0018). Zones live here rather than on the maps because a zone has to
 exist before a map is put in it, and because a tick will advance a whole zone —
 which means resolving several maps at once, from the manifest that lists them.
 
@@ -92,25 +92,25 @@ the whole hexagon, untilted, one image per cell and no relief. A `surface` list
 plus a ladder of elevation levels draws an isometric one, each level one image
 holding the side faces a drop exposes. The world's projection decides which
 answers, and neither is ever scaled or squashed into the other's outline; a tile
-with no art for the projection in force draws its `fallbackColor` (ADR-0037).
+with no art for the projection in force draws its `fallbackColor` (ADR-0026).
 
 What a cell of height `h` draws is *resolved* rather than stored —
 `resolve_tile_render` in `crates/world/src/tile_art.rs`, mirrored for the draw
 loop in `apps/web/src/renderer/tile-art.ts` — so a hundred-step cliff costs the
 art of a two-step one, and no part of an image is ever produced from another
-part (ADR-0035). The set as a whole declares the pixel grid its images are drawn
+part (ADR-0026). The set as a whole declares the pixel grid its images are drawn
 on, and that grid is what the renderer's projection is derived from.
 
 Map cells (`PlacedTile`) carry a position, a reference to one of these ids, and
 an `elevation` — relief the renderer draws in isometric mode and the rules
-ignore (ADR-0016). A cell may also carry `art`: the variant it shows — which
+ignore (ADR-0013). A cell may also carry `art`: the variant it shows — which
 picks out of the tile's `surface` list or its `flat` list, whichever the world's
 projection draws from — the tile whose elevation ladder cuts its faces, and the
 variant of that ladder.
 All three are optional and all three are by id; left unset — which is what
 nearly every cell says — the picture is rolled from the cell's coordinates.
 Presentation, like `elevation`: no rule reads it, and it says which picture, not
-what a tile is (ADR-0036).
+what a tile is (ADR-0026).
 
 ## EntityDefinition
 
@@ -138,7 +138,7 @@ without touching a single world file.
 ## CharacterDefinition
 
 *How a kind of character is drawn, and what may be chosen about one.* Authored
-content, one file per definition, listed by the project (ADR-0028).
+content, one file per definition, listed by the project (ADR-0024).
 
 ```text
 CharacterDefinition
@@ -166,7 +166,7 @@ CharacterDefinition
 `parent` makes the layers a **tree**, and the tree **places** the character: a
 child's box is measured from the joint it hangs off, so a sprite drawn to sit on
 that joint is `[0, 0, w, h]` and moving a parent moves everything under it
-(ADR-0034). A root hangs off nothing, so its box is a canvas position.
+(ADR-0024). A root hangs off nothing, so its box is a canvas position.
 
 The tree is *not* the draw order: layers are drawn in author order, back to
 front, so a cape hangs off the body and is drawn behind it — until a variant's
@@ -182,13 +182,13 @@ storing three hundred positions.
 Its **pose** holds what the character is drawn *as*. Those values join the
 customisation while it plays, and layers pick them up through the `when` they
 already have — so a `when` key names a parameter or a pose key and a variant
-does not know which (ADR-0033). One line says a whole animation is the side
+does not know which (ADR-0025). One line says a whole animation is the side
 view; four lines say which leg is forward. And `mirrorOf` makes a whole
 animation the reflection of another, so walking right is one line rather than a
 second cycle to keep in step.
 
 `role` gives an animation optional gameplay meaning without reserving its id
-(ADR-0043). `idle`, `moveLeft` and `moveRight` cover the ordinary runtime. Any
+(ADR-0030). `idle`, `moveLeft` and `moveRight` cover the ordinary runtime. Any
 of the six exact hex directions may override the corresponding left/right
 cycle, so direction-specific art is possible without making six cycles the
 minimum.
@@ -220,12 +220,12 @@ On the map, a movement event selects a transient animation role and its
 presentation clock; after one pass the player returns to `idle`. The same event
 creates a linear render transition from `from` to the authoritative snapshot
 cell for every entity kind, including monsters. Neither the role, the clock nor
-the interpolated position belongs to deterministic `GameState` (ADR-0044).
+the interpolated position belongs to deterministic `GameState` (ADR-0031).
 
 A character's **size** is its canvas, not a scale factor: a rat is authored at
 32×32 and a dragon at 256×256. Character previews zoom each by a whole number
-(ADR-0029); a map applies its one fractional outer transform so a 128-pixel
-canvas occupies `characterHeightTiles` projected tile faces (ADR-0044).
+(ADR-0024); a map applies its one fractional outer transform so a 128-pixel
+canvas occupies `characterHeightTiles` projected tile faces (ADR-0031).
 
 **No type here is specific to the player.** The player's character is one
 `CharacterDefinition` among the project's, and the reason to keep it that way is
@@ -236,7 +236,7 @@ renderer multiplied by a bestiary.
 
 *Which initial choices a player is offered, which independent values are stored
 on that player, and how the screens are ordered.* Authored content, referenced
-once by the project (ADR-0042).
+once by the project (ADR-0029).
 
 ```text
 CharacterCreationDefinition
@@ -267,7 +267,7 @@ storage is not implemented yet, so neither collection currently enters
 
 *The pixels of one image, while an author is editing them.* Editor-only, and the
 only model here that is not content: it is what a PNG looks like between being
-read and being written (`apps/web/src/content/sprite-document.ts`, ADR-0030).
+read and being written (`apps/web/src/content/sprite-document.ts`, ADR-0028).
 
 ```text
 SpriteDocument
@@ -290,7 +290,7 @@ they would from any other tool.
 ## ScenarioDefinition
 
 *Not implemented in the MVP.* The scenario will contain acts, phases,
-objectives, flags, timers, triggers, events and consequences (ADR-0005). Phases
+objectives, flags, timers, triggers, events and consequences (ADR-0004). Phases
 5 and 6 of the tick pipeline are already reserved for it and are explicit no-ops
 in `crates/simulation/src/tick.rs`.
 
@@ -321,7 +321,7 @@ reference data, so a play session borrows it instead of owning a duplicate.
 door: `GameState::enter_world` rebuilds the state from the target world and
 carries `tick`, the RNG stream and the arrival position across. The player
 entity is the one the target map authors, so every map stays independently
-playable (ADR-0017).
+playable (ADR-0014).
 
 ### WorldGrid
 
@@ -344,14 +344,14 @@ coordinate, the buffer index and the rendered position all agree.
 `bounds` answers where a *buffer index* lives; `WorldGrid::contains` answers
 whether the **world has** that hex, and only the second one is a rule. A hole
 makes `tile_at` return `None`, which makes it impassable and costless to every
-rule downstream without any of them learning about shapes (ADR-0046).
+rule downstream without any of them learning about shapes (ADR-0033).
 
 `art_choices` is the one **sparse** structure, and normally empty: choosing is an
 authored exception, so three more dense buffers would be three megabytes of
 zeroes per million cells. Building the grid is also where the ids a map file
 carries become the indices a renderer wants — `resolve_cell_art` — so no draw
 call ever searches a variant list by name, and an id that resolves to nothing
-leaves the cell rolling (ADR-0036).
+leaves the cell rolling (ADR-0026).
 
 ### EntityStore
 
@@ -378,7 +378,7 @@ refuse rather than destroy: carving is refused while anything authored stands on
 the cell, and trimming while the discarded region still holds hexes or authored
 records (`occupantsAt`, `occupantsOutside`, `presentOutside` are what name what
 is in the way). Paint, elevation and art choices deliberately survive under a
-hole, so restoring a hex restores what was on it (ADR-0046).
+hole, so restoring a hex restores what was on it (ADR-0033).
 Its palette entries carry each tile's `art`, and the document carries the tile
 set's pixel grid, so the editor's renderer and the game's are handed the same
 model.
@@ -392,7 +392,7 @@ the shared hex path is stroked, so it never grows or shrinks while zooming.
 **Placed decorations** are a list rather than a buffer, and the only authored
 record that is *not* one per cell: a hex may hold a tree, a bush and a
 signpost, so `placeDecoration` appends and `decorationsAt` returns all of them
-(ADR-0051). Each placement carries the id a scenario addresses, its own pixel `offset` from
+(ADR-0035). Each placement carries the id a scenario addresses, its own pixel `offset` from
 the definition's anchor, and its own `interactive` bit — the definition says
 what a tree looks like, the placement says where exactly it sits and whether
 *this* one can be searched. Author order is the tie-breaker within
@@ -401,14 +401,14 @@ a plane, so the document never reorders the list.
 Per-cell **art choices** are the exception to that density, here as in the grid:
 a `Map` keyed by cell index, holding the ids the file carries. Painting a cell
 with another tile drops its choice, because `grass_f` means nothing on sand
-(ADR-0036).
+(ADR-0026).
 
 The **asset editor** owns a fourth, smaller one: a `SpriteDocument` per image
 being painted (`apps/web/src/content/sprite-document.ts`), which is the buffer
 the pixel tools write into and the buffer the preview draws from — one copy of
-every image, never two (ADR-0030, ADR-0035). Every category of the asset editor
+every image, never two (ADR-0028, ADR-0026). Every category of the asset editor
 holds them the same way, and a character's two scene modes are two views of the
-same buffer rather than two buffers (ADR-0039). It is the only editor state that
+same buffer rather than two buffers (ADR-0028). It is the only editor state that
 is *not* mirrored into `localStorage`: unwritten pixels live in the tab, and the
 screen says how many there are.
 
@@ -418,7 +418,7 @@ one shape, `ContentLibrary`
 authored**, by id, and hands them back to the engine after `resetContent()`,
 because `loadProject` refuses a manifest naming a definition that is not loaded.
 A subclass says only which list it reads, how one file is registered, and how
-one is described for a picker (ADR-0028, ADR-0048, ADR-0049).
+one is described for a picker (ADR-0024, ADR-0035, ADR-0036).
 
 The editor holds **one document per map**, not one document
 (`ProjectStoreService`, `apps/web/src/app/services/project-store.service.ts`),
@@ -426,7 +426,7 @@ together with the manifest and the loaded tile sets. Map links require it: a
 door names another map, so authoring one means having the others in hand, and
 the whole set is what `validateLinks` judges. The store also owns which map is
 open, whether anything is dirty, and the `localStorage` mirror — which only the
-dev build writes (ADR-0018).
+dev build writes (ADR-0015).
 
 Editor state and runtime state never mix. The only things that cross between
 them are a `WorldDefinition` and a `ProjectDefinition`: files.

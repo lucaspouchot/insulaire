@@ -1,5 +1,5 @@
 /* The rail-and-list column, then the open category. Nothing here knows what is
-   in them (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+   in them (docs/adr/ADR-0028-one-editor-for-everything-drawn.md). */
 :host {
   display: block;
   height: 100%;

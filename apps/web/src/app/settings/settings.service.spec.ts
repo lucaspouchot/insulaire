@@ -4,7 +4,7 @@
  * The cases that matter are the boundaries between the two kinds of setting:
  * which values cross into the engine, which act on the shell, and what a
  * `showIf` condition sees before anybody has touched anything
- * (`docs/adr/ADR-0025-settings.md`).
+ * (`docs/adr/ADR-0022-settings.md`).
  */
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';

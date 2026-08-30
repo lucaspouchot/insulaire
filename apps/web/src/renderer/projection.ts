@@ -2,9 +2,9 @@
  * The transform from the hex plane to the drawing plane.
  *
  * {@link HexLayout} describes one thing only: a top-down, pointy-top hex plane
- * (`docs/adr/ADR-0014-hex-coordinate-model.md`). This module turns that plane
+ * (`docs/adr/ADR-0011-hex-coordinate-model.md`). This module turns that plane
  * into what the canvas actually receives, and it is the *only* place the two
- * differ (`docs/adr/ADR-0016-isometric-projection.md`).
+ * differ (`docs/adr/ADR-0013-isometric-projection.md`).
  *
  * # The transform
  *
@@ -66,7 +66,7 @@ export class Projection {
    * surface image *is* the top face and its step *is* one level of relief. So
    * the projection is derived from the art rather than the art squashed into
    * the projection, and a sprite tile and a colour-filled tile cannot disagree
-   * on the same map (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+   * on the same map (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
    *
    * Everything downstream — hit-testing, culling, wall bases — keeps working by
    * construction, because it all still asks this object.

@@ -1,11 +1,11 @@
 /* The decorations category. The frame around it — rail, list, scene, inspector
    — is `asset-workspace.css`; what is here dresses the four slots this category
-   fills (docs/adr/ADR-0039-one-editor-for-everything-drawn.md).
+   fills (docs/adr/ADR-0028-one-editor-for-everything-drawn.md).
 
    The one thing worth reading twice is `.stage-frame`: the hexagon and the
    decoration are drawn by script into a canvas sized from this element's box,
    so nothing here may size the canvas itself
-   (docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md). */
+   (docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md). */
 
 :host {
   display: block;
@@ -154,7 +154,7 @@
 }
 
 /* Two positions, not two buttons: there are exactly two surfaces and you are
-   always on one of them (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+   always on one of them (docs/adr/ADR-0028-one-editor-for-everything-drawn.md). */
 .switch {
   display: inline-flex;
   align-items: stretch;

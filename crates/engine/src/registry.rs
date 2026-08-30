@@ -79,7 +79,7 @@ impl ContentRegistry {
     ///
     /// This is what the asset editor calls before writing a file: the same
     /// validator the runtime loads with, so a set the editor accepts is a set
-    /// the runtime accepts (`docs/adr/ADR-0015-shared-content-validation.md`).
+    /// the runtime accepts (`docs/adr/ADR-0012-shared-content-validation.md`).
     ///
     /// # Errors
     ///
@@ -134,7 +134,7 @@ impl ContentRegistry {
     /// Load it **after** the content it lists: the project is validated against
     /// what is actually in the registry, so that a bundle missing a file fails
     /// at load time rather than when a player walks through a door
-    /// (`docs/adr/ADR-0018-client-delivery-build.md`).
+    /// (`docs/adr/ADR-0015-client-delivery-build.md`).
     ///
     /// # Errors
     ///
@@ -200,7 +200,7 @@ impl ContentRegistry {
     ///
     /// Files are merged into one bundle per language, in load order, and a key
     /// defined twice is refused rather than silently overwritten
-    /// (`docs/adr/ADR-0023-localised-content-keys.md`).
+    /// (`docs/adr/ADR-0020-localised-content-keys.md`).
     ///
     /// # Errors
     ///
@@ -476,7 +476,7 @@ impl ContentRegistry {
 
         // No cell in hand at load time: a decoration is not bound to one tile
         // set, so `decoration.overflowsCell` is the editor's warning, not the
-        // registry's (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+        // registry's (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
         let report = validate_decoration(&decoration, None);
         if !report.valid {
             return Err(EngineError::Invalid {
@@ -542,7 +542,7 @@ impl ContentRegistry {
     ///
     /// The resolver lives in `insulaire_world`; this only finds the definition,
     /// so the editor's preview and the map renderer place a tree with the same
-    /// arithmetic (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+    /// arithmetic (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
     #[must_use]
     pub fn resolve_decoration(
         &self,
@@ -617,7 +617,7 @@ impl ContentRegistry {
     ///
     /// The resolver lives in `insulaire_world`; this only finds the definition,
     /// so an inventory panel and the editor's preview show the same frame
-    /// (`docs/adr/ADR-0050-an-object-icon-is-a-flipbook.md`).
+    /// (`docs/adr/ADR-0036-an-object-is-carried-not-placed.md`).
     #[must_use]
     pub fn resolve_object(&self, id: &str, time_ms: u32) -> Option<ResolvedObject> {
         self.objects
@@ -629,7 +629,7 @@ impl ContentRegistry {
     ///
     /// Merged into the project's report rather than the object's own, for the
     /// reason the title screen's keys are: a key is only missing relative to
-    /// the languages a *project* declares (`docs/adr/ADR-0023-localised-content-keys.md`).
+    /// the languages a *project* declares (`docs/adr/ADR-0020-localised-content-keys.md`).
     fn object_key_report(&self) -> ValidationReport {
         if self.locales.is_empty() {
             return ValidationReport::clean();
@@ -743,8 +743,8 @@ impl ContentRegistry {
     ///
     /// The resolver lives in `insulaire_world`; this only finds the definition,
     /// so every host — editor preview, runtime, test — draws what the same code
-    /// produced (`docs/adr/ADR-0028-character-definitions.md`,
-    /// `docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+    /// produced (`docs/adr/ADR-0024-character-definitions.md`,
+    /// `docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`).
     ///
     /// `animation` of `None` is the rest pose, and so is an id the definition
     /// does not declare.
@@ -829,7 +829,7 @@ impl ContentRegistry {
     /// the project to get there would be collateral damage. This is the narrow
     /// door the language editor needs: clear the languages, register the edited
     /// files, and the same registry answers the new text
-    /// (`docs/adr/ADR-0027-authoring-creates-keys.md`).
+    /// (`docs/adr/ADR-0020-localised-content-keys.md`).
     pub fn clear_locales(&mut self) {
         self.locales.clear();
     }
@@ -838,7 +838,7 @@ impl ContentRegistry {
     ///
     /// Single-world validation cannot do this — a link's target lives in another
     /// file — so this is the check that says a *set* of maps hangs together
-    /// (`docs/adr/ADR-0017-map-links.md`).
+    /// (`docs/adr/ADR-0014-map-links.md`).
     #[must_use]
     pub fn validate_links(&self) -> ValidationReport {
         validate_project_links(self.worlds.values(), |id| self.tile_sets.get(id))
@@ -1055,7 +1055,7 @@ mod tests {
 
     /// A zone id resolves only against the project that declares it, so loading
     /// the manifest is where a map in a zone nobody declared is caught
-    /// (`docs/adr/ADR-0021-map-zones.md`).
+    /// (`docs/adr/ADR-0018-map-zones.md`).
     #[test]
     fn a_project_refuses_a_world_in_a_zone_it_does_not_declare() {
         let mut registry = ContentRegistry::new();

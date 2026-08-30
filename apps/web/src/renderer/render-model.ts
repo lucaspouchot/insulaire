@@ -41,7 +41,7 @@ export interface RenderPaletteEntry {
    *
    * Carried on the palette entry rather than fetched per cell: the renderer
    * already indexes the palette once per cell, and that is the budget
-   * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+   * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
    */
   readonly art?: TileArt;
 }
@@ -71,7 +71,7 @@ export interface RenderEntity {
  *
  * Already resolved: the frame is chosen and the anchor subtracted, so the
  * renderer multiplies by the tile scale and draws
- * (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+ * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
  */
 export interface RenderDecoration {
   /** Id of the *placement*, unique within the map. */
@@ -98,7 +98,7 @@ export interface RenderLocation {
  * A door: a cell that sends the player to another map.
  *
  * Drawn as its own marker rather than as a location, because it is not a place
- * — it is a way out (`docs/adr/ADR-0017-map-links.md`).
+ * — it is a way out (`docs/adr/ADR-0014-map-links.md`).
  */
 export interface RenderLink {
   readonly id: string;
@@ -114,7 +114,7 @@ export interface RenderLink {
  * list by name: Rust did that once when it flattened the map, and a `null`
  * field is simply a choice the author did not make — or one whose id stopped
  * meaning anything, which validation reports separately
- * (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
  */
 export interface CellArtChoice {
   /** Index into the cell's own tile's surface variants. */
@@ -138,7 +138,7 @@ export interface RenderModel {
    * The rectangle the packed buffers cover.
    *
    * Storage, not the shape of the world: which of those cells the map has is
-   * {@link presence} (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+   * {@link presence} (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
    */
   readonly bounds: MapBounds;
   /** How the hex plane is projected; authored per world. */
@@ -150,7 +150,7 @@ export interface RenderModel {
    *
    * The renderer derives its tilt and its elevation step from this, so a tile
    * drawn from sprites and one filled with colour agree about how tall a step
-   * is (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+   * is (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
    */
   readonly tileArt: TileArtGeometry;
   readonly palette: readonly RenderPaletteEntry[];
@@ -185,7 +185,7 @@ export interface RenderModel {
    * Sparse, and normally empty: choosing is an authored exception, so this is a
    * map rather than three more buffers of nulls. The renderer looks a cell up
    * once, next to the palette lookup it already does
-   * (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+   * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
    */
   readonly artChoices: ReadonlyMap<number, CellArtChoice>;
   readonly entities: readonly RenderEntity[];
@@ -194,7 +194,7 @@ export interface RenderModel {
    *
    * Sorted by the host, once per model, rather than by the renderer once per
    * frame: the order is `plane`, then the definition's `order`, then author
-   * order (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+   * order (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
    */
   readonly decorations: readonly RenderDecoration[];
   readonly locations: readonly RenderLocation[];
@@ -216,7 +216,7 @@ export interface RenderModel {
    * The editor draws them as a faint ghost so an author can see — and click —
    * the canvas they may extend into. Play draws nothing there: a hole is
    * simply not part of the world
-   * (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+   * (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
    */
   readonly showExtent: boolean;
   readonly showGrid: boolean;
@@ -231,7 +231,7 @@ export interface RenderModel {
    * How far relief may be seen through around the pointer.
    *
    * Authored per map because how tall a map's relief is decides how much of it
-   * hides its own hexes (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+   * hides its own hexes (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
    */
   readonly reveal: RevealStyle;
 }
@@ -270,7 +270,7 @@ export function cellArtChoicesOf(
  * other happens once per edit rather than once per cell per frame. An id
  * nothing defines resolves to nothing — the cell rolls that choice, and the
  * validator is what tells the author
- * (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
  */
 export function resolveCellArtChoices(
   palette: readonly { readonly id: string; readonly art?: TileArt }[],

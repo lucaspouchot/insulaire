@@ -6,9 +6,9 @@
  * testable without Angular, and the component is thinner for it.
  *
  * Tiles are one category of the asset editor
- * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`); what a tile *is*
+ * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`); what a tile *is*
  * and how its art resolves by level is
- * `docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`.
+ * `docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`.
  */
 
 import {
@@ -61,7 +61,7 @@ export const SURFACE_LEVEL = -1;
  *
  * A flat image belongs to no level: a top-down world draws one image per cell
  * and no relief at all
- * (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`). It gets a
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`). It gets a
  * pseudo-level for the same reason the surface has one — so a target is two
  * numbers rather than a tagged union.
  */
@@ -129,7 +129,7 @@ export function pruneArt(tile: TileDefinition): void {
  * An id derived from `name` that no member of `taken` already uses.
  *
  * Ids are stable and names are not: renaming a tile must never repoint a map
- * (`docs/adr/ADR-0009-assets-tilesets.md`), so this is only ever used to
+ * (`docs/adr/ADR-0006-assets-tilesets.md`), so this is only ever used to
  * *propose* one when something is created.
  */
 export function freeId(name: string, taken: Iterable<string>): string {

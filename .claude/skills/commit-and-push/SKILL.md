@@ -127,7 +127,7 @@ git commit -m "$(cat <<'EOF'
 paint elevation with the raise tool
 
 The tool wrote the terrain index instead of the elevation byte, so a raised
-hex rendered flat (docs/adr/ADR-0016-isometric-projection.md).
+hex rendered flat (docs/adr/ADR-0013-isometric-projection.md).
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 EOF

@@ -2,7 +2,7 @@
 //!
 //! No string shown to a player or an author is written in the source. Each one
 //! is a **key** — `menu.title.buttons.newGame` — resolved against the language
-//! in use (`docs/adr/ADR-0023-localised-content-keys.md`). The application
+//! in use (`docs/adr/ADR-0020-localised-content-keys.md`). The application
 //! ships the keys of its own chrome so it is never blank; everything the game
 //! says is content, like the maps.
 //!
@@ -155,7 +155,7 @@ impl LocaleBundle {
     ///
     /// A key this language holds *empty* is a gap like any other. The editor
     /// creates a key in every language the moment content names it
-    /// (`docs/adr/ADR-0027-authoring-creates-keys.md`), so an empty value means
+    /// (`docs/adr/ADR-0020-localised-content-keys.md`), so an empty value means
     /// "nobody has written this yet", not "this language says nothing".
     #[must_use]
     pub fn with_fallback(&self, fallback: &Self) -> Self {

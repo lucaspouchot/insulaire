@@ -11,7 +11,7 @@ import { serializeTileSet } from './tile-set-serializer';
  * content: **what it exports is what is checked in.** A tile set saved from the
  * asset editor has to come back byte for byte identical to the shipped file, or
  * every unrelated save produces a diff nobody asked for
- * (`docs/adr/ADR-0022-authoring-content-workspace.md`).
+ * (`docs/adr/ADR-0019-authoring-content-workspace.md`).
  */
 describe('serializeTileSet', () => {
   const repoRoot = resolve(process.cwd(), '../..');
@@ -61,7 +61,7 @@ describe('serializeTileSet', () => {
     expect(written).toContain('      "art": {');
     expect(written).toContain('    "flatHeight": 37,');
     // The flat view is written first, so the two projections read in the order
-    // the format documents (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+    // the format documents (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     expect(written.indexOf('"flat": [')).toBeLessThan(written.indexOf('"surface": ['));
     expect(written).toContain('          { "id": "a", "asset": "assets/tiles/cliff_top_a.png" },');
     expect(written).toContain('          "repeat": { "level": 1 }');

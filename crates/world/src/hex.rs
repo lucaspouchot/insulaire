@@ -34,7 +34,7 @@
 //! Hex <-> pixel conversion intentionally lives in the TypeScript renderer, not
 //! here: it depends on camera, zoom and device pixel ratio, it runs per frame,
 //! and the engine must never depend on presentation concerns. See
-//! `docs/adr/ADR-0014-hex-coordinate-model.md`.
+//! `docs/adr/ADR-0011-hex-coordinate-model.md`.
 
 use std::fmt;
 
@@ -267,7 +267,7 @@ impl From<Hex> for OffsetCoord {
 /// The rectangle of offset coordinates a map's dense buffers cover.
 ///
 /// A map is a *set of hexes*, not a rectangle
-/// (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`); this is the box those
+/// (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`); this is the box those
 /// hexes are stored in, and the only thing that turns a coordinate into a
 /// buffer index.
 ///
@@ -276,7 +276,7 @@ impl From<Hex> for OffsetCoord {
 /// so an authored `[col, row]` means the same hex forever — which matters twice
 /// over: odd-r is not translation-invariant, so shifting rows by an odd amount
 /// would mirror the shape, and another map's door names a coordinate in this
-/// one (`docs/adr/ADR-0017-map-links.md`).
+/// one (`docs/adr/ADR-0014-map-links.md`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MapBounds {
@@ -345,7 +345,7 @@ impl MapBounds {
     ///
     /// This answers where a *buffer index* lives. Whether the world actually has
     /// that hex is [`crate::WorldGrid::contains`], and only that one is a rule
-    /// (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+    /// (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
     #[must_use]
     pub const fn contains(&self, at: OffsetCoord) -> bool {
         let col = at.col as i64 - self.origin.col as i64;
@@ -606,7 +606,7 @@ mod tests {
         // Odd-r is not translation-invariant, which is the whole reason the
         // extent has an origin rather than the cells being renumbered: the same
         // authored coordinate must keep the same neighbours whatever box holds
-        // it (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+        // it (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
         let cell = OffsetCoord::new(4, 3);
         let neighbours = Hex::from_offset(cell).neighbors().map(Hex::to_offset);
 

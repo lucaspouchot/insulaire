@@ -13,7 +13,7 @@
  * or `showIf` parses back to exactly the value dropped here. `scope` is the
  * exception and is always written — it decides whether a player can move the
  * setting during a game, which is worth reading in the file rather than knowing
- * (`docs/adr/ADR-0025-settings.md`).
+ * (`docs/adr/ADR-0022-settings.md`).
  */
 
 import {

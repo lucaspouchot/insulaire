@@ -5,7 +5,7 @@
  * `f`, standing one step above the cell in front of it, is the same picture on
  * cell (3, 4) as on cell (57, 12): the only thing those two cells do not share
  * is where they are drawn. This module is the factory that hands out that
- * shared picture, and `docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`
+ * shared picture, and `docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`
  * is why it exists.
  *
  * # What is intrinsic, and what is not
@@ -78,7 +78,7 @@ export interface TileAppearance {
    *
    * Until then the renderer falls back to the tile's `fallbackColor`, exactly
    * as it did before this cache existed
-   * (`docs/adr/ADR-0009-assets-tilesets.md`).
+   * (`docs/adr/ADR-0006-assets-tilesets.md`).
    */
   readonly ready: boolean;
   /**
@@ -287,7 +287,7 @@ export class TileAppearanceCache {
    *
    * A borrowed ladder counts as used even though no cell is painted with the
    * tile that lends it — the faces of a cell that borrowed it are drawn from
-   * its art (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+   * its art (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
    */
   paintedAssets(): string[] {
     const used = new Set<number>();
@@ -309,7 +309,7 @@ export class TileAppearanceCache {
    * editor wants warm so a brush the author has not picked yet is ready when
    * they pick it. A top-down world never fetches a surface or a ladder, and an
    * isometric one never fetches a flat image
-   * (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+   * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
    */
   assets(): string[] {
     return this.assetsOf(() => true);
@@ -379,7 +379,7 @@ export class TileAppearanceCache {
     const isometric = this.model.projection === 'isometric';
     // The choice is read, never copied: building a `CellArt` per cell per frame
     // is one of the allocations this cache exists to remove
-    // (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+    // (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     const choice = this.model.artChoices.size === 0 ? undefined : this.model.artChoices.get(index);
 
     // The roll is the cell's own; reducing it to a variant index is what turns
@@ -502,7 +502,7 @@ export class TileAppearanceCache {
    * layer sits `shoulderLine + drop * elevationStep` rows down, exactly as
    * `drawPaintedCell` places it, and the composed picture is then scaled once
    * instead of every layer being scaled separately
-   * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+   * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
    *
    * A single-image look — a flat hexagon, or a top face with nothing under it —
    * *is* its own picture, and costs no canvas at all.

@@ -6,7 +6,7 @@
 //! definition to resolve or one of that definition's parameters, which is the
 //! seam between creation and the resource editor without forcing both lists to
 //! be identical
-//! (`docs/adr/ADR-0042-character-creation-is-a-generic-authored-workflow.md`).
+//! (`docs/adr/ADR-0029-character-creation-is-a-generic-authored-workflow.md`).
 
 use std::collections::BTreeMap;
 

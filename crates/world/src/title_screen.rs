@@ -3,7 +3,7 @@
 //! A delivered client does not open on a map. It opens on a splash, then a menu
 //! with a background, a piece of music and a few buttons — and every one of
 //! those is **content**, not code, so a game can look like itself without a
-//! rebuild (`docs/adr/ADR-0024-authored-title-screen.md`).
+//! rebuild (`docs/adr/ADR-0021-authored-title-screen.md`).
 //!
 //! What is *not* content is what the buttons do. [`TitleAction`] is a closed
 //! set the application knows how to perform; a title screen chooses which of
@@ -13,7 +13,7 @@
 //!
 //! Text is never written here either: `titleKey` and `labelKey` are keys
 //! resolved against the language in use
-//! (`docs/adr/ADR-0023-localised-content-keys.md`).
+//! (`docs/adr/ADR-0020-localised-content-keys.md`).
 
 use serde::{Deserialize, Serialize};
 

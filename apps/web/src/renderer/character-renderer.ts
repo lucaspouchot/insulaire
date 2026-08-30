@@ -6,7 +6,7 @@
  * rendering on this side of the boundary — every decision about what a
  * character looks like was made by the Rust resolver, and what arrives here is
  * an ordered list of sprites with their boxes and tints already resolved
- * (`docs/adr/ADR-0028-character-definitions.md`).
+ * (`docs/adr/ADR-0024-character-definitions.md`).
  *
  * # Pixels stay pixels
  *
@@ -14,12 +14,12 @@
  * much larger, so everything here exists to keep that honest: smoothing off,
  * a **whole-number** zoom, and integer destination coordinates. Half a pixel of
  * drift is a seam between two layers that were drawn to touch
- * (`docs/adr/ADR-0029-characters-are-composed-sprites.md`).
+ * (`docs/adr/ADR-0024-character-definitions.md`).
  *
  * The map renderer keeps this contract by drawing a native resolved canvas
  * here, then applying one outer transform to the whole character. That
  * map-only scale is measured in tile faces and may be fractional
- * (`docs/adr/ADR-0044-map-entity-presentation.md`); layer coordinates never are.
+ * (`docs/adr/ADR-0031-map-entity-presentation.md`); layer coordinates never are.
  *
  * # Mirroring
  *
@@ -27,7 +27,7 @@
  * character is the one case where that is not simply the box it was given: the
  * whole canvas is flipped about its own vertical centre, layers and pixels
  * together. That is what lets one authored walk cycle serve both directions
- * (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`). It is
+ * (`docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`). It is
  * still not an appearance decision — the resolver said `mirrored`, and this
  * only obeys it.
  */
@@ -57,7 +57,7 @@ export interface SpriteSource {
    * because a caller waiting on this is waiting to *stop waiting*, and a
    * missing file is an answer. Asking for what will be needed before it is
    * needed is what keeps a map from being watched as it fills in
-   * (`docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`).
+   * (`docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`).
    */
   preload(assets: Iterable<string>): Promise<void>;
   /**
@@ -67,7 +67,7 @@ export interface SpriteSource {
    * the map's cache implements it, the asset workspaces do not. A source that
    * offers it is expected to reject rather than half-fill when the bundle
    * cannot be read, so the caller falls back to {@link preload}
-   * (`docs/adr/ADR-0040-tile-art-travels-as-one-bundle.md`).
+   * (`docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`).
    */
   loadBundle?(url: string): Promise<void>;
 }
@@ -112,7 +112,7 @@ export function placement(
  * The inverse of {@link placement}, and it lives beside it deliberately: an
  * editor's click lands on the pixel it points at only for as long as the two
  * agree, so they are read together or not at all
- * (`docs/adr/ADR-0030-the-editor-paints-its-sprites.md`).
+ * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
  *
  * `bounds` is the canvas element's **rendered** box and `box` is the box it was
  * **drawn** in. Those are different units the moment anything scales the page —
@@ -227,13 +227,13 @@ function drawLayer(
  * arrives at full strength over the gap it leaves, so a pixel at alpha `a` came
  * out at `tint x (1 - a + a x shade)` — the more transparent, the closer to flat
  * tint. A soft edge came back as a pale halo in the tint's own colour, and
- * `docs/adr/ADR-0030-the-editor-paints-its-sprites.md` forbade partial alpha on
+ * `docs/adr/ADR-0028-one-editor-for-everything-drawn.md` forbade partial alpha on
  * a character *because of this function*.
  *
  * `ImageData` is non-premultiplied, so the honest version is the arithmetic the
  * blend mode was standing in for: multiply the RGB, carry the alpha through
  * untouched. A pixel at half alpha is now the shade it was drawn as, at half
- * alpha, and ADR-0039 lifted the prohibition on the strength of it.
+ * alpha, and ADR-0028 lifted the prohibition on the strength of it.
  */
 function tinted(
   image: CanvasImageSource,
@@ -279,7 +279,7 @@ function tinted(
  * stylesheet accepts — a name, `#rgb`, `hsl()` — into a serialised form, and
  * that form is `#rrggbb` unless the colour carries an alpha of its own.
  * A tint's own alpha is ignored: what a layer is transparent by is its pixels
- * (ADR-0039), not its colour.
+ * (ADR-0028), not its colour.
  */
 function resolveColor(
   context: CanvasRenderingContext2D,
@@ -337,7 +337,7 @@ function outlineMissing(
  *
  * * an asset is fetched **once**, however many cells, layers or characters ask
  *   for it — the map's flyweight pictures are built out of these shared images
- *   (`docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`);
+ *   (`docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`);
  * * `onLoad` fires at most **once per animation frame**, not once per image. A
  *   hundred images arriving in a burst used to be a hundred model rebuilds and
  *   a hundred redraws; it is now one.
@@ -354,7 +354,7 @@ export class SpriteCache implements SpriteSource {
    *
    * The editor clears this cache precisely when an asset has been repainted; an
    * in-flight request for the old file finishing afterwards would put the
-   * version the author just replaced back in front of them (ADR-0030).
+   * version the author just replaced back in front of them (ADR-0028).
    */
   private era = 0;
   /**
@@ -404,13 +404,13 @@ export class SpriteCache implements SpriteSource {
    * A map is painted from a hundred and eighty-odd sprites of about 1.4 kB.
    * Fetched individually the browser queues them six at a time and the map
    * waits on the queue, not on the bytes; fetched as a bundle it is one request
-   * and one wait (`docs/adr/ADR-0040-tile-art-travels-as-one-bundle.md`).
+   * and one wait (`docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`).
    *
    * This is an **optimisation, never a rule**. It rejects when there is no
    * bundle to be had — an unknown URL, a corrupt file, a browser without
    * `createImageBitmap` — and a caller that catches it simply falls back to
    * {@link preload}, which fetches the same pixels one file at a time. That is
-   * the same bargain composition strikes in ADR-0038: faster when it works,
+   * the same bargain composition strikes in ADR-0027: faster when it works,
    * identical when it does not.
    *
    * An asset already settled or in flight keeps what it has: an open editing

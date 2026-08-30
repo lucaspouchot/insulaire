@@ -16,7 +16,7 @@ import {
  *
  * A guide drawn by eye is worse than no guide: an artist would draw to it, and
  * the map would draw somewhere else
- * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
  */
 describe('tile preview geometry', () => {
   const GEOMETRY: TileArtGeometry = {
@@ -107,7 +107,7 @@ describe('tile preview geometry', () => {
   /**
    * The framing has no minimum worth the name: a dock dragged down to a sliver
    * gets a sliver of a board, not a board hanging out of its frame for the CSS
-   * to clip (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+   * to clip (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
    */
   it('shrinks the board into a box far too short for it', () => {
     const cells = [0, 1, 2].map((col) => ({
@@ -129,7 +129,7 @@ describe('tile preview geometry', () => {
    * A cell on the ground has no faces, so nothing hangs below its surface.
    * Framing for a cliff it does not have is a third of the box left empty, and
    * the box is where a tile is painted
-   * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+   * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
    */
   it('frames a cell on the ground to its surface, not to a cliff it has not got', () => {
     const flat = {
@@ -175,7 +175,7 @@ describe('tile preview geometry', () => {
  * The arithmetic a click on the hexagon rests on.
  *
  * The preview is the drawing surface for a tile
- * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`), so a pointer has to
+ * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`), so a pointer has to
  * come back as a pixel of the image under it — and the two frames involved, the
  * canvas and the hex plane the draw is translated into, are exactly where that
  * goes wrong.
@@ -236,7 +236,7 @@ describe('painting on the preview', () => {
     const box = previewImageBox(cell(), GEOMETRY, view, 'flat');
 
     // Centred on the cell: a flat tile is the whole hexagon and nothing else
-    // (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+    // (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     const centre = view.projection.project(view.layout.centerOf({ col: 0, row: 0 }), 0);
     expect(box.y + box.height / 2).toBeCloseTo(centre.y, 6);
     expect(box.height).toBeCloseTo(GEOMETRY.flatHeight * (box.width / GEOMETRY.width), 6);

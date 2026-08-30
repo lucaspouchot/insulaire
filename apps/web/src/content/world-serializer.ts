@@ -68,7 +68,7 @@ export function serializeWorld(world: WorldDefinition): string {
  *
  * Written the same way `tiles` is, and for the same reason: a coastline is
  * edited hex by hex, so a diff should show which hexes moved rather than one
- * reflowed line (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`). Omitted
+ * reflowed line (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`). Omitted
  * entirely when the map is the full rectangle it used to be.
  */
 function shapeBlock(shape: WorldDefinition['shape']): string[] {
@@ -96,7 +96,7 @@ function shapeBlock(shape: WorldDefinition['shape']): string[] {
  *
  * The editor writes this file whenever the set of maps changes, so a delivered
  * bundle can be produced from exported content alone
- * (`docs/adr/ADR-0018-client-delivery-build.md`).
+ * (`docs/adr/ADR-0015-client-delivery-build.md`).
  */
 export function serializeProject(project: ProjectDefinition): string {
   const lines = [
@@ -147,7 +147,7 @@ export function serializeProject(project: ProjectDefinition): string {
  *
  * Written out even when empty, because a project that lost its languages by
  * export would lose every screen's text with them
- * (`docs/adr/ADR-0023-localised-content-keys.md`).
+ * (`docs/adr/ADR-0020-localised-content-keys.md`).
  */
 function localesBlock(locales: ProjectDefinition['locales']): string[] {
   const languages = locales?.languages ?? [];

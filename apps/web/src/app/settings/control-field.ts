@@ -4,7 +4,7 @@
  * This component is the reason the application's settings and the game's use one
  * vocabulary: a `slider` is drawn the same way whether it is the music volume or
  * a starting population, so a game gets a settings screen without a line of code
- * (`docs/adr/ADR-0025-settings.md`).
+ * (`docs/adr/ADR-0022-settings.md`).
  *
  * It holds no policy — what a value *means*, whether it may change, where it
  * ends up — only how a `ControlDefinition` becomes an input and back.

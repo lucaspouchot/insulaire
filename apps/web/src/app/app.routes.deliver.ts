@@ -3,7 +3,7 @@ import { Routes } from '@angular/router';
 
 import { I18nService } from './i18n/i18n.service';
 
-/** Document title for a route, resolved in the language in use (ADR-0023). */
+/** Document title for a route, resolved in the language in use (ADR-0020). */
 function pageTitle(key: string): () => string {
   return () => inject(I18nService).t(key);
 }
@@ -16,11 +16,11 @@ function pageTitle(key: string): () => string {
  * guarded import, not a dead branch — because a dynamic `import()` inside dead
  * code still makes the bundler emit the chunk. Absence here is what makes the
  * editor absent from the delivered bundle
- * (`docs/adr/ADR-0018-client-delivery-build.md`).
+ * (`docs/adr/ADR-0015-client-delivery-build.md`).
  */
 export const routes: Routes = [
   // A delivered game opens on its title screen, never on a map
-  // (`docs/adr/ADR-0024-authored-title-screen.md`).
+  // (`docs/adr/ADR-0021-authored-title-screen.md`).
   { path: '', pathMatch: 'full', redirectTo: 'title' },
   {
     path: 'title',

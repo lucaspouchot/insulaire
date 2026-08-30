@@ -3,7 +3,7 @@
  *
  * The rule is absolute: **no string is written where it is displayed**. A
  * template names a key, and the key resolves here or in the project's locale
- * files (`docs/adr/ADR-0023-localised-content-keys.md`).
+ * files (`docs/adr/ADR-0020-localised-content-keys.md`).
  *
  * These keys — the `ui.` namespace — are the *chrome*: the shell, the editor,
  * the play screen. They ship with the application so it is legible before any
@@ -128,7 +128,7 @@ const EN: StringTree = {
           title: 'Scenario',
           summary: 'Acts, phases, objectives, triggers, timers and consequences.',
           plans: {
-            runtime: 'author the data-driven scenario runtime of ADR-0005',
+            runtime: 'author the data-driven scenario runtime of ADR-0004',
             triggers: 'wire triggers to map links, locations and gameplay tags',
             noLogic: 'no scenario-specific logic in the engine — only content',
           },
@@ -1246,7 +1246,7 @@ const FR: StringTree = {
           title: 'Scénario',
           summary: 'Actes, phases, objectifs, déclencheurs, minuteurs et conséquences.',
           plans: {
-            runtime: 'écrire le scénario piloté par les données de l’ADR-0005',
+            runtime: 'écrire le scénario piloté par les données de l’ADR-0004',
             triggers: 'brancher les déclencheurs sur les portes, lieux et tags de gameplay',
             noLogic: 'aucune logique de scénario dans le moteur — uniquement du contenu',
           },

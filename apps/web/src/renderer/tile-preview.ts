@@ -5,11 +5,11 @@
  * can show one tile at a chosen height, or a small board of several, using the
  * **same geometry the game uses** — `HexLayout` for the hex plane, `Projection`
  * for the transform onto the canvas, `tile-art.ts` for what resolves to what
- * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
  *
  * Nothing here re-derives a hexagon. If the preview and the map ever disagreed,
  * the whole editor would be a drawing of a guess
- * (`docs/adr/ADR-0014-hex-coordinate-model.md`).
+ * (`docs/adr/ADR-0011-hex-coordinate-model.md`).
  */
 
 import {
@@ -50,7 +50,7 @@ export interface PreviewCell {
    * The map rolls a variant per cell so a field does not repeat, and the editor
    * needs the opposite: the cell being painted must show the image being
    * painted, not whichever one the hash chose
-   * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+   * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
    */
   readonly choice?: CellArt;
 }
@@ -84,7 +84,7 @@ const MIN_HEX_SIZE = 0.5;
  * `zoom` overrides the fitting: it is **screen pixels per authored pixel**, the
  * same unit the character stage zooms in, so a tile at `6` is a tile whose
  * pixels are six-pixel blocks whatever the panel's size
- * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`). The board is still
+ * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`). The board is still
  * centred, and {@link PreviewLayout.contentWidth} says how much room it wants —
  * a caller with a scroller gives it that and lets the rest scroll.
  */
@@ -115,7 +115,7 @@ export function fitPreview(
     if (mode !== 'isometric') {
       // A flat cell is its hexagon and nothing else: no tilt to allow for, and
       // no cliff hanging below it
-      // (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+      // (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
       maxY = Math.max(maxY, top + probe.hexHeight);
       continue;
     }
@@ -127,7 +127,7 @@ export function fitPreview(
       // A cell on the ground draws no faces at all, so framing for a cliff it
       // does not have leaves a third of the box empty under it — which matters
       // now that the hexagon is what a tile is painted on
-      // (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+      // (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
       maxY = Math.max(maxY, top + geometry.surfaceHeight * perPixel);
       continue;
     }
@@ -158,7 +158,7 @@ export function fitPreview(
   // answer to a box too small to draw in, and a *minimum* size is not — it
   // makes the board overflow a short box, which the frame then clips. The
   // preview scales; it never crops
-  // (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+  // (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
   const fitted = Math.max(
     MIN_HEX_SIZE,
     Math.min(usableWidth / Math.max(1e-6, maxX - minX), usableHeight / Math.max(1e-6, maxY - minY)),
@@ -223,7 +223,7 @@ export interface PreviewImageBox {
  * every cell in the hex plane's own coordinates, so a box and a click are in
  * two different frames. This is the one place that says so: a caller turning a
  * pointer into a pixel goes through here first
- * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+ * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
  */
 export function previewPointOf(point: Point, view: PreviewLayout): Point {
   return { x: point.x - view.originX, y: point.y - view.originY };
@@ -238,8 +238,8 @@ export function previewPointOf(point: Point, view: PreviewLayout): Point {
  * The editor's other half of `drawPreviewCell`: a click on the hexagon has to
  * come back as a pixel of the image under it, and the only way the two cannot
  * drift is for both to read this
- * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`,
- * `docs/adr/ADR-0030-the-editor-paints-its-sprites.md` for the character
+ * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`,
+ * `docs/adr/ADR-0028-one-editor-for-everything-drawn.md` for the character
  * precedent).
  */
 export function previewImageBox(
@@ -296,7 +296,7 @@ function drawPreviewCell(
 
   // A flat cell is one image over the whole hexagon, or the colour when the
   // tile authors none for this projection — the map renderer's rule exactly
-  // (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+  // (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
   if (projection.mode !== 'isometric') {
     const image = render.flat === null ? null : (images?.image(render.flat) ?? null);
     if (image === null) {
@@ -395,7 +395,7 @@ function trace(context: CanvasRenderingContext2D, points: readonly Point[]): voi
  * where the visible shape is. It is the **same** hexagon the renderer draws,
  * scaled from the projected top face into image pixels — not a shape redrawn by
  * eye, which is how a guide and a renderer come to disagree
- * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
  *
  * The corners come out in the order `HexLayout.corners` produces: `1`, `2` and
  * `3` are the near ones, which is what makes the face boundaries below the
@@ -418,7 +418,7 @@ export function surfaceHexagon(geometry: TileArtGeometry): Point[] {
  *
  * The same shape a top-down map strokes for its grid, so an artist drawing a
  * flat tile is drawing inside the outline the renderer will use
- * (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`). Nothing squashes
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`). Nothing squashes
  * it — that is the whole difference between this image and a surface.
  */
 export function flatHexagon(geometry: TileArtGeometry): Point[] {
@@ -443,7 +443,7 @@ export type ImageKind = 'flat' | 'surface' | 'elevation';
  * is only that the artist can see which pixels end up on which face.
  *
  * Note what the geometry actually exposes. This engine draws **pointy-top**
- * hexagons (`docs/adr/ADR-0014-hex-coordinate-model.md`), whose silhouette has
+ * hexagons (`docs/adr/ADR-0011-hex-coordinate-model.md`), whose silhouette has
  * two lower edges meeting at a south vertex — so a raised tile shows a
  * south-west face and a south-east face, and the "south" of a flat-top hex
  * does not exist here. Both are drawn by hand in the one image, and neither is
@@ -508,7 +508,7 @@ export function drawChecker(
   zoom: number,
 ): void {
   // Two authored pixels per square when one would be too small to read, the
-  // same rule the character stage uses (ADR-0030).
+  // same rule the character stage uses (ADR-0028).
   const square = zoom >= 4 ? 1 : 2;
   for (let y = 0; y < height; y += square) {
     for (let x = 0; x < width; x += square) {

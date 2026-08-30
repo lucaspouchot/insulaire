@@ -3,7 +3,7 @@
 # Tauri cannot cross-compile: a Windows installer needs Windows, a .dmg needs
 # macOS, and a .deb needs a glibc no newer than the oldest distribution we
 # support. That is the whole reason this workflow exists — one machine cannot
-# produce the delivery on its own (`docs/adr/ADR-0020-desktop-executable.md`).
+# produce the delivery on its own (`docs/adr/ADR-0017-desktop-executable.md`).
 #
 # Linux builds on ubuntu-22.04 on purpose: a binary linked against a newer glibc
 # refuses to start on an older system, so the oldest runner we support is the one

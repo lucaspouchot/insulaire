@@ -21,14 +21,14 @@
  * picture out of {@link TileAppearanceCache}, and a cell costs one lookup and
  * one blit. Nothing is drawn from that art until it has all arrived, so a map
  * appears whole rather than filling in as its files land
- * (`docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`).
+ * (`docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`).
  *
  * **Two draw paths.** A top-down world is one band covering the whole viewport,
  * which is the single-batch case above. An isometric world is drawn a row at a
  * time from back to front, because elevated cells overlap the row behind them —
  * batching is then per row, and everything standing on a row (overlays,
  * entities, markers) is drawn with it so terrain in front can occlude it
- * (`docs/adr/ADR-0016-isometric-projection.md`). Captions are the exception and
+ * (`docs/adr/ADR-0013-isometric-projection.md`). Captions are the exception and
  * come last, unoccluded; see {@link HexMapRenderer.drawLayered}.
  */
 
@@ -99,7 +99,7 @@ const ROW_SEARCH_SLACK = 2;
  * How much fainter the extent's empty cells are drawn than the grid itself.
  *
  * Enough to read as "you may draw here", not enough to be mistaken for a hex
- * the map has (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+ * the map has (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
  */
 const EXTENT_GHOST_ALPHA = 0.4;
 
@@ -111,7 +111,7 @@ const EXTENT_GHOST_ALPHA = 0.4;
  * the shipped set's geometry a cell one row behind a neighbour raised three
  * levels keeps about a third of its face — enough to aim at — and one behind a
  * neighbour raised four keeps about a twentieth, which is not
- * (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+ * (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
  */
 const BURIED_COVERAGE = 0.75;
 
@@ -211,7 +211,7 @@ export class HexMapRenderer {
    * Renderer state for the same reason {@link hovered} is, and separate from it
    * because they answer different questions: what a click lands on, and what
    * the relief is being seen through
-   * (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+   * (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
    */
   private revealed: Offset | null = null;
   /**
@@ -226,7 +226,7 @@ export class HexMapRenderer {
    * The cells drawn see-through this frame, by cell index, and how solidly.
    *
    * Derived from {@link revealed} and the model; rebuilt only when one of the
-   * two moves (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+   * two moves (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
    */
   private fades: ReadonlyMap<number, number> = new Map();
   /** What {@link fades} was built from, so it is not built twice for one hover. */
@@ -246,7 +246,7 @@ export class HexMapRenderer {
      *
      * The same {@link SpriteSource} a character is drawn through: an editor and
      * the game both hand one in, and neither this class nor that one knows how
-     * it loads (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+     * it loads (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
      */
     private readonly images: SpriteSource | null = null,
     /**
@@ -255,7 +255,7 @@ export class HexMapRenderer {
      *
      * A map is a hundred and eighty-odd files of about 1.4 kB, and what it
      * waits on is the number of requests rather than the bytes
-     * (`docs/adr/ADR-0040-tile-art-travels-as-one-bundle.md`). It is an
+     * (`docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`). It is an
      * optimisation: when there is no bundle to be had, {@link warmTileArt}
      * fetches the same pixels file by file and draws the same map.
      */
@@ -285,7 +285,7 @@ export class HexMapRenderer {
    * Separate from {@link setHover} on purpose: the reveal follows the pointer
    * whatever a click would resolve to, so a host may show an author what is
    * behind a mountain without changing what clicking the mountain does
-   * (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+   * (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
    */
   setReveal(cell: Offset | null): void {
     this.revealed = cell;
@@ -308,7 +308,7 @@ export class HexMapRenderer {
    * A gameplay animation changes at frame rate while tile art does not. Keeping
    * this narrow update out of {@link setModel} avoids re-indexing the world's
    * shared pictures for every pose
-   * (`docs/adr/ADR-0043-gameplay-selects-character-animations-by-role.md`).
+   * (`docs/adr/ADR-0030-gameplay-selects-character-animations-by-role.md`).
    */
   setEntityCharacter(id: string, character: RenderEntity['character']): void {
     this.setEntities(
@@ -332,7 +332,7 @@ export class HexMapRenderer {
    * the tool loading rather than as a world, and it gets worse with every tile
    * a project adds. So the host calls this once per opened world, and until it
    * settles the canvas shows its background and nothing else
-   * (`docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`).
+   * (`docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`).
    *
    * What is waited on is what the map's own cells need, not everything its
    * palette could offer: a map painted with four tiles out of forty appears
@@ -352,7 +352,7 @@ export class HexMapRenderer {
     }
     // The trees standing on the map are part of what the map is made of, so
     // they are waited for with it rather than popping in afterwards
-    // (`docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`).
+    // (`docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`).
     const assets = [...this.appearances.paintedAssets(), ...decorationAssets(this.model)];
     if (assets.length === 0) {
       // A map drawn from colours alone must not be held back for art it will
@@ -366,7 +366,7 @@ export class HexMapRenderer {
     this.warming = true;
     // A source that fails outright must still let the map through: the tiles it
     // could not fetch draw their colour, which is what a missing file has
-    // always looked like (`docs/adr/ADR-0009-assets-tilesets.md`).
+    // always looked like (`docs/adr/ADR-0006-assets-tilesets.md`).
     const bundle = this.loadBundle();
     return (bundle === null ? images.preload(assets) : bundle.then(() => images.preload(assets)))
       .catch(() => undefined)
@@ -386,7 +386,7 @@ export class HexMapRenderer {
    *
    * Never rejects: a bundle that cannot be had is not an error but a slower
    * path, and the `preload` that follows fetches the same sprites one at a
-   * time (`docs/adr/ADR-0040-tile-art-travels-as-one-bundle.md`).
+   * time (`docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`).
    */
   private loadBundle(): Promise<void> | null {
     const images = this.images;
@@ -405,7 +405,7 @@ export class HexMapRenderer {
    * whose decoration definitions arrive from the manifest a moment after the
    * map opens. Without it a tree is resolved, placed, and then drawn from an
    * image nobody ever fetched
-   * (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+   * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
    *
    * Never held for, unlike the terrain: a tree arriving a moment late redraws
    * itself, while a map arriving in pieces reads as the tool loading.
@@ -534,7 +534,7 @@ export class HexMapRenderer {
    * to, and `peek` is the extra bit of intent that asks for the other. The
    * reveal needs no such bit: showing what is behind changes nothing, so
    * {@link PointerTarget.buried} is answered whether or not `peek` is set
-   * (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+   * (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
    */
   resolvePointer(point: Point, peek = false): PointerTarget {
     const front = this.cellAtScreen(point);
@@ -586,7 +586,7 @@ export class HexMapRenderer {
    *
    * A hole is only clickable where the extent is shown — the editor, so that
    * "put a hex back here" has something to aim at. Play resolves present cells
-   * alone (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+   * alone (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
    */
   private hittable(model: RenderModel, cell: Offset): boolean {
     const index = indexIn(cell, model.bounds);
@@ -643,7 +643,7 @@ export class HexMapRenderer {
    */
   contentBounds(model: RenderModel = this.model): Rect {
     // Framed on the hexes the map has, not on the box they are stored in
-    // (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+    // (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
     const drawn = model.showExtent ? model.bounds : this.presentExtent(model);
     const plane = this.layout.boundsOf(drawn);
     const projection = model === this.model ? this.projection : this.projectionFor(model);
@@ -704,7 +704,7 @@ export class HexMapRenderer {
 
     // A map with no cells, and a map whose pictures are still on the wire, are
     // the same frame: the background, and nothing drawn on it
-    // (`docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`).
+    // (`docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`).
     if (model.bounds.width === 0 || model.bounds.height === 0 || this.warming) {
       ctx.restore();
       this.recordFrame(startedAt, model, 0, 0);
@@ -726,7 +726,7 @@ export class HexMapRenderer {
 
     // What the relief has to be seen through, decided once for the frame: the
     // terrain pass reads it per cell in its innermost loop
-    // (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+    // (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
     this.fadesFor(model);
 
     this.batchCount = 0;
@@ -831,7 +831,7 @@ export class HexMapRenderer {
       this.drawLinks(model, linksByRow.get(row) ?? []);
       // The two planes with the characters between them, per row, which is
       // what makes a walker pass behind a canopy and in front of the grass
-      // (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+      // (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
       const decorations = decorationsByRow.get(row) ?? [];
       this.drawDecorations(model, decorations, 'behind');
       this.drawEntities(model, entitiesByRow.get(row) ?? []);
@@ -852,7 +852,7 @@ export class HexMapRenderer {
    * back over the relief — that reads as a tile floating in front of a cliff,
    * because it is one. What the relief hides is seen by drawing the relief
    * see-through, which is the only way round that keeps the mountain in front
-   * and the hex behind (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+   * and the hex behind (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
    *
    * A cell in the way of the hex the pointer rests on is drawn at
    * `reveal.opacity`, one in the way of the ring around it at
@@ -984,7 +984,7 @@ export class HexMapRenderer {
         const paletteIndex = model.terrain[index];
         // A hole is not drawn at all — no top, no faces, no colour. Its paint
         // is still in the buffer, waiting for the hex to come back
-        // (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+        // (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
         if (paletteIndex === undefined || model.presence[index] !== 1) {
           continue;
         }
@@ -993,7 +993,7 @@ export class HexMapRenderer {
         // A cell standing in front of a revealed hex leaves the batches: it is
         // drawn on its own, at its own opacity, once the batches are down. At
         // nothing it is not drawn at all, and what it hides is simply there
-        // (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+        // (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
         const alpha = this.fades.get(index);
         if (alpha !== undefined && alpha < 1) {
           if (alpha > 0) {
@@ -1074,7 +1074,7 @@ export class HexMapRenderer {
    * palette entry: two cells of the same tile, one faded and one not, cannot
    * share a fill. There are only ever a handful of them — what stands in front
    * of a hex or two — so the batching this gives up costs nothing
-   * (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+   * (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
    */
   private drawFadedCell(
     model: RenderModel,
@@ -1131,7 +1131,7 @@ export class HexMapRenderer {
    * `MAX_STACKED_LEVELS` falls short at its bottom. Either way the colour wall
    * goes back behind the blits, because a cell standing above its neighbours
    * has to *look* like it
-   * (`docs/adr/ADR-0009-assets-tilesets.md`: `fallbackColor` is what is drawn
+   * (`docs/adr/ADR-0006-assets-tilesets.md`: `fallbackColor` is what is drawn
    * wherever a texture is not).
    */
   private facesAreShort(
@@ -1154,17 +1154,17 @@ export class HexMapRenderer {
    * lower shoulders and moved by its layer's `drop` — which the resolver
    * measured so that the lowest band of a stack ends on the silhouette, and may
    * therefore be negative for the topmost one, which the surface covers
-   * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+   * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
    *
    * A composed picture stacked those layers once, at the tile set's own
    * resolution, and every cell that looks like this one blits it
-   * (`docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`). The layer
+   * (`docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`). The layer
    * loop below draws exactly the same thing one image at a time, for the cell
    * whose look could not be composed.
    *
    * A top-down cell is one image over the whole hexagon and nothing else: no
    * tilt to fit, no faces to stack
-   * (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+   * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
    */
   private drawPaintedCell(model: RenderModel, painted: PaintedCell): void {
     const ctx = this.context;
@@ -1241,7 +1241,7 @@ export class HexMapRenderer {
     const grid = new Path2D();
     // The cells the extent covers but the map lacks: drawn fainter, and only
     // where an author can act on them, so the shape's outline is what the grid
-    // shows (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+    // shows (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
     const ghost = new Path2D();
     /** One path per opacity the reveal is drawing cells at. */
     const faded = new Map<number, Path2D>();
@@ -1442,7 +1442,7 @@ export class HexMapRenderer {
    * Everything is already resolved and already sorted: the frame was chosen and
    * the anchor subtracted by the Rust resolver, and the host put the list in
    * draw order, so this multiplies by the tile scale and blits
-   * (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+   * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
    *
    * A decoration is authored on the tile set's own pixel grid, so one authored
    * pixel is `hexWidth / tileArt.width` world units — exactly the scale a
@@ -1464,7 +1464,7 @@ export class HexMapRenderer {
         continue;
       }
       // A decoration on a cell the reveal is looking through is in the way
-      // exactly as the cell is (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+      // exactly as the cell is (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
       const alpha = this.alphaAt(model, decoration.at);
       if (alpha <= 0) {
         continue;
@@ -1517,7 +1517,7 @@ export class HexMapRenderer {
 
     for (const entity of entities) {
       // Someone standing on a cell the reveal is looking through is in the way
-      // exactly as the cell is (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+      // exactly as the cell is (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
       const alpha = this.alphaAt(model, entity.at);
       if (alpha <= 0) {
         continue;
@@ -1529,7 +1529,7 @@ export class HexMapRenderer {
       if (entity.character !== null && entity.character !== undefined) {
         // Layer placement stays in authored whole pixels. The map applies one
         // outer scale so a 128px canvas occupies the number of tile faces this
-        // world authored (`docs/adr/ADR-0044-map-entity-presentation.md`).
+        // world authored (`docs/adr/ADR-0031-map-entity-presentation.md`).
         const { width, height } = entity.character.resolution;
         const scale = this.characterScale(model);
         ctx.beginPath();
@@ -1618,7 +1618,7 @@ export class HexMapRenderer {
    * through; everything a cell carries — its grid outline, its overlay, its
    * markers, whoever stands on it — fades with the cell, or the map is left
    * with bright chrome floating over nothing
-   * (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+   * (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
    */
   private alphaAt(model: RenderModel, cell: Offset): number {
     return Math.min(this.fades.get(indexIn(cell, model.bounds)) ?? 1, 1);
@@ -1691,7 +1691,7 @@ export class HexMapRenderer {
    */
   private wallBaseOf(model: RenderModel, cell: Offset): number {
     // odd-r: even rows put their SW neighbour a column left, odd rows lean right
-    // (`docs/adr/ADR-0014-hex-coordinate-model.md`).
+    // (`docs/adr/ADR-0011-hex-coordinate-model.md`).
     const west = cell.row % 2 === 0 ? cell.col - 1 : cell.col;
     return Math.min(
       this.elevationOf(model, { col: west, row: cell.row + 1 }),

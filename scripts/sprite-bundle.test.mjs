@@ -4,7 +4,7 @@
  * Run by `npm run test:scripts`. The *reading* half lives in
  * `apps/web/src/content/sprite-bundle.spec.ts`, which imports this module's
  * packer so the two halves of the format cannot drift apart
- * (`docs/adr/ADR-0040-tile-art-travels-as-one-bundle.md`).
+ * (`docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`).
  */
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, utimes, writeFile } from 'node:fs/promises';
@@ -109,7 +109,7 @@ test('the signature moves when a file is written, and only then', async () => {
   assert.equal(await spriteSignature(root, TILE_ART_DIR), before);
 
   // What the asset editor does: writes the same path with new pixels
-  // (`docs/adr/ADR-0030-the-editor-paints-its-sprites.md`).
+  // (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
   const painted = join(root, TILE_ART_DIR, 'grass/flat/grass_a.png');
   await writeFile(painted, 'PNG-A-REPAINTED');
   assert.notEqual(await spriteSignature(root, TILE_ART_DIR), before);

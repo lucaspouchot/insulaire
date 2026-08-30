@@ -5,7 +5,7 @@
  * a band **filling the canvas under the `V`, its lower edge following the same
  * `V` as its upper one** — the outline `faceGuides` marks in the asset editor,
  * and the outline of the `fallbackColor` wall the renderer fills behind the art
- * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`). That
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`). That
  * band is `elevationHeight - shoulderDepth` thick, which is *not* the same
  * question as how far a level lifts a cell: the shipped set lifts half a band
  * per level, and the renderer hides the other half under the layer above.
@@ -197,7 +197,7 @@ test('an elevation image fills its band, and never overhangs it', () => {
 
 /**
  * A flat image is the *untilted* hexagon, which is the whole reason it is not a
- * surface (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`). Two
+ * surface (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`). Two
  * numbers say so and neither is true of a surface: the canvas is `2 / sqrt(3)`
  * as tall as it is wide, and the widest opaque row is the full width of the
  * image, at its own middle.

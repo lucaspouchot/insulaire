@@ -1,12 +1,12 @@
 /* The objects category. The frame around it — rail, list, scene, inspector —
    is `asset-workspace.css`; what is here dresses the four slots this category
-   fills (docs/adr/ADR-0039-one-editor-for-everything-drawn.md).
+   fills (docs/adr/ADR-0028-one-editor-for-everything-drawn.md).
 
    It is the shortest of the three stylesheets, and that is the point: an object
    has an icon and no geometry, so there is no stage to build
-   (docs/adr/ADR-0049-an-object-is-carried-not-placed.md). What it does have is
+   (docs/adr/ADR-0036-an-object-is-carried-not-placed.md). What it does have is
    a frame strip, because the icon is a flipbook
-   (docs/adr/ADR-0050-an-object-icon-is-a-flipbook.md). */
+   (docs/adr/ADR-0036-an-object-is-carried-not-placed.md). */
 
 :host {
   display: block;
@@ -175,7 +175,7 @@
 }
 
 /* What a key currently resolves to, so the form reads as prose rather than as
-   a list of identifiers (docs/adr/ADR-0023-localised-content-keys.md). */
+   a list of identifiers (docs/adr/ADR-0020-localised-content-keys.md). */
 .preview {
   margin: -2px 0 8px;
   padding-left: 148px;

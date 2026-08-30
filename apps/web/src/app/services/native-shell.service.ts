@@ -3,7 +3,7 @@
  * resize, hold the screen in one orientation.
  *
  * The same bundle runs in a browser tab and inside the Tauri shell
- * (`docs/adr/ADR-0020-desktop-executable.md`), so this service answers "what is
+ * (`docs/adr/ADR-0017-desktop-executable.md`), so this service answers "what is
  * hosting me?" and, when the answer is a browser, does nothing. A **Quit**
  * button in a browser tab is not a button that fails — it is a button that is
  * not offered.

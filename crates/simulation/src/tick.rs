@@ -1,7 +1,7 @@
 //! The tick pipeline.
 //!
 //! One accepted player action == one tick. The resolution order is fixed by
-//! `docs/adr/ADR-0004-tick-simulation.md` and implemented literally in
+//! `docs/adr/ADR-0003-tick-simulation.md` and implemented literally in
 //! [`apply`], phase by phase, including the phases the MVP leaves empty. The
 //! empty phases are kept as named, commented steps on purpose: they are where
 //! the scenario runtime and the trigger system will plug in, and their position
@@ -19,7 +19,7 @@ use crate::state::GameState;
 ///
 /// The simulation cannot follow it: the target world lives in the host's
 /// content registry, which this crate has no access to by design
-/// (`docs/adr/ADR-0017-map-links.md`). The tick therefore *reports* the
+/// (`docs/adr/ADR-0014-map-links.md`). The tick therefore *reports* the
 /// transition and the host resolves it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingTransition {
@@ -82,7 +82,7 @@ pub fn apply(state: &mut GameState, action: Action) -> ActionOutcome {
     run_actors(state, &mut events);
 
     // Phase 5 — advance the scenario.
-    // Empty until the data-driven scenario runtime lands (ADR-0005).
+    // Empty until the data-driven scenario runtime lands (ADR-0004).
 
     // Phase 6 — resolve triggers and events.
     // Empty for the same reason.
@@ -100,7 +100,7 @@ pub fn apply(state: &mut GameState, action: Action) -> ActionOutcome {
 ///
 /// The tick is *not* cut short when one fires: phases 4 to 6 still run on the
 /// map being left, so the pipeline's order stays the same whether or not a link
-/// is involved (ADR-0004). The host applies the map change afterwards.
+/// is involved (ADR-0003). The host applies the map change afterwards.
 fn triggered_link(
     state: &GameState,
     entered: Hex,

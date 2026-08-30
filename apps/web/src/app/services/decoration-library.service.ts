@@ -6,7 +6,7 @@
  * plane a picker shows beside the name: which side of the characters this thing
  * is drawn on is the first question an author asks about a prop, and the answer
  * belongs in the list rather than two clicks in
- * (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+ * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
  */
 
 import { Injectable } from '@angular/core';

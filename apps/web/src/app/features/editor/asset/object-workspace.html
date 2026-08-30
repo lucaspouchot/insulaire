@@ -5,7 +5,7 @@
     <span class="path">{{ path() || ('ui.editor.object.noFile' | t) }}</span>
     <!-- Zoom, fit and the grid live in the file bar, above the surface, as they
          do for every other category
-         (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). -->
+         (docs/adr/ADR-0028-one-editor-for-everything-drawn.md). -->
     <span class="view" [title]="'ui.editor.object.zoom' | t">
       <button type="button" class="small" (click)="zoomBy(-1)" aria-label="−">−</button>
       <span class="readout">{{ zoom() }}×</span>
@@ -186,7 +186,7 @@
       </section>
 
       <!-- What a player reads. Keys, never text: saving creates every one of
-           them in every language (docs/adr/ADR-0027-authoring-creates-keys.md). -->
+           them in every language (docs/adr/ADR-0020-localised-content-keys.md). -->
       <section class="panel">
         <h2>{{ 'ui.editor.object.text' | t }}</h2>
         <label class="row">
@@ -217,7 +217,7 @@
       </section>
 
       <!-- The icon is a flipbook: one frame is a still potion, four are a
-           glinting gem (docs/adr/ADR-0050-an-object-icon-is-a-flipbook.md). -->
+           glinting gem (docs/adr/ADR-0036-an-object-is-carried-not-placed.md). -->
       <section class="panel">
         <h2>{{ 'ui.editor.object.icon' | t }}</h2>
 

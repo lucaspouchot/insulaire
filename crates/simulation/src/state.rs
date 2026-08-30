@@ -117,7 +117,7 @@ impl GameState {
     ///
     /// The player entity itself is the one the target map authors, so every map
     /// stays independently playable and a link needs no knowledge of the
-    /// traveller (`docs/adr/ADR-0017-map-links.md`). When the player gains
+    /// traveller (`docs/adr/ADR-0014-map-links.md`). When the player gains
     /// runtime state of its own — health, inventory — this method is the single
     /// seam that has to carry it.
     ///

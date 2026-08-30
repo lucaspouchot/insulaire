@@ -2,7 +2,7 @@
 //!
 //! The engine owns the seed and the RNG state; the browser's `Math.random()` is
 //! never involved in simulation (see
-//! `docs/adr/ADR-0011-deterministic-rng.md`).
+//! `docs/adr/ADR-0008-deterministic-rng.md`).
 //!
 //! The algorithm is PCG-XSH-RR 64/32 (O'Neill, 2014): 128 bits of state, 32 bits
 //! of output, small enough to serialise into every save and fast enough to be

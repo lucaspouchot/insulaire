@@ -14,9 +14,9 @@
  *
  * A subclass says three things and nothing else: which manifest list it reads,
  * how one file is registered with the engine, and how one is described for a
- * picker (`docs/adr/ADR-0028-character-definitions.md`,
- * `docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`,
- * `docs/adr/ADR-0049-an-object-is-carried-not-placed.md`).
+ * picker (`docs/adr/ADR-0024-character-definitions.md`,
+ * `docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`,
+ * `docs/adr/ADR-0036-an-object-is-carried-not-placed.md`).
  */
 
 import { inject, signal } from '@angular/core';

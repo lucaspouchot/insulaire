@@ -3,7 +3,7 @@
  *
  * A layout component: the category rail with the open category's list under it,
  * the scene, a draggable divider, and the inspector
- * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+ * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
  *
  * ```text
  * ┌───────────┬──────────────────────────┬──────────────┐

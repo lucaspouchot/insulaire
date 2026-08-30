@@ -51,23 +51,23 @@ The MVP implements the marked parts. Unmarked entries are the planned shape.
 │       └── src/
 │           ├── core/hex/        # coordinate transforms + pixel layout       [MVP]
 │           ├── content/         # authored document model + serialiser,      [MVP]
-│           │                     # incl. the editable sprite buffer (ADR-0030)
+│           │                     # incl. the editable sprite buffer (ADR-0028)
 │           ├── renderer/        # framework-free Canvas renderer, projection, [MVP]
-│           │                     # and the shared tile pictures (ADR-0038)
+│           │                     # and the shared tile pictures (ADR-0027)
 │           ├── engine/          # boundary types + WASM loader               [MVP]
 │           └── app/             # Angular shell, services, feature pages     [MVP]
 │               ├── i18n/                # key lookup, the `t` pipe, app strings [MVP]
 │               ├── settings/            # application schema, values, one control renderer [MVP]
-│               ├── features/title/      # the authored title screen (ADR-0024)  [MVP]
-│               ├── build-features*.ts   # dev vs client build seam (ADR-0018) [MVP]
+│               ├── features/title/      # the authored title screen (ADR-0021)  [MVP]
+│               ├── build-features*.ts   # dev vs client build seam (ADR-0015) [MVP]
 │               ├── app.routes*.ts       # dev routes / client routes          [MVP]
 │               └── features/editor/     # shell + one module per domain       [MVP]
 │                   ├── map/             # the map editor                      [MVP]
-│                   ├── title/           # the title screen editor (ADR-0024)  [MVP]
-│                   ├── settings/        # the game settings editor (ADR-0025) [MVP]
-│                   ├── locale/          # the language table (ADR-0023)       [MVP]
-│                   ├── character/       # definitions, sprites, animations (ADR-0028..0034) [MVP]
-│                   ├── asset/           # the asset browser, tile editor and pixel tools (ADR-0035) [MVP]
+│                   ├── title/           # the title screen editor (ADR-0021)  [MVP]
+│                   ├── settings/        # the game settings editor (ADR-0022) [MVP]
+│                   ├── locale/          # the language table (ADR-0020)       [MVP]
+│                   ├── character/       # definitions, sprites, animations (ADR-0024..0034) [MVP]
+│                   ├── asset/           # the asset browser, tile editor and pixel tools (ADR-0026) [MVP]
 │                   └── planned/         # the scenario tab                     [MVP]
 ├── crates/
 │   ├── world/                   # hexes, content definitions, validation     [MVP]
@@ -77,12 +77,12 @@ The MVP implements the marked parts. Unmarked entries are the planned shape.
 │   ├── scenario/                # acts, triggers, events
 │   └── combat/                  # deck/cards/effects
 ├── content/                     # the FIXTURE: minimum valid project, read by every test [MVP]
-│   │                            # a game is authored elsewhere, via INSULAIRE_CONTENT_DIR (ADR-0022)
+│   │                            # a game is authored elsewhere, via INSULAIRE_CONTENT_DIR (ADR-0019)
 │   ├── project.json             # which files make one game, and where it starts [MVP]
 │   ├── worlds/                  # demo_world.json, demo_refuge.json          [MVP]
 │   ├── tilesets/                # mvp_terrain.json                           [MVP]
 │   ├── locales/                 # <language>/<namespace>.json: every displayed string [MVP]
-│   ├── characters/              # how a character is drawn and moves (ADR-0028, ADR-0031, ADR-0034) [MVP]
+│   ├── characters/              # how a character is drawn and moves (ADR-0024, ADR-0025) [MVP]
 │   ├── assets/                  # images: title art, character sprites, tile art [MVP]
 │   ├── menu/                    # title-screen.json: what a client opens on   [MVP]
 │   ├── settings.json            # the settings the game offers                [MVP]
@@ -113,64 +113,63 @@ browser. `cargo test` runs the entire simulation without WASM.
 ## Where the seams are
 
 - **Angular ↔ engine** — commands in, compact snapshots out. See
-  `docs/wasm-api.md` and ADR-0013.
+  `docs/wasm-api.md` and ADR-0010.
 - **Content ↔ runtime** — `WorldDefinition` is immutable reference data;
-  `GameState` is the mutable runtime. See `docs/data-model.md` and ADR-0003.
-- **Editor ↔ runtime** — one validator, in Rust, used by both. See ADR-0015.
+  `GameState` is the mutable runtime. See `docs/data-model.md` and ADR-0002.
+- **Editor ↔ runtime** — one validator, in Rust, used by both. See ADR-0012.
 - **Engine ↔ renderer** — the engine emits data (palette, packed terrain,
-  entity snapshots); the renderer decides what it looks like. See ADR-0007 and
-  ADR-0009.
+  entity snapshots); the renderer decides what it looks like. See ADR-0005 and
+  ADR-0006.
 - **Cell ↔ picture** — a cell contributes its coordinates and nothing else: the
   look they roll is shared by every cell that rolls it, composed once, and
   drawn with one blit. A map is not drawn at all until the pictures it is made
-  of have loaded. See ADR-0038.
+  of have loaded. See ADR-0027.
 - **Coordinates** — offset for content, axial inside the engine, pixels only in
-  TypeScript. See ADR-0014.
+  TypeScript. See ADR-0011.
 - **Map ↔ map** — a door is authored content; the tick names its target and the
-  engine's registry resolves it. See ADR-0017.
+  engine's registry resolves it. See ADR-0014.
 - **Dev build ↔ client build** — two Angular build configurations over one
   source tree, separated by `fileReplacements` on the routes and the feature
-  flags. `just deliver` produces the client zip. See ADR-0018.
+  flags. `just deliver` produces the client zip. See ADR-0015.
 - **Editor module ↔ editor module** — each is a route registered in
-  `editor-modules.ts`; they share services, never internals. See ADR-0019.
+  `editor-modules.ts`; they share services, never internals. See ADR-0016.
 - **Character ↔ renderer** — a definition plus a customisation resolves in Rust
   into an ordered list of whole-pixel boxes with an image and a tint each; the
-  renderer blits them and decides nothing about appearance. See ADR-0028 and
-  ADR-0029.
+  renderer blits them and decides nothing about appearance. See ADR-0024.
 - **Character ↔ animation** — the layers form a tree, and an animation is a list
   of whole-pixel offsets from the rest pose, per node, per frame. Offsets
   compose down the tree, the resolver bakes them into the boxes it produces, and
   the renderer never learns that time exists. A keyframe may also name which
   variant its node draws, and an animation may be another one mirrored — the
-  renderer's one placement decision. See ADR-0031, ADR-0033 and ADR-0034.
+  renderer's one placement decision. See ADR-0025 and ADR-0024.
 - **Composing ↔ painting** — the same stage does both: the preview draws the
   resolved character, and in paint mode it writes into the image behind the open
   layer. The pixels are a framework-free buffer in `content/sprite-document.ts`
   and never cross the boundary — they reach the engine only as files. See
-  ADR-0030.
+  ADR-0028.
 - **Application ↔ game settings** — the shell's settings are declared in code,
   the game's are content; both use one control vocabulary and one resolver, and
   only the game's cross `createGame`. Physical-key bindings follow the same
   ownership split: universal action ids live in the shell and game-specific ids
-  are authored content. See ADR-0025 and ADR-0045.
+  are authored content. See ADR-0022 and ADR-0032.
 - **Session ↔ route** — the engine owns the game, so leaving `/play` does not
   end it and returning resumes it; a game ends only where a player asks. Anything
   calling `resetContent()` re-registers the languages, the title screen and the
   settings with the maps, because `loadProject` validates the whole manifest.
-  See ADR-0026.
+  See ADR-0023.
 - **Files ↔ browser storage** — the content directory is the project, and the
   editor's `localStorage` copy is one session's work in progress. On a reload the
   **files win**: storage restores the maps it holds and contributes manifest
   entries the file does not have, but never removes or redirects one. Anything
   else hides what an author wrote by hand and lets the next save overwrite it.
-  See ADR-0022 and `project-store.service.ts`.
+  See ADR-0019 and `project-store.service.ts`.
 - **Text ↔ language** — no string is written where it is displayed: a template
   names a key, the engine flattens the project's locale files and applies the
-  default-language fallback. See ADR-0023.
+  default-language fallback. See ADR-0020.
 - **Naming a key ↔ writing its text** — the editor creates a key, empty, in every
   language the moment content names it (`app/services/locale-authoring.service.ts`),
   and hands the written files back to the engine with `resetLocales`. An
-  untranslated key is a warning and renders as itself. See ADR-0027.
+  untranslated key is a warning and renders as itself. See ADR-0020.
 - **Repository ↔ authored game** — the game's content directory is named by
   `INSULAIRE_CONTENT_DIR`; a dev-only server serves it and lets the editor write
-  into it, while the game itself still reads static files. See ADR-0022.
+  into it, while the game itself still reads static files. See ADR-0019.

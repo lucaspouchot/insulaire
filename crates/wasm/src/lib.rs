@@ -8,7 +8,7 @@
 //!
 //! That split is deliberate: a bug in the boundary should be catchable without
 //! a browser. See `docs/wasm-api.md` and
-//! `docs/adr/ADR-0013-engine-api.md`.
+//! `docs/adr/ADR-0010-engine-api.md`.
 
 #![forbid(unsafe_code)]
 
@@ -84,13 +84,13 @@ impl InsulaireEngine {
     ///
     /// `base` is the height the cell's side faces reach down to; `roll` is the
     /// cell's variant roll
-    /// (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+    /// (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     /// `projection` is the world's own — `"isometric"` for the surface and the
     /// cliff, anything else for the flat image
-    /// (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+    /// (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     /// `choiceJson` is a `PlacedTileArt` — what the cell picked by hand —
     /// resolved against the set passed in; `"{}"` rolls everything
-    /// (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+    /// (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     ///
     /// # Errors
     ///
@@ -296,7 +296,7 @@ impl InsulaireEngine {
     /// per cell, in the same layout as `terrainBuffer`.
     ///
     /// Presentation only; the renderer uses it in isometric mode
-    /// (`docs/adr/ADR-0016-isometric-projection.md`).
+    /// (`docs/adr/ADR-0013-isometric-projection.md`).
     ///
     /// # Errors
     ///
@@ -312,7 +312,7 @@ impl InsulaireEngine {
     ///
     /// A map is a set of hexes, not a rectangle; the extent in
     /// `worldView().bounds` is only what the buffers cover
-    /// (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+    /// (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
     ///
     /// # Errors
     ///

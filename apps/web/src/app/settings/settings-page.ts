@@ -4,7 +4,7 @@
  * The screen itself is generic — it walks sections, groups and fields and hands
  * each one to {@link ControlField}. Nothing here knows what "difficulty" means,
  * which is what lets a game declare its own settings and get a screen for them
- * (`docs/adr/ADR-0025-settings.md`).
+ * (`docs/adr/ADR-0022-settings.md`).
  *
  * A `newGame` setting is shown **locked** while a game is running, rather than
  * hidden: the value is part of the game in progress, and a player looking for it

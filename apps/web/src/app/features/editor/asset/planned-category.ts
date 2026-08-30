@@ -4,7 +4,7 @@
  * It wears the frame rather than replacing the screen, because the rail is how
  * you get back out: a placeholder that took the whole window would strand an
  * author who clicked *Objects* to see what was there
- * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+ * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
  */
 
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';

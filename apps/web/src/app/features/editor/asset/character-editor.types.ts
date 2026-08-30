@@ -5,13 +5,13 @@
  * The model itself is `crates/world/src/character.rs`, mirrored in
  * `content-types.ts`; what lives here is only which categories the picker
  * offers, and what a freshly added parameter, layer or variant should look like
- * so that it validates the moment it exists (`docs/adr/ADR-0028-character-
- * definitions.md`, `docs/adr/ADR-0029-characters-are-composed-sprites.md`).
+ * so that it validates the moment it exists (`docs/adr/ADR-0024-character-
+ * definitions.md`, `docs/adr/ADR-0024-character-definitions.md`).
  *
  * The animation half is the same kind of knowledge: what a new animation should
  * look like, how the layer tree flattens into rows a list can render, whether a
  * parent would close a loop, and what value a new keyframe starts from
- * (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+ * (`docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`).
  * **Evaluating** an animation is not here and never will be — that is the
  * engine's, and a second evaluator would be a second answer.
  *
@@ -103,7 +103,7 @@ export const CATEGORIES: readonly { readonly id: CharacterCategory; readonly lab
  * The timeline is wide, and this is a column; what makes that work is that the
  * column is **resizable**, so an author editing an animation drags the
  * inspector open and gets the width back from the scene
- * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+ * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
  */
 export type EditorTab = 'character' | 'parameters' | 'layers' | 'animation';
 
@@ -148,7 +148,7 @@ export function isNumeric(control: ControlKind): boolean {
  * It names no image yet, which is not an oversight: the renderer draws an
  * outline where a missing sprite would go, so a layer can be placed on the
  * canvas before any art exists
- * (`docs/adr/ADR-0029-characters-are-composed-sprites.md`).
+ * (`docs/adr/ADR-0024-character-definitions.md`).
  */
 export function blankVariant(id: string, resolution: SpriteResolution): LayerVariant {
   // A box a quarter of the canvas, centred: visible straight away, which is the
@@ -217,7 +217,7 @@ export function keyframeAt(track: AnimationTrack | undefined, frame: number): Ke
  * interpolate. It answers an authoring question: dragging a node that has no
  * keyframe here should move it from where it currently sits, which is the last
  * value written at or before this frame, or the first one written at all
- * (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+ * (`docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`).
  */
 export function heldOffset(track: AnimationTrack | undefined, frame: number): PixelOffset {
   const keyframes = track?.keyframes ?? [];

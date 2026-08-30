@@ -11,11 +11,11 @@
  * the runtime runs at load time. The editor cannot approve a world the runtime
  * would reject. Map links add a second check the editor alone cannot make —
  * a door's target lives in another file — so `validateLinks` runs over the
- * whole loaded project (`docs/adr/ADR-0017-map-links.md`).
+ * whole loaded project (`docs/adr/ADR-0014-map-links.md`).
  *
  * Saving is the other half of that: the buttons write the map, and the manifest
  * that goes with it, straight into the content directory through the authoring
- * server (`docs/adr/ADR-0022-authoring-content-workspace.md`). Invalid content
+ * server (`docs/adr/ADR-0019-authoring-content-workspace.md`). Invalid content
  * is never written — the files on disk are what the runtime boots on.
  */
 
@@ -141,7 +141,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    * Rebinding happens on the settings screen while a map may already be open,
    * and a view still watching the old key would look through relief on a key
    * that now means something else
-   * (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+   * (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
    */
   private readonly peekBinding = effect(() => {
     this.view?.setPeekKey(this.settings.keyBinding(ENGINE_SHORTCUT.peek));
@@ -154,7 +154,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    *
    * A tile set that ships no art never asks for one, so this costs nothing
    * until an asset editor has painted something
-   * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+   * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
    */
   private readonly tileImages = new SpriteCache(
     (asset) => contentUrl(asset),
@@ -204,7 +204,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
 
   /**
    * `true` once the authoring server has answered — the editor is honest about
-   * being unable to write (`docs/adr/ADR-0022-authoring-content-workspace.md`).
+   * being unable to write (`docs/adr/ADR-0019-authoring-content-workspace.md`).
    */
   protected readonly writable = computed(() => this.workspace.status() !== null);
 
@@ -328,7 +328,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    * A palette is a *tool's* content: the terrain list is the paint tool's brush
    * box and has no meaning while raising ground or placing doors. Closing the
    * dock rather than greying it out gives the canvas the width back, which is
-   * the point — the palette will only grow (`docs/adr/ADR-0009-assets-tilesets.md`).
+   * the point — the palette will only grow (`docs/adr/ADR-0006-assets-tilesets.md`).
    */
   protected readonly resourceDock = computed<'terrain' | 'maps' | 'characters' | null>(() => {
     switch (this.tool()) {
@@ -385,7 +385,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    * current answer: the tile's own surface variants, every tile that ships a
    * cliff, and the variants of whichever cliff is actually drawing. `null` when
    * nothing is selected, which is what closes the panel
-   * (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+   * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
    */
   protected readonly cellArt = computed(() => {
     this.revision();
@@ -452,7 +452,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    * The decorations standing on the selected hex, in author order.
    *
    * A list rather than one, because a cell may hold a tree, a bush and a
-   * signpost (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+   * signpost (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
    */
   protected readonly placementsHere = computed(() => {
     this.revision();
@@ -478,7 +478,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    *
    * The decision belongs here rather than to the definition: one chest in ten
    * holds the letter, and the other nine are scenery
-   * (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+   * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
    */
   protected setPlacementInteractive(id: string, interactive: boolean): void {
     const document = this.store.document();
@@ -497,7 +497,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    * The id is what the scenario will name, so it is the author's to write. A
    * name already taken on this map is refused and said so: two placements
    * answering to one name is not a state worth passing through
-   * (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+   * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
    */
   protected setPlacementId(id: string, input: HTMLInputElement): void {
     const document = this.store.document();
@@ -529,7 +529,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    * The anchor is where a tree *belongs*; this is the few pixels that keep a
    * row of them from reading as a stamped pattern, and it is per placement
    * because that is the only thing that differs between two trees drawn from
-   * one definition (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+   * one definition (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
    */
   protected setPlacementOffset(id: string, axis: 0 | 1, raw: string): void {
     const value = Math.round(Number.parseFloat(raw));
@@ -612,13 +612,13 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       .catch(() => undefined);
     // Loaded for the same reason the characters are: the manifest names them,
     // and a world is judged against a project that has to load
-    // (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+    // (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
     //
     // And followed through, unlike them: a map opened before its definitions
     // land resolves every tree it places to nothing. Forgetting those misses
     // and drawing again is what makes a dressed map appear on its own, rather
     // than only after a visit to the decoration editor
-    // (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+    // (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
     void this.decorations
       .ensureLoaded()
       .then(() => {
@@ -648,10 +648,10 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       new SpriteRegistry(),
       // A tile drawn from images needs its images; a tile set that ships none
       // simply never asks for one
-      // (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+      // (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
       this.tileImages,
       // All of them in one request rather than one each
-      // (`docs/adr/ADR-0040-tile-art-travels-as-one-bundle.md`).
+      // (`docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`).
       contentUrl(TILE_ART_BUNDLE),
     );
     this.renderer.setModel(this.buildModel(document));
@@ -806,7 +806,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
         if (placed !== null) {
           // Straight into the inspector: the next decision an author makes about
           // a tree they just planted is whether it can be searched
-          // (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+          // (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
           this.selectedPlacement.set(placed.id);
         }
         changed = placed !== null;
@@ -862,7 +862,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    *
    * Refusing rather than taking the entity, the door or the point of interest
    * with it: authored content is never destroyed by a brush stroke
-   * (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+   * (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
    */
   private carve(document: WorldDocument, cell: Offset): boolean {
     const occupants = document.occupantsAt(cell);
@@ -881,7 +881,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    *
    * Growing north or west moves the origin instead of renumbering the cells, so
    * an authored coordinate — and every door in another map pointing at it —
-   * survives the change (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`). New
+   * survives the change (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`). New
    * cells arrive absent: blank canvas, not a slab of terrain.
    */
   protected extend(side: 'north' | 'south' | 'east' | 'west', steps: number): void {
@@ -943,7 +943,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    * variants exist and the Rust validator is what reports a dangling one, just
    * as with a door's target — and a choice that stops resolving costs the cell
    * its choice, not its picture
-   * (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+   * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
    */
   protected setCellArt(field: 'surface' | 'elevationTile' | 'elevation', value: string): void {
     const cell = this.selected();
@@ -1112,7 +1112,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    *
    * Clamped rather than refused: these are two dials on a slider, and an author
    * who types `9` means "as far as it goes"
-   * (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+   * (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
    */
   private applyReveal(
     document: WorldDocument,
@@ -1440,7 +1440,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    * Validates every map plus the doors between them.
    *
    * A project is only loadable if each of its files is *and* every door
-   * resolves, so saving the project checks both (`docs/adr/ADR-0017-map-links.md`).
+   * resolves, so saving the project checks both (`docs/adr/ADR-0014-map-links.md`).
    * `null` means the engine was not ready and nothing was checked.
    */
   private validateProject(): ValidationReport | null {
@@ -1520,7 +1520,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    *
    * Locales go back in with the rest; `resetContent` cleared them, and the
    * manifest will not load without the languages it declares
-   * (`docs/adr/ADR-0023-localised-content-keys.md`).
+   * (`docs/adr/ADR-0020-localised-content-keys.md`).
    */
   private resetEngineContent(): void {
     this.engine.resetContent();
@@ -1609,7 +1609,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    * Switches the world between top-down and isometric.
    *
    * This edits the *document*, not the view: the projection is authored content
-   * (`docs/adr/ADR-0016-isometric-projection.md`), so the runtime will render
+   * (`docs/adr/ADR-0013-isometric-projection.md`), so the runtime will render
    * the exported world exactly the way the editor shows it.
    */
   protected toggleProjection(): void {
@@ -1624,7 +1624,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     this.rebuild();
     // The two views are drawn from two different sets of images, and the one
     // just switched to may never have been asked for
-    // (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+    // (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     this.warmTileArt();
     this.view?.fit();
   }
@@ -1706,7 +1706,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    * The map first, then the rest of the palette: until the map's own images
    * settle the canvas shows its background rather than a map filling in tile by
    * tile, and a brush the author has not picked yet is one they are about to
-   * (`docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`).
+   * (`docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`).
    */
   private warmTileArt(): void {
     const renderer = this.renderer;
@@ -1783,7 +1783,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       overlays: [],
       selected: this.selected(),
       // The author needs to see — and click — the canvas they may extend into
-      // (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+      // (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
       showExtent: true,
       showGrid: this.showGrid(),
       gridLineWidth: document.grid.lineWidth,
@@ -1798,7 +1798,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    *
    * Through Rust, like every other resolve: the editor and the game place a
    * trunk with the same arithmetic
-   * (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+   * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
    */
   private resolveDecoration(id: string): ResolvedDecoration | null {
     if (this.decorationResolutions.has(id)) {

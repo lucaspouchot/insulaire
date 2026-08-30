@@ -2,12 +2,12 @@
  * The saved games a player can continue from.
  *
  * **Nothing writes here yet.** Saving needs the engine to serialise its
- * `GameState`, which it does not, and a store in IndexedDB, which ADR-0010
+ * `GameState`, which it does not, and a store in IndexedDB, which ADR-0007
  * specifies and nobody has built. This service exists so that the one screen
  * that asks the question — the title screen's *Continue* button — asks it of a
  * real place, and so that implementing saves is a matter of filling this in
  * rather than of finding every caller
- * (`docs/adr/ADR-0024-authored-title-screen.md`).
+ * (`docs/adr/ADR-0021-authored-title-screen.md`).
  *
  * Until then it answers honestly: there are no saves, and *Continue* is offered
  * disabled rather than hidden, because a menu that changes shape depending on

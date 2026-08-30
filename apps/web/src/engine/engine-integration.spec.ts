@@ -114,7 +114,7 @@ describe.skipIf(!built)('engine boundary', () => {
    *
    * The manifest declares its languages, and a declared language with no file
    * is a load error — so anything that loads the real `project.json` loads
-   * these too (`docs/adr/ADR-0023-localised-content-keys.md`).
+   * these too (`docs/adr/ADR-0020-localised-content-keys.md`).
    */
   function loadShippedLocales(instance: RawInsulaireEngine): void {
     for (const language of ['en', 'fr']) {
@@ -132,7 +132,7 @@ describe.skipIf(!built)('engine boundary', () => {
    * Registers the shipped title screen.
    *
    * Like the languages: the manifest names it, so the manifest will not load
-   * without it (`docs/adr/ADR-0024-authored-title-screen.md`).
+   * without it (`docs/adr/ADR-0021-authored-title-screen.md`).
    */
   function loadShippedTitleScreen(instance: RawInsulaireEngine): void {
     instance.loadTitleScreen(readText('content/menu/title-screen.json'));
@@ -158,7 +158,7 @@ describe.skipIf(!built)('engine boundary', () => {
     // The renderer resolves this itself, once per visible cell per frame, and
     // may not cross the boundary to do it. So the two implementations are held
     // together here, against the real WASM build
-    // (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+    // (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     const set: TileSetDefinition = {
       id: 'art',
       schemaVersion: TILE_SET_SCHEMA_VERSION,
@@ -172,7 +172,7 @@ describe.skipIf(!built)('engine boundary', () => {
           art: {
             // Fewer flats than surfaces, so the wrap a shared index implies is
             // held together across the boundary as well
-            // (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+            // (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
             flat: [{ id: 'a', asset: 'assets/tiles/flat_a.png' }],
             surface: [
               { id: 'a', asset: 'assets/tiles/top_a.png' },
@@ -214,7 +214,7 @@ describe.skipIf(!built)('engine boundary', () => {
 
     // Both projections, because they resolve from different lists and a mirror
     // that agreed on only one of them would be half a mirror
-    // (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+    // (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     for (const projection of ['isometric', 'topDown'] as const) {
       for (const elevation of [0, 1, 2, 3, 4, 10]) {
         for (const roll of [0, 1, 7, 12345]) {
@@ -246,7 +246,7 @@ describe.skipIf(!built)('engine boundary', () => {
 
     // The same agreement for a cell that chose by hand, including a ladder
     // borrowed from another tile — the ids are resolved by Rust, the drawing by
-    // the mirror (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+    // the mirror (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     const meadow = set.tiles[1] as TileDefinition;
     for (const [choice, cell] of [
       [{ surface: 'b' }, { surface: 1 }],
@@ -288,7 +288,7 @@ describe.skipIf(!built)('engine boundary', () => {
     // so one image spans two levels and the stack is bands rather than slices.
     // Rust reads the span off the tile set; the mirror is told it, and the two
     // have to agree layer for layer
-    // (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+    // (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     const set: TileSetDefinition = {
       id: 'halved',
       schemaVersion: TILE_SET_SCHEMA_VERSION,
@@ -371,7 +371,7 @@ describe.skipIf(!built)('engine boundary', () => {
     expect(terrain.length).toBe(view.cellCount);
 
     // The shipped art rides on the palette, which is the renderer's one lookup
-    // per cell (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+    // per cell (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     // The step is half the 16-pixel band the ladders draw: the shipped set lifts
     // a level by half its own faces, so cliffs read at half height without a
     // single asset being redrawn.
@@ -549,7 +549,7 @@ describe.skipIf(!built)('engine boundary', () => {
 
   /**
    * A shape authored in the editor, through the real boundary and back out as
-   * an engine verdict (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+   * an engine verdict (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
    */
   it('carries a custom map shape across the boundary', () => {
     const tileSet = readJson<TileSetDefinition>('content/tilesets/mvp_terrain.json');
@@ -599,7 +599,7 @@ describe.skipIf(!built)('engine boundary', () => {
   /**
    * The whole map-link loop across the real boundary: the client loads the
    * project, walks onto a door, and the engine hands back a snapshot on the
-   * other map (`docs/adr/ADR-0017-map-links.md`).
+   * other map (`docs/adr/ADR-0014-map-links.md`).
    */
   it('changes map when the player walks onto a door', () => {
     const instance = engine();
@@ -652,7 +652,7 @@ describe.skipIf(!built)('engine boundary', () => {
   /**
    * The shipped languages, across the real boundary: the files this repository
    * ships load, resolve, and answer the same keys
-   * (`docs/adr/ADR-0023-localised-content-keys.md`).
+   * (`docs/adr/ADR-0020-localised-content-keys.md`).
    */
   it('loads the shipped languages and resolves their keys', () => {
     const instance = loaded();
@@ -735,7 +735,7 @@ describe.skipIf(!built)('engine boundary', () => {
   /**
    * The two halves of authoring text while the editor is running: a key that
    * exists but has no text yet behaves like a missing one, and edited files can
-   * replace the loaded ones (`docs/adr/ADR-0027-authoring-creates-keys.md`).
+   * replace the loaded ones (`docs/adr/ADR-0020-localised-content-keys.md`).
    */
   it('treats an empty translation as a gap, and takes edited files back', () => {
     const instance = loaded();
@@ -779,7 +779,7 @@ describe.skipIf(!built)('engine boundary', () => {
    * The character pipeline, end to end and through the real types: the shipped
    * definition loads, resolves into drawable layers, and honours the choices it
    * offers. The editor's preview is this same call
-   * (`docs/adr/ADR-0028-character-definitions.md`).
+   * (`docs/adr/ADR-0024-character-definitions.md`).
    */
   it('resolves the shipped character into layers a renderer can draw', () => {
     const instance = engine();
@@ -877,7 +877,7 @@ describe.skipIf(!built)('engine boundary', () => {
   /**
    * The animation pipeline, end to end and through the real types: one track
    * moves the body, the hierarchy moves what hangs off it, and the legs stay
-   * on the ground (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+   * on the ground (`docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`).
    */
   it('plays the shipped idle through the layer hierarchy', () => {
     const instance = engine();
@@ -933,7 +933,7 @@ describe.skipIf(!built)('engine boundary', () => {
   /**
    * The shipped walk cycle, through the real WASM build: a leg sprite per
    * frame, and the other direction authored as one line
-   * (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+   * (`docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`).
    */
   it('walks the shipped character left, and mirrors it to walk right', () => {
     const instance = engine();
@@ -1049,7 +1049,7 @@ describe.skipIf(!built)('engine boundary', () => {
    * A decoration crosses the boundary the same way a character does, and the
    * placement box comes back with the anchor already subtracted — the editor
    * and the map both blit at the cell's ground point plus that box
-   * (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+   * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
    */
   it('resolves a decoration onto the ground point, frame by frame', () => {
     const instance = engine();
@@ -1096,7 +1096,7 @@ describe.skipIf(!built)('engine boundary', () => {
    * The anchor is a position **on the cell**, so it is the drawing leaving the
    * hexagon that is worth reporting — never the anchor leaving the decoration's
    * own canvas, which is what a small prop dropped off-centre looks like
-   * (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+   * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
    */
   it('warns about a decoration that overflows its cell, and only then', () => {
     const instance = engine();
@@ -1139,7 +1139,7 @@ describe.skipIf(!built)('engine boundary', () => {
   /**
    * A placement is what a scenario addresses, and `interactive` is a fact about
    * **this** tree rather than about trees
-   * (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+   * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
    */
   it('carries placed decorations through the world view, one interactive', () => {
     const instance = engine();
@@ -1192,7 +1192,7 @@ describe.skipIf(!built)('engine boundary', () => {
   /**
    * An icon is a flipbook, and the one frame nearly every object has is the
    * degenerate case of it: still, whenever it is asked for
-   * (`docs/adr/ADR-0050-an-object-icon-is-a-flipbook.md`).
+   * (`docs/adr/ADR-0036-an-object-is-carried-not-placed.md`).
    */
   it('plays an object icon through the real resolver, and holds a still one', () => {
     const instance = engine();
@@ -1242,7 +1242,7 @@ describe.skipIf(!built)('engine boundary', () => {
   /**
    * An object blocked out before its art exists still saves: no frame is a
    * warning, and a frame naming nothing is the error
-   * (`docs/adr/ADR-0049-an-object-is-carried-not-placed.md`).
+   * (`docs/adr/ADR-0036-an-object-is-carried-not-placed.md`).
    */
   it('warns about an object with no icon, and refuses one with an empty frame', () => {
     const instance = engine();

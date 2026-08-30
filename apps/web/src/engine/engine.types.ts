@@ -70,7 +70,7 @@ export interface GameSnapshot {
    * The game settings this game was created with, already resolved.
    *
    * Declared by content, set by the player, carried by the engine
-   * (`docs/adr/ADR-0025-settings.md`).
+   * (`docs/adr/ADR-0022-settings.md`).
    */
   settings: SettingsValues;
 }
@@ -140,7 +140,7 @@ export interface WorldView {
    *
    * Storage, not the shape of the world — which of those cells the map has
    * arrives in `presenceBuffer`
-   * (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+   * (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
    */
   bounds: WorldBounds;
   orientation: string;
@@ -155,7 +155,7 @@ export interface WorldView {
    *
    * Presentation transported the same way the grid is; the map renderer is the
    * only thing that reads it
-   * (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+   * (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
    */
   reveal: RevealStyle;
   tileSetId: string;
@@ -167,7 +167,7 @@ export interface WorldView {
    *
    * Only the *placement* travels: what a tree looks like is `resolveDecoration`,
    * asked once per definition rather than once per tree
-   * (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+   * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
    */
   decorations?: PlacedDecoration[];
   locations: LocationView[];
@@ -177,7 +177,7 @@ export interface WorldView {
    *
    * Sparse and normally absent: choosing is an authored exception, so the ids
    * an author wrote arrive already resolved to indices and the buffers stay two
-   * (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+   * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
    */
   artChoices?: WorldCellArt[];
   /** Length of every packed buffer: `bounds.width * bounds.height`. */
@@ -245,7 +245,7 @@ export interface ProjectView {
  * One language's text, ready to look keys up in.
  *
  * Gaps are already filled by the project's default language, so a key some
- * language defines always resolves (`docs/adr/ADR-0023-localised-content-keys.md`).
+ * language defines always resolves (`docs/adr/ADR-0020-localised-content-keys.md`).
  */
 export interface LocaleView {
   language: string;

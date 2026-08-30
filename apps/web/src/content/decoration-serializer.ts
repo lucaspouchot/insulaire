@@ -31,7 +31,7 @@
  * none. What is **always** written is what the file is *about* and what a
  * reader should not have to know the defaults of: `category`, `resolution`,
  * `anchor`, `plane` and `order`
- * (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+ * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
  */
 
 import {

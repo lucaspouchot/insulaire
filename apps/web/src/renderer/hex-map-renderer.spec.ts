@@ -16,7 +16,7 @@ import { projectionRatiosOf } from './tile-art';
  * Derived exactly as `HexMapRenderer` derives it, from the tile set's authored
  * pixel grid rather than from a pair of constants: a test that wrote the tilt
  * down would pass against a picture the renderer no longer draws
- * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
  */
 function isometricFor(hexSize: number): Projection {
   const { tilt, elevationRatio } = projectionRatiosOf(emptyRenderModel().tileArt);
@@ -285,7 +285,7 @@ describe('HexMapRenderer content bounds', () => {
  * exactly: an elevation image is the faces alone, so its `V` has to fall on the
  * hexagon's own lower edges. Half a hex out and the faces hide behind the top
  * face, leaving the drop empty — which is the bug this covers
- * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
  */
 describe('HexMapRenderer tile art', () => {
   const HEX_SIZE = 24;
@@ -471,7 +471,7 @@ describe('HexMapRenderer tile art', () => {
    * The tests above run where `OffscreenCanvas` does not exist, which is the
    * layer-by-layer fallback; this one gives the renderer somewhere to stack a
    * cell once and checks that the cell is then *one* blit
-   * (`docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`).
+   * (`docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`).
    */
   function withComposition<T>(body: () => T): T {
     class Composed {
@@ -545,7 +545,7 @@ describe('HexMapRenderer tile art', () => {
     renderer.draw(600, 600);
     // Not one tile, not one colour: a map half made of pictures and half of
     // placeholders is what this whole change exists to stop showing
-    // (`docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`).
+    // (`docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`).
     expect(canvas.blits).toHaveLength(0);
     expect(canvas.fills).toBe(0);
     expect(renderer.frameStats.cellsDrawn).toBe(0);
@@ -586,7 +586,7 @@ describe('HexMapRenderer tile art', () => {
 
     // The order is the whole point: a `preload` that ran first would fetch the
     // files the bundle is about to carry
-    // (`docs/adr/ADR-0040-tile-art-travels-as-one-bundle.md`).
+    // (`docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`).
     expect(asked).toEqual(['bundle:/content/tile-art.bundle']);
     // And nothing is drawn meanwhile, so no frame resolves a cell and asks for
     // its images one at a time.
@@ -815,7 +815,7 @@ describe('HexMapRenderer hover', () => {
     shaped[0] = 0;
 
     // The editor shows the canvas an author may draw into: two strokes, the
-    // ghost first and fainter (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+    // ghost first and fainter (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
     const editor = new HexMapRenderer(context, LAYOUT, new Camera());
     editor.setModel({ ...base, presence: shaped, showGrid: true, showExtent: true });
     editor.draw(400, 400);
@@ -967,7 +967,7 @@ describe('HexMapRenderer hover', () => {
  * behind it is drawn, so a pixel names two hexes and the picture cannot say
  * which. These pin both halves of the answer: the reveal, which needs no intent
  * because it decides nothing, and the peek, which is the intent that resolves
- * the ambiguity (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+ * the ambiguity (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
  */
 describe('HexMapRenderer reveal', () => {
   const HEX_SIZE = 24;
@@ -1062,7 +1062,7 @@ describe('HexMapRenderer reveal', () => {
 
   it('buries nothing at all in top-down mode', () => {
     // A flat world hides nothing by construction: there is no relief to see
-    // through (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+    // through (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     const renderer = rendererFor(model(ELEVATION, 'topDown'));
 
     expect(renderer.buriedCellAtScreen(LAYOUT.centerOf(BURIED))).toBeNull();
@@ -1143,8 +1143,8 @@ describe('HexMapRenderer reveal', () => {
  *
  * The whole point of two planes is that a character passes *between* them, so
  * the order the three are painted in is the behaviour worth pinning
- * (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`,
- * `docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+ * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`,
+ * `docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
  */
 describe('HexMapRenderer decorations', () => {
   const HEX_SIZE = 24;
@@ -1274,7 +1274,7 @@ describe('HexMapRenderer decorations', () => {
    * The other half of a map appearing dressed: a host whose definitions arrive
    * after the first model — the map editor — has to be able to ask for their
    * pictures without reloading the terrain
-   * (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+   * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
    */
   it('asks its image source for the frames the placements name', async () => {
     const asked: string[][] = [];

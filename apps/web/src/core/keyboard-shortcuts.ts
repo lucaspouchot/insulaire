@@ -3,11 +3,11 @@
  *
  * A shortcut stores `KeyboardEvent.code`, the physical position. `key` is only
  * a label: on AZERTY the event `{ code: 'KeyW', key: 'z' }` still means the
- * north-west position (`docs/adr/ADR-0045-shortcuts-use-physical-keys.md`).
+ * north-west position (`docs/adr/ADR-0032-shortcuts-use-physical-keys.md`).
  *
  * In `core/` rather than beside the settings screen because the framework-free
  * canvas view reads a binding too: it holds one down to look through relief
- * (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`), and `renderer/` may not
+ * (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`), and `renderer/` may not
  * reach into `app/`.
  */
 

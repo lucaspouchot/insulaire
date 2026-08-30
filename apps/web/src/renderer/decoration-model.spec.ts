@@ -7,7 +7,7 @@ import { renderDecorations } from './decoration-model';
  * Turning placements into what the renderer draws: the order, and the nudge.
  *
  * Both are content decisions, and both are made once here rather than in each
- * host (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+ * host (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
  */
 describe('renderDecorations', () => {
   /** A definition anchored at the bottom middle of a 32×48 canvas. */

@@ -9,7 +9,7 @@
  *
  * `document.baseURI` is the one anchor that is right in both: Angular writes
  * `<base href>` into `index.html`, and the `deliver` configuration sets it to
- * `./` (`docs/adr/ADR-0018-client-delivery-build.md`).
+ * `./` (`docs/adr/ADR-0015-client-delivery-build.md`).
  */
 export function assetUrl(path: string): string {
   const base = typeof document === 'undefined' ? 'http://localhost/' : document.baseURI;

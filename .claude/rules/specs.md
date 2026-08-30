@@ -25,9 +25,9 @@ so a behaviour change that leaves them stale is an incomplete change.
 | The engine facade, DTOs, commands or errors (`crates/engine/`, `crates/wasm/`) | `docs/wasm-api.md` — methods, payload shapes, error codes |
 | `GameState`, entities, RNG or the editor document model | `docs/data-model.md` |
 | Crate boundaries, a new crate, or the repository layout | `docs/architecture.md` |
-| The tick pipeline's phases or their order | `docs/wasm-api.md` ("Tick contract") **and** ADR-0004 |
+| The tick pipeline's phases or their order | `docs/wasm-api.md` ("Tick contract") **and** ADR-0003 |
 | Developer commands, prerequisites, or a new limitation | `README.md` |
-| An architectural decision | A new ADR — use `/create-adr`, never edit a decision in place |
+| An architectural decision | `/create-adr` — which decides whether it is an edit to an existing ADR (usually) or a new one |
 
 If a change spans several rows, update all of them.
 
@@ -46,7 +46,7 @@ If a change spans several rows, update all of them.
   requires bumping `WORLD_SCHEMA_VERSION` / `TILE_SET_SCHEMA_VERSION` and saying
   so in `docs/content-format.md`.
 - **Reference decisions by path.** Cite ADRs from code and docs as
-  `docs/adr/ADR-0014-hex-coordinate-model.md` so the reference stays greppable
+  `docs/adr/ADR-0011-hex-coordinate-model.md` so the reference stays greppable
   and can be checked to still resolve.
 - **Pure refactorings, styling and technical changes need no doc update.**
 

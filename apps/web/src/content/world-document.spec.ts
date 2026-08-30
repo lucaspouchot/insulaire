@@ -352,7 +352,7 @@ describe('WorldDocument', () => {
       expect(document.isPresent(water)).toBe(false);
       expect(document.presentCellCount).toBe(11);
       // Paint deliberately outlives the hole
-      // (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+      // (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
       expect(document.tileAt(water)?.id).toBe('water');
 
       expect(document.setPresent(water, true)).toBe(true);
@@ -410,7 +410,7 @@ describe('WorldDocument', () => {
       expect(document.resize(mapBounds(4, 6, offset(0, -3)))).toBe(true);
       // The authored coordinate still names the hex its author meant, which is
       // what keeps another map's door pointing at it
-      // (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+      // (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
       expect(document.tileAt(offset(1, 1))?.id).toBe(before);
       expect(document.isPresent(offset(1, 1))).toBe(true);
       // New canvas arrives empty rather than as a slab of terrain.
@@ -522,7 +522,7 @@ describe('WorldDocument', () => {
   describe('placed decorations', () => {
     /**
      * The one thing a decoration does that an entity and a door do not: share
-     * a cell (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+     * a cell (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
      */
     it('stacks several on one hex and exports them in author order', () => {
       const document = documentFor();
@@ -606,7 +606,7 @@ describe('WorldDocument', () => {
       expect(document.removeTopDecorationAt(at)).toBe(false);
     });
 
-    /** Authored content is never destroyed by a brush stroke (ADR-0046). */
+    /** Authored content is never destroyed by a brush stroke (ADR-0033). */
     it('refuses to carve a hex out from under one', () => {
       const document = documentFor();
       const at = offset(2, 1);

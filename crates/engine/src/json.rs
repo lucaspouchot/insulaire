@@ -181,7 +181,7 @@ impl JsonEngine {
     ///
     /// `projection` is the world's: `"isometric"` resolves the surface and the
     /// cliff, anything else the flat image
-    /// (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+    /// (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     /// `choice_json` is the cell's `PlacedTileArt`; `"{}"` rolls everything.
     ///
     /// # Errors
@@ -307,7 +307,7 @@ impl JsonEngine {
     }
 
     /// Returns the packed presence buffer: `1` per hex the map has, `0` per
-    /// hole (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+    /// hole (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
     ///
     /// # Errors
     ///
@@ -802,7 +802,7 @@ mod tests {
 
         assert_eq!(engine.terrain_buffer("w").expect("buffer").len(), 64);
         // The third bulk transfer: all ones on a map nobody shaped
-        // (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+        // (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
         let presence = engine.presence_buffer("w").expect("buffer");
         assert_eq!(presence.len(), 64);
         assert!(presence.iter().all(|flag| *flag == 1));
@@ -859,7 +859,7 @@ mod tests {
 
         // Grass on top, rock underneath: the borrowed ladder cuts the faces and
         // the top face stays the cell's own
-        // (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+        // (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
         let borrowed = json(
             &engine
                 .preview_tile_render(
@@ -911,7 +911,7 @@ mod tests {
 
         // The same raised cell, drawn twice. Top-down it is one flat image and
         // no relief at all
-        // (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+        // (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
         let flat = json(
             &engine
                 .preview_tile_render(ART_TILE_SET, "rock", "topDown", 3, 0, 0, "{}")
@@ -974,7 +974,7 @@ mod tests {
 
     /// A placed decoration crosses to the host as a *placement*: which
     /// definition, where, and whether this one can be interacted with
-    /// (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+    /// (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
     #[test]
     fn a_placed_decoration_crosses_in_the_world_view() {
         let mut engine = JsonEngine::new();
@@ -1126,7 +1126,7 @@ mod tests {
 
     /// An animated icon is previewed the way a decoration is: from the JSON in
     /// the editor's hand, unregistered and possibly not yet valid
-    /// (`docs/adr/ADR-0050-an-object-icon-is-a-flipbook.md`).
+    /// (`docs/adr/ADR-0036-an-object-is-carried-not-placed.md`).
     #[test]
     fn an_animated_object_icon_previews_through_the_boundary() {
         let engine = JsonEngine::new();

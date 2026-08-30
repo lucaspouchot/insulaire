@@ -5,8 +5,8 @@
  * The mechanics are {@link ContentLibrary}'s. What is an object's own is that
  * its picker label is a **key**, not text: an object's name is what a player
  * reads in an inventory, so the list shows the key and the editor resolves it
- * through the loaded languages (`docs/adr/ADR-0023-localised-content-keys.md`,
- * `docs/adr/ADR-0049-an-object-is-carried-not-placed.md`).
+ * through the loaded languages (`docs/adr/ADR-0020-localised-content-keys.md`,
+ * `docs/adr/ADR-0036-an-object-is-carried-not-placed.md`).
  */
 
 import { Injectable } from '@angular/core';

@@ -5,7 +5,7 @@
  *
  * One command has to start both, because the application is useless without
  * its content and the content now comes from a directory that may live
- * anywhere on disk (`docs/adr/ADR-0022-authoring-content-workspace.md`). The
+ * anywhere on disk (`docs/adr/ADR-0019-authoring-content-workspace.md`). The
  * Angular builder accepts no middleware of its own, so the seam is a proxy:
  * `/content` and `/api/content` are forwarded to the content server, and
  * everything else is the Angular application.

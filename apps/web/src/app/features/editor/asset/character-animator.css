@@ -5,7 +5,7 @@
    shape are `character-workspace.css`'s, deliberately.
 
    It lives in the inspector, whose width the author sets by dragging the
-   divider (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). So it lays
+   divider (docs/adr/ADR-0028-one-editor-for-everything-drawn.md). So it lays
    itself out against *that* width rather than the window's: one column when the
    inspector is left alone, three once it is dragged wide enough for the
    timeline to be worth reading — which is what an author does when they open
@@ -53,7 +53,7 @@
 /* One column, always. Splitting this into columns put the timeline — the part
    an author reads and clicks constantly — in the narrowest of them, and starved
    the pose editor beside it. It gets the full width instead, and stays in view
-   while the rest scrolls (docs/adr/ADR-0039-one-editor-for-everything-drawn.md).
+   while the rest scrolls (docs/adr/ADR-0028-one-editor-for-everything-drawn.md).
 
    `sticky` rather than a fixed pane, because the author can switch it off: a
    long timeline pinned to the top of a short column is worse than one that

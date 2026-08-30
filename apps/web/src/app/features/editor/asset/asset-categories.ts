@@ -4,11 +4,11 @@
  * What `editor-modules.ts` is to the editor shell, this is to the asset module:
  * the one list the child routes, the rail and the placeholder page all read, so
  * a new kind of drawn thing is one entry now and one component later
- * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`,
- * `docs/adr/ADR-0019-editor-modules.md`).
+ * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`,
+ * `docs/adr/ADR-0016-editor-modules.md`).
  *
  * Every label is a **key**, not text
- * (`docs/adr/ADR-0023-localised-content-keys.md`).
+ * (`docs/adr/ADR-0020-localised-content-keys.md`).
  */
 
 /** A family of assets the editor browses. */

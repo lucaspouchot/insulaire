@@ -9,7 +9,7 @@
  * hundred and twenty-eight hand-drawn tiles is not a thing to commit to a
  * fixture. So the art is generated once, checked in as ordinary PNGs, and from
  * then on it is ordinary art: the asset editor opens it, paints it and writes
- * it back (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+ * it back (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
  * Nothing in the build runs this, and nothing reads it at run time.
  *
  * It is deterministic — one seeded PRNG per image — so re-running it reproduces
@@ -28,14 +28,14 @@
  * elevation ladders for dirt, rock and mountain. A tile that authors no ladder
  * of its own borrows one — a grass meadow standing on a rock cliff is a
  * per-cell choice, not a second set of images
- * (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
  *
  * # A flat tile is the same drawing on a different outline
  *
  * A top-down world and an isometric one do not show the same hexagon: one is
  * `2 / sqrt(3)` as tall as it is wide, the other is squashed to the grid's
  * tilt. So they get separate images and neither is stretched into the other
- * (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`). What is *not*
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`). What is *not*
  * separate is the drawing: the same painter fills both, from the same seed,
  * with the outline swapped underneath it — grass is grass whichever way the
  * map is drawn, and the only thing the projection decides is where the edge is.
@@ -76,7 +76,7 @@
  * ```
  *
  * A pointy-top hexagon exposes a south-west and a south-east face
- * (`docs/adr/ADR-0014-hex-coordinate-model.md`). They are laid out from
+ * (`docs/adr/ADR-0011-hex-coordinate-model.md`). They are laid out from
  * **separate draws with separate seeds and separate lighting** — never one
  * mirrored into the other — because that is the rule the whole feature rests
  * on, and a generator that cheated here would be teaching the wrong thing to
@@ -98,7 +98,7 @@ const REPO = resolve(HERE, '..');
  *
  * Must match `art` in the tile set that references them, and the ratios decide
  * the isometric projection: `surfaceHeight / width` is the tilt and
- * `step / width` is one level of relief (ADR-0035). 64 wide is 32's ratios at
+ * `step / width` is one level of relief (ADR-0026). 64 wide is 32's ratios at
  * twice the resolution — the same map, four times the pixels to draw on.
  */
 const GRID = { width: 64, flatHeight: 74, surfaceHeight: 40, elevationHeight: 26, step: 16 };
@@ -157,7 +157,7 @@ const HEX = hexagon();
  * The untilted hexagon, in a flat image's pixel space.
  *
  * The same corner set, without the tilt: this is the shape a top-down map draws
- * (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`), which is why a
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`), which is why a
  * flat image is its own picture rather than a surface stretched. With this grid
  * its north vertex is at `y = 0.05` and its south at `73.95`, so the whole
  * hexagon fits the canvas.
@@ -733,7 +733,7 @@ function canopy(sheet, rng, cx, cy, radius, palette) {
  * face and once for the south-east one. Nothing is copied between them: the
  * strata fall in different places and the two sides are lit differently,
  * because the light is fixed and the faces point in different directions. That
- * is ADR-0035's rule, and a generator that mirrored one into the other would be
+ * is ADR-0026's rule, and a generator that mirrored one into the other would be
  * teaching the wrong thing to whoever reads it next.
  *
  * Everything is laid out **relative to `faceRow`**, so each stratum runs
@@ -1423,7 +1423,7 @@ function encodePng(sheet) {
  * Only three ladders for seven terrains, on purpose: a cell may draw its faces
  * from another tile's ladder, so a sand shelf is dirt's cut and a grass mesa is
  * rock's — a choice in the map, not another eight images
- * (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
  */
 const TERRAINS = [
   { id: 'grass', paint: grassSurface },

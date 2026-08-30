@@ -8,10 +8,10 @@
  * embedded in that executable verbatim, so verifying the folder verifies what
  * ships — a bundle that still contains the editor, or that is missing its engine
  * or its content, is a defect the client must never see
- * (`docs/adr/ADR-0018-client-delivery-build.md`).
+ * (`docs/adr/ADR-0015-client-delivery-build.md`).
  *
  * This check is the reason the packaging step survived the move from a zip to
- * an executable (ADR-0020): the shell changed, the thing to prove did not.
+ * an executable (ADR-0017): the shell changed, the thing to prove did not.
  */
 
 import { existsSync } from 'node:fs';
@@ -29,7 +29,7 @@ const buildDir = join(repoRoot, 'apps', 'web', 'dist', 'web', 'browser');
  * The tile-art bundle is in the list even though a missing one is survivable:
  * the client would fall back to fetching every sprite on its own, which is the
  * hundred-and-eighty-four requests the bundle exists to remove
- * (`docs/adr/ADR-0040-tile-art-travels-as-one-bundle.md`). A build that lost it
+ * (`docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`). A build that lost it
  * lost `sync-content`, and that is worth failing on rather than shipping.
  */
 const REQUIRED = [

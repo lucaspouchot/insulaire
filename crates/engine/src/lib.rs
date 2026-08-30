@@ -24,7 +24,7 @@
 //! * a [`CommandResult`] carries only what changed plus a few hundred bytes of
 //!   runtime state — never the map.
 //!
-//! See `docs/wasm-api.md` and `docs/adr/ADR-0013-engine-api.md`.
+//! See `docs/wasm-api.md` and `docs/adr/ADR-0010-engine-api.md`.
 //!
 //! # Example
 //!
@@ -95,7 +95,7 @@ pub struct Engine {
     /// They live here rather than in `GameState` because no rule reads them
     /// yet: the simulation gains them the day a scenario needs one, and until
     /// then keeping them out of the state keeps the state honest
-    /// (`docs/adr/ADR-0025-settings.md`).
+    /// (`docs/adr/ADR-0022-settings.md`).
     game_settings: BTreeMap<String, serde_json::Value>,
 }
 
@@ -139,15 +139,15 @@ impl Engine {
     ///
     /// `projection` is the world's own — `"isometric"` draws the surface and
     /// the cliff, anything else draws the flat image
-    /// (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`), which is the
+    /// (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`), which is the
     /// same fallback the renderer applies to a world that names a mode nobody
     /// knows. `base` is the height the cell's side faces reach down to, and
     /// `roll` is [`insulaire_world::variant_roll`] for the cell
-    /// (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+    /// (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     /// `choice_json` is a `PlacedTileArt` — what the cell picked by hand —
     /// resolved against the set that was passed in; `"{}"` rolls everything,
     /// which is what a preview of a plain tile wants
-    /// (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+    /// (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     ///
     /// # Errors
     ///
@@ -224,7 +224,7 @@ impl Engine {
     /// The namespace prefixes every key in the file, so `menu.json` loaded as
     /// `menu` answers `menu.title.buttons.newGame`. Load a language's files in
     /// any order; a key defined twice is refused
-    /// (`docs/adr/ADR-0023-localised-content-keys.md`).
+    /// (`docs/adr/ADR-0020-localised-content-keys.md`).
     ///
     /// # Errors
     ///
@@ -270,7 +270,7 @@ impl Engine {
         // language does not have, or one it holds empty and another language
         // answered. A key that is empty everywhere is nobody's fallback — it is
         // this language's own, still unwritten, and an editor has to keep
-        // showing it (`docs/adr/ADR-0027-authoring-creates-keys.md`).
+        // showing it (`docs/adr/ADR-0020-localised-content-keys.md`).
         let fallbacks = resolved
             .entries
             .iter()
@@ -314,7 +314,7 @@ impl Engine {
     ///
     /// Unlike the load, this also resolves the keys it references against the
     /// loaded languages, because an editor wants both answers at once
-    /// (`docs/adr/ADR-0024-authored-title-screen.md`).
+    /// (`docs/adr/ADR-0021-authored-title-screen.md`).
     ///
     /// # Errors
     ///
@@ -357,7 +357,7 @@ impl Engine {
     ///
     /// What a host calls after *editing* locale files: loading is additive and
     /// refuses a key twice, so the edited files can only go back in once the
-    /// old ones are gone (`docs/adr/ADR-0027-authoring-creates-keys.md`).
+    /// old ones are gone (`docs/adr/ADR-0020-localised-content-keys.md`).
     pub fn reset_locales(&mut self) {
         self.content.clear_locales();
     }
@@ -379,7 +379,7 @@ impl Engine {
     /// A world validates on its own without its link targets existing, so this
     /// is the check that a *set* of maps is coherent — the editor runs it after
     /// loading a project, the client runs it at boot
-    /// (`docs/adr/ADR-0017-map-links.md`).
+    /// (`docs/adr/ADR-0014-map-links.md`).
     #[must_use]
     pub fn validate_links(&self) -> insulaire_world::ValidationReport {
         self.content.validate_links()
@@ -453,7 +453,7 @@ impl Engine {
     /// [`terrain_buffer`](Self::terrain_buffer).
     ///
     /// Presentation only — the renderer lifts cells by this much in isometric
-    /// mode (`docs/adr/ADR-0016-isometric-projection.md`). No rule reads it.
+    /// mode (`docs/adr/ADR-0013-isometric-projection.md`). No rule reads it.
     ///
     /// # Errors
     ///
@@ -468,7 +468,7 @@ impl Engine {
     ///
     /// A map is a set of hexes rather than a rectangle, and this is how the
     /// renderer learns which of the extent's cells to draw
-    /// (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`). An unshaped map sends
+    /// (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`). An unshaped map sends
     /// all ones.
     ///
     /// # Errors
@@ -992,7 +992,7 @@ impl Engine {
     /// it draws. Resolution is total, so an incomplete definition previews as
     /// whatever it currently is rather than as an error, and an animation id it
     /// no longer declares previews as the rest pose
-    /// (`docs/adr/ADR-0028-character-definitions.md`).
+    /// (`docs/adr/ADR-0024-character-definitions.md`).
     ///
     /// # Errors
     ///
@@ -1022,8 +1022,8 @@ impl Engine {
     ///
     /// The whole of character rendering that is not the renderer: the editor's
     /// preview and the game call this, so what an author sees while editing is
-    /// what a player will see (`docs/adr/ADR-0028-character-definitions.md`,
-    /// `docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+    /// what a player will see (`docs/adr/ADR-0024-character-definitions.md`,
+    /// `docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`).
     ///
     /// `animation` of `None` is the rest pose, and `time_ms` counts from the
     /// moment the animation started.
@@ -1052,7 +1052,7 @@ impl Engine {
     ///
     /// Direction-specific movement roles fall back to `moveLeft` or
     /// `moveRight` inside the shared character resolver. An unassigned role is
-    /// the rest pose (`docs/adr/ADR-0043-gameplay-selects-character-animations-by-role.md`).
+    /// the rest pose (`docs/adr/ADR-0030-gameplay-selects-character-animations-by-role.md`).
     ///
     /// # Errors
     ///
@@ -1126,7 +1126,7 @@ impl Engine {
     ///
     /// The simulation names the target world; only the registry can produce it,
     /// which is why this step lives in the facade rather than in the tick
-    /// pipeline (`docs/adr/ADR-0017-map-links.md`). A target that cannot be
+    /// pipeline (`docs/adr/ADR-0014-map-links.md`). A target that cannot be
     /// resolved leaves the session exactly where it was and comes back as a
     /// `linkUnresolved` event: content validation is supposed to have caught it
     /// (`link.unknownTargetWorld`), and a broken door must not end a session.
@@ -1191,7 +1191,7 @@ impl Engine {
 /// `toProjectionMode` in `apps/web/src/renderer/projection.ts` does with the
 /// same string and what `ProjectionMode::default` is. A preview of content the
 /// caller is still editing should draw *something* rather than refuse
-/// (`docs/adr/ADR-0016-isometric-projection.md`).
+/// (`docs/adr/ADR-0013-isometric-projection.md`).
 fn projection_of(mode: &str) -> ProjectionMode {
     if mode == "isometric" {
         ProjectionMode::Isometric

@@ -4,7 +4,7 @@
 //! **put on it** — a tree, a house, a chest, a bush, a signpost. Several may
 //! share one cell, each is placed at its own whole-pixel offset, and each says
 //! whether a character walking onto that cell passes **in front of** it or
-//! **behind** it (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+//! **behind** it (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
 //!
 //! ```text
 //! DecorationDefinition + animation + time ──> resolve_at() ──> ResolvedDecoration ──> renderer
@@ -40,14 +40,14 @@
 //! A named [`DecorationAnimation`] is also how a decoration has **states**: a
 //! chest declares `closed` and `open`, each one frame long, and the scenario
 //! asks for one by id. Nothing here knows what opening a chest means — that is
-//! content (`docs/adr/ADR-0005-scenario-runtime.md`).
+//! content (`docs/adr/ADR-0004-scenario-runtime.md`).
 //!
 //! # What is deliberately absent
 //!
 //! Interaction, in both halves. A *definition* does not even say **whether**:
 //! that is a fact about the chest standing at `[4, 7]`, and it lives on
 //! [`crate::PlacedDecoration`] with the id a scenario names
-//! (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+//! (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
 //! What *happens* when it is opened is scenario content, and an
 //! `if this is a chest` in the engine is the thing `CLAUDE.md` forbids.
 
@@ -62,7 +62,7 @@ use crate::character::SpriteResolution;
 ///
 /// `2` removed `interactive`. Whether a thing can be opened or searched is a
 /// fact about the tree standing at `[4, 7]`, not about trees
-/// (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+/// (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
 pub const DECORATION_SCHEMA_VERSION: u32 = 2;
 
 /// Furthest a decoration may be sorted from the middle of its plane.
@@ -105,7 +105,7 @@ pub enum DecorationCategory {
 ///
 /// The two groups of z-index. A character on a cell is drawn between them, so
 /// this is the one thing a combined ordering cannot say
-/// (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+/// (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize,
 )]

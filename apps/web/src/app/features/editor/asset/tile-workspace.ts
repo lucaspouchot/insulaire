@@ -4,30 +4,30 @@
  * One of the workspaces `asset-editor-page.ts` routes to, wearing the frame
  * every category wears: the tile list on the left, the pixels in the middle,
  * the definition on the right, and the hexagon in the dock
- * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`). What a tile *is*
+ * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`). What a tile *is*
  * and how its art resolves by level is
- * `docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`.
+ * `docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`.
  *
  * Three things this screen is careful about.
  *
  * **The preview is not a mock-up.** It draws with `HexLayout`, `Projection` and
  * the same resolver the map renderer uses, so a tile that looks right here
- * looks right on a map (`docs/adr/ADR-0014-hex-coordinate-model.md`,
- * `docs/adr/ADR-0016-isometric-projection.md`). It sits in the dock because it
+ * looks right on a map (`docs/adr/ADR-0011-hex-coordinate-model.md`,
+ * `docs/adr/ADR-0013-isometric-projection.md`). It sits in the dock because it
  * is *context* rather than the thing being edited — and because sharing a
  * column with the pixel tools is what used to leave it clipped.
  *
  * **There is one copy of every image.** The pixel editor writes into a
  * {@link SpriteDocument}, and the preview draws from that same buffer — so a
  * stroke shows up in the hexagon as it is painted, with no round trip through
- * a file (`docs/adr/ADR-0030-the-editor-paints-its-sprites.md`).
+ * a file (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
  *
  * **A tile edited here is a tile the map editor has.** Saving replaces the
  * loaded tile set and rebuilds the open maps, so the palette next door grows
- * the moment this screen writes (`docs/adr/ADR-0009-assets-tilesets.md`).
+ * the moment this screen writes (`docs/adr/ADR-0006-assets-tilesets.md`).
  *
  * Labels are keys, like everywhere else
- * (`docs/adr/ADR-0023-localised-content-keys.md`).
+ * (`docs/adr/ADR-0020-localised-content-keys.md`).
  */
 
 import {
@@ -147,7 +147,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
    * How tall the painted cell stands.
    *
    * Flat on the ground by default: the hexagon is the drawing surface now
-   * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`), and a cell raised
+   * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`), and a cell raised
    * two steps spends most of the scene on a cliff nobody is painting. Opening a
    * level raises it to that level, because a face has to exist to be drawn on.
    */
@@ -158,7 +158,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
    *
    * The two views are different images of the same tile, so the artist needs to
    * be able to look at either
-   * (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`). It follows the
+   * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`). It follows the
    * open tab rather than being a separate control: opening `flat` is asking to
    * see the flat view.
    */
@@ -172,7 +172,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
    *
    * A tile is painted on its hexagon, so it needs the zoom a drawing surface
    * needs — the same ladder the character stage and the flat view step through
-   * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+   * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
    */
   protected readonly previewZoom = signal<number | null>(null);
   /**
@@ -180,7 +180,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
    *
    * There is no mode: this screen exists to draw tiles, and a button that has
    * to be pressed before the pencil works is a button in the way
-   * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+   * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
    */
   /** Whether the pixel grid is drawn over the image being painted. */
   protected readonly showGrid = signal(true);
@@ -195,7 +195,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
    *
    * Kept so a click can be turned back into a pixel of the image under it: the
    * framing is decided at draw time and there is no second copy of it
-   * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+   * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
    */
   private view: { layout: PreviewLayout; width: number; height: number } | null = null;
   protected readonly status = signal<string | null>(null);
@@ -220,7 +220,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
    *
    * The single most important line on this screen. Without it the hexagon shows
    * the file while the pencil edits the buffer, and the author is looking at
-   * the previous version of their own stroke (ADR-0030).
+   * the previous version of their own stroke (ADR-0028).
    */
   private readonly source: SpriteSource = {
     image: (asset: string) => this.sessions.get(asset)?.surface() ?? this.cache.image(asset),
@@ -256,7 +256,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
     // growing under it. The canvas is sized from its parent's box in `paint`,
     // so a parent that changes without a repaint leaves a canvas at the old
     // size — drawn *past* its own frame
-    // (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+    // (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
     const box = this.previewRef()?.nativeElement.parentElement;
     if (box !== null && box !== undefined && typeof ResizeObserver !== 'undefined') {
       this.watching = new ResizeObserver(() => this.schedulePreview());
@@ -395,7 +395,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
    * The hexagon draws whichever image is open (`paintedChoice`), so a tab with
    * no image open shows a rolled variant and paints nothing. Opening one is
    * what the author meant by opening the tab
-   * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+   * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
    */
   protected setTab(tab: TileEditorTab): void {
     this.tab.set(tab);
@@ -505,7 +505,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
   /**
    * Changes a tile's id.
    *
-   * The id is the reference every map holds (ADR-0009), so this is the one
+   * The id is the reference every map holds (ADR-0006), so this is the one
    * field that can break content. It is offered anyway — a tile authored as
    * `tile_2` has to be renameable — and validation reports the maps that no
    * longer resolve, which is the honest answer.
@@ -621,7 +621,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
     this.openImage.set({ level, variant });
     // A face only exists on a cell tall enough to show it, and the hexagon is
     // where it is painted now
-    // (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+    // (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
     // A band spans several levels when a step is shorter than the faces, so the
     // cell has to be that much taller before the level being painted is on it.
     const needed = level * bandLevels(this.geometry());
@@ -890,7 +890,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
    * editor.
    *
    * Art and definition are one act of authoring, so they are written together
-   * (ADR-0030). The set is replaced in the store *after* the write, which is
+   * (ADR-0028). The set is replaced in the store *after* the write, which is
    * what makes the map editor's palette grow without a reload.
    */
   protected async save(): Promise<void> {
@@ -994,7 +994,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
    *
    * A map rolls a variant per cell so a field does not repeat itself; an editor
    * needs the opposite, or an author paints `grass_b` while looking at
-   * `grass_f` (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+   * `grass_f` (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
    */
   private paintedChoice(): CellArt {
     const target = this.openImage();
@@ -1104,7 +1104,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
       return;
     }
     event.preventDefault();
-    // Alt is the eyedropper wherever you are (ADR-0030).
+    // Alt is the eyedropper wherever you are (ADR-0028).
     if (this.tool() === 'picker' || event.altKey) {
       const color = sprite.colorAt(at.x, at.y);
       if (color !== null) {
@@ -1161,7 +1161,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
    * The box comes from `previewImageBox()` — the same call the draw makes — so
    * the click and the blit cannot drift apart. The pointer is measured against
    * the canvas *element* rather than the layout, because the interface scale
-   * multiplies one and not the other (ADR-0030).
+   * multiplies one and not the other (ADR-0028).
    */
   private pixelAt(event: PointerEvent): { x: number; y: number } | null {
     const canvas = this.previewRef()?.nativeElement;
@@ -1228,7 +1228,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
     // At a zoom the board may want more room than the panel has, and then the
     // canvas is the board's size and the panel scrolls it. Measured first,
     // because the framing has to centre inside whatever the canvas ends up
-    // being (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+    // being (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
     const measured = fitPreview(cells, geometry, boxWidth, boxHeight, mode, PREVIEW_PADDING, zoom);
     const width = zoom === null ? boxWidth : Math.max(boxWidth, Math.ceil(measured.contentWidth));
     const height =

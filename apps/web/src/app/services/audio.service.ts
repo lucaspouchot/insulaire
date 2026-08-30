@@ -6,7 +6,7 @@
  * refused promise is the *normal* first outcome, not an error. So this service
  * never assumes it started — it remembers what it was asked to play and starts
  * it at the first gesture, which on the title screen is the click or key that
- * skips the splash (`docs/adr/ADR-0024-authored-title-screen.md`).
+ * skips the splash (`docs/adr/ADR-0021-authored-title-screen.md`).
  *
  * Volumes come from the settings and are applied to whatever is already
  * playing, so a slider moves the music under the player's hand.

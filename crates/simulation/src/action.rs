@@ -7,7 +7,7 @@ use thiserror::Error;
 /// Something the player asks the engine to do.
 ///
 /// Actions are the *only* way Angular changes the simulation. Each accepted
-/// action costs exactly one tick (see `docs/adr/ADR-0004-tick-simulation.md`).
+/// action costs exactly one tick (see `docs/adr/ADR-0003-tick-simulation.md`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     /// Step the player onto an adjacent hex.

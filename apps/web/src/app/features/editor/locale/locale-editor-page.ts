@@ -5,12 +5,12 @@
  * the two things that make it bearable are seeing the languages together and
  * being told what is missing. Both come from the engine: it flattens the files,
  * and `validateLocales` reports the gaps
- * (`docs/adr/ADR-0023-localised-content-keys.md`).
+ * (`docs/adr/ADR-0020-localised-content-keys.md`).
  *
  * The text itself, the files it is written to and the re-registration that
  * follows a save belong to {@link LocaleAuthoringService}, because the title and
  * settings editors create keys through the same door
- * (`docs/adr/ADR-0027-authoring-creates-keys.md`). This screen is the table over
+ * (`docs/adr/ADR-0020-localised-content-keys.md`). This screen is the table over
  * it: filtering, searching and showing what is still empty.
  *
  * The application's own `ui.` keys are listed too, greyed until they are

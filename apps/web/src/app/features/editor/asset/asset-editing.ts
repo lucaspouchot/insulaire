@@ -4,7 +4,7 @@
  * Three functions, and they are here rather than in one category's types file
  * because a tile, a character, a decoration and an object all name things,
  * reorder lists and declare a canvas. Nothing here knows what is being edited
- * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+ * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
  */
 
 import { MAX_SPRITE_RESOLUTION } from '../../../../content/content-types';

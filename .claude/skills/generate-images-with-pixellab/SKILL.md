@@ -47,7 +47,7 @@ outcome nobody can act on.
 A flat tile is the untilted pointy-top hexagon on a `width × flatHeight` canvas,
 a surface is that hexagon squashed to the grid's tilt, and an elevation image is
 the two side faces *alone* — a band that follows the `V` its lower edges cut
-(`docs/content-format.md`, ADR-0035/0037/0041). PixelLab knows none of that, and
+(`docs/content-format.md`, ADR-0026/0037/0041). PixelLab knows none of that, and
 an image that misses it fails `scripts/tile-art.test.mjs`, draws a seam at every
 cliff foot, or shows the background through the ground.
 
@@ -91,7 +91,7 @@ Then:
 ## 2. Which directory the file lands in
 
 Two content directories exist and confusing them is the classic mistake
-(ADR-0022):
+(ADR-0019):
 
 | Directory | What it is | When art goes there |
 |---|---|---|
@@ -179,7 +179,7 @@ Three things this project does **not** take from PixelLab as-is:
 
 - **`create_character` output.** A character here is a paper doll: a tree of
   layers, each a small sprite placed from a joint, with variants chosen by
-  parameters and moved by animations (ADR-0029/0031/0034). A finished
+  parameters and moved by animations (ADR-0024/0031/0034). A finished
   four-direction sprite sheet has no way into that. Use it as the drawing to
   cut layers from, or to check a silhouette — not as an asset.
 - **Objects and props.** `create_map_object` and `create_1_direction_object`
@@ -244,7 +244,7 @@ conforming something that came back at an odd size.
 
 For `sprite` it prints the box it wrote, which is the `width`/`height` half of
 the `rect` the character definition owes it; `x`/`y` are measured from the joint
-the layer hangs off (ADR-0034) and are commonly negative.
+the layer hangs off (ADR-0024) and are commonly negative.
 
 ## 6. Wire it into the content
 

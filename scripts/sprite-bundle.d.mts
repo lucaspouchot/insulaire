@@ -5,7 +5,7 @@
  * reader (`apps/web/src/content/sprite-bundle.ts`) — and the only way to keep
  * them honest is a test that runs both. That test is TypeScript, so the writer
  * needs a shape. Nothing in the application imports this: the scripts are plain
- * ESM and stay that way (`docs/adr/ADR-0040-tile-art-travels-as-one-bundle.md`).
+ * ESM and stay that way (`docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`).
  */
 
 /** One file on its way into a bundle. */

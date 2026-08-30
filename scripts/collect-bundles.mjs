@@ -7,7 +7,7 @@
  * one folder per bundle format; this script gathers the installers and the raw
  * executable in one place, names them, and hashes them, so that "the thing to
  * send" is never a path someone has to remember
- * (`docs/adr/ADR-0020-desktop-executable.md`).
+ * (`docs/adr/ADR-0017-desktop-executable.md`).
  *
  * The raw executable is collected on purpose, next to the installers: a Steam
  * depot takes the binary, not an installer, and the frontend and the engine are
@@ -15,7 +15,7 @@
  *
  * Nothing is verified here beyond existence: the bundle contents are Tauri's
  * business, and what a client must not receive — the editor — is settled in the
- * web build the shell embeds (ADR-0018).
+ * web build the shell embeds (ADR-0015).
  */
 
 import { existsSync } from 'node:fs';

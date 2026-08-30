@@ -55,7 +55,7 @@ export type EngineStatus = 'idle' | 'loading' | 'ready' | 'failed';
  * Time rather than a frame number: a frame is how an author *writes* an
  * animation, milliseconds are how anything *plays* one, and the engine owns the
  * conversion so the editor's preview and a game loop cannot disagree about it
- * (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+ * (`docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`).
  */
 export interface CharacterPose {
   /** Id of the animation. One the definition does not declare is the rest pose. */
@@ -123,7 +123,7 @@ export class EngineService {
    * Validates a tile set **without** registering it.
    *
    * What the asset editor calls before writing a file: the same validator the
-   * runtime loads with (`docs/adr/ADR-0015-shared-content-validation.md`).
+   * runtime loads with (`docs/adr/ADR-0012-shared-content-validation.md`).
    */
   validateTileSet(json: string): ValidationReport {
     return this.parse<ValidationReport>(() => this.engine().validateTileSet(json));
@@ -132,15 +132,15 @@ export class EngineService {
   /**
    * Resolves what to draw for one cell of a tile set **passed in** — the asset
    * editor's preview, for content that is not registered yet
-   * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+   * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
    *
    * `projection` is the world's own: `'isometric'` resolves the surface and the
    * cliff, anything else the flat image
-   * (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+   * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
    *
    * `choice` is what the cell picked by hand, resolved against the set passed
    * in; the default rolls everything, which is what a plain preview wants
-   * (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+   * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
    */
   previewTileRender(
     tileSetJson: string,
@@ -184,7 +184,7 @@ export class EngineService {
    *
    * The namespace prefixes every key in the file, so `menu.json` loaded as
    * `menu` answers `menu.title.buttons.newGame`
-   * (`docs/adr/ADR-0023-localised-content-keys.md`).
+   * (`docs/adr/ADR-0020-localised-content-keys.md`).
    */
   loadLocale(language: string, namespace: string, json: string): LoadOutcome {
     return this.parse<LoadOutcome>(() => this.engine().loadLocale(language, namespace, json));
@@ -214,7 +214,7 @@ export class EngineService {
    * Registers the title screen a client opens on.
    *
    * Load it before the project, which validates that the screen it names is
-   * actually loaded (`docs/adr/ADR-0024-authored-title-screen.md`).
+   * actually loaded (`docs/adr/ADR-0021-authored-title-screen.md`).
    */
   loadTitleScreen(json: string): LoadOutcome {
     return this.parse<LoadOutcome>(() => this.engine().loadTitleScreen(json));
@@ -240,7 +240,7 @@ export class EngineService {
    *
    * A definition says how a *kind* of character is drawn — the player's, an
    * NPC's, a monster's — and offers the choices that may be made about one
-   * (`docs/adr/ADR-0028-character-definitions.md`).
+   * (`docs/adr/ADR-0024-character-definitions.md`).
    */
   loadCharacter(json: string): LoadOutcome {
     return this.parse<LoadOutcome>(() => this.engine().loadCharacter(json));
@@ -267,7 +267,7 @@ export class EngineService {
    * A decoration is a kind of thing that stands on a hex — a tree, a chest, a
    * bush — with the anchor, plane and order that decide how it shares that hex
    * with the characters walking over it
-   * (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+   * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
    */
   loadDecoration(json: string): LoadOutcome {
     return this.parse<LoadOutcome>(() => this.engine().loadDecoration(json));
@@ -279,7 +279,7 @@ export class EngineService {
    * `cell` is the pixel grid it will stand among. Without one the file's own
    * shape is still checked and only `decoration.overflowsCell` is skipped —
    * which is why the editor, which knows its tile set, passes one
-   * (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+   * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
    */
   validateDecoration(json: string, cell?: TileArtGeometry): ValidationReport {
     return this.parse<ValidationReport>(() =>
@@ -334,7 +334,7 @@ export class EngineService {
    * Registers an object definition, before the project that lists it.
    *
    * An object is carried, not placed: an inventory item, a piece of equipment,
-   * a quest token (`docs/adr/ADR-0049-an-object-is-carried-not-placed.md`).
+   * a quest token (`docs/adr/ADR-0036-an-object-is-carried-not-placed.md`).
    */
   loadObject(json: string): LoadOutcome {
     return this.parse<LoadOutcome>(() => this.engine().loadObject(json));
@@ -360,7 +360,7 @@ export class EngineService {
    *
    * The frame arithmetic is Rust's, so an inventory panel and the editor's
    * preview cannot disagree about which drawing is on screen
-   * (`docs/adr/ADR-0050-an-object-icon-is-a-flipbook.md`).
+   * (`docs/adr/ADR-0036-an-object-is-carried-not-placed.md`).
    */
   resolveObject(id: string, timeMs = 0): ResolvedObject {
     return this.parse<ResolvedObject>(() =>
@@ -429,7 +429,7 @@ export class EngineService {
    *
    * Every host draws what *this* produced: the editor's preview and the game
    * call the same resolver, so a preview cannot flatter the result — animation
-   * included (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+   * included (`docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`).
    *
    * `pose` of `undefined` is the rest pose, and so is an animation id the
    * definition does not declare.
@@ -530,7 +530,7 @@ export class EngineService {
    *
    * What the language editor calls after writing its files: loading is additive
    * and refuses a key twice, so edited text only replaces the old text once the
-   * old bundles are gone (`docs/adr/ADR-0027-authoring-creates-keys.md`).
+   * old bundles are gone (`docs/adr/ADR-0020-localised-content-keys.md`).
    */
   resetLocales(): void {
     this.engine().resetLocales();
@@ -540,7 +540,7 @@ export class EngineService {
    * Resolves every map link across the loaded worlds.
    *
    * The check no single world file can make: a door's target lives in another
-   * file (`docs/adr/ADR-0017-map-links.md`).
+   * file (`docs/adr/ADR-0014-map-links.md`).
    */
   validateLinks(): ValidationReport {
     return this.parse<ValidationReport>(() => this.engine().validateLinks());
@@ -551,7 +551,7 @@ export class EngineService {
    *
    * This is the editor's pre-export check, and it is deliberately the *same*
    * validator the runtime uses — see
-   * `docs/adr/ADR-0015-shared-content-validation.md`.
+   * `docs/adr/ADR-0012-shared-content-validation.md`.
    */
   validateWorld(json: string): ValidationReport {
     return this.parse<ValidationReport>(() => this.engine().validateWorld(json));
@@ -593,7 +593,7 @@ export class EngineService {
    *
    * A map is a set of hexes rather than a rectangle, and `worldView().bounds`
    * is only the box those hexes are stored in
-   * (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+   * (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
    */
   presenceBuffer(worldId: string): Uint8Array {
     return this.call(() => this.engine().presenceBuffer(worldId));
@@ -605,7 +605,7 @@ export class EngineService {
    * Starts a game. The engine owns the seed and the settings from here on.
    *
    * `settings` are the game's own, declared by content; the application's
-   * settings never cross the boundary (`docs/adr/ADR-0025-settings.md`).
+   * settings never cross the boundary (`docs/adr/ADR-0022-settings.md`).
    */
   createGame(worldId: string, seed: number, settings: SettingsValues = {}): GameSnapshot {
     const snapshot = this.parse<GameSnapshot>(() =>

@@ -5,16 +5,16 @@
  * Everything editor-related hangs off this one file, and `app.routes.ts` is the
  * only place that imports it. That is what lets the client build drop the whole
  * editor by swapping a single route file
- * (`docs/adr/ADR-0018-client-delivery-build.md`).
+ * (`docs/adr/ADR-0015-client-delivery-build.md`).
  *
  * The asset module is the one with children: every kind of drawn thing is a
  * category under `/editor/asset`, and a planned one routes to the same
  * placeholder a planned module does
- * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+ * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
  *
  * Document titles are **resolvers**, not literals: a title is text on a screen
  * like any other, so it goes through the same keys
- * (`docs/adr/ADR-0023-localised-content-keys.md`).
+ * (`docs/adr/ADR-0020-localised-content-keys.md`).
  */
 
 import { inject } from '@angular/core';

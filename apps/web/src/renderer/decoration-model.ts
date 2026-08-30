@@ -6,7 +6,7 @@
  * and which side of the characters it is drawn on. Putting the two together —
  * and putting the result in draw order — happens **once per model**, here,
  * rather than once per frame in the renderer
- * (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+ * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
  *
  * Both hosts use it: the map editor over the document being edited, and Play
  * over the world view the engine published. Neither may sort decorations its
@@ -25,7 +25,7 @@ export type ResolveDecoration = (definitionId: string) => ResolvedDecoration | n
  * The order is `plane` first — everything behind the characters, then
  * everything in front — then the definition's `order` within that plane, then
  * **author order**, which is what settles two trees drawn from one definition
- * (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+ * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
  *
  * Each placement's `offset` is added to the box the definition's anchor gives
  * it, so what comes out is already where it goes.
@@ -69,7 +69,7 @@ export function renderDecorations(
 
   return entries.map(({ placed, drawn }) => {
     // The nudge is folded in here, once, so neither host — and no renderer —
-    // has to remember to add it (ADR-0051).
+    // has to remember to add it (ADR-0035).
     const [dx, dy] = placed.offset ?? [0, 0];
     const [x, y, width, height] = drawn.placement;
     return {

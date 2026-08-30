@@ -6,7 +6,7 @@ import { serializeDecoration } from './decoration-serializer';
 /**
  * The claim these tests make is the serialiser's whole job: the file an author
  * would have written, and one that parses back to the definition it came from
- * (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+ * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
  */
 describe('serializeDecoration', () => {
   const torch: DecorationDefinition = {

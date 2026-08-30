@@ -22,7 +22,7 @@
  *
  * A map is a *set of hexes*, not a rectangle: the `width x height` extent is
  * what the buffers cover, and a third dense buffer says which of those cells
- * the map actually has (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+ * the map actually has (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
  * Carving a hex deliberately leaves its paint, its elevation and its art choice
  * alone, so restoring it restores what was there.
  *
@@ -30,7 +30,7 @@
  * its own surface or borrows another tile's cliff is an authored oddity, so
  * they live in a `Map` keyed by cell index rather than in three more buffers
  * that would be empty on every map anybody actually draws
- * (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
  */
 
 import {
@@ -152,7 +152,7 @@ export interface DocumentLocation {
  * The document deliberately does *not* check that `targetWorld` exists — a map
  * knows nothing about its siblings. Resolving the target is the project's job,
  * and the verdict comes from the Rust validator through
- * `EngineService.validateLinks` (`docs/adr/ADR-0017-map-links.md`).
+ * `EngineService.validateLinks` (`docs/adr/ADR-0014-map-links.md`).
  */
 export interface DocumentLink {
   id: string;
@@ -168,7 +168,7 @@ export interface DocumentLink {
  *
  * Several may share a hex — that is the point of a decoration — so unlike an
  * entity or a door this is never "the one at this cell"
- * (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+ * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
  */
 export interface DocumentDecoration {
   id: string;
@@ -193,7 +193,7 @@ export interface DocumentDecoration {
  * Carving a cell out from under an entity, a point of interest or a door would
  * destroy authored content or leave it dangling in the void, so the document
  * refuses and hands back what is in the way for the editor to name
- * (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+ * (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
  */
 export interface CellOccupant {
   readonly kind: 'entity' | 'location' | 'link' | 'decoration';
@@ -240,7 +240,7 @@ export class WorldDocument {
      * `1` where the map has a hex, `0` where it has a hole, same layout again.
      *
      * The buffer that makes the extent storage rather than shape
-     * (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+     * (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
      */
     private presenceFlags: Uint8Array,
     /** The cells that chose their art, keyed by their index in {@link cells}. */
@@ -259,7 +259,7 @@ export class WorldDocument {
     public grid: GridStyle,
     /**
      * How far relief may be seen through when the pointer rests on a hex it
-     * hides (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+     * hides (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
      */
     public reveal: RevealStyle,
     /** Authoring zone; `''` means unzoned. Grouping only, never a rule. */
@@ -467,7 +467,7 @@ export class WorldDocument {
    *
    * Carving refuses while anything stands on the cell: the author moves the
    * entity, the door or the point of interest first, rather than losing it
-   * (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`). Paint, elevation and art
+   * (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`). Paint, elevation and art
    * choices are deliberately left alone, so putting the hex back puts back what
    * was on it.
    *
@@ -541,7 +541,7 @@ export class WorldDocument {
     }
     // Trimming discards buffer, and a hex the map has is not buffer: an author
     // carves it first, so the extent never quietly eats the island
-    // (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+    // (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
     if (this.occupantsOutside(next).length > 0 || this.presentOutside(next) > 0) {
       return false;
     }
@@ -673,7 +673,7 @@ export class WorldDocument {
     // A hand-picked surface belongs to the tile that was there: `grass_f` means
     // nothing on sand. Painting over a cell therefore drops its choice and puts
     // it back on the roll, which is also what the author almost always wants
-    // (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+    // (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     this.artChoices.delete(index);
     return true;
   }
@@ -696,7 +696,7 @@ export class WorldDocument {
    *
    * Nothing here checks that the ids exist: the tile set is the authority on
    * that and the Rust validator is the one that says so, exactly as with a
-   * door's target (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+   * door's target (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
    *
    * @returns `true` when the cell changed.
    */
@@ -836,11 +836,11 @@ export class WorldDocument {
    *
    * Unlike an entity or a door, this **appends**: a cell may hold a tree, a
    * bush and a signpost, and author order is what settles which is drawn over
-   * which (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+   * which (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
    *
    * The new placement is not interactive. Whether a player may open *this*
    * chest is a decision the author makes afterwards, in the inspector
-   * (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+   * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
    *
    * @returns the placement, or `null` when the cell is out of bounds.
    */
@@ -865,7 +865,7 @@ export class WorldDocument {
    *
    * The id is what a scenario addresses, so an author has to be able to write
    * it — `chest_with_the_letter` rather than `chest_3`
-   * (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+   * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
    *
    * Refused rather than allowed-and-reported when the name is empty or already
    * taken: a duplicate id is not a state worth passing through, because while
@@ -1120,7 +1120,7 @@ export class WorldDocument {
    *
    * A carved coastline lists its holes; an archipelago drawn on an empty canvas
    * lists its hexes. Picking the shorter list is what keeps both cheap
-   * (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+   * (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
    */
   private writeShape(): MapShape | null {
     const present: [number, number][] = [];

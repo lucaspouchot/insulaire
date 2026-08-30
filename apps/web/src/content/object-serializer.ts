@@ -6,11 +6,11 @@
  * are: an object file is read and diffed by people, and a definition
  * round-tripped through `JSON.stringify` would carry `"slot": ""` and
  * `"tags": []` on every potion in the game
- * (`docs/adr/ADR-0049-an-object-is-carried-not-placed.md`).
+ * (`docs/adr/ADR-0036-an-object-is-carried-not-placed.md`).
  *
  * The icon is a **flipbook**, one frame per line, so "the third frame of the
  * glint changed image" is one changed line
- * (`docs/adr/ADR-0050-an-object-icon-is-a-flipbook.md`).
+ * (`docs/adr/ADR-0036-an-object-is-carried-not-placed.md`).
  *
  * ```json
  * {

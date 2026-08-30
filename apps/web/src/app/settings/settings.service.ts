@@ -3,7 +3,7 @@
  *
  * Two sources, one store: the application's settings
  * (`engine-settings.schema.ts`) and the game's, declared by content and
- * validated by the engine (`docs/adr/ADR-0025-settings.md`). They share a value
+ * validated by the engine (`docs/adr/ADR-0022-settings.md`). They share a value
  * map so one screen can render both, and they are told apart by which
  * declaration a field came from — which is what decides where a value *goes*:
  *
@@ -11,7 +11,7 @@
  * - game settings cross the boundary at `createGame` and nowhere else.
  *
  * Values live in `localStorage`. A save will carry the game's settings when
- * saves exist (ADR-0010); until then, starting a game reads them from here.
+ * saves exist (ADR-0007); until then, starting a game reads them from here.
  */
 
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
@@ -43,7 +43,7 @@ const STORAGE_KEY = 'insulaire.settings.v1';
  * The interface scale is the one whose effect moves the control being held: a
  * shell that zooms on every `input` slides the slider out from under the
  * cursor, and the player chases it. Everything else applies live — that is what
- * makes a volume audible while it is being dragged (ADR-0025) — so this is a
+ * makes a volume audible while it is being dragged (ADR-0022) — so this is a
  * list, not a rule about sliders.
  */
 const APPLIED_ON_RELEASE: ReadonlySet<string> = new Set([ENGINE_SETTING.scale]);
@@ -139,7 +139,7 @@ export class SettingsService {
    *
    * Called again by anything that runs `resetContent()` before re-loading a
    * project: the manifest names the settings file, and will not load without it
-   * (`docs/adr/ADR-0025-settings.md`).
+   * (`docs/adr/ADR-0022-settings.md`).
    */
   register(): void {
     if (this.declarationJson === null) {
@@ -207,7 +207,7 @@ export class SettingsService {
         const previous = this.accepts(field, stored) ? (stored as SettingValue) : field.default;
         // Rebinding onto an occupied physical key swaps the two commands. This
         // preserves a one-key/one-action map without making the player repair a
-        // command that was silently unbound (ADR-0045).
+        // command that was silently unbound (ADR-0032).
         for (const other of fieldsOf(this.sections())) {
           if (
             other.id !== field.id &&

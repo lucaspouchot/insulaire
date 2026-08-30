@@ -18,8 +18,8 @@ This is a single-context repo: one `CONTEXT.md` at the root, one `docs/adr/`.
 ├── CONTEXT.md
 ├── docs/adr/
 │   ├── ADR-0001-separation-ui-engine.md
-│   ├── ADR-0002-rust-wasm.md
-│   └── ADR-0050-an-object-icon-is-a-flipbook.md
+│   ├── ADR-0001-separation-ui-engine.md
+│   └── ADR-0036-an-object-is-carried-not-placed.md
 ├── apps/          ← web (Angular) + desktop (Tauri)
 └── crates/        ← engine, simulation, wasm, world
 ```
@@ -40,4 +40,4 @@ If the concept you need isn't in the glossary yet, that's a signal: either you'r
 
 If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
 
-> _Contradicts ADR-0007 (renderer: Canvas/WebGL), but worth reopening because…_
+> _Contradicts ADR-0005 (renderer: Canvas/WebGL), but worth reopening because…_

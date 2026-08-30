@@ -22,7 +22,7 @@ import { SettingsService } from './settings/settings.service';
  * The shell is also where the project's **languages** are adopted: it is the
  * one place that needs both the engine and the content, and every screen below
  * it displays keys resolved against what it sets up
- * (`docs/adr/ADR-0023-localised-content-keys.md`).
+ * (`docs/adr/ADR-0020-localised-content-keys.md`).
  */
 @Component({
   selector: 'app-root',
@@ -39,7 +39,7 @@ export class App {
    * Injected for its effect, not for its API: constructing this service is what
    * puts the application's own settings in force — the interface scale the
    * shell zooms by (`app.css`), the volumes, the window
-   * (`docs/adr/ADR-0025-settings.md`). They act on the shell, so they belong to
+   * (`docs/adr/ADR-0022-settings.md`). They act on the shell, so they belong to
    * the shell's lifetime; asked for by a screen instead, they would only apply
    * once a player had happened to open that screen, and the title screen — the
    * first thing anyone sees — asks for none of them.
@@ -72,7 +72,7 @@ export class App {
    * The title screen is the game's own first impression and takes the whole
    * window: a navigation bar and an engine badge across the top of it would be
    * the development tooling leaking into the product
-   * (`docs/adr/ADR-0024-authored-title-screen.md`). The settings screen is the
+   * (`docs/adr/ADR-0021-authored-title-screen.md`). The settings screen is the
    * same argument — it is a screen a *player* opens, it fills the window, and
    * it carries its own way back to wherever it was opened from. Character
    * creation is also part of the game's own presentation and carries its own
@@ -107,7 +107,7 @@ export class App {
    * Leaving for the settings or the editor keeps the session — the engine holds
    * it, not the play component — but the title screen is where a game is
    * started, so arriving there ends the one in progress. Saves do not exist yet
-   * (`docs/adr/ADR-0010-save-system.md`), so "unsaved" is currently everything.
+   * (`docs/adr/ADR-0007-save-system.md`), so "unsaved" is currently everything.
    */
   protected async goToTitle(): Promise<void> {
     if (this.engine.hasGame()) {

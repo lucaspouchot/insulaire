@@ -5,10 +5,10 @@
 //! session starts* or *which files a build must ship*. That is what a project
 //! answers, and it is why a delivered bundle can boot with no editor and no
 //! backend: it reads one project file and loads exactly what it lists
-//! (`docs/adr/ADR-0018-client-delivery-build.md`).
+//! (`docs/adr/ADR-0015-client-delivery-build.md`).
 //!
 //! The project is content like everything else: authored, versioned, validated
-//! by the same Rust validator the runtime uses (ADR-0006, ADR-0015).
+//! by the same Rust validator the runtime uses (ADR-0002, ADR-0012).
 
 use serde::{Deserialize, Serialize};
 
@@ -26,7 +26,7 @@ pub const DEFAULT_ZONE_ID: &str = "default";
 /// A zone is the unit of *simulated scope*: a tick advances the maps of one
 /// zone, not only the map the player stands on, so two maps in a zone share a
 /// clock while a map in another zone does not
-/// (`docs/adr/ADR-0021-map-zones.md`). Every map belongs to exactly one.
+/// (`docs/adr/ADR-0018-map-zones.md`). Every map belongs to exactly one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ZoneDefinition {
@@ -52,7 +52,7 @@ pub struct ContentRef {
 /// Each file's [`ContentRef::id`] is its **namespace**: `locales/fr/menu.json`
 /// registered as `menu` provides the keys under `menu.` — so the same key
 /// exists in every language, and a translator works on one area at a time
-/// (`docs/adr/ADR-0023-localised-content-keys.md`).
+/// (`docs/adr/ADR-0020-localised-content-keys.md`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LanguageDefinition {
@@ -135,26 +135,26 @@ pub struct ProjectDefinition {
     ///
     /// A project may ship none: characters describe how an entity is *drawn*,
     /// and a map of coloured tokens needs no definition
-    /// (`docs/adr/ADR-0028-character-definitions.md`).
+    /// (`docs/adr/ADR-0024-character-definitions.md`).
     #[serde(default)]
     pub characters: Vec<ContentRef>,
     /// Decoration definitions to load, in order.
     ///
     /// A project may ship none: a map of bare terrain needs no props
-    /// (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+    /// (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
     #[serde(default)]
     pub decorations: Vec<ContentRef>,
     /// Object definitions to load, in order.
     ///
     /// A project may ship none: a game with no inventory carries nothing
-    /// (`docs/adr/ADR-0049-an-object-is-carried-not-placed.md`).
+    /// (`docs/adr/ADR-0036-an-object-is-carried-not-placed.md`).
     #[serde(default)]
     pub objects: Vec<ContentRef>,
     /// The player-facing character-creation workflow, if this game has one.
     ///
     /// The file contains generic choices and bindings. Words such as race or
     /// gender are author-owned ids, never fields of the engine
-    /// (`docs/adr/ADR-0042-character-creation-is-a-generic-authored-workflow.md`).
+    /// (`docs/adr/ADR-0029-character-creation-is-a-generic-authored-workflow.md`).
     #[serde(default)]
     pub character_creation: Option<ContentRef>,
     /// The languages the game is available in, and their locale files.
@@ -164,14 +164,14 @@ pub struct ProjectDefinition {
     ///
     /// Absent means the game starts on its `start_world` with no menu, which is
     /// what development wants and what a delivery should not do
-    /// (`docs/adr/ADR-0024-authored-title-screen.md`).
+    /// (`docs/adr/ADR-0021-authored-title-screen.md`).
     #[serde(default)]
     pub title_screen: Option<ContentRef>,
     /// The settings this game offers, if it declares any.
     ///
     /// The *application's* settings — volumes, interface scale, language — are
     /// not here: they configure the shell, not the game
-    /// (`docs/adr/ADR-0025-settings.md`).
+    /// (`docs/adr/ADR-0022-settings.md`).
     #[serde(default)]
     pub settings: Option<ContentRef>,
 }

@@ -1,6 +1,6 @@
 /**
  * What {@link LocaleAuthoringService} promises the three screens that author
- * text (`docs/adr/ADR-0027-authoring-creates-keys.md`).
+ * text (`docs/adr/ADR-0020-localised-content-keys.md`).
  *
  * Two behaviours carry the whole feature: a key content names comes into
  * existence, in every language and in a namespace file that may not exist yet;

@@ -4,7 +4,7 @@
  * This lives in TypeScript rather than in the engine on purpose. Pixel maths
  * depends on camera, zoom and device pixel ratio, it runs every frame, and the
  * engine must stay free of presentation concerns
- * (`docs/adr/ADR-0014-hex-coordinate-model.md`).
+ * (`docs/adr/ADR-0011-hex-coordinate-model.md`).
  *
  * # Geometry
  *
@@ -122,7 +122,7 @@ export class HexLayout {
    *
    * Derived from the corner cells rather than from `width x height` alone,
    * because an extent may be anchored anywhere — a map extended northwards has
-   * a negative origin (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+   * a negative origin (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
    */
   boundsOf(bounds: MapBounds): Rect {
     if (bounds.width === 0 || bounds.height === 0) {

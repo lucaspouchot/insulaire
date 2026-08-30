@@ -13,13 +13,13 @@ import { HexMapRenderer, PointerTarget } from './hex-map-renderer';
  * this class asks, and with what intent — the peek key is the case that cannot
  * be read off a pointer event at all, because a hand holding it over a still
  * pointer sends no pointer event
- * (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+ * (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
  */
 describe('CanvasView pointer input', () => {
   /** The hex a pointer resolves to, with and without the peek key held. */
   const RELIEF = offset(4, 6);
   const BURIED = offset(4, 4);
-  /** A physical position, not a printed character (ADR-0045). */
+  /** A physical position, not a printed character (ADR-0032). */
   const PEEK_KEY = 'KeyS';
 
   beforeAll(() => {
@@ -121,7 +121,7 @@ describe('CanvasView pointer input', () => {
 
   it('watches the physical position rather than the printed character', () => {
     // AZERTY sends `{ code: 'KeyS', key: 's' }` here too, but a layout that
-    // prints something else must still peek (ADR-0045).
+    // prints something else must still peek (ADR-0032).
     const view = harness();
     pointer(view.canvas, 'pointermove');
     view.asked.length = 0;

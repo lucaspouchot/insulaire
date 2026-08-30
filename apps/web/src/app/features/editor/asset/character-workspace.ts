@@ -5,14 +5,14 @@
  * what may be chosen about one. The player's character is simply the first of
  * them; nothing on this screen knows what a player is, and the same form
  * creates a merchant, a goblin or a dragon
- * (`docs/adr/ADR-0028-character-definitions.md`).
+ * (`docs/adr/ADR-0024-character-definitions.md`).
  *
  * A definition is two lists:
  *
  * * **parameters** — the choices it offers, written in the settings vocabulary,
  *   so "hair colour" is a `color` control and the player's character-creation
  *   screen will render it with the component that renders a volume slider
- *   (`docs/adr/ADR-0025-settings.md`);
+ *   (`docs/adr/ADR-0022-settings.md`);
  * * **layers** — the pieces it is drawn from, each with variants that answer to
  *   those choices.
  *
@@ -26,18 +26,18 @@
  * author to another tool for every pixel; so the stage opens the sprite behind
  * the layer being edited and writes into it — pencil, eraser, eyedropper, the
  * character's own palette, and a whole-number zoom
- * (`docs/adr/ADR-0030-the-editor-paints-its-sprites.md`).
+ * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
  *
  * A character is also a **skeleton**: a layer may hang off another one, and an
  * animation moves a node by whole pixels with everything below it following.
  * The preview is where that is watched — resolved by the same Rust code the
  * game will use, at the moment the timeline names
- * (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+ * (`docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`).
  *
  * Labels are keys: this screen picks and **creates** them — saving writes every
  * key the file names into every language, empty — and the language editor is
- * where their text is written (ADR-0023,
- * `docs/adr/ADR-0027-authoring-creates-keys.md`).
+ * where their text is written (ADR-0020,
+ * `docs/adr/ADR-0020-localised-content-keys.md`).
  */
 
 import {
@@ -121,7 +121,7 @@ import { CONTENT_ROOT, ProjectStoreService } from '../../../services/project-sto
  *
  * Only a floor for a panel that has not been laid out yet: the box the fit
  * actually uses is the frame's own, height included
- * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+ * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
  */
 const MIN_STAGE = 120;
 
@@ -136,7 +136,7 @@ const FIXED_TINT = '#fixed';
  *
  * Whole numbers, for the reason the renderer's zoom is one: a pixel is a square
  * block of screen pixels or it is a smear
- * (`docs/adr/ADR-0029-characters-are-composed-sprites.md`).
+ * (`docs/adr/ADR-0024-character-definitions.md`).
  */
 const ZOOM_STEPS: readonly number[] = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32];
 
@@ -238,16 +238,16 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
   /**
    * Opacity of the pencil, `0..255`.
    *
-   * Opaque by default and the author's to change: ADR-0030 forbade partial
+   * Opaque by default and the author's to change: ADR-0028 forbade partial
    * alpha on a character because the tint pipeline turned a soft edge into a
    * pale halo, and the pipeline multiplies per pixel now
-   * (`character-renderer.ts`, ADR-0039).
+   * (`character-renderer.ts`, ADR-0028).
    */
   protected readonly alpha = signal(255);
   /**
    * Which surface the scene shows.
    *
-   * `composed` is ADR-0030's: the figure, painted where it stands, which is the
+   * `composed` is ADR-0028's: the figure, painted where it stands, which is the
    * only place the last three pixels can be judged. `flat` is the shared
    * {@link PixelEditor} over the very same buffer — the same document, so a
    * stroke in one is already in the other, and nothing has to be kept in step.
@@ -260,7 +260,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
    *
    * A view setting rather than a paint one: an author lining a cape up with a
    * shoulder wants the grid without picking up a pencil
-   * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+   * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
    */
   protected readonly showGrid = signal(true);
   /** The flat view's zoom, so the file bar steps whichever surface is open. */
@@ -442,7 +442,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
    *
    * Itself, unless it is a mirror — a mirror borrows its source's timing, so
    * the playback loop and the timeline have to read the source or they would
-   * be counting frames nothing has (`docs/adr/ADR-0031-characters-animate-by-
+   * be counting frames nothing has (`docs/adr/ADR-0025-characters-animate-by-
    * hierarchy-and-offsets.md`).
    */
   protected readonly played = computed<Animation | null>(() => {
@@ -507,7 +507,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
    * **which panel is open**: an author with the animation editor in front of
    * them is placing a limb, and one with the layers panel open is drawing. It
    * used to be the paint toggle, and the paint toggle is gone
-   * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`). The hint under
+   * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`). The hint under
    * the stage says which one a drag will do.
    */
   protected readonly posable = computed(
@@ -608,7 +608,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
    *
    * Not the untranslated keys: naming a key is how a key comes to exist, and
    * saving creates it in every language
-   * (`docs/adr/ADR-0027-authoring-creates-keys.md`).
+   * (`docs/adr/ADR-0020-localised-content-keys.md`).
    */
   protected readonly blocking = computed(() =>
     (this.report()?.issues ?? []).filter((issue) => issue.code !== 'locale.unknownKey'),
@@ -641,7 +641,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
     // The flat view needs them too, and needs them without paint mode: it *is*
     // the image, so arriving there with nothing decoded showed "open an image"
     // over a layer that was already selected
-    // (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+    // (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
     effect(() => {
       for (const drawn of this.resolved()?.layers ?? []) {
         this.requireSprite(drawn.asset);
@@ -1224,7 +1224,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
    * changes what every number in the layer means: re-parenting a head onto a
    * shoulder would otherwise throw it across the canvas, and an author would
    * have to type its position back in from nothing
-   * (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`).
+   * (`docs/adr/ADR-0024-character-definitions.md`).
    *
    * So the boxes are rebased by the difference between the old frame and the
    * new one, and the picture is unchanged. Moving a layer is a separate act
@@ -1517,7 +1517,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
    *
    * The same door the title editor opens, at the same convention: an author
    * with a PNG should not have to leave the editor to use it
-   * (`docs/adr/ADR-0022-authoring-content-workspace.md`).
+   * (`docs/adr/ADR-0019-authoring-content-workspace.md`).
    */
   protected async uploadAsset(event: Event, index: number): Promise<void> {
     const input = event.target as HTMLInputElement;
@@ -1606,7 +1606,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
    * keys the character's animations set.
    *
    * One namespace, because that is what a `when` reads
-   * (`docs/adr/ADR-0033-animations-set-pose-values.md`). Offering only the
+   * (`docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`). Offering only the
    * parameters would leave a condition like `view: side` in the file and
    * nowhere on screen — invisible and uneditable, which is how it was until
    * this list existed.
@@ -1716,7 +1716,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
    *
    * Both go through Rust: the validator is the runtime's own, and the resolver
    * is the one the game will draw with, so neither the verdict nor the picture
-   * is this screen's opinion (ADR-0015, ADR-0028).
+   * is this screen's opinion (ADR-0012, ADR-0024).
    */
   protected refresh(): void {
     const document = this.document();
@@ -1839,7 +1839,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
    * It painted the same {@link SpriteDocument} the composed stage paints, so
    * there is nothing to copy across — only the counter every palette, button
    * and figure reads, and a redraw for when the scene switches back
-   * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+   * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
    */
   protected onFlatPainted(): void {
     this.strokes.update((count) => count + 1);
@@ -1862,7 +1862,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
    * One pair of buttons, in the file bar, for the composed stage and the flat
    * view both: an author should not have to find a different control depending
    * on which one they are looking at
-   * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+   * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
    */
   protected zoomBy(delta: number): void {
     if (this.scene() === 'flat') {
@@ -2247,7 +2247,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
   private pixelAt(event: PointerEvent): { x: number; y: number } | null {
     // The **resolved** box, not the authored one: a child's `rect` is measured
     // from the joint it hangs off, so the file's numbers are not where the
-    // sprite is (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`).
+    // sprite is (`docs/adr/ADR-0024-character-definitions.md`).
     const box = this.drawnRect();
     if (box === null) {
       return null;
@@ -2293,7 +2293,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
     // Fitting means the *frame*, both ways. It used to mean the frame's width
     // and a fixed 400px of height, which is why a fit in a tall panel left the
     // figure small with a band of nothing under it, and why the box the click
-    // arithmetic used did not match the panel it was drawn in (ADR-0039).
+    // arithmetic used did not match the panel it was drawn in (ADR-0028).
     const width =
       explicit === null
         ? Math.max(MIN_STAGE, Math.floor(frame.clientWidth))
@@ -2444,7 +2444,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
    * The edited layer loses its tint. What the pencil writes is the file, and a
    * file seen through a multiply is not the thing being edited — an author
    * matching two greys would be matching them through a colour that is not in
-   * either of them (`docs/adr/ADR-0030-the-editor-paints-its-sprites.md`).
+   * either of them (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
    */
   private painted(resolved: ResolvedCharacter): ResolvedCharacter {
     const target = this.target();

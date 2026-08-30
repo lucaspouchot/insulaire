@@ -242,7 +242,7 @@ fn walking_through_the_shipped_door_changes_map_and_comes_back() {
 /// say that a path is *shaped* like a content path (`tile.unusableAsset`).
 /// A typo'd filename is therefore invisible until a tile draws as a hole, which
 /// is exactly the kind of thing that ships
-/// (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+/// (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
 #[test]
 fn every_image_the_shipped_tiles_name_is_on_disk() {
     let tile_set: insulaire_world::TileSetDefinition =
@@ -270,11 +270,11 @@ fn every_image_the_shipped_tiles_name_is_on_disk() {
 
     // Seven terrains at eight flat images and eight surfaces each — the two
     // projections are two sets of pictures
-    // (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`) — and three of
+    // (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`) — and three of
     // them (dirt, rock, mountain) carrying a ladder of three levels at eight
     // variants. The other four borrow a ladder when a cell asks for one, which
     // is why there are three rather than seven
-    // (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+    // (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     assert_eq!(checked, 7 * 8 * 2 + 3 * 3 * 8);
 }
 
@@ -288,13 +288,13 @@ fn the_demo_world_matches_its_documented_shape() {
     assert_eq!(view.tile_set_id, "mvp_terrain");
     assert_eq!(view.cell_count, 400);
     // The shipped demo is still a full rectangle, so its shape costs nothing
-    // (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+    // (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
     assert_eq!(view.present_cell_count, 400);
     assert_eq!(view.palette.len(), 7);
     assert_eq!(view.locations.len(), 3);
 
     // Every tile the shipped art draws carries it through to the renderer
-    // (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+    // (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     assert_eq!(view.tile_art.width, 64);
     // The ladders draw a full band of faces and a level lifts half of one, so a
     // cliff reads at half the height the same art used to give it and the rest
@@ -317,7 +317,7 @@ fn the_demo_world_matches_its_documented_shape() {
         assert_eq!(art_of(id).surface.len(), 8, "{id} lost its surfaces");
     }
     // Three ladders for seven terrains: the rest borrow one per cell
-    // (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+    // (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     for id in ["dirt", "rock", "mountain"] {
         assert_eq!(art_of(id).elevation.levels.len(), 3, "{id} lost its ladder");
         // Level 4 and up reuse the deepest course, so a cliff of any height is
@@ -592,7 +592,7 @@ fn the_shipped_character_resolves_for_every_choice_it_offers() {
 ///
 /// Its idle drives one node — the body — and every layer that hangs off it
 /// moves too, while the legs stay planted on the ground because they hang off
-/// nothing (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+/// nothing (`docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`).
 #[test]
 fn the_shipped_character_plays_its_idle_through_the_hierarchy() {
     let engine = engine_with_shipped_content();
@@ -657,7 +657,7 @@ fn the_shipped_character_plays_its_idle_through_the_hierarchy() {
 /// This is the pair the whole per-frame-sprite feature exists for — the legs
 /// change drawing four times a cycle while everything else about them stays
 /// what the customisation said, and `walking_right` is the same cycle with one
-/// flag set (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+/// flag set (`docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`).
 #[test]
 fn the_shipped_character_walks_left_and_mirrors_it_to_walk_right() {
     let engine = engine_with_shipped_content();

@@ -108,7 +108,7 @@ describe('hex coordinates', () => {
 
   it('covers negative coordinates once the extent has an origin', () => {
     // A map extended northwards and westwards; mirrors the Rust assertions
-    // (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+    // (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
     const bounds = mapBounds(6, 8, offset(-3, -5));
     expect(isWithin(offset(-3, -5), bounds)).toBe(true);
     expect(isWithin(offset(2, 2), bounds)).toBe(true);

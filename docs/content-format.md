@@ -1,8 +1,8 @@
 # Content Format v1
 
 Authored content is JSON on disk. Every file carries an `id` and a
-`schemaVersion` (ADR-0006), references other content by stable id (ADR-0009),
-and is validated by the engine before it can be loaded (ADR-0015).
+`schemaVersion` (ADR-0002), references other content by stable id (ADR-0006),
+and is validated by the engine before it can be loaded (ADR-0012).
 
 Two file kinds exist in the MVP:
 
@@ -17,7 +17,7 @@ Canonical implementations:
 | Concern | Rust | TypeScript |
 |---|---|---|
 | Types | `crates/world/src/definition.rs`, `tileset.rs`, `decoration.rs`, `object.rs` | `apps/web/src/content/content-types.ts` |
-| Validation | `crates/world/src/validation.rs` | *(none — see ADR-0015)* |
+| Validation | `crates/world/src/validation.rs` | *(none — see ADR-0012)* |
 | Writing | `serde_json` | `apps/web/src/content/world-serializer.ts`, `decoration-serializer.ts`, `object-serializer.ts` |
 
 ---
@@ -31,7 +31,7 @@ Positions are **odd-r offset** pairs written as a two-element array:
 ```
 
 meaning column 4, row 10. Rows run horizontally, `row` increases downwards, and
-odd rows are shifted half a hex to the right. Full rationale in ADR-0014.
+odd rows are shifted half a hex to the right. Full rationale in ADR-0011.
 
 A world's **extent** is the rectangle its dense buffers cover: `width` columns
 and `height` rows, anchored at `origin` (default `[0, 0]`). It addresses `col`
@@ -42,7 +42,7 @@ which is what a map extended northwards or westwards produces.
 The extent is **storage, not shape**. Which of its cells the map actually has is
 authored in `shape`, and a map is a *set of hexes*: it may be carved into any
 outline, and its islands need not touch
-(`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`). Extending a map moves the
+(`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`). Extending a map moves the
 origin rather than renumbering its cells, so an authored coordinate names the
 same hex forever — which matters because odd-r is not translation-invariant, and
 because a door in another map names a coordinate in this one.
@@ -81,12 +81,12 @@ The palette a world may paint with.
 | `tiles` | TileDefinition[] | yes | At least one, at most 256. |
 
 **Version 2** added `art`, on the set and on each tile
-(`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`). Every field
+(`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`). Every field
 it adds has a default, so a version-1 file still parses and draws its colours.
 
 **Version 3** adds the **flat** view — `art.flat` on a tile, `art.flatHeight` on
 the set — which is what a top-down world is drawn from
-(`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`). `flatHeight` is
+(`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`). `flatHeight` is
 **required** wherever a set declares an `art` block at all, so a version-2 file
 that declared a grid no longer parses; adding the one line fixes it. The shipped
 files say `3`.
@@ -134,7 +134,7 @@ the two lower edges cut.
 flat image and no relief at all; an `isometric` world draws the surface with the
 cliff stacked under it. Neither is ever scaled, squashed or composed to fit the
 other's outline — that is what makes them two images
-(`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`). A tile with no art
+(`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`). A tile with no art
 for the projection in force draws its `fallbackColor`, exactly as a tile with no
 art at all does.
 
@@ -165,7 +165,7 @@ asset being redrawn or one row of it repeating.
 Bands are stacked **from the foot up**, so the lowest one ends on the hexagon's
 own silhouette whatever the cell's height, and the topmost may start *above* the
 top face — which is drawn last and covers it. That is why a layer's `drop` is
-signed (`docs/adr/ADR-0041-a-cliff-is-stacked-in-bands.md`). Which ladder level a band draws is its index from the ground
+signed (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`). Which ladder level a band draws is its index from the ground
 (`floor(base / bandLevels) + n`), so a cliff standing on higher ground shows the
 stratum its taller neighbour shows at that height. A step *equal* to the band —
 the common case, and the defaults — makes `bandLevels` `1`, one image per level,
@@ -179,7 +179,7 @@ which is a warning rather than an error.
 its tilt from `surfaceHeight / width` and its per-level lift from
 `elevationStep / width`, so a tile drawn from images and a tile filled with
 `fallbackColor` cannot disagree about the shape of a hexagon on the same map.
-ADR-0016's constants are no longer the source of those two numbers.
+ADR-0013's constants are no longer the source of those two numbers.
 
 ### TileDefinition
 
@@ -234,7 +234,7 @@ its images load. Rendering *logic* never appears in content.
 A tile may author one view, both, or neither. Whatever the world's projection
 finds nothing for is drawn in `fallbackColor` — a top-down map of tiles that
 only drew surfaces is entirely colour, on purpose
-(`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+(`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
 
 A `TileArtVariant` is `{ "id", "asset" }`: an id unique within its list, and a
 path under the content root. An `ElevationLevel` is `{ "name"?, "variants" }`
@@ -253,8 +253,8 @@ projection exposes, and only those: a cell's top face always comes from its
 `surface` variants, at every height, so raising a tile never costs it the
 variety its surfaces give it. Nothing in the engine rotates, mirrors, skews or
 scales any part of an image to produce another part; a face that must differ
-from its neighbour is a face an artist draws (ADR-0035). This engine's hexagons
-are pointy-top (ADR-0014), so a raised tile exposes a **south-west** and a
+from its neighbour is a face an artist draws (ADR-0026). This engine's hexagons
+are pointy-top (ADR-0011), so a raised tile exposes a **south-west** and a
 **south-east** face meeting at its south vertex.
 
 **Resolution.** A cell of height `h` standing over a base of `b` — the lower of
@@ -274,7 +274,7 @@ take the same variant, at every level of the drop: a cell showing `grass_f` is
 undercut by `dirt_f` all the way down, so a cliff reads as one cut through one
 hillside rather than as courses of masonry. A level with fewer variants wraps.
 A cell may override any of this — see `PlacedTile.art` below
-(ADR-0036).
+(ADR-0026).
 
 A tile that authors a surface and **no** elevation art still draws its authored
 top face; the drop under it is filled with `fallbackColor`, exactly as a tile
@@ -296,7 +296,7 @@ assets/tiles/dirt/elevation/level_2/dirt_a.png
 
 Three ladders for seven terrains is deliberate: a cell borrows one when it needs
 one (`PlacedTile.art.elevationTile`), so a sand shelf is dirt's cut and a grass
-mesa is rock's, without a second set of images (ADR-0036).
+mesa is rock's, without a second set of images (ADR-0026).
 
 A flat and a surface of the same letter are the **same drawing on a different
 outline**: the generator swaps the hexagon it masks to and keeps the material,
@@ -388,7 +388,7 @@ since.
 
 A zone is a group of maps that belong together, and it is the unit of *simulated
 scope*: a tick advances the maps of the player's zone, not only the map they
-stand on (ADR-0021 — the zone-wide tick is not implemented yet; the grouping it
+stand on (ADR-0018 — the zone-wide tick is not implemented yet; the grouping it
 will read is).
 
 Zones are declared by the **project**, not by the maps: `zone` names a
@@ -448,14 +448,14 @@ there. A painted absent cell is reported as the *warning* `tile.absentCell`,
 never an error.
 
 **Connectivity is never checked.** Three rocks off the western shore are a
-legitimate map (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+legitimate map (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
 
 ### Presentation: projection, character scale, grid and reveal
 
 `projection` is **presentation carried by content**. The simulation never reads
 it and no rule may depend on it; it decides how the renderer draws the map, and
 it travels to the UI on `WorldView.projection`
-(`docs/adr/ADR-0016-isometric-projection.md`).
+(`docs/adr/ADR-0013-isometric-projection.md`).
 
 `characterHeightTiles` is presentation carried the same way. Its reference is a
 128-pixel character canvas: at the default `2`, the shipped 64×128 human stands
@@ -463,7 +463,7 @@ about two projected tile faces high. Canvas sizes keep their authored relative
 scale, so a 32-pixel creature is one quarter as tall and a 256-pixel creature
 twice as tall. The map editor exposes the ratio; the renderer receives it on
 `WorldView.characterHeightTiles`
-(`docs/adr/ADR-0044-map-entity-presentation.md`).
+(`docs/adr/ADR-0031-map-entity-presentation.md`).
 
 `grid` authors the stroke used whenever the grid is visible in the editor or in
 Play. `lineWidth` is an integer from `1` to `4`, expressed in **screen pixels**:
@@ -477,7 +477,7 @@ and is omitted again by canonical serialisation.
 raised cell is drawn over the rows behind it, and past about four levels it
 covers a hex entirely; whenever the pointer rests on such a **buried** hex, the
 renderer draws whatever stands in front of it see-through
-(`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+(`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
 
 | Field | Meaning |
 |---|---|
@@ -536,7 +536,7 @@ stored.
 
 **Presentation only**, exactly like `elevation` beside it: no rule reads it and
 no rule may. It says which *picture*, never what a tile *is* — terrain, cost,
-tags and passability all still come from the `TileDefinition` (ADR-0036).
+tags and passability all still come from the `TileDefinition` (ADR-0026).
 
 `elevationTile` is how a meadow stands on a rock cliff: the faces come from the
 named tile's ladder and the top face stays the cell's own grass. A cell may
@@ -575,7 +575,7 @@ so it does not change `WORLD_SCHEMA_VERSION`.
 
 ### PlacedDecoration
 
-One decoration standing on one cell (ADR-0051). Several may share a hex — that
+One decoration standing on one cell (ADR-0035). Several may share a hex — that
 is what decorations are for — and author order breaks a tie between two drawn
 from the same definition.
 
@@ -603,7 +603,7 @@ placing it.
 `interactive` lives here rather than on the definition because it is a fact
 about the chest standing at `[4, 7]`, not about chests: one in ten holds the
 letter and the other nine are scenery. *Whether*, never *what* — what happens
-when it is opened is scenario content (ADR-0005).
+when it is opened is scenario content (ADR-0004).
 
 Whether `decoration` names a definition that exists is a **project-level**
 question, like a link's `targetWorld`: a world file is validated on its own and
@@ -621,7 +621,7 @@ cannot know, so the unresolved reference is reported as
 
 ### MapLink
 
-A cell that sends the player to another map (ADR-0017). It is the only
+A cell that sends the player to another map (ADR-0014). It is the only
 cross-file reference in the world schema.
 
 | Field | Type | Required | Meaning |
@@ -648,7 +648,7 @@ Because `targetWorld` names another file, a single world validates without it
 ## ProjectDefinition
 
 `content/project.json` says which files make up one game and where a session
-starts. It is what a delivered client build boots from (ADR-0018).
+starts. It is what a delivered client build boots from (ADR-0015).
 
 ```json
 {
@@ -711,7 +711,7 @@ subdirectory.
 ### Locales
 
 Every string a screen displays is a **key**, resolved against the language in
-use (ADR-0023). A locale file is a plain nested object of strings, and the
+use (ADR-0020). A locale file is a plain nested object of strings, and the
 manifest gives it a namespace — its `id` — which prefixes every key in it:
 
 ```json
@@ -749,7 +749,7 @@ claims, so the editor is legible with no content loaded. Content may define
 ## TitleScreenDefinition
 
 `content/menu/title-screen.json` is what a delivered client opens on: the
-background, the music, and the menu (ADR-0024). Everything visible is authored;
+background, the music, and the menu (ADR-0021). Everything visible is authored;
 what a button *does* is not — `action` names one of a closed set the application
 implements.
 
@@ -805,7 +805,7 @@ Rules:
 
 ## SettingsDefinition
 
-`content/settings.json` declares the settings the **game** offers (ADR-0025).
+`content/settings.json` declares the settings the **game** offers (ADR-0022).
 The application's own — volumes, interface scale, language, window size — are
 not here: they configure the shell and are declared in the application. Both use
 the same control vocabulary, so one screen renders them together.
@@ -858,7 +858,7 @@ A `keyBinding` value is one modifier-free browser `KeyboardEvent.code`, such as
 `"KeyW"`, `"Digit1"` or `"Quote"`. It identifies the physical key position,
 not the printed character: `KeyW` is the key labelled `Z` on French AZERTY and
 `W` on QWERTY. The settings UI captures that code and uses the active keyboard
-layout only for its label (ADR-0045). Character parameters and character
+layout only for its label (ADR-0032). Character parameters and character
 creation controls cannot use `keyBinding`; Escape is reserved to cancel capture
 and its `scope` must be `session` so it can be rebound during play.
 
@@ -867,7 +867,7 @@ and its `scope` must be `session` so it can be rebound during play.
 ## CharacterCreationDefinition
 
 `content/character-creation.json` defines the initial form and its ordered
-player-facing screens (ADR-0042). `CHARACTER_CREATION_SCHEMA_VERSION` is **1**.
+player-facing screens (ADR-0029). `CHARACTER_CREATION_SCHEMA_VERSION` is **1**.
 The engine reserves no semantic id: `race`, `gender`, `hairLength`, `hp` and
 every other name belong to the game.
 
@@ -959,19 +959,19 @@ same prefix.
 ## CharacterDefinition
 
 `content/characters/*.json` describes **how a kind of character is drawn, and
-what may be chosen about one** (ADR-0028). The player's character is one of
+what may be chosen about one** (ADR-0024). The player's character is one of
 them; an NPC, a monster or a boss is another, and nothing in the format is
 specific to any of those.
 
 A character is **composed of sprites** on a pixel canvas it declares
-(ADR-0029). There is no procedural drawing vocabulary: a layer names an image.
+(ADR-0024). There is no procedural drawing vocabulary: a layer names an image.
 
 Its layers also form a **tree**: a layer hangs off a joint on another one and is
-**placed from there** (ADR-0034), and **animations** move nodes of that tree by
-whole pixels over time (ADR-0031). Both are optional — a definition of roots and
+**placed from there** (ADR-0024), and **animations** move nodes of that tree by
+whole pixels over time (ADR-0025). Both are optional — a definition of roots and
 no animation is a flat stack of sprites, which is how it started.
 An animation may also declare the gameplay **role** it serves, so the runtime
-never guesses meaning from an author-owned id (ADR-0043).
+never guesses meaning from an author-owned id (ADR-0030).
 
 ```json
 {
@@ -1009,7 +1009,7 @@ CharacterDefinition + values ──> resolve() ──> ResolvedCharacter ──>
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `id` | string | yes | Stable id; must match the manifest's entry. |
-| `schemaVersion` | integer | yes | `3` — anchor-relative boxes (ADR-0034). `2` was ADR-0029's absolute ones; `1` was ADR-0028's primitives on a unit square. Both are gone. |
+| `schemaVersion` | integer | yes | `3` — anchor-relative boxes (ADR-0024). `2` used absolute boxes on the canvas; `1` drew coloured primitives on a unit square. Both are gone, with no reader for either. |
 | `name` | string | no | Shown in the editor. Not player-facing, so not a key. |
 | `category` | `player` \| `npc` \| `enemy` \| `monster` \| `other` | no | Filing only. **Never read by the resolver or the renderer.** Default `other`. |
 | `resolution` | `{ width, height }` | no | The pixel canvas the sprites are authored on, `1..=256` a side. Default `64 × 128`. |
@@ -1087,7 +1087,7 @@ hair sprite serve every hair colour instead of one image per colour. A
 ### The skeleton
 
 `parent` makes the layers a **tree**, and the tree **places** the character as
-well as animating it (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`):
+well as animating it (`docs/adr/ADR-0024-character-definitions.md`):
 
 ```text
 origin(root)  = the canvas origin
@@ -1112,7 +1112,7 @@ read as canvas coordinates. Every other layer's anchors travel with it.
 
 An animation's offsets compose into the same frames, so a body that drops two
 pixels takes the head, the hair and everything hanging off it with it
-(ADR-0031). The resolved payload carries the absolute box **and** the `origin`
+(ADR-0025). The resolved payload carries the absolute box **and** the `origin`
 it was measured from, so a renderer needs none of this and an editor can turn a
 click back into the number in the file.
 
@@ -1152,7 +1152,7 @@ An animation is two statements. Its **tracks** say what moves: offsets from the
 rest pose, per node, per frame. Its **pose** says what is drawn: values that
 join the customisation while it plays, so layers pick their sprites through the
 `when` conditions they already have
-(`docs/adr/ADR-0033-animations-set-pose-values.md`).
+(`docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`).
 
 ```json
 "animations": [
@@ -1217,13 +1217,13 @@ animation it travels from the last keyframe back to the first.
 Evaluation takes a **time in milliseconds**, not a frame: a looping animation
 wraps, and one that does not stops inside its last frame. There is **no rotation
 or scale inside an animation**, because either would resample the layer art
-ADR-0029 exists to keep sharp. A map may still apply the single outer character
-scale decided by ADR-0044 after resolution.
+ADR-0024 exists to keep sharp. A map may still apply the single outer character
+scale decided by ADR-0031 after resolution.
 
 ### Gameplay animation roles
 
 Animation ids remain arbitrary. Gameplay selects the optional `role` instead
-(`docs/adr/ADR-0043-gameplay-selects-character-animations-by-role.md`):
+(`docs/adr/ADR-0030-gameplay-selects-character-animations-by-role.md`):
 
 | Role | Meaning |
 |---|---|
@@ -1375,7 +1375,7 @@ previewing a definition mid-edit gets a picture rather than an error.
 
 `content/decorations/*.json` describe **the things that stand on a hex without
 being the hex**: a tree, a house, a chest, a bush, a signpost. Several may share
-one cell (ADR-0048).
+one cell (ADR-0035).
 
 ```json
 {
@@ -1415,7 +1415,7 @@ one cell (ADR-0048).
 | `animations` | `DecorationAnimation[]` | no | The appearances it can play, in author order. |
 | `defaultAnimation` | string | no | Which one plays when nothing asks for one. Absent names the first declared. |
 
-**Schema `2` removed `interactive`** (ADR-0051). Whether a thing can be opened
+**Schema `2` removed `interactive`** (ADR-0035). Whether a thing can be opened
 or searched is a fact about the chest standing at `[4, 7]`, so it moved to
 `PlacedDecoration`. There is no reader for the old field: a `1` file's
 `interactive` is ignored.
@@ -1448,7 +1448,7 @@ front of* the grass and *behind* the tree canopy, so the sort key is the
 `plane` first — everything `behind`, then the characters, then everything
 `front` — and `order` within each. One combined z-index cannot express that
 without the renderer knowing which numbers mean "past the characters", which is
-scenario-shaped knowledge the engine must not carry (ADR-0048).
+scenario-shaped knowledge the engine must not carry (ADR-0035).
 
 ### Appearances are flipbooks
 
@@ -1472,7 +1472,7 @@ makes a one-shot state stay in the state it reached.
 
 Nothing in the format says what *interacting* with a decoration does.
 `interactive` says **whether**, never **what**; opening a chest and searching a
-bush are scenario content (ADR-0005).
+bush are scenario content (ADR-0004).
 
 ### ResolvedDecoration
 
@@ -1488,7 +1488,7 @@ What `resolveDecoration` / `previewDecoration` return (`docs/wasm-api.md`):
 `content/objects/*.json` describe **what a character carries**: inventory items,
 equipment, consumables, quest tokens. The sibling of a decoration and its
 opposite — a decoration stands on a hex and is drawn in the world, an object
-travels in a bag and is drawn in a panel (ADR-0049).
+travels in a bag and is drawn in a panel (ADR-0036).
 
 ```json
 {
@@ -1513,7 +1513,7 @@ travels in a bag and is drawn in a panel (ADR-0049).
 | `schemaVersion` | integer | yes | `2`. |
 | `name` | string | no | Editor label. Not player-facing, so not a key. |
 | `kind` | enum | no | `consumable`, `equipment`, `quest`, `material`, `other`. Filing only. |
-| `nameKey` | string | no | Key of the name a player reads (ADR-0023). |
+| `nameKey` | string | no | Key of the name a player reads (ADR-0020). |
 | `descriptionKey` | string | no | Key of the description a player reads. |
 | `frames` | string[] | no | The images of the icon, in play order, under the content root. **One frame is a still icon.** At most 64. |
 | `frameDurationMs` | integer | no | How long each frame lasts. Defaults to `120`. Unread by a still icon. |
@@ -1523,7 +1523,7 @@ travels in a bag and is drawn in a panel (ADR-0049).
 | `slot` | string | no | Where equipment is worn — an author-owned id such as `head` or `mainHand`. Empty for anything not worn. |
 | `tags` | string[] | no | Author-owned gameplay tags. |
 
-**Schema `2` replaced `icon` with `frames`** (ADR-0050). An icon is the same
+**Schema `2` replaced `icon` with `frames`** (ADR-0036). An icon is the same
 flipbook a decoration animates with — an ordered list of images played at a
 fixed rate — and the still icon nearly every object has is that flipbook one
 frame long. There is no reader for the old field: a `1` file's `icon` is
@@ -1535,7 +1535,7 @@ does not redo the frame arithmetic (`docs/wasm-api.md`).
 
 An object with no `nameKey` and no `frames` is a **warning**, not an error: an
 object is routinely written before its art and its text exist, and the editor
-creates every key it names on save (ADR-0027). A frame that names *nothing*, on
+creates every key it names on save (ADR-0020). A frame that names *nothing*, on
 the other hand, is an error — it is a row an author left half-filled.
 
 What is deliberately absent: effects, prices, damage, durability. What drinking
@@ -1566,7 +1566,7 @@ single world file, because worlds only ever reference an id.
 ## Validation
 
 Run by `insulaire_world::validate_world`, used identically by the editor and the
-runtime (ADR-0015). Each issue carries a stable `code`, a `severity`, a `path`
+runtime (ADR-0012). Each issue carries a stable `code`, a `severity`, a `path`
 such as `entities[3].at`, and a message.
 
 Two checks span more than one file and therefore have their own entry points:
@@ -1727,7 +1727,7 @@ exposed across the boundary as `validateLinks()` and `loadProject()`.
 | `locale.missingTranslation` | A key the default language defines is missing from another language; its text is served instead. |
 | `locale.orphanKey` | A language defines a key the default language does not. |
 | `locale.emptyValue` | A translation is an empty string — the state a key is created in, and a gap the default language fills. |
-| `locale.unknownKey` | Content references a key no language defines. It renders as itself until the language editor gives it text (`docs/adr/ADR-0027-authoring-creates-keys.md`). |
+| `locale.unknownKey` | Content references a key no language defines. It renders as itself until the language editor gives it text (`docs/adr/ADR-0020-localised-content-keys.md`). |
 | `titleScreen.instantSplash` | A splash that lasts 0 ms and cannot be skipped will never be seen. |
 | `settings.unusedOptions` | A control that does not choose from a list declares options. |
 | `character.unusedOptions` | As above, for a character parameter. |
@@ -1788,7 +1788,7 @@ requirement is on writing, not reading.
 `/content/tile-art.bundle` is **generated, never authored**. It carries every
 allowed file under `assets/tiles/` in one response, so a map costs one request
 instead of the hundred and eighty-four its sprites would
-(`docs/adr/ADR-0040-tile-art-travels-as-one-bundle.md`).
+(`docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`).
 
 ```text
   0   magic        4 bytes   "ISLB"
@@ -1828,26 +1828,25 @@ changing the meaning of an existing one, likewise requires a bump and an
 explicit migration.
 
 `WORLD_SCHEMA_VERSION` is at **5**. Version 5 adds `reveal`, which says how far
-relief may be seen through around the pointer (ADR-0047); every field of it is
+relief may be seen through around the pointer (ADR-0034); every field of it is
 defaulted, so a version-4 file loads unchanged. Version 4 added
 `origin` and `shape`: a map is a set of hexes rather than a rectangle
-(ADR-0046). Both default to what every earlier file meant — anchored at
+(ADR-0033). Both default to what every earlier file meant — anchored at
 `[0, 0]`, every cell present — so a version-3 file loads unchanged. Version 3
 added the map-wide `grid` appearance used by both editor and Play; absent values
 keep the former 1 px, black-at-25% renderer style. Version 2 added
-`PlacedTile.art`, the per-cell art choice (ADR-0036). The shipped files are
+`PlacedTile.art`, the per-cell art choice (ADR-0026). The shipped files are
 written as `5`.
 
 `TILE_SET_SCHEMA_VERSION` is at **2**. Version 2 added `art` — the set's pixel
-grid and each tile's images (ADR-0035). Everything it added is optional with a
+grid and each tile's images (ADR-0026). Everything it added is optional with a
 default, so a version-1 file still parses and draws its `fallbackColor`; the
 shipped files are written as `2`.
 
 `CHARACTER_SCHEMA_VERSION` is at **3**. Version 3 places a child layer's box
-relative to the attachment point it hangs off (ADR-0034); version 2 was
-ADR-0029's, where every box was absolute on the canvas; version 1 was
-ADR-0028's, where a layer could be a coloured rectangle, ellipse or triangle on
-a unit square of floats. Nothing reads 1 or 2 — before 1.0 a breaking change is
+relative to the attachment point it hangs off (ADR-0024); version 2 placed every
+box absolutely on the canvas; version 1 let a layer be a coloured rectangle,
+ellipse or triangle on a unit square of floats. Nothing reads 1 or 2 — before 1.0 a breaking change is
 the answer rather than a migration (`CLAUDE.md`, "Versioning") — so a file
 written against either must be rewritten, not converted. Rewriting a version-2
 file means subtracting, from every child layer's `rect`, the canvas position of

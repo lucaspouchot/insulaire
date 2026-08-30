@@ -20,7 +20,7 @@ stack to prove the architecture works end to end, and nothing more.
 - Render it to a Canvas with pan, zoom, hover, selection and viewport culling.
 - Paint terrain, place a player and monsters, validate, save to disk and import.
 - Give a map **any shape**: remove and add hexes anywhere, extend the canvas in
-  any direction, leave islands detached from each other (ADR-0046).
+  any direction, leave islands detached from each other (ADR-0033).
 - Author a **project of several maps** and link them: a door on a hex sends the
   player to another map, and the engine follows it during play.
 - Start a playable test game **from the maps the editor is holding**.
@@ -44,7 +44,7 @@ stack to prove the architecture works end to end, and nothing more.
 
 Deliberately **not** implemented yet: scenarios, combat, deckbuilding,
 pathfinding, procedural generation, **saving and loading** (the title screen's
-*Continue* is disabled until it exists, ADR-0010), an asset pipeline, a backend.
+*Continue* is disabled until it exists, ADR-0007), an asset pipeline, a backend.
 
 ---
 
@@ -85,7 +85,7 @@ Two screens take the whole window and drop the bar, because they are the
 player's and not the developer's: the title screen and **Settings**. Settings
 carries its own **Back**, which returns wherever it was opened from. And while a
 game is running, **Title** asks before it navigates — arriving there ends the
-session, and saving does not exist yet (ADR-0010). Going to the settings or the
+session, and saving does not exist yet (ADR-0007). Going to the settings or the
 editor does not: the engine holds the game, so coming back to **Play** resumes
 it.
 
@@ -116,7 +116,7 @@ actions (validate, save, import) sit in the toolbar on top.
 The **Map** tool is where a project is organised: add a map, pick one to open,
 rename it. Every map belongs to a **zone** — a group of maps declared by
 `project.json` and picked from a list, never typed. Zones are what a tick will
-advance together, so a hunter two maps away keeps moving (ADR-0021; the
+advance together, so a hunter two maps away keeps moving (ADR-0018; the
 zone-wide tick is not implemented yet). Add one under *Zones*, put maps in it
 from *Map settings* or when creating them; the picker filters on it and shows
 five maps at a time, so a project of forty stays navigable.
@@ -132,7 +132,7 @@ five maps at a time, so a project of forty stays navigable.
    and the message says which. The pale cells around the map are canvas you may
    draw into; the **Shape** panel extends or trims that canvas on any side, and
    growing north or west moves the map's origin rather than renumbering its
-   cells, so doors in other maps keep pointing where you put them (ADR-0046).
+   cells, so doors in other maps keep pointing where you put them (ADR-0033).
 5. Switch the tool to **Player** or **Monster** and click a hex to place one. A
    world has exactly one player; placing a new one moves it.
 6. **Erase** removes whatever entity, door or location stands on a hex.
@@ -141,7 +141,7 @@ five maps at a time, so a project of forty stays navigable.
    `entities[3].at · entity 'monster_3' stands on an impassable tile at [5, 5]`.
 8. **Save map** writes the open map into the content directory, as
    `worlds/<id>.json`, through the authoring server `npm run dev` starts
-   (ADR-0022). **Save project** does the same for every map. Both validate
+   (ADR-0019). **Save project** does the same for every map. Both validate
    first, and **nothing is written when the report is not clean**: the files on
    disk are what the runtime boots on. **Import JSON** still loads a world file
    from anywhere on disk.
@@ -177,13 +177,13 @@ into `demo_refuge` — whose own door leads back out.
 
 ### Other editors
 
-`/editor` is a shell with one tab per module (ADR-0019). **Maps**, **Title
+`/editor` is a shell with one tab per module (ADR-0016). **Maps**, **Title
 screen**, **Settings**, **Languages** and **Resources** are implemented;
 **Scenario** is registered and routes to a placeholder describing what it will
 own. Adding one is an entry in `editor-modules.ts` plus a component.
 
 **Resources** is where everything the game is *drawn from* is authored, one
-category per kind (ADR-0039). **Tiles** and **Characters** open today; objects,
+category per kind (ADR-0028). **Tiles** and **Characters** open today; objects,
 decorations and effects are listed and open a placeholder. Every category wears
 the same frame: the category rail on the left with that category's own list
 under it, the scene in the middle, the definition on the right, and a **divider
@@ -200,7 +200,7 @@ uploaded straight into the content directory, and the preview on the right is
 the real title screen component, so what you see is what a player gets.
 
 **Settings** edits `settings.json`: the settings the *game* offers — sections
-become tabs, groups become panels, fields become controls (ADR-0025). Pick a
+become tabs, groups become panels, fields become controls (ADR-0022). Pick a
 control kind and the form offers exactly what that kind accepts: options for a
 `select`, `min`/`max`/`step` for a slider, a `showIf` naming one other field.
 The preview on the right is the player's screen, rendered with the same
@@ -213,7 +213,7 @@ size, seed — are *not* editable there, because they are not content: the
 application implements each one (`app/settings/engine-settings.schema.ts`).
 
 **Resources → Characters** edits `characters/*.json`: how a *kind* of character is drawn,
-and what may be chosen about one (ADR-0028, ADR-0029). A character is composed
+and what may be chosen about one (ADR-0024). A character is composed
 of **sprites** on a pixel canvas it declares — up to 256 a side, chosen by
 whoever authors it.
 
@@ -231,7 +231,7 @@ pixel art. A **tint** recolours a sprite, either with a fixed colour or from a
 parameter: one greyscale hair sprite serves every hair colour instead of one
 image per colour.
 
-The scene is also where the sprites are **painted** (ADR-0030), and it always
+The scene is also where the sprites are **painted** (ADR-0028), and it always
 is — there is no paint mode to turn on. The composed figure is the drawing
 surface for the image behind the open layer: pencil, eraser, eyedropper (or hold
 Alt), an opacity, undo with Ctrl+Z, and a whole-number zoom from the file bar or
@@ -242,7 +242,7 @@ can create a transparent one at its box's size.
 With the **Animation** panel open and an animation selected, a drag on the stage
 moves the open node at that frame instead of painting it — that is how a pose is
 authored, and the hint under the stage says which of the two a drag will do
-(ADR-0039).
+(ADR-0028).
 
 *Flat* switches the scene to that one sprite seen alone, with the same tools
 over the same buffer — a stroke in one view is already in the other.
@@ -275,7 +275,7 @@ typing over one overrides it for this project.
 
 Keys are **created where they are used**: type a `labelKey` in the title or
 settings editor, save, and the key exists in every language, empty, waiting for
-its text here (ADR-0027). Until someone writes it, that key shows on screen as
+its text here (ADR-0020). Until someone writes it, that key shows on screen as
 itself.
 
 ### Play it
@@ -322,10 +322,10 @@ In Play mode:
 `node scripts/generate-tile-art.mjs` redraws the shipped tile art in
 `content/assets/tiles/`: for each of the seven terrains, eight **flat** images
 for a top-down map and eight **surfaces** for an isometric one
-(`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`), plus three elevation
+(`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`), plus three elevation
 ladders — dirt, rock and mountain — at three levels of eight variants, one
 directory per tile. The other four terrains borrow a ladder when a cell asks for
-one (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`). It is a **seeder**:
+one (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`). It is a **seeder**:
 nothing in the build runs it, the images it writes are ordinary art the asset
 editor edits from then on, and re-running it overwrites whatever has been
 painted since.
@@ -386,8 +386,8 @@ apps/web/src/
   engine/          boundary types + runtime WASM loader
   app/             Angular shell, services, editor modules, play page
     features/editor/  shell + map, title, settings, locale and resource
-                      editors, and one placeholder page (ADR-0019, ADR-0039)
-    build-features*.ts, app.routes*.ts   dev vs client build seam (ADR-0018)
+                      editors, and one placeholder page (ADR-0016, ADR-0028)
+    build-features*.ts, app.routes*.ts   dev vs client build seam (ADR-0015)
 
 content/
   project.json     which files make one game, and where it starts
@@ -402,7 +402,7 @@ docs/
   adr/                architecture decisions
 apps/desktop/
   src/main.rs      the window, and nothing else
-  src/steam.rs     the Steam seam, off by default (ADR-0020)
+  src/steam.rs     the Steam seam, off by default (ADR-0017)
   tauri.conf.json  window, bundle targets, webview CSP
   icons/icon.svg   source of every generated icon
 
@@ -440,14 +440,14 @@ npm run dev        # serves that directory, and lets the editor write into it
 proxies `/content` and `/api/content` to it, so an image dropped into the editor
 lands on disk and appears immediately. Nothing in the *game* talks to it: builds
 mirror the directory into the bundle, and the delivered executable embeds it
-(`docs/adr/ADR-0022-authoring-content-workspace.md`).
+(`docs/adr/ADR-0019-authoring-content-workspace.md`).
 
 The file schema is specified in **`docs/content-format.md`**.
 
 ### Languages
 
 No string on screen is written in the source. A template names a key, and the
-key resolves against the language in use (`docs/adr/ADR-0023-localised-content-keys.md`):
+key resolves against the language in use (`docs/adr/ADR-0020-localised-content-keys.md`):
 
 ```text
 content/locales/en/menu.json    { "buttons": { "newGame": "New game" } }
@@ -498,7 +498,7 @@ changes one line of the diff.
 
 Files are loaded over HTTP as static assets. **`file://` does not work** for
 this app: browsers block ES module and WebAssembly loading from the local
-filesystem (ADR-0012).
+filesystem (ADR-0009).
 
 Any static host works, with one piece of configuration: the app uses path-based
 routing, so unknown paths must fall back to `index.html` — otherwise
@@ -521,7 +521,7 @@ No backend, no database, no content service.
 
 The client receives an **executable**: a Tauri 2 desktop application that hosts
 the same web bundle and the same WASM engine in a native window
-(**ADR-0020**). No browser, no server, no installation ritual.
+(**ADR-0017**). No browser, no server, no installation ritual.
 
 ```bash
 just deliver
@@ -534,7 +534,7 @@ and collects the result into `deliveries/` (git-ignored).
 That build is the **game only**: `app.routes.deliver.ts` replaces
 `app.routes.ts`, so the editor is not merely hidden — it is absent from the
 bundle, and `scripts/verify-client-build.mjs` fails the delivery if any chunk
-still contains it (ADR-0018). The app starts on `/play`, loads
+still contains it (ADR-0015). The app starts on `/play`, loads
 `content/project.json` and begins on its `startWorld`.
 
 **One platform per machine.** Tauri cannot cross-compile, so `just deliver`
@@ -555,7 +555,7 @@ Steam depot takes.
 
 Steam itself is a seam, not an integration: `apps/desktop/src/steam.rs` is
 inert unless the crate is built `--features steam`, because the Steamworks SDK
-is not redistributable (ADR-0020).
+is not redistributable (ADR-0017).
 
 Building on Windows needs the **MSVC C++ build tools** ("Desktop development
 with C++" in the Visual Studio Build Tools) and the **WebView2 runtime**, which
@@ -642,39 +642,39 @@ types the application uses — including the whole change-map loop.
 - **A map link carries the session, not the character.** Tick and RNG survive a
   door; the player entity is the one the target map authors, so future per-player
   state (health, inventory, deck) will need `GameState::enter_world` to carry it
-  (ADR-0017).
+  (ADR-0014).
 - **Only the `enter` trigger** for map links; `interact` is in the schema and
   rejected by validation.
 - **A tick still advances one map.** Zones are authored, validated and edited,
   but the zone-wide tick they exist for is not written: maps outside the one the
-  player stands on stay frozen (ADR-0021).
+  player stands on stay frozen (ADR-0018).
 - **The scenario editor is a placeholder** — a registered tab describing what
-  it will own, with no implementation (ADR-0019). So are three of the five
-  resource categories: objects, decorations and effects (ADR-0039).
+  it will own, with no implementation (ADR-0016). So are three of the five
+  resource categories: objects, decorations and effects (ADR-0028).
 - **Characters are authored but not yet worn.** Definitions and the generic
   creation workflow are edited, validated, traversed from **New game** and
   resolved into drawable sprites, but its result is not yet carried by
   `GameState` or saves, and map entities still use `EntityTemplate` visuals
-  (ADR-0028, ADR-0042).
+  (ADR-0024, ADR-0029).
 - **A character is one still frame.** No animation, no directions, no sprite
-  sheets: a variant names one image (ADR-0029).
+  sheets: a variant names one image (ADR-0024).
 - **The shipped character's sprites are placeholders** — eight small PNGs under
   `content/assets/characters/`, there to exercise the pipeline, not to be
   looked at.
 - **No undo/redo outside the pixel tools**, no copy/paste in the editor. Paint
-  mode undoes the last 32 strokes, in memory only (ADR-0030); nothing else in
+  mode undoes the last 32 strokes, in memory only (ADR-0028); nothing else in
   the editor undoes anything.
 - **The pixel tools are for retouching**, not for drawing a sprite from
   scratch: three tools, no fill, no selection, no brush size, no sub-layers, no
   sprite sheets. Art made elsewhere still arrives through the ⤒ upload button
-  (ADR-0030, ADR-0039).
+  (ADR-0028).
 - **A tile is painted on its hexagon** — there is no flat pixel view for tiles,
-  though the hexagon zooms like any other surface (ADR-0039).
+  though the hexagon zooms like any other surface (ADR-0028).
 - **Only `pointy` orientation** is implemented; `flat` is in the schema and
   rejected by validation.
 - **Isometric relief is drawn, not simulated.** `elevation` lifts a cell and
   gives it a side face; no rule reads it — movement cost, passability and
-  adjacency are unaffected (ADR-0016).
+  adjacency are unaffected (ADR-0013).
 - **Isometric entities are ordered against terrain, not against each other.**
   Two entities on the same row with very different elevations can overlap in the
   wrong order.
@@ -697,59 +697,48 @@ types the application uses — including the whole change-map loop.
 
 ## Architecture decisions
 
-Read in order:
+One decision per file in `docs/adr/`, numbered contiguously in the order they
+were taken. The set was consolidated once, at 0.25.0: chains of amendments were
+folded into the decision they amended and the survivors renumbered, so an ADR
+number in a commit older than that refers to a different document — `git log` on
+`docs/adr/` is the way back.
 
-1. ADR-0001 — UI / engine separation
-2. ADR-0002 — Rust/WASM engine
-3. ADR-0003 — authored and data-driven worlds
-4. ADR-0004 — tick-based simulation
-5. ADR-0005 — scenario runtime *(not implemented yet)*
-6. ADR-0006 — content data format
-7. ADR-0007 — rendering
-8. ADR-0008 — world editor
-9. ADR-0009 — assets and tilesets
-10. ADR-0010 — save system *(not implemented yet)*
-11. ADR-0011 — deterministic RNG
-12. ADR-0012 — static distribution
-13. **ADR-0013 — engine API: commands and compact snapshots**
-14. **ADR-0014 — hex coordinate model**
-15. **ADR-0015 — shared content validation**
-16. **ADR-0016 — isometric projection**
-17. **ADR-0017 — map links and multi-map sessions**
-18. **ADR-0018 — client delivery build**
-19. **ADR-0019 — editor modules**
-20. **ADR-0020 — desktop executable (Tauri 2), Steam seam**
-21. **ADR-0021 — map zones** *(zone-wide ticks not implemented yet)*
-22. **ADR-0022 — authoring content workspace and the dev-only content server**
-23. **ADR-0023 — every displayed string is a key, resolved per language**
-24. **ADR-0024 — the client opens on an authored title screen**
-25. **ADR-0025 — engine settings belong to the shell, game settings are content**
-26. **ADR-0026 — the session outlives the route, and the title screen ends it**
-27. **ADR-0027 — naming a key creates it; an untranslated key is a warning**
-28. **ADR-0028 — characters are definitions plus customisations, resolved in Rust**
-29. **ADR-0029 — characters are composed sprites on a declared pixel canvas**
-30. **ADR-0030 — the editor paints the sprites it composes**
-31. **ADR-0031 — characters animate by a layer hierarchy and whole-pixel offsets**
-32. **ADR-0032 — a keyframe may name a sprite, and an animation may be another one mirrored**
-33. **ADR-0033 — an animation sets pose values, and variants choose from them**
-34. **ADR-0034 — a layer's box is measured from the joint it hangs off**
-35. **ADR-0035 — tile art is authored per level and resolved, never transformed**
-36. **ADR-0036 — a cell may choose its tile art, and a cliff may be borrowed**
-37. **ADR-0037 — a flat map is drawn from flat art, or from colour**
-38. **ADR-0038 — a map is drawn from shared pictures, and only once it has them**
-39. **ADR-0039 — one editor for everything the game is drawn from**
-40. **ADR-0040 — tile art travels as one bundle**
-41. **ADR-0041 — a cliff is stacked in bands**
-42. **ADR-0042 — character creation is a generic authored workflow**
-43. **ADR-0043 — gameplay selects character animations by role**
-44. **ADR-0044 — scale and move map entities in presentation space**
-45. **ADR-0045 — shortcuts use physical keys**
-46. **ADR-0046 — a map is a set of hexes, not a rectangle**
-47. **ADR-0047 — relief never hides a hex**
-48. **ADR-0048 — a decoration is anchored to a hex, in two planes**
-49. **ADR-0049 — an object is carried, not placed**
-50. **ADR-0050 — an object icon is a flipbook**
-51. **ADR-0051 — a decoration is placed, and the placement decides**
+- **ADR-0001** — The Game Engine Is Rust/WASM and Owns the Game State
+- **ADR-0002** — Worlds Are Authored, Versioned, Data-Driven Content
+- **ADR-0003** — Use Discrete Tick-Based Simulation
+- **ADR-0004** — Make Scenario Progression Data-Driven *(not implemented yet)*
+- **ADR-0005** — Render the World to a Canvas, Not to the DOM
+- **ADR-0006** — Content References Assets by Stable Id, Never by Path
+- **ADR-0007** — Store Local Saves in IndexedDB *(not implemented yet)*
+- **ADR-0008** — Use Deterministic RNG
+- **ADR-0009** — Require No Backend; Distribute as Static Files
+- **ADR-0010** — Shape the Engine API as Commands and Compact Snapshots
+- **ADR-0011** — Use Odd-R Offset Coordinates for Content and Axial Internally
+- **ADR-0012** — Validate Content in the Engine, for Both Editor and Runtime
+- **ADR-0013** — Project the Hex Plane at Render Time, Author the Mode per World
+- **ADR-0014** — Author Map Links as Content; Resolve Them in the Engine
+- **ADR-0015** — Ship the Client as an Editor-Free Build of the Same Source Tree
+- **ADR-0016** — The Editor Is an Angular Application of Registered Modules
+- **ADR-0017** — Ship the Client as a Desktop Executable (Tauri 2)
+- **ADR-0018** — Group Maps into Zones, the Unit of Simulated Scope *(zone-wide ticks not implemented yet)*
+- **ADR-0019** — Author Content in a Directory Named by `.env`, Served by a Dev-Only Content Server
+- **ADR-0020** — Every Displayed String Is a Key, Resolved per Language
+- **ADR-0021** — The Client Opens on an Authored Title Screen
+- **ADR-0022** — Engine Settings Belong to the Shell, Game Settings Are Content
+- **ADR-0023** — The Session Outlives the Route, and the Title Screen Ends It
+- **ADR-0024** — Characters Are Definitions Plus Customisations, Resolved in Rust
+- **ADR-0025** — Characters Animate by a Layer Hierarchy, Offsets and Poses
+- **ADR-0026** — Tile Art Is Authored per Band and Resolved, Never Transformed
+- **ADR-0027** — A Map Is Drawn from Shared Pictures, Delivered as One Bundle
+- **ADR-0028** — One Editor for Everything the Game Is Drawn From
+- **ADR-0029** — Character Creation Is a Generic Authored Workflow
+- **ADR-0030** — Gameplay Selects Character Animations by Role
+- **ADR-0031** — Scale and Move Map Entities in Presentation Space
+- **ADR-0032** — Shortcuts Use Physical Keys
+- **ADR-0033** — A Map Is a Set of Hexes, Not a Rectangle
+- **ADR-0034** — Relief Never Hides a Hex
+- **ADR-0035** — A Decoration Is Anchored to a Hex, in Two Planes, and Placed on a Map
+- **ADR-0036** — An Object Is Carried, Not Placed, and Its Icon Is a Flipbook
 
 `CLAUDE.md` contains project-level instructions for Claude Code and other coding
 agents.

@@ -2,7 +2,7 @@
 //!
 //! A [`TileSetDefinition`] is an authored content file describing the tiles a
 //! world may paint with. Worlds reference tiles by stable id, never by file
-//! path or array index (see `docs/adr/ADR-0009-assets-tilesets.md`).
+//! path or array index (see `docs/adr/ADR-0006-assets-tilesets.md`).
 
 use std::collections::BTreeMap;
 
@@ -12,7 +12,7 @@ use crate::tile_art::{TileArt, TileArtGeometry};
 
 /// Highest tile-set schema version this build understands.
 ///
-/// `2` added the authored art of `docs/adr/ADR-0035-tile-art-is-authored-and-
+/// `2` added the authored art of `docs/adr/ADR-0026-tile-art-is-authored-and-
 /// resolved-by-level.md`: a set declares the pixel grid its images are drawn
 /// on, and a tile may carry surface variants and a ladder of elevation levels.
 ///
@@ -87,7 +87,7 @@ pub struct TileDefinition {
     ///
     /// Absent — or empty — draws [`TileVisual::fallback_color`], which is what
     /// every tile did before there was an asset editor
-    /// (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+    /// (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     #[serde(default, skip_serializing_if = "TileArt::is_empty")]
     pub art: TileArt,
 }

@@ -20,7 +20,7 @@ desktop:
     npm run desktop:dev
 
 # Build the client delivery: the game without the editor, as an executable for
-# the machine you are on, collected under deliveries/ (ADR-0020).
+# the machine you are on, collected under deliveries/ (ADR-0017).
 deliver:
     npm install
     npm run wasm:build

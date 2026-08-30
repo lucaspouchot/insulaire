@@ -7,7 +7,7 @@
  * here is only what a *form for building one* has to know: which control kinds
  * carry options, which carry bounds, and what a freshly added field should
  * default to so that it validates the moment it exists
- * (`docs/adr/ADR-0025-settings.md`).
+ * (`docs/adr/ADR-0022-settings.md`).
  */
 
 import { ControlKind, SettingScope, SettingValue } from '../../../../content/content-types';

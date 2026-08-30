@@ -5,7 +5,7 @@
  * Three screens need the same three things — the language editor edits every
  * key, and the title and settings editors *create* keys as an author types a
  * `labelKey` — so the table, the writing and the re-registration live here
- * rather than three times over (`docs/adr/ADR-0027-authoring-creates-keys.md`).
+ * rather than three times over (`docs/adr/ADR-0020-localised-content-keys.md`).
  *
  * Two rules matter and both are the ADR's:
  *
@@ -17,7 +17,7 @@
  *   how a key could be saved to disk and vanish from the table.
  *
  * **Editor-only.** It writes through {@link ContentWorkspaceService}, so nothing
- * the client build imports may reach it (`docs/adr/ADR-0018-client-delivery-build.md`).
+ * the client build imports may reach it (`docs/adr/ADR-0015-client-delivery-build.md`).
  */
 
 import { Injectable, computed, inject, signal } from '@angular/core';

@@ -169,7 +169,7 @@
                   Growing north or west moves the origin instead of renumbering
                   the cells, so an authored coordinate — and every door in
                   another map pointing at it — survives
-                  (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+                  (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
                 -->
                 <h3>{{ 'ui.editor.map.shape.extend' | t }}</h3>
                 <div class="extent">
@@ -254,7 +254,7 @@
 
           <!-- Planting a decoration and deciding whether it can be searched are
                one screen: the second question is what the first one raises
-               (docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md). -->
+               (docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md). -->
           @case ('decorations') {
             <section class="panel">
               <h2>{{ 'ui.editor.map.decorations.brush' | t }}</h2>
@@ -463,7 +463,7 @@
           tool rather than a case of the switch, because it is the same question
           as "which terrain" one level down: paint a hex, then say which of its
           pictures it shows and what its cliff is cut from
-          (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+          (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
         -->
         @if (inspector() === 'brush') {
           <section class="panel">
@@ -922,7 +922,7 @@
             <div class="row">
               <!--
                 The extent is what the buffers cover; the hex count is the size
-                of the world (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+                of the world (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
               -->
               <span>{{ 'ui.editor.map.open.size' | t }}</span>
               <span>{{ doc.width }} × {{ doc.height }}</span>

@@ -5,7 +5,7 @@
  * being the hex: a tree, a house, a chest, a bush, a signpost. Several may
  * share one cell, and what makes them share it properly is three numbers this
  * screen exists to get right
- * (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`):
+ * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`):
  *
  * * the **anchor** — which pixel of the image lands on the cell's ground point;
  * * the **plane** — whether a character walking onto that cell passes in front
@@ -23,10 +23,10 @@
  * skeleton. A named animation is also how a decoration has *states*: a chest
  * declares `closed` and `open`, each one frame long, and the scenario asks for
  * one by id. Nothing here knows what opening a chest means
- * (`docs/adr/ADR-0005-scenario-runtime.md`).
+ * (`docs/adr/ADR-0004-scenario-runtime.md`).
  *
  * The pixels are painted on the same surface every other category paints on
- * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`), and the placement
+ * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`), and the placement
  * is resolved by the Rust resolver the map will use — so what an author lines
  * up here is what a map will draw.
  */
@@ -104,7 +104,7 @@ const MIN_STAGE = 120;
  *
  * Mirrors the map renderer's own unit: a 128-pixel character spans that many
  * tile faces, and every other canvas scales in proportion
- * (`docs/adr/ADR-0044-map-entity-presentation.md`).
+ * (`docs/adr/ADR-0031-map-entity-presentation.md`).
  */
 const CHARACTER_UNIT_HEIGHT = 128;
 
@@ -133,7 +133,7 @@ const CHROME = {
  *
  * The shipped human is authored on a 64x128 canvas and does not fill it, so a
  * silhouette a little narrower than half its height is what a character reads
- * as (`docs/adr/ADR-0029-characters-are-composed-sprites.md`).
+ * as (`docs/adr/ADR-0024-character-definitions.md`).
  */
 const FIGURE_ASPECT = 0.38;
 
@@ -157,7 +157,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
    * A *real* one: the plane decision is "does a character pass in front of
    * this", and the honest way to answer it is the character the game will
    * actually draw, at the scale the map will draw it
-   * (`docs/adr/ADR-0044-map-entity-presentation.md`).
+   * (`docs/adr/ADR-0031-map-entity-presentation.md`).
    */
   private readonly characters = inject(CharacterLibraryService);
 
@@ -287,7 +287,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
    *
    * The project's own tile geometry, not a shape this screen invented: a
    * decoration is judged against the tiles it will stand on
-   * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+   * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
    */
   protected readonly geometry = computed<TileArtGeometry>(() => {
     const tileSet = this.store.tileSetDefinitions()[0];
@@ -310,7 +310,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
    *
    * The same resolver the game draws with, so what an author judges the plane
    * against is a real figure at the real proportion and not a stand-in
-   * (`docs/adr/ADR-0028-character-definitions.md`). `null` falls back to the
+   * (`docs/adr/ADR-0024-character-definitions.md`). `null` falls back to the
    * plain silhouette, which is what a project shipping no character gets.
    */
   protected readonly figure = computed<ResolvedCharacter | null>(() => {
@@ -397,7 +397,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
     if (frame !== undefined && typeof ResizeObserver !== 'undefined') {
       // A canvas sized in script from its parent's box has to be repainted when
       // that box moves — the inspector divider moves it without a window resize
-      // (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+      // (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
       this.resizeObserver = new ResizeObserver(() => this.draw());
       this.resizeObserver.observe(frame);
     }
@@ -558,7 +558,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
     // The canvas a new decoration starts on is **this project's hex**, not the
     // schema's fallback: a prop is drawn against the tiles it will stand on,
     // and a 32-pixel canvas on a 64-pixel tile set is a first edit every author
-    // would have to make (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+    // would have to make (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     const geometry = this.geometry();
     const resolution = {
       width: clampResolution(geometry.width),
@@ -831,7 +831,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
    *
    * The same door the character editor opens, at the same convention: an author
    * with a PNG should not have to leave the editor to use it
-   * (`docs/adr/ADR-0022-authoring-content-workspace.md`).
+   * (`docs/adr/ADR-0019-authoring-content-workspace.md`).
    */
   protected async uploadFrame(event: Event, index: number): Promise<void> {
     const input = event.target as HTMLInputElement;
@@ -908,7 +908,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
    *
    * The readout only; **what is drawn** comes from the Rust resolver, so the
    * two cannot drift on the thing that matters
-   * (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+   * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
    */
   private frameOf(animation: DecorationAnimation, timeMs: number): number {
     const count = animation.frames.length;
@@ -927,7 +927,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
    * Both go through Rust: the validator is the runtime's own and the resolver
    * is the one a map will place a tree with, so neither the verdict nor the
    * position is this screen's opinion
-   * (`docs/adr/ADR-0015-shared-content-validation.md`).
+   * (`docs/adr/ADR-0012-shared-content-validation.md`).
    */
   protected refresh(): void {
     const document = this.document();
@@ -1171,7 +1171,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
    *
    * The order *is* the decision this screen exists to make visible: everything
    * in the `behind` plane, then the characters, then everything in `front`
-   * (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+   * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
    */
   private draw(): void {
     const canvas = this.canvasRef()?.nativeElement;
@@ -1320,9 +1320,9 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
    * It is placed at the scale the map places one: a 128-pixel canvas spans
    * `characterHeightTiles` tile faces, and every other canvas scales with it,
    * so a rat is small and a dragon is not
-   * (`docs/adr/ADR-0044-map-entity-presentation.md`). The zoom `drawCharacter`
+   * (`docs/adr/ADR-0031-map-entity-presentation.md`). The zoom `drawCharacter`
    * settles on is a whole number, which is what an editor preview keeps
-   * (`docs/adr/ADR-0029-characters-are-composed-sprites.md`), so the figure is
+   * (`docs/adr/ADR-0024-character-definitions.md`), so the figure is
    * the nearest whole zoom under that height rather than exactly it.
    *
    * The plain silhouette below is the fallback for a project with no character
@@ -1396,7 +1396,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
  * How large the reference figure is drawn, in authored pixels.
  *
  * `characterHeightTiles` tile faces tall, which is what a map means by "as tall
- * as a character" (`docs/adr/ADR-0044-map-entity-presentation.md`). Shared by
+ * as a character" (`docs/adr/ADR-0031-map-entity-presentation.md`). Shared by
  * the fit and the draw, so the guide can never be sized into the frame's edge.
  */
 function figureBox(hexHeight: number): { width: number; height: number } {

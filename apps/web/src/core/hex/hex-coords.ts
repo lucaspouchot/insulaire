@@ -10,7 +10,7 @@
  * Anything that decides what the player *may do* stays in Rust. The UI never
  * computes "is this hex adjacent, passable, free?"; it asks the engine and
  * highlights `legalMoves` from the snapshot. See
- * `docs/adr/ADR-0014-hex-coordinate-model.md`.
+ * `docs/adr/ADR-0011-hex-coordinate-model.md`.
  *
  * # Representation
  *
@@ -114,7 +114,7 @@ export function hexDistance(a: Axial, b: Axial): number {
  * The rectangle a map's dense buffers cover; mirrors Rust's `MapBounds`.
  *
  * A map is a *set of hexes*, not a rectangle
- * (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`). This is only the box those
+ * (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`). This is only the box those
  * hexes are stored in, and the `origin` is what lets the box grow northwards or
  * westwards without renumbering a single authored cell — odd-r is not
  * translation-invariant, so a shape shifted by an odd number of rows would be a

@@ -5,8 +5,8 @@
  * **mirror**: the same rules, the same numbers, asserted by the same tests on
  * both sides. It exists for the same reason the hex maths does — resolution
  * runs once per visible cell per frame, and one WASM crossing per tile is the
- * thing `CLAUDE.md` forbids (`docs/adr/ADR-0014-hex-coordinate-model.md` set
- * the precedent, `docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`
+ * thing `CLAUDE.md` forbids (`docs/adr/ADR-0011-hex-coordinate-model.md` set
+ * the precedent, `docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`
  * decided what is resolved).
  *
  * What crosses the boundary is the **content**: a tile's `art` arrives on the
@@ -20,7 +20,7 @@
  * `surface` plus `elevation` for an isometric one. Neither is ever stretched
  * into the other's shape, and a tile that authors nothing for the projection in
  * force draws its `fallbackColor`
- * (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
  *
  * # An elevation image is the faces, and only the faces
  *
@@ -34,7 +34,7 @@
  * up. A set whose step is its whole band answers `1` and gets one image per
  * step, as it always did; a shorter step spreads each image over several levels
  * instead of drawing the same slice of it over and over
- * (`docs/adr/ADR-0041-a-cliff-is-stacked-in-bands.md`).
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
  *
  * # A cell may choose, and mostly does not
  *
@@ -43,7 +43,7 @@
  * overrides that with a {@link CellArt}: this surface, this ladder, this
  * variant. The ids were resolved to indices by Rust when the grid was built, so
  * nothing here searches a variant list by name
- * (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
  *
  * # What resolution never does
  *
@@ -251,7 +251,7 @@ export function sourceLevel(elevation: TileElevation | undefined, level: number)
  *
  * Mirrors `CellArt` in `crates/world/src/tile_art.rs`. An absent field is "roll
  * it", so `{}` — the default — is the ordinary cell
- * (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
  */
 export interface CellArt {
   /**
@@ -282,7 +282,7 @@ export interface CellArt {
  * `projection` decides which set of images answers, and the two never mix: a
  * top-down world is one flat image and nothing else, and a tile that authors
  * none resolves to nothing so the renderer fills its colour
- * (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
  *
  * `base` is the height the cell's side faces reach down to — the lower of its
  * two front neighbours, which is what the renderer already computes so a cliff
@@ -394,7 +394,7 @@ function assetAt(
  * a sprite tile and a colour-filled tile disagreeing on the same map — every
  * consumer still asks {@link Projection}, and hit-testing, culling and the wall
  * bases keep working by construction
- * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
  *
  * ```text
  *   drawn hex width  = sqrt(3) * hexSize            (HexLayout)

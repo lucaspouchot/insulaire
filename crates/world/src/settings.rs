@@ -5,7 +5,7 @@
 //! **The application's** settings — window size, interface scale, text speed,
 //! volumes, language — configure the shell around the game. They are fixed, the
 //! application implements each one, and the engine has no business knowing that
-//! a screen has a size (`docs/adr/ADR-0025-settings.md`).
+//! a screen has a size (`docs/adr/ADR-0022-settings.md`).
 //!
 //! **The game's** settings — difficulty, starting population, whichever knobs a
 //! particular game wants — are content: a project declares them, the player sets
@@ -16,7 +16,7 @@
 //!
 //! Both are described with the **same vocabulary** — [`ControlDefinition`] — so
 //! one screen renders them side by side and an author has one set of concepts
-//! to learn. Labels are keys, like all displayed text (ADR-0023).
+//! to learn. Labels are keys, like all displayed text (ADR-0020).
 
 use std::collections::BTreeMap;
 
@@ -26,7 +26,7 @@ use serde_json::Value;
 /// Highest settings schema version this build understands.
 ///
 /// Version 2 adds the physical-key [`ControlKind::KeyBinding`] control
-/// (`docs/adr/ADR-0045-shortcuts-use-physical-keys.md`).
+/// (`docs/adr/ADR-0032-shortcuts-use-physical-keys.md`).
 pub const SETTINGS_SCHEMA_VERSION: u32 = 2;
 
 /// How a setting is presented, and therefore what values it accepts.
@@ -201,7 +201,7 @@ impl ControlDefinition {
 /// The platform owns the growing list of codes, so validation deliberately
 /// checks the stable shape instead of copying that list. Whitespace,
 /// `Unidentified`, and modifier-only codes are the values that cannot describe
-/// the single physical action ADR-0045 defines.
+/// the single physical action ADR-0032 defines.
 fn is_keyboard_code(code: &str) -> bool {
     !code.is_empty()
         && code != "Unidentified"
@@ -340,7 +340,7 @@ impl SettingsDefinition {
 /// The rule in one place, for both callers: a settings file and a character's
 /// parameters are the same vocabulary, so "unknown key dropped, wrong type
 /// refused, number clamped, gap filled with the default" cannot come to mean
-/// two different things (`docs/adr/ADR-0028-character-definitions.md`).
+/// two different things (`docs/adr/ADR-0024-character-definitions.md`).
 #[must_use]
 pub fn resolve_controls<'a>(
     controls: impl Iterator<Item = &'a ControlDefinition>,

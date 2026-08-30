@@ -102,7 +102,7 @@ interface EntityMotion {
  *
  * A line is a **key and its values**, not a sentence: the log is on screen, so
  * it is translated like everything else, and switching language rewrites the
- * lines already logged (`docs/adr/ADR-0023-localised-content-keys.md`).
+ * lines already logged (`docs/adr/ADR-0020-localised-content-keys.md`).
  */
 interface LogEntry {
   readonly id: number;
@@ -138,7 +138,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
    * Rebinding happens on the settings screen while a map may already be open,
    * and a view still watching the old key would look through relief on a key
    * that now means something else
-   * (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+   * (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
    */
   private readonly peekBinding = effect(() => {
     this.view?.setPeekKey(this.settings.keyBinding(ENGINE_SHORTCUT.peek));
@@ -151,7 +151,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
    *
    * A tile set that ships no art never asks for one, so this costs nothing
    * until an asset editor has painted something
-   * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+   * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
    */
   private readonly tileImages = new SpriteCache(
     (asset) => contentUrl(asset),
@@ -223,20 +223,20 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       await this.store.ensureLoaded();
       // The manifest declares its languages, and it will not load until their
       // files are registered — so the game waits for them like any other
-      // content (`docs/adr/ADR-0023-localised-content-keys.md`).
+      // content (`docs/adr/ADR-0020-localised-content-keys.md`).
       await this.i18n.ensureAdopted();
       // The game's settings are content, and the game is created with them; the
       // seed comes from the application's own settings
-      // (`docs/adr/ADR-0025-settings.md`).
+      // (`docs/adr/ADR-0022-settings.md`).
       await this.settings.ensureLoaded();
       // Character definitions are content the manifest lists, so the project
       // will not load without them either
-      // (`docs/adr/ADR-0028-character-definitions.md`).
+      // (`docs/adr/ADR-0024-character-definitions.md`).
       await this.characters.ensureLoaded();
       // And the decorations and objects the manifest lists, for the same
       // reason: `loadProject` refuses a manifest naming a file that is not
-      // registered (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`,
-      // `docs/adr/ADR-0049-an-object-is-carried-not-placed.md`).
+      // registered (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`,
+      // `docs/adr/ADR-0036-an-object-is-carried-not-placed.md`).
       await this.decorations.ensureLoaded();
       await this.objects.ensureLoaded();
       // Character creation is optional content, but when the manifest names it
@@ -247,7 +247,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       // that is not registered (`project.unloadedTitleScreen`). Opening
       // `/play` directly — a bookmark, a reload, the editor's Play button —
       // does not pass through the title page, so nothing else would have loaded
-      // it (`docs/adr/ADR-0024-authored-title-screen.md`).
+      // it (`docs/adr/ADR-0021-authored-title-screen.md`).
       await this.titleScreen.ensureLoaded();
       if (this.engine.hasGame()) {
         this.resumeGame();
@@ -344,7 +344,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
    *
    * *Whole* project, not just the map being played: a door can send the player
    * anywhere the project ships, and the engine can only follow a link to a
-   * world it already holds (`docs/adr/ADR-0017-map-links.md`).
+   * world it already holds (`docs/adr/ADR-0014-map-links.md`).
    */
   private registerContent(): void {
     // Cleared first: loading is additive, so a map removed in the editor
@@ -526,10 +526,10 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       new SpriteRegistry(),
       // A tile drawn from images needs its images; a tile set that ships none
       // simply never asks for one
-      // (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+      // (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
       this.tileImages,
       // All of them in one request rather than one each
-      // (`docs/adr/ADR-0040-tile-art-travels-as-one-bundle.md`).
+      // (`docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`).
       contentUrl(TILE_ART_BUNDLE),
     );
     // The elevation range is scanned once per loaded world, never per frame.
@@ -563,7 +563,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
    * Not awaited by its callers: starting a game is synchronous and stays that
    * way. The map is simply not painted until this settles, which is the whole
    * point — a world appears whole instead of filling in tile by tile
-   * (`docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`).
+   * (`docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`).
    */
   private warmTileArt(): void {
     if (this.renderer === null) {
@@ -617,7 +617,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
    * What a decoration definition draws, or `null` when nothing loaded it.
    *
    * Through Rust, like every other resolve: the frame arithmetic and the anchor
-   * subtraction are the engine's (`docs/adr/ADR-0028-character-definitions.md`).
+   * subtraction are the engine's (`docs/adr/ADR-0024-character-definitions.md`).
    */
   private resolveDecoration(id: string): ResolvedDecoration | null {
     try {
@@ -658,7 +658,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       // Placement is content and definitions are content; putting the two
       // together is the shared helper's, so Play and the editor draw a forest
       // in the same order
-      // (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+      // (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
       decorations: renderDecorations(view.decorations ?? [], (id) => this.resolveDecoration(id)),
       locations: view.locations.map((location) => ({
         id: location.id,
@@ -680,7 +680,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       ],
       selected: this.selected(),
       // Play draws no canvas: a hole is simply not part of the world
-      // (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+      // (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
       showExtent: false,
       showGrid: this.showGrid(),
       gridLineWidth: view.grid.lineWidth,
@@ -695,7 +695,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
    *
    * Movement lasts one authored pass even when the source is marked looping;
    * after that the player returns to idle. Time stays presentation-only and no
-   * tick is spent (`docs/adr/ADR-0043-gameplay-selects-character-animations-by-role.md`).
+   * tick is spent (`docs/adr/ADR-0030-gameplay-selects-character-animations-by-role.md`).
    */
   private startPlayerAnimation(role: AnimationRole, now = performance.now()): number {
     const first = this.resolvePlayerCharacter(role, 0);

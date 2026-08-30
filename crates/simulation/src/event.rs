@@ -52,7 +52,7 @@ pub enum SimEvent {
     /// Emitted by the tick pipeline, which knows the link exists but cannot
     /// reach the target world — only the host's content registry can. The swap
     /// itself is reported by [`SimEvent::WorldEntered`]
-    /// (`docs/adr/ADR-0017-map-links.md`).
+    /// (`docs/adr/ADR-0014-map-links.md`).
     LinkTriggered {
         /// Authored id of the link.
         link: String,

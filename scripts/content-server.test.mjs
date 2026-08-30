@@ -4,7 +4,7 @@
  * The path rules have their own suite (`content-paths.test.mjs`); what is left
  * to prove here is the one route that answers with something no file on disk
  * holds, and that it stops answering with yesterday's art the moment the files
- * under it move (`docs/adr/ADR-0040-tile-art-travels-as-one-bundle.md`).
+ * under it move (`docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`).
  */
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
@@ -66,7 +66,7 @@ test('a repainted sprite is in the next bundle', async () => {
   const before = Buffer.from(await (await fetch(url)).arrayBuffer());
   assert.equal(payloadOf(before), 'PNG-A');
 
-  // What the asset editor does, through this very server (ADR-0030).
+  // What the asset editor does, through this very server (ADR-0028).
   const written = await fetch(`${base}/api/content/${TILE_ART_DIR}/grass/flat/grass_a.png`, {
     method: 'PUT',
     body: 'PNG-A-REPAINTED',

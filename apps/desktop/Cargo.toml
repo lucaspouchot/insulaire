@@ -9,7 +9,7 @@ description = "Desktop shell for Insulaire: hosts the game bundle in a native wi
 # Deliberately its own workspace, not a member of the engine's.
 #
 # This crate depends on nothing in `crates/` — the engine still runs as WASM
-# inside the webview (`docs/adr/ADR-0020-desktop-executable.md`), so the shell
+# inside the webview (`docs/adr/ADR-0017-desktop-executable.md`), so the shell
 # and the engine share content, not code. Keeping it separate means
 # `cargo clippy --workspace` and `cargo test --workspace` stay what they are
 # today: a fast, headless gate that needs no GTK or WebKit development packages

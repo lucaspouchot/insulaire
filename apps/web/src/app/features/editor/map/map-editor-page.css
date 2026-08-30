@@ -456,7 +456,7 @@
 
 /* One placement standing on the selected hex: what it is, where it sits, and
    whether a player may interact with it
-   (docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md). */
+   (docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md). */
 .node {
   margin-bottom: 6px;
   padding: 6px 8px;

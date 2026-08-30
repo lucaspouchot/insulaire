@@ -7,7 +7,7 @@
  * on a `width x flatHeight` canvas, a surface is that hexagon squashed to the
  * grid's tilt, and an elevation image is the two side faces *alone*, a band
  * that follows the `V` its lower edges cut
- * (`docs/content-format.md`, ADR-0035/0037/0041). An image that misses any of
+ * (`docs/content-format.md`, ADR-0026/0037/0041). An image that misses any of
  * that fails `scripts/tile-art.test.mjs` — which is the point: the silhouette
  * is a contract, not a preference.
  *
@@ -18,7 +18,7 @@
  *
  * Sprites — characters, objects, UI — have no silhouette to honour, only a box:
  * `sprite` trims the transparent border and reports the `rect` the character
- * definition owes it (ADR-0034).
+ * definition owes it (ADR-0024).
  *
  * # Usage
  *
@@ -473,7 +473,7 @@ function conformTile(shape, source, geometry, shapes, options) {
   if (shape === 'elevation') {
     // The band follows the `V`: every column is slid down by the row its own
     // cut begins on, so the lowest layer of a cliff ends on the hexagon's
-    // silhouette instead of on a flat cut (ADR-0041).
+    // silhouette instead of on a flat cut (ADR-0026).
     const canvas = {
       width: geometry.width,
       height: geometry.elevationHeight,

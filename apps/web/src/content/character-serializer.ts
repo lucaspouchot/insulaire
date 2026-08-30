@@ -41,7 +41,7 @@
  * `category` and `resolution` are always written — they are what the
  * file is *about*, and a reader should not have to know the defaults. `scope` is
  * never written: it belongs to the settings vocabulary and means nothing to a
- * character (`docs/adr/ADR-0029-characters-are-composed-sprites.md`).
+ * character (`docs/adr/ADR-0024-character-definitions.md`).
  */
 
 import {

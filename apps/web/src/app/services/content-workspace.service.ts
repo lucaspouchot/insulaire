@@ -5,13 +5,13 @@
  * outside this repository, in the directory `INSULAIRE_CONTENT_DIR` names. A
  * browser cannot write there, so the dev server proxies `/api/content` to a
  * small authoring server that can
- * (`docs/adr/ADR-0022-authoring-content-workspace.md`).
+ * (`docs/adr/ADR-0019-authoring-content-workspace.md`).
  *
  * **This is editor-only.** The game never calls it: content is read as static
  * files through {@link contentUrl}, exactly as the delivered executable reads
  * the files embedded next to it. Nothing in `app.routes.deliver.ts`'s import
  * graph may reach this service, or the client build would ship a call to a
- * server that is not there (`docs/adr/ADR-0018-client-delivery-build.md`).
+ * server that is not there (`docs/adr/ADR-0015-client-delivery-build.md`).
  */
 
 import { Injectable, signal } from '@angular/core';

@@ -29,7 +29,7 @@
 //! # Deliberately not implemented
 //!
 //! No pathfinding: a chaser walks into dead ends and waits there. Adding A* is a
-//! later, isolated change to this module — see `docs/adr/ADR-0013-engine-api.md`
+//! later, isolated change to this module — see `docs/adr/ADR-0010-engine-api.md`
 //! for why the rule lives behind the engine facade rather than in Angular.
 
 use insulaire_world::Hex;

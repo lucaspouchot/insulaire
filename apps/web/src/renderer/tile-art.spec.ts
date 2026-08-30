@@ -21,8 +21,8 @@ import {
  *
  * Case for case, so the two implementations cannot drift: a change on one side
  * that is not made on the other fails here or there
- * (`docs/adr/ADR-0014-hex-coordinate-model.md` set that precedent for the hex
- * maths; `docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`
+ * (`docs/adr/ADR-0011-hex-coordinate-model.md` set that precedent for the hex
+ * maths; `docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`
  * extends it to resolution). `engine-integration.spec.ts` closes the loop by
  * asking the real WASM build for the same answers.
  */
@@ -162,7 +162,7 @@ describe('tile art resolution', () => {
   it('keeps one face the whole way down a column', () => {
     // A cliff is one cut through one ground, so its layers agree: the variety
     // is between cells and between levels, not down a single column
-    // (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+    // (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     const tile: TileArt = {
       surface: [variant('top_a'), variant('top_b')],
       elevation: { levels: [{ variants: [variant('a'), variant('b')] }] },
@@ -177,7 +177,7 @@ describe('tile art resolution', () => {
   it('draws a top-down cell from its flat image and no relief', () => {
     // The two projections are two sets of pictures, and a top-down world never
     // reaches for the isometric ones
-    // (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+    // (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     const tile: TileArt = {
       flat: [variant('flat_a'), variant('flat_b')],
       surface: [variant('top_a'), variant('top_b')],

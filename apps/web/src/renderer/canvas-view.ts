@@ -85,10 +85,10 @@ export class CanvasView {
    * Physical key held to reach a hex the relief hides, or `null` for none.
    *
    * A `KeyboardEvent.code` — the physical position, not the printed character
-   * (`docs/adr/ADR-0045-shortcuts-use-physical-keys.md`) — set by the host from
+   * (`docs/adr/ADR-0032-shortcuts-use-physical-keys.md`) — set by the host from
    * the player's own binding. This class never reads the setting itself: it is
    * framework-free, and which key it is is an application decision
-   * (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+   * (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
    */
   private peekKey: string | null = null;
 
@@ -111,7 +111,7 @@ export class CanvasView {
     // On the window, not the canvas: a canvas is not focusable, so a key press
     // never reaches it. What the key changes is the answer to a question the
     // pointer is already asking, and that answer must not wait for the hand to
-    // move (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+    // move (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
     this.listenToWindow('keydown', this.handlePeekDown);
     this.listenToWindow('keyup', this.handlePeekUp);
     // A window losing focus with the key held never sends its `keyup`.
@@ -130,7 +130,7 @@ export class CanvasView {
    * Binds the physical key held to reach a hex the relief hides, or `null`.
    *
    * A `KeyboardEvent.code`, the player's own from the controls settings
-   * (`docs/adr/ADR-0045-shortcuts-use-physical-keys.md`). Rebinding while the
+   * (`docs/adr/ADR-0032-shortcuts-use-physical-keys.md`). Rebinding while the
    * old key is down lets it go, so a key that will never send its `keyup` to
    * this class cannot leave the map stuck looking through its relief.
    */
@@ -340,14 +340,14 @@ export class CanvasView {
     }
     // The reveal follows the pointer whether or not the modifier is held:
     // seeing through relief changes nothing, so it needs no intent
-    // (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+    // (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
     this.setReveal(buried);
     return cell;
   }
 
   private handlePeekDown(event: KeyboardEvent): void {
     // A key typed into a form belongs to the form, and a chord is another
-    // command: a bound key means what it means on its own (ADR-0045).
+    // command: a bound key means what it means on its own (ADR-0032).
     if (
       event.code !== this.peekKey ||
       isEditableTarget(event.target) ||

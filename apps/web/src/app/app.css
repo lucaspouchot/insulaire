@@ -1,11 +1,11 @@
 /* Flex rather than fixed grid rows: the bar is absent on the title screen, and
-   a row template would leave its 48 px behind (ADR-0024). */
+   a row template would leave its 48 px behind (ADR-0021). */
 :host {
   display: flex;
   flex-direction: column;
 
   /*
-    The interface scale (ADR-0025) acts here, once, on the whole shell.
+    The interface scale (ADR-0022) acts here, once, on the whole shell.
 
     `zoom` rather than a transform: it scales the *layout*, so a dock takes the
     room its larger text needs and everything below reflows around it, where
@@ -21,7 +21,7 @@
     two engines this application runs on disagree about viewport units inside a
     zoomed box. Chromium multiplies them by the zoom like any other length, so
     `100vh` overflows the window; WebKitGTK — the Tauri shell on Linux
-    (ADR-0020) — resolves them in the zoomed box's own units, so a `100vh`
+    (ADR-0017) — resolves them in the zoomed box's own units, so a `100vh`
     divided by the scale to satisfy Chromium left the window two-thirds full.
     A percentage of `body`, which `styles.css` keeps one window tall, is
     resolved the same way by both.

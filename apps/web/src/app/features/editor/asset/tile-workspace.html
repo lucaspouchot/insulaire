@@ -8,7 +8,7 @@
 
     <span class="path">{{ contentRoot }}/{{ tileSetId() }}</span>
     <!-- The view controls, in the one bar every surface shares
-         (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). -->
+         (docs/adr/ADR-0028-one-editor-for-everything-drawn.md). -->
     <span class="view" [title]="'ui.editor.asset.zoomIn' | t">
       <button type="button" class="small" (click)="zoomBy(-1)" aria-label="−">−</button>
       <span class="readout">{{ shownZoom() }}×</span>
@@ -111,8 +111,8 @@
   <!-- The hexagon *is* the drawing surface: what an author is judging is the
        tile in place, at the size the map draws it, and a second flat copy of
        the same image beside it was two of everything
-       (docs/adr/ADR-0039-one-editor-for-everything-drawn.md, and
-       docs/adr/ADR-0030-the-editor-paints-its-sprites.md for the rule it
+       (docs/adr/ADR-0028-one-editor-for-everything-drawn.md, and
+       docs/adr/ADR-0028-one-editor-for-everything-drawn.md for the rule it
        follows). -->
   <div scene class="tile-scene">
     <div class="preview-bar">

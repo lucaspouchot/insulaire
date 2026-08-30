@@ -328,7 +328,7 @@ router-outlet {
  * What the stage says while it is holding a map back for its pictures.
  *
  * The canvas is deliberately empty until every image a map is painted from has
- * arrived (`docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`), and an
+ * arrived (`docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`), and an
  * empty canvas with nothing on it reads as a broken tool rather than as a busy
  * one.
  */

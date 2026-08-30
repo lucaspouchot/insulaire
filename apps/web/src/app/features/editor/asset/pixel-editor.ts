@@ -5,7 +5,7 @@
  * undo history and the palette (`docs/adr/ADR-0030-the-editor-paints-its-
  * sprites.md`); this puts a canvas, a zoom and the guides around them, with an
  * alpha for art that is blitted as it stands
- * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
  *
  * It is deliberately not a drawing application: three tools, no sub-layers, no
  * brush size, no filters, no animation. When a job needs more the answer is a
@@ -14,7 +14,7 @@
  * It is a **component**, not a page, and every asset category embeds the same
  * one: a tile's surface, a character's cape seen flat, and whatever objects and
  * decorations turn out to be
- * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`). Nothing in it knows
+ * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`). Nothing in it knows
  * what it is drawing beyond the guides it is handed — and it may be handed
  * none.
  *
@@ -24,7 +24,7 @@
  * element rather than the layout — the interface scale zooms the whole shell,
  * so the box a pointer arrives in has been multiplied while the box the canvas
  * drew in has not. Dividing one by the other is what keeps a click landing on
- * the pixel it points at, at any interface scale (ADR-0030).
+ * the pixel it points at, at any interface scale (ADR-0028).
  */
 
 import {
@@ -54,7 +54,7 @@ import { PixelTool, PixelTools } from './pixel-tools';
  *
  * Whole numbers, for the reason every zoom in this project is one: a pixel is
  * a square block of screen pixels or it is a smear
- * (`docs/adr/ADR-0029-characters-are-composed-sprites.md`).
+ * (`docs/adr/ADR-0024-character-definitions.md`).
  */
 export const PIXEL_ZOOMS: readonly number[] = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32];
 
@@ -81,7 +81,7 @@ export class PixelEditor implements AfterViewInit, OnDestroy {
    * A tile is drawn onto a hexagon and wants the shoulders and the fold marked;
    * a character's cape is drawn onto nothing at all. The component asks for
    * guides rather than knowing what it is drawing
-   * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+   * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
    */
   readonly geometry = input<TileArtGeometry | null>(null);
   /** Which guides to draw: only an elevation image has faces below it. */
@@ -97,7 +97,7 @@ export class PixelEditor implements AfterViewInit, OnDestroy {
    * A `model` rather than internal state because the zoom lives in the file
    * bar now, above every surface: an author should not have to find a
    * different set of buttons depending on which one is open
-   * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+   * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
    */
   readonly zoom = model(6);
 
@@ -176,7 +176,7 @@ export class PixelEditor implements AfterViewInit, OnDestroy {
    * The colours on offer: this image's own first, then the ones shared with it.
    *
    * A palette made of the drawing rather than a fixed ramp, for the reason
-   * ADR-0030 gave: the tones that matter are the ones already there, and a tile
+   * ADR-0028 gave: the tones that matter are the ones already there, and a tile
    * set that shares them is a tile set whose tiles sit next to each other
    * without clashing.
    */
@@ -271,7 +271,7 @@ export class PixelEditor implements AfterViewInit, OnDestroy {
     (event.target as HTMLElement).setPointerCapture?.(event.pointerId);
 
     // Alt is the eyedropper wherever you are: reaching for the tool to take a
-    // colour and reaching back is most of what makes painting slow (ADR-0030).
+    // colour and reaching back is most of what makes painting slow (ADR-0028).
     if (this.tool() === 'picker' || event.altKey) {
       this.take(at.x, at.y);
       return;
@@ -363,7 +363,7 @@ export class PixelEditor implements AfterViewInit, OnDestroy {
    * The canvas is drawn at the origin, so the whole of the transform is the
    * zoom — except for whatever scaled the page, which is why the element's
    * **rendered** box is divided by the box it was **drawn** in rather than
-   * trusted directly (ADR-0030).
+   * trusted directly (ADR-0028).
    */
   private pixelUnder(event: PointerEvent): { x: number; y: number } | null {
     const canvas = this.canvasRef()?.nativeElement;
@@ -409,7 +409,7 @@ export class PixelEditor implements AfterViewInit, OnDestroy {
     }
     context.imageSmoothingEnabled = false;
     // The checker is painted in authored pixels so it zooms with the drawing,
-    // rather than putting a second grid on the stage at another scale (ADR-0030).
+    // rather than putting a second grid on the stage at another scale (ADR-0028).
     drawChecker(context, sprite.width, sprite.height, zoom);
 
     const surface = sprite.surface();
@@ -454,7 +454,7 @@ function isTyping(target: EventTarget | null): boolean {
  *
  * Shared, because the file bar steps the zoom of whichever surface is open and
  * they all step through the same numbers
- * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+ * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
  */
 export function steppedZoom(from: number, by: number): number {
   const first = PIXEL_ZOOMS[0] ?? 1;

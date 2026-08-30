@@ -11,7 +11,7 @@
  * - the **workspace** is where an actual game is authored — a directory outside
  *   this repository, named by `INSULAIRE_CONTENT_DIR` in `.env`. The dev server
  *   serves it and the editor writes into it
- *   (`docs/adr/ADR-0022-authoring-content-workspace.md`).
+ *   (`docs/adr/ADR-0019-authoring-content-workspace.md`).
  *
  * `.env` is parsed here rather than with `process.loadEnvFile`, which would
  * overwrite variables the caller set — see {@link loadEnvOnce}. A missing
@@ -41,7 +41,7 @@ let envLoaded = false;
  * `INSULAIRE_CONTENT_DIR` on the dev server it spawns, and a transcript
  * compared byte for byte against a baseline must never depend on whichever game
  * the developer happens to be authoring
- * (`docs/adr/ADR-0022-authoring-content-workspace.md`).
+ * (`docs/adr/ADR-0019-authoring-content-workspace.md`).
  *
  * Node's own `process.loadEnvFile` overwrites what is already set, which is the
  * opposite of that — so the file is parsed here instead. The format is the

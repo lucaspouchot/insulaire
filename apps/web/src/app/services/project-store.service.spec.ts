@@ -6,7 +6,7 @@
  * control, so a save has to write the files that moved, leave the ones that did
  * not, and delete the ones whose map is gone — anything coarser buries the real
  * change in a diff of timestamps, or leaves a file behind that no manifest
- * names (`docs/adr/ADR-0022-authoring-content-workspace.md`).
+ * names (`docs/adr/ADR-0019-authoring-content-workspace.md`).
  */
 import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -219,7 +219,7 @@ describe('ProjectStoreService — what a save has to write', () => {
 
   it('wants the manifest written when a project declares no zone', async () => {
     // A zone is mandatory in the model even where the file leaves it out
-    // (`docs/adr/ADR-0021-map-zones.md`), so the first save materialises the
+    // (`docs/adr/ADR-0018-map-zones.md`), so the first save materialises the
     // implicit default. It is a real change to the file, and it converges: the
     // save after it has nothing to write.
     const { zones: _zones, ...unzoned } = PROJECT;
@@ -245,7 +245,7 @@ describe('ProjectStoreService — what a save has to write', () => {
 });
 
 /**
- * The content directory is the project (`docs/adr/ADR-0022-authoring-content-
+ * The content directory is the project (`docs/adr/ADR-0019-authoring-content-
  * workspace.md`). Browser storage carries a session's work in progress, and a
  * session that outlived a hand-edit must not hide what was written by hand — nor
  * arrive at the next save ready to overwrite it.

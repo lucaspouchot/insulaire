@@ -1,7 +1,7 @@
 /*
   The authored theme arrives as custom properties set on the host element, so
   every value below has a defensible default and the content only overrides what
-  it cares about (`docs/adr/ADR-0024-authored-title-screen.md`).
+  it cares about (`docs/adr/ADR-0021-authored-title-screen.md`).
 */
 :host {
   display: block;

@@ -5,7 +5,7 @@
     <span class="path">{{ path() || ('ui.editor.decoration.noFile' | t) }}</span>
     <!-- Zoom, fit and the grid live here, above every surface, so they are in
          one place whichever one is open
-         (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). -->
+         (docs/adr/ADR-0028-one-editor-for-everything-drawn.md). -->
     <span class="view" [title]="'ui.editor.decoration.zoom' | t">
       <button type="button" class="small" (click)="zoomBy(-1)" aria-label="−">−</button>
       <span class="readout">{{ barZoom() }}×</span>
@@ -100,7 +100,7 @@
   <!-- -------------------------------------------------------------- scene -->
   <!-- The decoration on the hexagon it will stand on, with a figure standing
        there too: the plane switch is judged by looking, not by reasoning
-       (docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md). -->
+       (docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md). -->
   <div scene class="decoration-scene">
     <div class="decoration-scene-bar">
       <!-- One control with two positions rather than two buttons: there are
@@ -136,7 +136,7 @@
         <!-- A real character, not a stand-in shape: the plane decision is
              "does a character pass in front of this", so the thing standing on
              the hex is the one the game will draw
-             (docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md). -->
+             (docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md). -->
         <select
           class="figure"
           [attr.aria-label]="'ui.editor.decoration.figure' | t"
@@ -316,7 +316,7 @@
       </section>
 
       <!-- An animation and a state are the same thing: a named list of frames
-           (docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md). -->
+           (docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md). -->
       <section class="panel">
         <h2>{{ 'ui.editor.decoration.animations' | t }}</h2>
         <div class="chips">

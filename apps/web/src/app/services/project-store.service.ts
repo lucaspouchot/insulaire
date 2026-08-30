@@ -14,7 +14,7 @@
  *
  * Several maps rather than one is what map links require: a door names another
  * map, so authoring one means having the others in hand
- * (`docs/adr/ADR-0017-map-links.md`).
+ * (`docs/adr/ADR-0014-map-links.md`).
  *
  * Content is loaded from static files (`content/` mirrored into `public/`).
  * There is no backend and no database; `localStorage` is a convenience for
@@ -75,7 +75,7 @@ type LibraryKind = 'characters' | 'decorations' | 'objects';
  *
  * The text is kept as the file's own JSON rather than parsed here: the engine
  * owns flattening, merging and the fallback rule, so no host can invent its own
- * (`docs/adr/ADR-0023-localised-content-keys.md`).
+ * (`docs/adr/ADR-0020-localised-content-keys.md`).
  */
 export interface LocaleFile {
   readonly language: string;
@@ -246,7 +246,7 @@ export class ProjectStoreService {
    * Rebuilds documents from stored definitions. `false` when there are none.
    *
    * What browser storage holds is the editor's **work in progress**, not the
-   * project: the content directory is the project (ADR-0022), and an author may
+   * project: the content directory is the project (ADR-0019), and an author may
    * write into it by hand between two sessions — a map dropped in, a character
    * declared in `project.json`. So the files win wherever the two disagree, and
    * storage contributes only what it alone holds: the maps and the manifest
@@ -333,7 +333,7 @@ export class ProjectStoreService {
    * tile added or renamed in the asset editor is invisible to the map editor
    * until the documents are rebuilt. Rebuilding from `toDefinition()` keeps
    * every painted cell — a cell holds a palette *index*, and the definition it
-   * exports holds the tile *id*, which is exactly the indirection ADR-0009
+   * exports holds the tile *id*, which is exactly the indirection ADR-0006
    * exists for.
    *
    * A map that no longer resolves — its tile was deleted out from under it — is
@@ -445,7 +445,7 @@ export class ProjectStoreService {
    *
    * A project that declares none has one implicit zone, so the editor always
    * has something to put a new map in — zones are mandatory in the model even
-   * where the file leaves them out (`docs/adr/ADR-0021-map-zones.md`).
+   * where the file leaves them out (`docs/adr/ADR-0018-map-zones.md`).
    */
   readonly zones = computed<readonly ZoneDefinition[]>(() => {
     const declared = this.projectSignal()?.zones ?? [];
@@ -661,7 +661,7 @@ export class ProjectStoreService {
    * The language editor writes files to disk; this is what keeps the *loaded*
    * project holding the same text, so a later content reset re-registers what
    * was authored rather than what was fetched at boot
-   * (`docs/adr/ADR-0027-authoring-creates-keys.md`).
+   * (`docs/adr/ADR-0020-localised-content-keys.md`).
    */
   setLocaleFiles(files: readonly LocaleFile[]): void {
     this.localeFilesSignal.set([...files]);
@@ -710,8 +710,8 @@ export class ProjectStoreService {
    * The same door `declareLocaleFile` opens, for the same reason: creating a
    * character — or a decoration, or an object — in the editor should not mean
    * hand-editing `project.json` for it to exist
-   * (`docs/adr/ADR-0028-character-definitions.md`,
-   * `docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+   * (`docs/adr/ADR-0024-character-definitions.md`,
+   * `docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
    *
    * @returns `false` when the project already declares that id.
    */

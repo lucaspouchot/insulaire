@@ -2,7 +2,7 @@
  * Holds the authored title screen, and puts it back after a content reset.
  *
  * The screen is content like any other: fetched once, validated by Rust, held
- * by the engine (`docs/adr/ADR-0024-authored-title-screen.md`). What it needs a
+ * by the engine (`docs/adr/ADR-0021-authored-title-screen.md`). What it needs a
  * service for is the same thing the locales and the game's settings need one
  * for — **re-registration**. `resetContent()` forgets every loaded file, and
  * `loadProject` refuses a manifest naming a title screen that is not loaded, so

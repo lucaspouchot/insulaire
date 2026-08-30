@@ -6,7 +6,7 @@ import { SpriteDocument } from './sprite-document';
  * The buffer half of the sprite editor, which is all of it that matters: what
  * a stroke does, what undo takes back, and what the palette offers. None of it
  * needs a canvas, which is the point of keeping the DOM at the edges
- * (`docs/adr/ADR-0030-the-editor-paints-its-sprites.md`).
+ * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
  */
 
 /** Paints one pixel as a complete stroke, the way a click does. */

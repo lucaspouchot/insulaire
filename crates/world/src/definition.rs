@@ -2,7 +2,7 @@
 //!
 //! A world definition is *immutable reference data*. It is never mutated by the
 //! simulation: the runtime derives a [`crate::WorldGrid`] plus a
-//! `GameState` from it (see `docs/adr/ADR-0003-authored-world.md`).
+//! `GameState` from it (see `docs/adr/ADR-0002-authored-world.md`).
 
 use std::collections::BTreeMap;
 
@@ -16,26 +16,26 @@ use crate::hex::{MapBounds, OffsetCoord};
 ///
 /// A bound rather than a preference: a nudge is a few pixels of variety, and a
 /// four-digit one is a typo that puts a tree on another map
-/// (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+/// (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
 pub const MAX_DECORATION_OFFSET: i32 = 256;
 
 /// Highest world schema version this build understands.
 ///
 /// Version 2 added [`PlacedTile::art`], the per-cell art choice
-/// (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`). Every field of it
+/// (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`). Every field of it
 /// is defaulted, so a version 1 file parses unchanged and rolls its art as it
 /// always did. Version 3 adds the authored [`GridStyle`]; older files receive
 /// its defaults and keep the renderer's former appearance. Version 4 adds
 /// [`WorldDefinition::origin`] and [`WorldDefinition::shape`]: a map is a set of
 /// hexes rather than a rectangle
-/// (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`). Both default to what every
+/// (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`). Both default to what every
 /// earlier file meant — anchored at `[0, 0]`, every cell present. Version 5 adds
 /// the authored [`RevealStyle`], which says how far relief may be seen through
-/// (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`); its defaults reveal one
+/// (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`); its defaults reveal one
 /// ring at half opacity. Version 6 adds [`WorldDefinition::decorations`]: the
 /// trees, houses and chests standing on the map, each with the id a scenario
 /// addresses and its own `interactive` bit
-/// (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`),
+/// (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`),
 /// each free to sit a few pixels off its anchor. An earlier file places none,
 /// which is what an absent list means.
 pub const WORLD_SCHEMA_VERSION: u32 = 6;
@@ -59,7 +59,7 @@ pub enum HexOrientation {
 ///
 /// This is *presentation* carried by content: the simulation never reads it, and
 /// no rule may depend on it. The renderer turns it into an affine transform of
-/// world-space points (`docs/adr/ADR-0016-isometric-projection.md`).
+/// world-space points (`docs/adr/ADR-0013-isometric-projection.md`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ProjectionMode {
@@ -142,14 +142,14 @@ pub const DEFAULT_REVEAL_RADIUS: u8 = 1;
 /// Largest authored reveal radius.
 ///
 /// Every revealed hex costs one coverage measurement, so the radius is bounded
-/// rather than free (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+/// rather than free (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
 pub const MAX_REVEAL_RADIUS: u8 = 6;
 
 /// Default opacity of the relief standing in front of the pointed-at hex.
 ///
 /// Not `0`: a cell drawn away entirely takes its silhouette with it, and where
 /// nothing stands behind it that is a hole in the map rather than a hex seen
-/// through (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+/// through (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
 pub const DEFAULT_REVEAL_OPACITY: f32 = 0.25;
 
 /// Default opacity of the relief standing in front of a revealed neighbour.
@@ -160,7 +160,7 @@ pub const DEFAULT_REVEAL_NEIGHBOUR_OPACITY: f32 = 0.55;
 /// Both numbers are the opacity of **what stands in the way**, not of the hex
 /// behind it: seeing a buried hex means drawing the relief in front of it
 /// see-through, since drawing the hex back over that relief puts it in front of
-/// the cliff it is behind (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+/// the cliff it is behind (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
 /// Presentation only; no simulation rule reads it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -234,7 +234,7 @@ impl CellPresence {
 /// the two ways an author reaches a custom shape are opposites of each other:
 /// carving a coastline out of a full canvas lists holes, drawing an archipelago
 /// on an empty one lists hexes. Whichever list is shorter is the one written
-/// (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+/// (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MapShape {
@@ -290,7 +290,7 @@ pub struct WorldDefinition {
     /// into the default, and because a zone id only means something next to the
     /// project that declares it — like `targetWorld`, it is a cross-file
     /// reference the project-level validator resolves
-    /// (`docs/adr/ADR-0021-map-zones.md`).
+    /// (`docs/adr/ADR-0018-map-zones.md`).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub zone: String,
     /// North-west corner of the extent; the coordinate stored at buffer index
@@ -300,7 +300,7 @@ pub struct WorldDefinition {
     /// extents could move. Extending a map northwards or westwards moves this
     /// rather than renumbering the cells, so an authored coordinate keeps its
     /// hex — and its row parity — forever
-    /// (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+    /// (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
     #[serde(default, skip_serializing_if = "OffsetCoord::is_origin")]
     pub origin: OffsetCoord,
     /// Number of columns the extent covers.
@@ -322,7 +322,7 @@ pub struct WorldDefinition {
     /// Projected tile-face heights occupied by a 128-pixel character canvas.
     ///
     /// Presentation only. Rust transports and validates it; the map renderer
-    /// applies it (`docs/adr/ADR-0044-map-entity-presentation.md`).
+    /// applies it (`docs/adr/ADR-0031-map-entity-presentation.md`).
     #[serde(
         default = "default_character_height_tiles",
         skip_serializing_if = "is_default_character_height_tiles"
@@ -334,7 +334,7 @@ pub struct WorldDefinition {
     /// How far relief may be seen through around the pointer.
     ///
     /// Presentation, transported and validated here and applied by the map
-    /// renderer (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+    /// renderer (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
     #[serde(default, skip_serializing_if = "RevealStyle::is_default")]
     pub reveal: RevealStyle,
     /// Id of the [`crate::TileSetDefinition`] this world paints with.
@@ -354,14 +354,14 @@ pub struct WorldDefinition {
     ///
     /// Several may share a cell, and each is drawn in the plane its definition
     /// declares — everything `behind`, then the characters, then everything
-    /// `front` (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+    /// `front` (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
     #[serde(default)]
     pub decorations: Vec<PlacedDecoration>,
     /// Authored points of interest.
     #[serde(default)]
     pub locations: Vec<LocationDefinition>,
     /// Cells that send the player to another map
-    /// (`docs/adr/ADR-0017-map-links.md`).
+    /// (`docs/adr/ADR-0014-map-links.md`).
     #[serde(default)]
     pub links: Vec<MapLinkDefinition>,
     /// Free-form authoring metadata; never read by the simulation.
@@ -389,7 +389,7 @@ impl WorldDefinition {
     ///
     /// A coordinate outside the extent is absent like any other hole: the
     /// extent is storage, and no authored record may lean on it
-    /// (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+    /// (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
     #[must_use]
     pub fn has_cell(&self, at: OffsetCoord) -> bool {
         self.bounds().contains(at) && self.shape.presence_at(at).is_present()
@@ -439,7 +439,7 @@ pub struct PlacedTile {
 /// Ids, because they are what an author reads in the tile set and what survives
 /// a variant being inserted above another one; the renderer wants indices, and
 /// [`crate::WorldGrid`] resolves them once when it flattens the map
-/// (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+/// (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
 ///
 /// Three independent choices, all optional, because they answer three different
 /// questions: what the top face shows, what the cut underneath is made of, and
@@ -498,7 +498,7 @@ pub struct EntityDefinition {
 /// side of the characters it is drawn on. This says **which** tree, **where**,
 /// and — the field that only makes sense once a thing exists in the world —
 /// whether *this* one can be interacted with
-/// (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+/// (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
 ///
 /// [`Self::id`] is unique within the map because that is what a scenario
 /// addresses: one definition is placed a dozen times, and only one of those
@@ -519,7 +519,7 @@ pub struct PlacedDecoration {
     /// keeps a row of the same fence post from reading as a stamped pattern,
     /// and it is per *placement* because that is the only thing that differs
     /// between two trees drawn from one definition
-    /// (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+    /// (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
     ///
     /// Positive moves the drawing right and down, which is the direction
     /// dragging it in the editor moves it. Measured in the tile set's authored
@@ -530,7 +530,7 @@ pub struct PlacedDecoration {
     ///
     /// *Whether*, never *what*: opening a chest and searching a bush are
     /// scenario content, and an `if this is a chest` in the engine is the thing
-    /// `CLAUDE.md` forbids (`docs/adr/ADR-0005-scenario-runtime.md`).
+    /// `CLAUDE.md` forbids (`docs/adr/ADR-0004-scenario-runtime.md`).
     #[serde(default, skip_serializing_if = "is_false")]
     pub interactive: bool,
     /// Free-form gameplay tags, as everywhere else in the format.
@@ -584,7 +584,7 @@ impl LinkTrigger {
 /// only one whose target a single-world validation pass cannot resolve: bounds
 /// and duplicates are checked per world, and the target is checked by
 /// [`crate::validate_project_links`] once every world is loaded
-/// (`docs/adr/ADR-0017-map-links.md`).
+/// (`docs/adr/ADR-0014-map-links.md`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MapLinkDefinition {

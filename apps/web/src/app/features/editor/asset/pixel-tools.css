@@ -1,12 +1,12 @@
 /* One row of controls, wrapping when the column is narrow. It is worn by two
    different surfaces, so it sizes itself and assumes nothing about what is
-   below it (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+   below it (docs/adr/ADR-0028-one-editor-for-everything-drawn.md). */
 :host {
   display: block;
 }
 
 /* Down the side instead of across the top: same controls, no height taken from
-   what is being drawn (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+   what is being drawn (docs/adr/ADR-0028-one-editor-for-everything-drawn.md). */
 :host(.vertical) {
   display: flex;
   flex-direction: column;

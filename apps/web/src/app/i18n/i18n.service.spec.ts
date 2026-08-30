@@ -3,7 +3,7 @@
  *
  * The interesting cases are the ones that decide what a player actually reads:
  * which source wins, what happens to a key nobody defines, and whether the
- * screen follows a language change (`docs/adr/ADR-0023-localised-content-keys.md`).
+ * screen follows a language change (`docs/adr/ADR-0020-localised-content-keys.md`).
  */
 import { TestBed } from '@angular/core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -109,7 +109,7 @@ describe('I18nService', () => {
 
   /**
    * A key created but not yet written reads exactly like a key nobody defines,
-   * because that is what it is (`docs/adr/ADR-0027-authoring-creates-keys.md`).
+   * because that is what it is (`docs/adr/ADR-0020-localised-content-keys.md`).
    */
   it('shows the key itself when the only text for it is empty', () => {
     const { i18n, engine } = setup();

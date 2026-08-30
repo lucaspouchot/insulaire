@@ -10,7 +10,7 @@
  * Development does *not* go through here any more. `scripts/dev.mjs` proxies
  * `/content` straight to the directory being authored, so an uploaded image is
  * on screen without a rebuild and no stale copy can survive
- * (`docs/adr/ADR-0022-authoring-content-workspace.md`).
+ * (`docs/adr/ADR-0019-authoring-content-workspace.md`).
  *
  * Which directory is mirrored is `INSULAIRE_CONTENT_DIR`'s answer — the
  * repository fixture by default, an authoring workspace when `.env` names one.
@@ -38,7 +38,7 @@ await cp(dir.path, target, { recursive: true });
 // The build has no server to generate it on demand, so the bundle is written
 // here, next to the files it carries and at the URL the dev server serves it
 // from — the runtime asks for `/content/tile-art.bundle` and never learns which
-// of the two answered (`docs/adr/ADR-0040-tile-art-travels-as-one-bundle.md`).
+// of the two answered (`docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`).
 const sprites = await collectSprites(dir.path, TILE_ART_DIR);
 const bundle = packSpriteBundle(sprites);
 await writeFile(join(target, TILE_ART_BUNDLE), bundle);

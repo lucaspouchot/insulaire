@@ -5,20 +5,20 @@
  * key, a sword, a torn letter. The sibling of the decoration editor next door
  * and its opposite: a decoration stands on a hex and shares it with the
  * characters walking over it, an object travels in an inventory and is drawn in
- * a panel (`docs/adr/ADR-0049-an-object-is-carried-not-placed.md`).
+ * a panel (`docs/adr/ADR-0036-an-object-is-carried-not-placed.md`).
  *
  * Which is why this screen is the small one. An object has no anchor, no plane
  * and no order — it has an **icon**, a kind, a stack size, and the two keys a
  * player reads. The icon is a flipbook, painted on the same pixel surface every
  * other category paints on: one frame is a still potion, four are a glinting
  * gem, and neither needs a PNG from somewhere else to exist
- * (`docs/adr/ADR-0050-an-object-icon-is-a-flipbook.md`,
- * `docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+ * (`docs/adr/ADR-0036-an-object-is-carried-not-placed.md`,
+ * `docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
  *
  * Labels are keys: this screen picks and **creates** them — saving writes every
  * key the file names into every language, empty — and the language editor is
- * where their text is written (`docs/adr/ADR-0023-localised-content-keys.md`,
- * `docs/adr/ADR-0027-authoring-creates-keys.md`).
+ * where their text is written (`docs/adr/ADR-0020-localised-content-keys.md`,
+ * `docs/adr/ADR-0020-localised-content-keys.md`).
  */
 
 import {
@@ -335,7 +335,7 @@ export class ObjectWorkspace implements OnDestroy {
    * It starts as a nameless "other" with **no frame at all**, which is a
    * warning and not an error: an object is routinely blocked out before its art
    * and its text exist, and the scene offers to paint the first frame rather
-   * than asking for a PNG (`docs/adr/ADR-0050-an-object-icon-is-a-flipbook.md`).
+   * than asking for a PNG (`docs/adr/ADR-0036-an-object-is-carried-not-placed.md`).
    */
   protected addObject(): void {
     const id = freeId(
@@ -536,7 +536,7 @@ export class ObjectWorkspace implements OnDestroy {
    *
    * This is the door that means an object needs **no PNG from anywhere else**:
    * a new object is a canvas to paint, exactly as a decoration frame is
-   * (`docs/adr/ADR-0050-an-object-icon-is-a-flipbook.md`).
+   * (`docs/adr/ADR-0036-an-object-is-carried-not-placed.md`).
    */
   protected createFrame(index: number): void {
     const document = this.document();
@@ -561,7 +561,7 @@ export class ObjectWorkspace implements OnDestroy {
    *
    * The same door the character editor opens, at the same convention: an author
    * with a PNG should not have to leave the editor to use it
-   * (`docs/adr/ADR-0022-authoring-content-workspace.md`).
+   * (`docs/adr/ADR-0019-authoring-content-workspace.md`).
    */
   protected async uploadFrame(event: Event, index: number): Promise<void> {
     const input = event.target as HTMLInputElement;
@@ -713,7 +713,7 @@ export class ObjectWorkspace implements OnDestroy {
    * Both go through Rust: the validator is the runtime's own and the resolver
    * is the one an inventory panel will draw with, so neither the verdict nor
    * the frame is this screen's opinion
-   * (`docs/adr/ADR-0015-shared-content-validation.md`).
+   * (`docs/adr/ADR-0012-shared-content-validation.md`).
    */
   protected refresh(): void {
     const document = this.document();

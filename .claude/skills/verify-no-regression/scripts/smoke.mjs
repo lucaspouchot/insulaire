@@ -12,7 +12,7 @@
  *   1. **A transcript.** The scenario loads the shipped content, starts a game
  *      on a fixed seed and dispatches a fixed command sequence straight at the
  *      WASM module — no UI in the way. Ticks, positions, events, rejections and
- *      RNG draws are recorded. The engine is deterministic (ADR-0011), so this
+ *      RNG draws are recorded. The engine is deterministic (ADR-0008), so this
  *      transcript is byte-stable unless a rule, the content or the RNG changed
  *      — the version string it also carries is a note, not behaviour, see
  *      `NOT_BEHAVIOUR`.
@@ -133,7 +133,7 @@ async function waitForServer(url, timeoutMs, isAlive) {
  * `.env`: the transcript below is a byte-for-byte comparison against a
  * baseline, so it must run on the content this repository ships and never on
  * whichever game the developer happens to be authoring
- * (`docs/adr/ADR-0022-authoring-content-workspace.md`).
+ * (`docs/adr/ADR-0019-authoring-content-workspace.md`).
  */
 async function startServer(options, log) {
   const child = spawn(
@@ -362,7 +362,7 @@ async function openPage(browser, viewport) {
     hover: async (x, y) => {
       // No press, no release: the pointer is only passing over, which is what
       // drives hover and the reveal through relief
-      // (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+      // (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
       await browser.send(
         'Input.dispatchMouseEvent',
         { type: 'mouseMoved', x, y, button: 'none', buttons: 0 },
@@ -377,7 +377,7 @@ async function openPage(browser, viewport) {
     // A key held down and let go on its own, which no `key` press can stand in
     // for: what it changes is the answer to a question the pointer is already
     // asking, with no pointer event to carry it
-    // (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+    // (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
     hold: async (code, down) => {
       const letter = /^Key([A-Z])$/.exec(code)?.[1] ?? '';
       await browser.send(
@@ -463,7 +463,7 @@ async function recordTranscript(page, baseUrl, scenario) {
     }
     // Languages are content like the rest, and a language the manifest declares
     // without a loaded file makes loadProject fail — exactly as it does for a
-    // world (docs/adr/ADR-0023-localised-content-keys.md).
+    // world (docs/adr/ADR-0020-localised-content-keys.md).
     content.locales = [];
     for (const language of manifest.locales?.languages ?? []) {
       for (const file of language.files ?? []) {
@@ -473,7 +473,7 @@ async function recordTranscript(page, baseUrl, scenario) {
       }
     }
     // The menu is content too, and the manifest will not load without the
-    // screen it names (docs/adr/ADR-0024-authored-title-screen.md).
+    // screen it names (docs/adr/ADR-0021-authored-title-screen.md).
     content.titleScreen = null;
     if (manifest.titleScreen) {
       content.titleScreen = parse(
@@ -482,13 +482,13 @@ async function recordTranscript(page, baseUrl, scenario) {
     }
     // Character definitions are content the manifest lists, so the project will
     // not load without them either
-    // (docs/adr/ADR-0028-character-definitions.md).
+    // (docs/adr/ADR-0024-character-definitions.md).
     content.characters = [];
     for (const entry of manifest.characters ?? []) {
       content.characters.push(parse(engine.loadCharacter(await text('/content/' + entry.path))));
     }
     // Decorations and objects are content the manifest lists too, so the
-    // project will not load without them either (ADR-0048, ADR-0049).
+    // project will not load without them either (ADR-0035, ADR-0036).
     content.decorations = [];
     for (const entry of manifest.decorations ?? []) {
       content.decorations.push(parse(engine.loadDecoration(await text('/content/' + entry.path))));
@@ -498,7 +498,7 @@ async function recordTranscript(page, baseUrl, scenario) {
       content.objects.push(parse(engine.loadObject(await text('/content/' + entry.path))));
     }
     // Creation binds into those definitions, so it is loaded after them and
-    // before the manifest that requires it (ADR-0042).
+    // before the manifest that requires it (ADR-0029).
     content.characterCreation = null;
     if (manifest.characterCreation) {
       content.characterCreation = parse(
@@ -664,7 +664,7 @@ async function capturePages(browser, baseUrl, scenario, viewport, outDir, log) {
       // what an earlier capture saw. `hold` names a physical key kept down on
       // the keyboard, so a step with `move: false` proves the application
       // listens to the key rather than waiting for the hand
-      // (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+      // (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
       let held = null;
       for (const [index, spot] of (spec.hovers ?? []).entries()) {
         const wanted = spot.hold ?? null;

@@ -2,7 +2,7 @@
  * Resolves a stable `visualId` to something the canvas can fill with.
  *
  * This is the indirection that keeps rendering out of the world data
- * (`docs/adr/ADR-0009-assets-tilesets.md`): content says
+ * (`docs/adr/ADR-0006-assets-tilesets.md`): content says
  * `"visualId": "terrain.grass"`, and the renderer decides what that looks like.
  *
  * # MVP behaviour

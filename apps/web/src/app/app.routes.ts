@@ -3,7 +3,7 @@ import { Routes } from '@angular/router';
 
 import { I18nService } from './i18n/i18n.service';
 
-/** Document title for a route, resolved in the language in use (ADR-0023). */
+/** Document title for a route, resolved in the language in use (ADR-0020). */
 function pageTitle(key: string): () => string {
   return () => inject(I18nService).t(key);
 }
@@ -13,14 +13,14 @@ function pageTitle(key: string): () => string {
  *
  * The client build replaces this file with `app.routes.deliver.ts`, which does
  * not import `editor.routes` at all — so the editor is absent from the bundle
- * rather than merely unreachable (`docs/adr/ADR-0018-client-delivery-build.md`).
+ * rather than merely unreachable (`docs/adr/ADR-0015-client-delivery-build.md`).
  *
  * Everything is lazily loaded, so the editor's code does not sit in the play
  * bundle and vice versa.
  */
 export const routes: Routes = [
   // Both builds open on the title screen: the player's first screen is the one
-  // developers should be looking at too (`docs/adr/ADR-0024-authored-title-screen.md`).
+  // developers should be looking at too (`docs/adr/ADR-0021-authored-title-screen.md`).
   { path: '', pathMatch: 'full', redirectTo: 'title' },
   {
     path: 'title',

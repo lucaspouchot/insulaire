@@ -1,6 +1,6 @@
 # Angular ↔ Rust/WASM Boundary
 
-The engine's whole public surface. Decided in ADR-0013.
+The engine's whole public surface. Decided in ADR-0010.
 
 ```text
 ┌─────────────────────────────────────────── Angular ───────────────────────────────────────────┐
@@ -42,7 +42,7 @@ states the contract by hand instead, which is also what this document specifies.
 
 ## Conventions
 
-**Positions** cross as offset pairs `[col, row]` (ADR-0014).
+**Positions** cross as offset pairs `[col, row]` (ADR-0011).
 
 **Structured payloads** cross as JSON strings. Payloads are a few hundred bytes,
 so parse cost is irrelevant and the boundary stays inspectable from devtools.
@@ -106,7 +106,7 @@ with the same id. Throws `parse` or `invalidContent`.
 
 Validates a `TileSetDefinition` **without** registering it — what the asset
 editor calls before writing a file, so a set the editor accepts is a set the
-runtime accepts (ADR-0015). Throws `parse` for malformed JSON; a set that parses
+runtime accepts (ADR-0012). Throws `parse` for malformed JSON; a set that parses
 but is unusable produces an invalid report rather than an error.
 
 ### `previewTileRender(tileSetJson, tileId, projection, elevation, base, roll, choiceJson): ResolvedTileRender`
@@ -115,13 +115,13 @@ Resolves what to draw for one cell of a tile set **passed in** — content the
 editor has not saved yet. `projection` is the world's own: `"isometric"`
 resolves the surface and the cliff, and anything else — including a mode nobody
 knows — resolves the flat image, which is what `ProjectionMode` defaults to
-(`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`). `base` is the height
+(`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`). `base` is the height
 the cell's side faces reach down to (the lower of its two front neighbours; `0`
 for a tile standing on the ground), and `roll` is the cell's variant roll.
 
 `choiceJson` is a `PlacedTileArt` — what the cell picked by hand — resolved
 against the set that was passed in, so `elevationTile` may name any tile in it.
-`"{}"` rolls everything, which is what a plain preview wants (ADR-0036).
+`"{}"` rolls everything, which is what a plain preview wants (ADR-0026).
 
 ```json
 {
@@ -147,8 +147,7 @@ layer is one *band* of faces rather than one level of elevation
 ends on its silhouette, and the topmost may therefore start above the top face,
 which is drawn over it. `level` is the band's index from the ground, which is
 the ladder level it asks for. The whole image moves and nothing inside it is
-transformed (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`,
-`docs/adr/ADR-0041-a-cliff-is-stacked-in-bands.md`).
+transformed (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
 
 **One projection answers, never both.** A `topDown` request comes back with
 `flat` alone — the untilted hexagon, drawn over the whole cell, with no
@@ -160,18 +159,18 @@ transformed (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`,
 
 A tile that authors nothing for the projection in force resolves to
 `{ "tileId": …, "elevation": … }` and nothing else, which is the host's signal
-to fill `fallbackColor` (ADR-0037). Absent fields are omitted rather than sent
+to fill `fallbackColor` (ADR-0026). Absent fields are omitted rather than sent
 as `null`.
 
 Which variant each layer takes follows the surface unless `choiceJson` says
 otherwise, so a cell's cut matches the ground standing on it
-(`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+(`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
 
 Throws `parse`, or `unknownContent` when the set declares no such tile.
 
 **The renderer does not call this per frame.** Resolution is mirrored in
 `apps/web/src/renderer/tile-art.ts` for the draw loop, exactly as the hex maths
-is mirrored (ADR-0014); this method exists for the editor's preview and to pin
+is mirrored (ADR-0011); this method exists for the editor's preview and to pin
 the mirror against the real build in `engine-integration.spec.ts`.
 
 ### `loadWorld(json: string): LoadOutcome`
@@ -184,14 +183,14 @@ set. Only registered on success; warnings do not block.
 Registers the `ProjectDefinition` manifest — which content files make up the
 game, its `startWorld` and its `zones`. Call it **after** the content it lists:
 it is validated against what is actually in the registry, so a bundle missing a
-file fails here rather than when a player walks through a door (ADR-0018).
+file fails here rather than when a player walks through a door (ADR-0015).
 
 This is also where every loaded world's `zone` is resolved against the zones the
 project declares, since a world file alone cannot say whether its zone exists
-(ADR-0021), where every world's **placed decorations** are resolved against the
+(ADR-0018), where every world's **placed decorations** are resolved against the
 loaded definitions — `decoration.unknownDefinition`, for the same reason
-(ADR-0051) — and where the loaded **languages** are compared against the ones
-the manifest declares (ADR-0023).
+(ADR-0035) — and where the loaded **languages** are compared against the ones
+the manifest declares (ADR-0020).
 
 When `characterCreation` is present, load every character definition and then
 `loadCharacterCreation` before this call. Missing registration reports
@@ -204,7 +203,7 @@ Errors: `parse`, `invalidContent` (`project.unloadedWorld`,
 
 Registers one locale file — a nested object of strings — under a language and a
 namespace. The namespace prefixes every key in the file, so `menu.json`
-registered as `menu` answers `menu.title.buttons.newGame` (ADR-0023).
+registered as `menu` answers `menu.title.buttons.newGame` (ADR-0020).
 
 Files of one language are merged in load order, and a key defined twice is
 refused rather than overwritten: which file wins must not depend on load order.
@@ -235,7 +234,7 @@ answers a key identically.
 A key this language holds **empty** is a gap like a missing one: the default
 language answers it, and it is listed in `fallbacks`. That is what makes a key
 created before its text exists behave sensibly — the editor creates keys as
-content names them (`docs/adr/ADR-0027-authoring-creates-keys.md`), and a key no
+content names them (`docs/adr/ADR-0020-localised-content-keys.md`), and a key no
 language gives text to renders as itself.
 
 Errors: `unknownContent` when no file was loaded for that language.
@@ -249,7 +248,7 @@ editor's language screen is built from.
 
 ### `loadTitleScreen(json: string): LoadOutcome`
 
-Registers the `TitleScreenDefinition` a client opens on (ADR-0024). Load it
+Registers the `TitleScreenDefinition` a client opens on (ADR-0021). Load it
 **before** `loadProject`, which refuses a manifest whose title screen is not
 loaded.
 
@@ -279,7 +278,7 @@ back to a plain menu.
 
 ### `loadSettings(json: string): LoadOutcome`
 
-Registers the `SettingsDefinition` the **game** declares (ADR-0025). Load it
+Registers the `SettingsDefinition` the **game** declares (ADR-0022). Load it
 before `loadProject`, which refuses a manifest whose settings file is not
 loaded. The application's own settings are not content and never come through
 here.
@@ -296,7 +295,7 @@ references, resolved against the loaded languages. Registers nothing.
 
 The registered declaration, defaults filled in. Settings schema version 2 adds
 the `keyBinding` control; its default and resolved value are a modifier-free
-physical `KeyboardEvent.code` string (ADR-0045).
+physical `KeyboardEvent.code` string (ADR-0032).
 
 Errors: `unknownContent` when the project declares none — a legitimate state.
 
@@ -314,7 +313,7 @@ Errors: `parse` when the values are not a JSON object.
 ### `loadCharacter(json: string): LoadOutcome`
 
 Registers a `CharacterDefinition` — how a kind of character is drawn, and what
-may be chosen about one (ADR-0028). Load it before `loadProject`, which refuses
+may be chosen about one (ADR-0024). Load it before `loadProject`, which refuses
 a manifest naming a character that is not loaded.
 
 Errors: `parse`, `invalidContent` (`character.missingAsset`,
@@ -340,7 +339,7 @@ Ids of every registered definition, sorted.
 
 Registers a `DecorationDefinition` — a kind of thing that stands on a hex, with
 the anchor, plane and order that decide how it shares that hex with the
-characters walking over it (ADR-0048). Load it before `loadProject`, which
+characters walking over it (ADR-0035). Load it before `loadProject`, which
 refuses a manifest naming a decoration that is not loaded.
 
 Errors: `parse`, `invalidContent` (`decoration.emptyAnimation`,
@@ -405,7 +404,7 @@ Errors: `parse` when the JSON is malformed.
 
 ### `loadObject(json: string): LoadOutcome`
 
-Registers an `ObjectDefinition` — what a character carries (ADR-0049). Load it
+Registers an `ObjectDefinition` — what a character carries (ADR-0036). Load it
 before `loadProject`, which refuses a manifest naming an object that is not
 loaded.
 
@@ -440,7 +439,7 @@ What to draw for a registered object's icon at a moment of its flipbook:
 ```
 
 The frame arithmetic happens once, in Rust, so an inventory panel and the
-editor's preview cannot disagree about which drawing is on screen (ADR-0050). A
+editor's preview cannot disagree about which drawing is on screen (ADR-0036). A
 looping icon wraps at `timeMs`; one that does not holds its last frame. A still
 icon — one frame, which is nearly every object — stays on it however long it is
 left up, and `asset` comes back empty when the icon declares no frame.
@@ -456,7 +455,7 @@ Errors: `parse` when the JSON is malformed.
 
 ### `loadCharacterCreation(json: string): LoadOutcome`
 
-Registers the project's generic `CharacterCreationDefinition` (ADR-0042).
+Registers the project's generic `CharacterCreationDefinition` (ADR-0029).
 Load character definitions first: a binding to `{ kind: "character" }`, a
 binding to a parameter and preview overrides are validated against them.
 
@@ -511,7 +510,7 @@ animation, producing the flat ordered list of sprites described in
 an asset path and a resolved tint. The boxes are **absolute** whatever the file
 measured them from, and the list is in **draw order**, back to front, with any
 `order` a variant declared already applied — a host blits it as it stands
-(`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`). Each layer also
+(`docs/adr/ADR-0024-character-definitions.md`). Each layer also
 carries the `origin` its authored box was measured from, which an editor needs
 and a renderer ignores. Values go through the same rule as
 `resolveSettings`, and every tint is resolved here — a host blits what this
@@ -519,7 +518,7 @@ returned and decides nothing about appearance.
 
 `animation` is an animation id; `timeMs` counts from the moment it started, and
 the engine wraps a looping animation and holds a finished one on its last frame
-(ADR-0031). The animation's offset is **already in each layer's `rect`**, so a
+(ADR-0025). The animation's offset is **already in each layer's `rect`**, so a
 renderer needs no animation code at all; the payload also carries the `offset`
 that was applied and a `pose` saying which frame it is.
 `pose.durationMs` is one complete pass (the source's timing for a mirror), so a
@@ -529,7 +528,7 @@ timing calculation.
 An animation may also set **pose values**, which join the customisation while it
 plays and are what a variant's `when` selects on, so `layers[].variant` and
 `layers[].asset` can differ frame to frame
-(`docs/adr/ADR-0033-animations-set-pose-values.md`). The pose in force is
+(`docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`). The pose in force is
 reported on `pose.values`; it is deliberately **not** merged into `values`,
 which stay the customisation as given. A **mirrored** animation (`mirrorOf`)
 returns its source's layers unchanged with `mirrored: true`, which asks the host
@@ -554,7 +553,7 @@ resolveCharacterRole(
 ): ResolvedCharacter
 ```
 
-The gameplay-facing form of character resolution (ADR-0043). It selects the
+The gameplay-facing form of character resolution (ADR-0030). It selects the
 animation that declared `role`; an exact hex-direction role falls back to
 `moveRight` on the eastern side and `moveLeft` on the western side. An
 unassigned role is the rest pose. The returned payload and all customisation,
@@ -601,14 +600,14 @@ and project. Merging is additive and refuses a key twice, so a host that has
 that, without the collateral damage of `resetContent`.
 
 The language editor calls it after writing its files, then re-registers them with
-`loadLocale` (`docs/adr/ADR-0027-authoring-creates-keys.md`).
+`loadLocale` (`docs/adr/ADR-0020-localised-content-keys.md`).
 
 ### `validateLinks(): ValidationReport`
 
 Resolves every map link across the loaded worlds. This is the check no single
 world file can make: a link's `targetWorld` lives in another file, so
 `loadWorld` and `validateWorld` deliberately accept a world whose doors do not
-resolve yet (ADR-0017).
+resolve yet (ADR-0014).
 
 ```json
 {
@@ -630,7 +629,7 @@ Codes: `link.unknownTargetWorld`, `link.targetOutOfBounds`,
 ### `validateWorld(json: string): ValidationReport`
 
 Validates **without registering**. This is the editor's pre-save check, and it
-is the same validator `loadWorld` runs (ADR-0015).
+is the same validator `loadWorld` runs (ADR-0012).
 
 ```json
 {
@@ -695,7 +694,7 @@ Everything the renderer needs about a world **except** the per-cell buffers.
 Fetched **once per world**.
 
 `decorations` carries only the **placements** — which definition, where, how
-many pixels off its anchor, and whether *this* one is interactive (ADR-0051).
+many pixels off its anchor, and whether *this* one is interactive (ADR-0035).
 `offset` is added to the `placement` the definition resolves to; the host does
 the addition once, when it builds its model. What a tree looks like is
 `resolveDecoration`, asked once per definition rather than once per tree, and
@@ -708,7 +707,7 @@ the shape of the world — cell `[col, row]` lives at
 `(row - origin[1]) * width + (col - origin[0])`, and `origin` may be negative on
 a map that was extended northwards or westwards. Which of those cells the map
 actually has arrives in `presenceBuffer`
-(`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+(`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
 
 `cellCount` is the length of every packed buffer, `bounds.width *
 bounds.height`. `presentCellCount` is how many hexes the map has — equal to
@@ -716,12 +715,12 @@ bounds.height`. `presentCellCount` is how many hexes the map has — equal to
 
 `projection` is `"topDown"` or `"isometric"`, republished from the authored
 world. The engine transports it and never interprets it — it has no notion of
-pixels (ADR-0014, ADR-0016).
+pixels (ADR-0011, ADR-0013).
 
 `characterHeightTiles` is likewise transported presentation: the projected
 tile-face heights occupied by a 128-pixel character canvas, defaulting to `2`.
 The renderer combines it with the hex layout and projection; no game rule reads
-it (`docs/adr/ADR-0044-map-entity-presentation.md`).
+it (`docs/adr/ADR-0031-map-entity-presentation.md`).
 
 `grid` is the authored appearance used whenever the host's grid toggle is on:
 `lineWidth` in zoom-independent screen pixels, six-digit RGB `color`, and
@@ -734,13 +733,13 @@ around a buried hex the pointer rests on, and `opacity` / `neighbourOpacity`,
 how solidly the relief standing in front of that hex and of those rings is
 drawn. The engine validates the three numbers and republishes them; only the map
 renderer reads them, and only in isometric mode
-(`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+(`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
 
 `tileArt` is the tile set's authored pixel grid — `width`, `flatHeight`,
 `surfaceHeight`, `elevationHeight`, `elevationStep` — transported the same way
 and for the same reason. The renderer derives its tilt and its per-level lift
 from it, so a tile drawn from images and a tile filled with `fallbackColor`
-agree about the shape of a hexagon (ADR-0035).
+agree about the shape of a hexagon (ADR-0026).
 
 Each palette entry carries its `art`: the images the tile is drawn from in
 either projection (`flat`, `surface`, `elevation`), empty for a tile that has
@@ -755,10 +754,10 @@ index into the packed buffers, then the choices, already resolved from the ids
 the map file carries to indices into `palette` and into the variant lists.
 `surface` is one index for both projections — it picks out of the tile's
 `surface` list in an isometric world and out of its `flat` list in a top-down
-one, wrapping when the two are different lengths (ADR-0037). A
+one, wrapping when the two are different lengths (ADR-0026). A
 choice whose id resolved to nothing is simply absent, and that cell rolls the
 field as it always would; `validateWorld` reports the dangling reference
-(ADR-0036). It travels as a sparse list rather than as three more packed buffers
+(ADR-0026). It travels as a sparse list rather than as three more packed buffers
 because choosing is an authored exception.
 
 ### `terrainBuffer(worldId: string): Uint8Array`
@@ -778,10 +777,10 @@ One **signed** byte per cell, in exactly the same layout and of exactly the same
 length as `terrainBuffer`.
 
 Presentation only: the renderer lifts cells by this much in isometric mode and
-draws their side faces (ADR-0016). No rule reads it. Fetched **once per world**.
+draws their side faces (ADR-0013). No rule reads it. Fetched **once per world**.
 
 It answers for a hole too: carving a hex out of a map does not clear what was
-authored under it (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+authored under it (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
 
 ### `presenceBuffer(worldId: string): Uint8Array`
 
@@ -793,15 +792,15 @@ This is what makes `bounds` storage rather than shape. A cell the map does not
 have is outside the map in every sense: the renderer skips it, and a move onto
 it is rejected with the same `outOfBounds` a coordinate beyond the extent gets.
 Fetched **once per world**, like the two buffers beside it
-(`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+(`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
 
 ### `createGame(worldId: string, seed: number, settingsJson: string): GameSnapshot`
 
 Starts a game on a registered world. `seed` is a `u32`; the engine owns it and
-the RNG state from here on (ADR-0011). Replaces any game in progress.
+the RNG state from here on (ADR-0008). Replaces any game in progress.
 
 `settingsJson` is the **game's** settings as a JSON object, resolved against the
-loaded declaration on the way in (ADR-0025). Pass `"{}"` when a project declares
+loaded declaration on the way in (ADR-0022). Pass `"{}"` when a project declares
 none. The resolved values come back on every `GameSnapshot` as `settings`, which
 is where a scenario will read them.
 
@@ -879,13 +878,13 @@ ordered causally: the player's move, then the clock, then the monsters.
 The browser presents every `entityMoved` — player and monsters alike — as a
 linear glide from `from` to `to`. The returned `state` already holds `to` and
 remains authoritative throughout; interpolation is render state and never a
-second simulation snapshot (ADR-0044).
+second simulation snapshot (ADR-0031).
 
 #### Changing map
 
 When the player's move ends on a hex carrying a map link, the same
 `CommandResult` reports the transition **and** comes back with `state.worldId`
-already set to the new map (ADR-0017):
+already set to the new map (ADR-0014):
 
 ```json
 {
@@ -920,14 +919,14 @@ Discards or reports the running game. Loaded content survives `endGame`.
 ## Tick contract
 
 One accepted command == one tick. The pipeline is implemented literally in
-`crates/simulation/src/tick.rs`, phase by phase, following ADR-0004:
+`crates/simulation/src/tick.rs`, phase by phase, following ADR-0003:
 
 1. validate
 2. apply the player action
 3. resolve immediate effects — a map link on the hex just entered is recorded
    here as a pending transition; nothing else in the MVP
 4. advance world systems: `tick += 1`, then every chaser acts once
-5. advance the scenario — *empty; ADR-0005 plugs in here*
+5. advance the scenario — *empty; ADR-0004 plugs in here*
 6. resolve triggers and events — *empty*
 7. emit observable changes
 

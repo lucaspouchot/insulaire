@@ -8,7 +8,7 @@
  * The rules are deliberately narrow. The server is an authoring tool bound to
  * the loopback interface, and it may only ever touch content-shaped files
  * inside one declared directory
- * (`docs/adr/ADR-0022-authoring-content-workspace.md`).
+ * (`docs/adr/ADR-0019-authoring-content-workspace.md`).
  */
 import { isAbsolute, resolve, sep } from 'node:path';
 

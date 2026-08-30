@@ -9,7 +9,7 @@ import { Composition, CompositionFactory, TileAppearanceCache } from './tile-app
 /**
  * The flyweight's two promises: cells that look alike share one object, and
  * what that object holds is the same picture the renderer used to build per
- * cell, per frame (`docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`).
+ * cell, per frame (`docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`).
  *
  * Sharing is the half that is easy to get wrong quietly — a key that forgets a
  * field shows the wrong picture, one that includes too much shares nothing —
@@ -186,7 +186,7 @@ describe('TileAppearanceCache', () => {
         },
       ],
       // Grass on top, rock underneath
-      // (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+      // (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
       artChoices: new Map([[0, { surface: null, elevationTile: 1, elevation: null }]]),
     };
 
@@ -199,7 +199,7 @@ describe('TileAppearanceCache', () => {
       'top_a.png',
     ]);
     // A top-down world draws no relief at all, so it fetches none
-    // (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+    // (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     expect(cacheOf(modelWith(ONE_VARIANT, 'topDown')).assets()).toEqual(['flat_a.png']);
   });
 
@@ -257,7 +257,7 @@ describe('TileAppearanceCache', () => {
     // The one thing that has to hold: the lowest band ends exactly where the
     // hexagon's silhouette does, three steps below the shoulders — which is
     // where `addWallTo` puts the foot of the colour wall behind the art
-    // (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+    // (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     const foot =
       shoulderLine(overlapping) + 3 * overlapping.elevationStep + shoulderDepth(overlapping);
     expect((composed?.blits[0]?.y ?? 0) + overlapping.elevationHeight).toBe(foot);
@@ -303,7 +303,7 @@ describe('TileAppearanceCache', () => {
 
     const waiting = cache.of(0, 0, offset(0, 0), 1, 0);
     // Not ready is the colour path: half a cliff is worse than a coloured one
-    // (`docs/adr/ADR-0009-assets-tilesets.md`).
+    // (`docs/adr/ADR-0006-assets-tilesets.md`).
     expect(waiting?.ready).toBe(false);
     expect(waiting?.picture).toBeNull();
     expect(made).toHaveLength(0);
@@ -347,7 +347,7 @@ describe('TileAppearanceCache', () => {
     // Every other cell rolls, and the ones that roll the *other* variant are a
     // different look — a choice is a look of its own, and a cell that happens
     // to roll what was chosen shares it, which is the point
-    // (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+    // (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     const rolled = [...Array(16).keys()]
       .map((col) => cache.of(0, col + 1, offset(col + 1, 0), 0, 0))
       .filter((look) => look?.render.surface === 'top_a.png');

@@ -53,7 +53,7 @@ impl Steam {
     /// Whether Steam services are actually reachable in this run.
     ///
     /// Unused so far by design: this is a seam waiting for the game features
-    /// that will report to Steam, not a dead end (ADR-0020).
+    /// that will report to Steam, not a dead end (ADR-0017).
     #[allow(dead_code)]
     pub fn is_available(&self) -> bool {
         #[cfg(feature = "steam")]

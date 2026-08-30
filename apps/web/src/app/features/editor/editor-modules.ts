@@ -6,18 +6,18 @@
  * They are declared here once and read by both the routes (`editor.routes.ts`)
  * and the shell's tab bar, so adding an editor is one entry plus one component
  * — never a second list to keep in step
- * (`docs/adr/ADR-0019-editor-modules.md`).
+ * (`docs/adr/ADR-0016-editor-modules.md`).
  *
  * A module is a **domain**, not a screen, which is why this list can shrink:
  * characters were a module of their own until they became a category of the
  * asset editor, and `asset-categories.ts` is the same kind of registry one
- * level down (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+ * level down (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
  *
  * Entries marked `planned` route to the placeholder page. They are listed on
  * purpose rather than hidden: the shell is the map of what the tool will be.
  *
  * Every label here is a **key**, not text: the editor is translated like the
- * rest of the interface (`docs/adr/ADR-0023-localised-content-keys.md`).
+ * rest of the interface (`docs/adr/ADR-0020-localised-content-keys.md`).
  */
 
 export type EditorModuleStatus = 'available' | 'planned';

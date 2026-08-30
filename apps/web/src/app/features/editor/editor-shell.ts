@@ -7,7 +7,7 @@
  * It does name the **content directory being authored**, because that is the
  * one piece of context every module shares and the one mistake that is
  * expensive to notice late: editing the repository fixture while believing you
- * are editing your game (`docs/adr/ADR-0022-authoring-content-workspace.md`).
+ * are editing your game (`docs/adr/ADR-0019-authoring-content-workspace.md`).
  */
 
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';

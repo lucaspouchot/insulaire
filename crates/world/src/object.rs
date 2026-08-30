@@ -4,7 +4,7 @@
 //! *sibling* of [`crate::DecorationDefinition`] and the opposite of it: a
 //! decoration stands on a hex and is drawn in the world, an object travels in
 //! an inventory and is drawn in a panel
-//! (`docs/adr/ADR-0049-an-object-is-carried-not-placed.md`).
+//! (`docs/adr/ADR-0036-an-object-is-carried-not-placed.md`).
 //!
 //! That difference is the whole reason they are two formats rather than one
 //! with a flag. A decoration needs an anchor, a plane and an order because it
@@ -18,7 +18,7 @@
 //! What a player sees is [`ObjectDefinition::name_key`] and
 //! [`ObjectDefinition::description_key`], resolved through the locale bundles
 //! like every other displayed string
-//! (`docs/adr/ADR-0023-localised-content-keys.md`).
+//! (`docs/adr/ADR-0020-localised-content-keys.md`).
 //!
 //! # An icon is a flipbook
 //!
@@ -150,7 +150,7 @@ impl ObjectDefinition {
     ///
     /// The same contract [`crate::CharacterDefinition::referenced_keys`] has,
     /// and what the editor uses to create every missing key on save
-    /// (`docs/adr/ADR-0027-authoring-creates-keys.md`).
+    /// (`docs/adr/ADR-0020-localised-content-keys.md`).
     #[must_use]
     pub fn referenced_keys(&self) -> Vec<(String, &str)> {
         let mut keys = Vec::new();

@@ -1,7 +1,7 @@
 /* A toolbar, a scrolling stage, and the drawing's own palette under it. The
    stage scrolls rather than shrinks: at 16x a 32-pixel tile is 512 across, and
    fitting that to the panel would give up the whole-number zoom the tools rest
-   on (`docs/adr/ADR-0030-the-editor-paints-its-sprites.md`). */
+   on (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`). */
 :host {
   display: block;
   min-height: 0;
@@ -17,6 +17,12 @@
 .stage-scroll {
   flex: 1;
   min-height: 220px;
+  /* A fitted surface must not scroll. A canvas sized from its frame's client box
+     plus a scrollbar is a feedback loop: the scrollbar shrinks the box, the box
+     shrinks the canvas, the canvas loses the scrollbar, the box grows. Driven by
+     a ResizeObserver at frame rate that reads as a figure shivering in place, so
+     scrolling is only offered once an explicit zoom is asked for
+     (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`). */
   overflow: auto;
   display: flex;
   align-items: flex-start;

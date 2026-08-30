@@ -49,9 +49,9 @@ fn tile(id: &str, terrain: &str, movement_cost: u32, color: &str) -> TileDefinit
 /// Two of each view, one explicit elevation level and a repeat rule.
 ///
 /// Enough for a downstream test to exercise the whole of
-/// `docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md` without
+/// `docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md` without
 /// rebuilding a tile set by hand — and both projections of
-/// `docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`, whose ids match
+/// `docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`, whose ids match
 /// the surfaces' so a chosen variant means the same thing either way.
 fn sample_art() -> TileArt {
     TileArt {
@@ -198,7 +198,7 @@ pub fn linked_world() -> WorldDefinition {
 /// A small interior map, the target of [`linked_world`]'s door.
 ///
 /// It carries its own player start — every map stays independently playable
-/// (`docs/adr/ADR-0017-map-links.md`) — plus a link back out.
+/// (`docs/adr/ADR-0014-map-links.md`) — plus a link back out.
 #[must_use]
 pub fn interior_world() -> WorldDefinition {
     let mut world = sample_world();

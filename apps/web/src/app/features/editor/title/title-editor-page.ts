@@ -3,18 +3,18 @@
  *
  * It edits one content file — `menu/title-screen.json` — and everything about
  * it follows from that: the form writes a `TitleScreenDefinition`, the Rust
- * validator judges it (ADR-0015), and the preview is the **real**
+ * validator judges it (ADR-0012), and the preview is the **real**
  * {@link TitlePage}, not a mock-up, so what an author sees is what a player
- * gets (`docs/adr/ADR-0024-authored-title-screen.md`).
+ * gets (`docs/adr/ADR-0021-authored-title-screen.md`).
  *
  * Images and music are uploaded straight into the content directory through the
- * authoring server (ADR-0022) — dropping a file here puts it on disk, which is
+ * authoring server (ADR-0019) — dropping a file here puts it on disk, which is
  * the whole point of having that server.
  *
  * Labels are keys: this screen picks and **creates** them — saving writes every
  * key the screen names into every language, empty — and the language editor is
- * where their text is written (ADR-0023,
- * `docs/adr/ADR-0027-authoring-creates-keys.md`).
+ * where their text is written (ADR-0020,
+ * `docs/adr/ADR-0020-localised-content-keys.md`).
  */
 
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';

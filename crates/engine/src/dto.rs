@@ -155,7 +155,7 @@ pub struct GameSnapshot {
     ///
     /// Content declares them and a player sets them; the engine carries them so
     /// a scenario can read them and a save can keep them
-    /// (`docs/adr/ADR-0025-settings.md`).
+    /// (`docs/adr/ADR-0022-settings.md`).
     pub settings: BTreeMap<String, serde_json::Value>,
 }
 
@@ -244,7 +244,7 @@ pub struct LocationView {
 /// without re-reading the world file. Only the *placement* travels: what a
 /// tree looks like is `resolveDecoration`, asked once per definition rather
 /// than once per tree
-/// (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+/// (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlacedDecorationView {
@@ -268,7 +268,7 @@ pub struct PlacedDecorationView {
 /// An authored map link, as the UI sees it.
 ///
 /// Republished so the client can draw the door and name where it leads without
-/// re-reading the world file (`docs/adr/ADR-0017-map-links.md`).
+/// re-reading the world file (`docs/adr/ADR-0014-map-links.md`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LinkView {
@@ -319,26 +319,26 @@ pub struct WorldView {
     ///
     /// Storage, not the shape of the world. Which of those cells the map
     /// actually has travels in `presenceBuffer`
-    /// (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+    /// (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
     pub bounds: MapBounds,
     /// Hex orientation, currently always `"pointy"`.
     pub orientation: String,
     /// Authored render projection: `"topDown"` or `"isometric"`.
     ///
     /// Transported, never interpreted: the engine has no notion of pixels
-    /// (`docs/adr/ADR-0016-isometric-projection.md`).
+    /// (`docs/adr/ADR-0013-isometric-projection.md`).
     pub projection: String,
     /// Projected tile-face heights occupied by a 128-pixel character canvas.
     ///
     /// Presentation transported from the world without becoming a game rule
-    /// (`docs/adr/ADR-0044-map-entity-presentation.md`).
+    /// (`docs/adr/ADR-0031-map-entity-presentation.md`).
     pub character_height_tiles: f32,
     /// Authored grid appearance, transported without becoming a game rule.
     pub grid: GridStyle,
     /// How far relief may be seen through around the pointer.
     ///
     /// Transported the same way, and applied by the map renderer alone
-    /// (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+    /// (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
     pub reveal: RevealStyle,
     /// Id of the tile set this world paints with.
     pub tile_set_id: String,
@@ -346,7 +346,7 @@ pub struct WorldView {
     ///
     /// Transported, never interpreted, exactly like `projection`: it is what
     /// the renderer derives its tilt and its elevation step from when the set
-    /// ships art (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+    /// ships art (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     pub tile_art: TileArtGeometry,
     /// The palette that the packed terrain buffer indexes into.
     pub palette: Vec<PaletteEntry>,
@@ -354,7 +354,7 @@ pub struct WorldView {
     ///
     /// Author order is the tie-breaker within a plane: two trees from the same
     /// definition sort equally, and the later one is drawn over the earlier
-    /// (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+    /// (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub decorations: Vec<PlacedDecorationView>,
     /// Authored points of interest.
@@ -365,7 +365,7 @@ pub struct WorldView {
     ///
     /// Sparse, and normally empty: choosing is an authored exception, so this
     /// travels as a list of resolved indices rather than as three more packed
-    /// buffers of zeroes (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+    /// buffers of zeroes (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub art_choices: Vec<CellArtChoice>,
     /// Length of every packed buffer, i.e. `bounds.width * bounds.height`.
@@ -472,7 +472,7 @@ impl From<&ProjectDefinition> for ProjectView {
 ///
 /// The default language has already filled the gaps, so a value is always
 /// present for a key some language defines — a raw key never reaches a screen
-/// (`docs/adr/ADR-0023-localised-content-keys.md`).
+/// (`docs/adr/ADR-0020-localised-content-keys.md`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LocaleView {

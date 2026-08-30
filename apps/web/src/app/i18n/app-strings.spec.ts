@@ -2,7 +2,7 @@
  * The application ships every string in every language it claims.
  *
  * This is the guard rail behind the rule that no text is written where it is
- * displayed (`docs/adr/ADR-0023-localised-content-keys.md`): adding an English
+ * displayed (`docs/adr/ADR-0020-localised-content-keys.md`): adding an English
  * key without its French counterpart, or leaving a placeholder behind in one of
  * the two, fails here rather than in front of a player.
  */

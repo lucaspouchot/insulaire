@@ -5,7 +5,7 @@
 //! flat top face, and a ladder of **elevation levels**, each an image that draws
 //! one whole step of relief — the top face and every side face the projection
 //! exposes, in one picture
-//! (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+//! (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
 //!
 //! ```text
 //! TileDefinition + projection + elevation + roll ──> resolve() ──> ResolvedTileRender
@@ -19,7 +19,7 @@
 //! So each view has its own images — [`TileArt::flat`] for a top-down world,
 //! [`TileArt::surface`] plus [`TileArt::elevation`] for an isometric one — and
 //! neither is ever stretched into the other's shape
-//! (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+//! (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
 //!
 //! A tile that authors no [`flat`](TileArt::flat) draws its `fallbackColor` in
 //! a top-down world. Reaching for the surface image instead is what this
@@ -47,7 +47,7 @@
 //! overrides that with [`CellArt`]: this surface, this ladder, this variant.
 //! The override travels on the cell, resolved to indices when the grid is
 //! built, and everything left unset keeps rolling
-//! (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+//! (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
 //!
 //! # Levels are resolved, not stored
 //!
@@ -63,7 +63,7 @@
 //! from when a tile set declares it, so the polygon fallback and the sprites
 //! cannot disagree about how tall a step is. Pixels never enter this crate as
 //! a screen measurement — these are the authored dimensions of a file
-//! (`docs/adr/ADR-0014-hex-coordinate-model.md`).
+//! (`docs/adr/ADR-0011-hex-coordinate-model.md`).
 
 use serde::{Deserialize, Serialize};
 
@@ -75,7 +75,7 @@ pub const DEFAULT_TILE_WIDTH: u32 = 32;
 /// Authored height of a surface image when a tile set declares no geometry.
 ///
 /// `20 / 32` is the top face of a pointy-top hexagon under the isometric tilt
-/// ADR-0016 chose, rounded to whole pixels.
+/// ADR-0013 chose, rounded to whole pixels.
 pub const DEFAULT_SURFACE_HEIGHT: u32 = 20;
 
 /// Authored height of an elevation image when a tile set declares no geometry.
@@ -157,7 +157,7 @@ pub struct TileArtGeometry {
     ///
     /// `width * 2 / sqrt(3)` for a hexagon drawn to the same width, which is
     /// what a top-down world puts on screen
-    /// (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+    /// (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     pub flat_height: u32,
     /// Height of a surface image: the top face's bounding box.
     pub surface_height: u32,
@@ -210,7 +210,7 @@ impl TileArtGeometry {
     /// every set said before the two were told apart. A **shorter** step means
     /// one image covers several levels: the cliff is lower without the art
     /// being sliced into repeating strips, which is the whole point of a step
-    /// shorter than a band (`docs/adr/ADR-0041-a-cliff-is-stacked-in-bands.md`).
+    /// shorter than a band (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     ///
     /// Never zero, and never so large that bands would gap: it rounds *down*,
     /// so a band that does not divide evenly overlaps its neighbour by the
@@ -297,7 +297,7 @@ impl TileElevation {
     /// names a level nobody authored falls back to the highest explicit one
     /// rather than drawing a hole. Validation reports the rule separately, so
     /// the author is told without the picture breaking
-    /// (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+    /// (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     #[must_use]
     pub fn source_level(&self, level: u32) -> Option<u32> {
         let count = u32::try_from(self.levels.len()).unwrap_or(u32::MAX);
@@ -352,7 +352,7 @@ impl TileElevation {
 /// [`elevation`](Self::elevation) draw an isometric one. A tile may author one
 /// view, both, or neither — whatever a projection finds nothing for is drawn in
 /// the tile's `fallbackColor`
-/// (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+/// (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TileArt {
@@ -472,7 +472,7 @@ pub fn variant_index(roll: u32, count: usize) -> Option<usize> {
 ///
 /// Every field is an override of a default that is already right nearly
 /// everywhere, so `None` — "roll it" — is what all but a handful of cells on a
-/// map say (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`). The
+/// map say (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`). The
 /// resolver never reads a tile set out of this: the ids an author writes are
 /// turned into indices, and a reference to another tile into that tile's
 /// [`TileArt`], once, when the grid is built.
@@ -501,7 +501,7 @@ pub struct CellArt<'a> {
 /// `projection` decides which set of images answers, and the two never mix: a
 /// top-down world is one [`flat`](TileArt::flat) image and nothing else, and a
 /// tile that authors none resolves to nothing so the renderer fills its colour
-/// (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+/// (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
 ///
 /// `base` is the height the cell's side faces reach down to — the lower of its
 /// two front neighbours, which is what the renderer already computes so that a
@@ -1032,7 +1032,7 @@ mod tests {
         // A cliff is *one* cut through *one* ground, so its layers agree: the
         // variety is between neighbouring cells and between levels, not down a
         // single column, where alternating faces read as a stack of bricks
-        // (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+        // (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
         let art = TileArt {
             flat: Vec::new(),
             surface: vec![variant("top_a"), variant("top_b")],
@@ -1067,7 +1067,7 @@ mod tests {
         // The two projections are two sets of pictures, and a top-down world
         // never reaches for the isometric ones: a surface is the top of a
         // squashed hexagon and fits the round one nowhere
-        // (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+        // (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
         let art = TileArt {
             flat: vec![variant("flat_a"), variant("flat_b")],
             surface: vec![variant("top_a"), variant("top_b")],

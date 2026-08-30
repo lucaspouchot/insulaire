@@ -1,6 +1,6 @@
 /* The tiles category. The frame around it — toolbar, three columns, dock — is
    `asset-workspace.css`; what is here dresses the four slots this category
-   fills (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+   fills (docs/adr/ADR-0028-one-editor-for-everything-drawn.md). */
 
 /* This category is the flex item beside `asset-editor-page.ts`'s rail: it grows
    into the rest of the row, and `min-width: 0` is what lets the grid inside it
@@ -27,7 +27,7 @@
 }
 
 /* Zoom, fit and the grid: beside the file name, in the one bar every surface
-   shares (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+   shares (docs/adr/ADR-0028-one-editor-for-everything-drawn.md). */
 .toolbar .view {
   display: inline-flex;
   align-items: center;
@@ -184,7 +184,7 @@
 /* The hexagon, and nothing else. It had a flat copy of the same image under it
    for one version of this editor, which meant two surfaces showing the same
    pixels, neither of them big enough
-   (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+   (docs/adr/ADR-0028-one-editor-for-everything-drawn.md). */
 .tile-scene {
   flex: 1;
   display: flex;
@@ -195,7 +195,7 @@
 }
 
 /* One line, always: every line this bar wraps onto is a line the hexagon under
-   it does not get (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+   it does not get (docs/adr/ADR-0028-one-editor-for-everything-drawn.md). */
 .preview-bar {
   display: flex;
   align-items: center;
@@ -235,11 +235,11 @@
 /* `min-height: 0` and no `overflow: hidden`: the canvas is drawn to whatever
    box this ends up being, and `fitPreview()` scales the board to fit it. What
    used to be here was a floor of 200px and a clip, which is a crop with extra
-   steps (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+   steps (docs/adr/ADR-0028-one-editor-for-everything-drawn.md). */
 /* `hidden` while fitting: the canvas is sized from this element's client box,
    so a scrollbar would shrink the box, shrink the canvas and remove itself —
    a loop the resize observer runs at frame rate
-   (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). At a zoom the board
+   (docs/adr/ADR-0028-one-editor-for-everything-drawn.md). At a zoom the board
    is larger than the panel on purpose, and then it scrolls. */
 .preview-canvas {
   flex: 1;

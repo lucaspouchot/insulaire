@@ -15,7 +15,7 @@
 //! structure, and the only sparse one: they are authored exceptions, a handful
 //! on a map of millions, so they travel as a sorted list of
 //! [`CellArtChoice`] rather than three more buffers nobody would fill
-//! (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`). Resolving the ids
+//! (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`). Resolving the ids
 //! an author wrote into the indices a renderer wants happens **here**, once per
 //! load, so no draw call ever searches a variant list by name.
 
@@ -115,7 +115,7 @@ impl ResolvedTile {
 /// an id that resolves to nothing simply leaves its field unset — the cell then
 /// rolls that choice as it always would, and validation reports the dangling
 /// reference separately rather than the picture breaking
-/// (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+/// (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CellArtChoice {
@@ -171,7 +171,7 @@ pub struct WorldGrid {
     /// as [`cells`](Self::cells).
     ///
     /// The third dense buffer, and the one that makes the extent storage rather
-    /// than shape (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`). One byte per
+    /// than shape (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`). One byte per
     /// cell, like the two beside it: a bit per cell would be eight times
     /// smaller and costs a shift and a mask in the renderer's inner loop.
     presence: Vec<u8>,
@@ -220,7 +220,7 @@ impl WorldGrid {
 
         // The shape is authored as a default plus exceptions, exactly like the
         // tiles below it; flattening it is one fill and one pass over the
-        // exception list (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+        // exception list (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
         let default_presence = u8::from(world.shape.default.is_present());
         let mut presence = vec![default_presence; bounds.cell_count()];
         for &at in &world.shape.exceptions {
@@ -300,7 +300,7 @@ impl WorldGrid {
     /// The packed elevations, in the same layout as [`cells`](Self::cells).
     ///
     /// Presentation only: the renderer lifts a cell by this much in isometric
-    /// mode (`docs/adr/ADR-0016-isometric-projection.md`). No rule reads it.
+    /// mode (`docs/adr/ADR-0013-isometric-projection.md`). No rule reads it.
     #[must_use]
     pub fn elevations(&self) -> &[i8] {
         &self.elevations
@@ -337,7 +337,7 @@ impl WorldGrid {
     ///
     /// Presentation, so this answers for a hole too: carving a hex out does not
     /// clear what was authored under it
-    /// (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+    /// (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
     #[must_use]
     pub fn elevation_at(&self, hex: Hex) -> Option<i8> {
         let index = self.bounds.index_of(hex.to_offset())?;
@@ -363,7 +363,7 @@ impl WorldGrid {
     ///
     /// Not "is inside the bounding box": a hole is outside the map exactly as a
     /// coordinate beyond the extent is, and this is the one question rules ask
-    /// (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`). Use
+    /// (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`). Use
     /// [`bounds`](Self::bounds)`.contains` for the storage question.
     #[must_use]
     pub fn contains(&self, hex: Hex) -> bool {
@@ -417,7 +417,7 @@ pub fn resolve_cell_art(
     // One index serves both projections, so the search falls through to the
     // flat list for a tile that only draws top-down; a set that ships both
     // gives them the same ids and the two lookups agree
-    // (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+    // (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
     let surface = if art.surface.is_empty() {
         None
     } else {

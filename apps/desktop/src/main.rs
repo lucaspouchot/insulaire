@@ -5,10 +5,10 @@
 //! It is not a second implementation of the game. The Angular application and
 //! the WebAssembly engine are exactly the ones the browser build produces —
 //! `tauri.conf.json` points `frontendDist` at the `deliver` build, so the shell
-//! ships the game without the editor, by the same file replacement ADR-0018
+//! ships the game without the editor, by the same file replacement ADR-0015
 //! describes. The engine keeps running as WASM inside the webview: the
 //! Angular/engine boundary that is tested and documented stays the only one
-//! (`docs/adr/ADR-0020-desktop-executable.md`).
+//! (`docs/adr/ADR-0017-desktop-executable.md`).
 //!
 //! So this file owns three things, and nothing else: the window, the assets
 //! embedded in the executable, and the native services a browser cannot give —

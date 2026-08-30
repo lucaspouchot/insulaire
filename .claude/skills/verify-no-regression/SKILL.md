@@ -18,7 +18,7 @@ Three layers, from cheapest to most convincing:
 | Screens | the same harness | a page that no longer loads, draws, or reacts to a click |
 
 The transcript is the one that makes this worth running: the engine is
-deterministic (ADR-0011), so the same seed and the same commands must produce
+deterministic (ADR-0008), so the same seed and the same commands must produce
 the same ticks, positions, events and rejections. Any difference is either your
 change or a regression — never noise.
 
@@ -137,7 +137,7 @@ feature lands that the current sequence would not notice.
 ```jsonc
 {
   "world": "demo_world",          // world the game starts on
-  "seed": 2026,                   // fixed: the RNG lives in Rust (ADR-0011)
+  "seed": 2026,                   // fixed: the RNG lives in Rust (ADR-0008)
   "viewport": { "width": 1440, "height": 900 },
   "steps": [
     { "label": "wait one tick", "cmd": { "type": "wait" } },
@@ -183,7 +183,7 @@ case can deliberately state both:
 `hovers` moves the pointer without pressing, capturing after each move — the
 only way to reach what a hand does on the way to a click: the hex outline, the
 coordinate readout, and the relief a map draws see-through to show the hex it
-hides (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`). `at` is a fraction of
+hides (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`). `at` is a fraction of
 the canvas box like `clicks`; `hold` names a physical `KeyboardEvent.code` kept
 down **on the keyboard** until a later step names another or none, and
 `move: false` captures without touching the pointer at all — which is how a key

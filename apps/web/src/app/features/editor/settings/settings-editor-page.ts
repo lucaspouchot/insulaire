@@ -3,9 +3,9 @@
  *
  * It edits one content file — `settings.json` — and everything about it follows
  * from that: the form writes a `SettingsDefinition`, the Rust validator judges
- * it (ADR-0015), and the preview is the **real** `control-field` component, the
+ * it (ADR-0012), and the preview is the **real** `control-field` component, the
  * one the player's settings screen renders with
- * (`docs/adr/ADR-0025-settings.md`).
+ * (`docs/adr/ADR-0022-settings.md`).
  *
  * Two things are deliberately not here.
  *
@@ -22,8 +22,8 @@
  *
  * Labels are keys: this screen picks and **creates** them — saving writes every
  * key the file names into every language, empty — and the language editor is
- * where their text is written (ADR-0023,
- * `docs/adr/ADR-0027-authoring-creates-keys.md`).
+ * where their text is written (ADR-0020,
+ * `docs/adr/ADR-0020-localised-content-keys.md`).
  */
 
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
@@ -142,7 +142,7 @@ export class SettingsEditorPage {
    *
    * Not the untranslated keys: naming a key is how a key comes to exist, and
    * saving creates it in every language
-   * (`docs/adr/ADR-0027-authoring-creates-keys.md`). They are listed on their
+   * (`docs/adr/ADR-0020-localised-content-keys.md`). They are listed on their
    * own, as work left to do in the Languages tab, rather than as something in
    * the way of writing the file.
    */

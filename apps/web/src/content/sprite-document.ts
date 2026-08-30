@@ -5,7 +5,7 @@
  * on a declared pixel canvas (`docs/adr/ADR-0029-characters-are-composed-
  * sprites.md`). This is the other half of authoring one: the image itself,
  * opened as a buffer, painted a pixel at a time, and written back as a PNG
- * (`docs/adr/ADR-0030-the-editor-paints-its-sprites.md`).
+ * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
  *
  * It is framework-free, like the serialisers next to it, and its core is plain
  * arithmetic on an RGBA buffer: painting, erasing, undo, the palette and the
@@ -21,11 +21,11 @@
  * It is a default, not a rule: {@link SpriteDocument.plot} takes an alpha, and
  * every editing surface offers it. A tile is blitted as it stands, so a
  * shoreline that fades is a thing an artist may want
- * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`); a
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`); a
  * character is tinted, and the tint multiplies the RGB per pixel and carries
  * the alpha through untouched, so a soft edge stays the shade it was drawn as
  * (`character-renderer.ts`,
- * `docs/adr/ADR-0039-one-editor-for-everything-drawn.md`). ADR-0030 forbade
+ * `docs/adr/ADR-0028-one-editor-for-everything-drawn.md`). ADR-0028 forbade
  * the second of those until the tint stopped turning it into a halo.
  */
 
@@ -166,10 +166,10 @@ export class SpriteDocument {
    *
    * `alpha` is `0..255` and defaults to opaque, which is what a pencil does
    * unless the author asks otherwise. Both kinds of art may ask: a tile is
-   * blitted as it stands (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-
+   * blitted as it stands (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-
    * by-level.md`), and a character's tint multiplies the colour per pixel and
-   * leaves the alpha alone (`docs/adr/ADR-0039-one-editor-for-everything-
-   * drawn.md`, amending `docs/adr/ADR-0030-the-editor-paints-its-sprites.md`).
+   * leaves the alpha alone (`docs/adr/ADR-0028-one-editor-for-everything-
+   * drawn.md`, amending `docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
    *
    * @returns whether the pixel actually changed
    */

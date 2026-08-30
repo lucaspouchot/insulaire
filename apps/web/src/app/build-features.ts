@@ -6,7 +6,7 @@
  * this file for `build-features.deliver.ts` and `app.routes.ts` for
  * `app.routes.deliver.ts` through `fileReplacements` in `angular.json`, so the
  * editor's code is not merely hidden — it is never imported, and the bundler
- * emits no chunk for it (`docs/adr/ADR-0018-client-delivery-build.md`).
+ * emits no chunk for it (`docs/adr/ADR-0015-client-delivery-build.md`).
  *
  * Read this flag to decide what the *shell* offers. Never use it to change game
  * rules or content handling: both builds must play a world identically.

@@ -7,7 +7,7 @@
  * A map's art is a hundred and eighty-four PNGs of about 1.4 kB each. Two
  * hundred and fifty kilobytes in total — nothing — but a hundred and
  * eighty-four round trips, and that is what the map waits on
- * (`docs/adr/ADR-0040-tile-art-travels-as-one-bundle.md`).
+ * (`docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`).
  *
  * Measured on the dev server, HTTP/1.1, `/editor/map`: the server answers each
  * image in **4 ms** and the browser spends a **median of 3.4 s** with the
@@ -107,7 +107,7 @@ export async function collectSprites(root, directory) {
  * This is how a cached bundle knows it is stale. The content directory is
  * authored *while the server runs* — the asset editor writes through it, and a
  * `git checkout` or the seeder script can change it behind the server's back
- * (`docs/adr/ADR-0022-authoring-content-workspace.md`) — so a bundle held in
+ * (`docs/adr/ADR-0019-authoring-content-workspace.md`) — so a bundle held in
  * memory is only valid as long as this string is.
  *
  * Cheap enough to run on every request: a couple of hundred `stat` calls, a few

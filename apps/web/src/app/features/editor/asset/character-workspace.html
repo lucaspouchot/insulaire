@@ -5,7 +5,7 @@
     <span class="path">{{ path() || ('ui.editor.character.noFile' | t) }}</span>
     <!-- The view controls live here, above every surface, so they are in one
          place whichever one is open
-         (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). -->
+         (docs/adr/ADR-0028-one-editor-for-everything-drawn.md). -->
     <span class="view" [title]="'ui.editor.character.zoom' | t">
       <button type="button" class="small" (click)="zoomBy(-1)" aria-label="−">−</button>
       <span class="readout">{{ shownZoom() }}×</span>
@@ -96,9 +96,9 @@
   <!-- -------------------------------------------------------------- scene -->
   <!-- The player's own view: the real controls, the real resolver, the real
        renderer — and, in paint mode, the drawing surface itself
-       (docs/adr/ADR-0030-the-editor-paints-its-sprites.md). The flat view is
+       (docs/adr/ADR-0028-one-editor-for-everything-drawn.md). The flat view is
        the same buffer seen alone, for the work a figure makes awkward
-       (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). -->
+       (docs/adr/ADR-0028-one-editor-for-everything-drawn.md). -->
   <div scene class="character-scene">
     @let painted = layer();
     @let drawn = target();
@@ -503,7 +503,7 @@
           <!--
             Where this layer hangs, and what may hang off it. Parentage is
             not draw order: a cape is drawn behind a body and still follows
-            it (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+            it (`docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`).
           -->
           <section class="panel">
             <h2>{{ 'ui.editor.character.skeletonOf' | t: { layer: active.id } }}</h2>
@@ -763,7 +763,7 @@
         engine at the moment this names. It is a tab rather than a strip along
         the bottom of the window: a dock took the height the figure needed, and
         the divider is how an author gives the timeline the width it wants
-        instead (docs/adr/ADR-0039-one-editor-for-everything-drawn.md).
+        instead (docs/adr/ADR-0028-one-editor-for-everything-drawn.md).
       -->
       <app-character-animator
         [document]="doc"

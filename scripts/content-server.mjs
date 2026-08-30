@@ -9,11 +9,11 @@
  * real files — images, music, worlds — that live outside this repository, and
  * because a browser cannot write to a directory on its own. It runs next to the
  * Angular dev server, which proxies `/content` and `/api/content` to it
- * (`docs/adr/ADR-0022-authoring-content-workspace.md`).
+ * (`docs/adr/ADR-0019-authoring-content-workspace.md`).
  *
  * It is **not** part of the game. The runtime still loads content over plain
  * HTTP from static files, and the delivered executable embeds them: no build of
- * the game ever talks to this server, and ADR-0012's "no backend" is unchanged.
+ * the game ever talks to this server, and ADR-0009's "no backend" is unchanged.
  * That is why it binds to the loopback interface and refuses everything that is
  * not a content file inside its one directory.
  *
@@ -134,14 +134,14 @@ const tileArtBundles = new Map();
  * This is the whole point of the bundle: a map is a hundred and eighty-odd
  * requests' worth of 1.4 kB PNGs, and the browser spends its time queueing them
  * rather than downloading them
- * (`docs/adr/ADR-0040-tile-art-travels-as-one-bundle.md`).
+ * (`docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`).
  *
  * It is generated, never stored: the content directory holds the individual
  * PNGs, which are what the asset editor opens and writes. The signature — every
  * path, size and mtime under `assets/tiles` — is what makes a cached bundle
  * safe to keep while an author is painting through this same server, and what
  * makes it rebuild when the seeder or a `git checkout` changes the art behind
- * our back (ADR-0022, ADR-0030).
+ * our back (ADR-0019, ADR-0028).
  */
 async function sendTileArtBundle(response, root) {
   const signature = await spriteSignature(root, TILE_ART_DIR);

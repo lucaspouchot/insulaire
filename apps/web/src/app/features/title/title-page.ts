@@ -3,7 +3,7 @@
  *
  * Everything visible here is authored — the background, the logo, the music,
  * the buttons, their order and their labels all come from the project's title
- * screen file (`docs/adr/ADR-0024-authored-title-screen.md`). The component
+ * screen file (`docs/adr/ADR-0021-authored-title-screen.md`). The component
  * contributes three things content cannot:
  *
  * 1. **what a button does.** `TitleAction` is a closed set, and this is where

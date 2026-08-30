@@ -1,6 +1,6 @@
 /* The characters category. The frame around it — toolbar, three columns, dock
    — is `asset-workspace.css`; what is here dresses the four slots this category
-   fills (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+   fills (docs/adr/ADR-0028-one-editor-for-everything-drawn.md). */
 
 /* This category is the flex item beside `asset-editor-page.ts`'s rail: it grows
    into the rest of the row, and `min-width: 0` is what lets the grid inside it
@@ -34,7 +34,7 @@
 
 /* The view controls: zoom, fit, grid. Beside the file name, because that is the
    one bar every surface shares
-   (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+   (docs/adr/ADR-0028-one-editor-for-everything-drawn.md). */
 .toolbar .view {
   display: inline-flex;
   align-items: center;
@@ -87,7 +87,7 @@
 }
 
 /* The character list lives under the category rail, in the frame's own side
-   column (docs/adr/ADR-0039-one-editor-for-everything-drawn.md), so it is a
+   column (docs/adr/ADR-0028-one-editor-for-everything-drawn.md), so it is a
    narrow thing and its panel wears no chrome of its own. */
 .library .panel {
   margin: 0;
@@ -116,7 +116,7 @@
    and this is the element projected *into* it. Two elements one inside the
    other under the same name is how this ended up not filling its own slot —
    the frame's rule cannot reach across view encapsulation to say so, so the
-   category says it here (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+   category says it here (docs/adr/ADR-0028-one-editor-for-everything-drawn.md). */
 .character-scene {
   flex: 1;
   display: flex;
@@ -188,7 +188,7 @@
 
 /* Which surface is on: the composed figure, or the sprite alone. One control,
    two positions — the shape of the choice it is making
-   (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+   (docs/adr/ADR-0028-one-editor-for-everything-drawn.md). */
 .switch {
   display: inline-flex;
   align-items: stretch;
@@ -211,9 +211,9 @@
 /* The stage takes every pixel the scene has: a figure is 128 pixels tall and an
    author needs it whole, at a zoom they can see, with the tools on screen at
    the same time. That is what the bottom dock was costing
-   (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+   (docs/adr/ADR-0028-one-editor-for-everything-drawn.md). */
 /* The toolbar over the figure, on one row, exactly as the flat view wears it:
-   one surface, one bar, in one place (ADR-0039). It is compact enough to stay a
+   one surface, one bar, in one place (ADR-0028). It is compact enough to stay a
    single row, which is what the height of this column depends on. */
 .composed {
   flex: 1;
@@ -226,7 +226,7 @@
 
 /* No chrome of its own: the checkerboard already says where the canvas is, and
    a panel's padding and border here is a dozen rows of pixels the figure does
-   not get (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+   not get (docs/adr/ADR-0028-one-editor-for-everything-drawn.md). */
 .composed .panel.stage {
   flex: 1;
   min-width: 0;
@@ -552,18 +552,18 @@ button.small {
 /* The stage scrolls, because a zoomed canvas is bigger than the panel. It has
    no ceiling of its own any more: it takes the height the scene column has, and
    a 520px cap on a 1400px screen was leaving a figure small in a large empty
-   panel (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+   panel (docs/adr/ADR-0028-one-editor-for-everything-drawn.md). */
 /* Centred at every zoom, and still scrollable past the edges when the canvas
    is the larger of the two. `safe` is the whole trick: plain centring in an
    overflowing box pushes the top-left corner out of reach, and a figure whose
    head cannot be scrolled to is worse than one sitting in a corner
-   (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+   (docs/adr/ADR-0028-one-editor-for-everything-drawn.md). */
 /* `hidden` unless a zoom was asked for, and that is not a detail: while the
    stage is *fitting*, the canvas is sized from this element's client box, so a
    scrollbar appearing shrinks the box, which shrinks the canvas, which removes
    the scrollbar, which grows the box — a loop the observer runs at frame rate
    and the author sees as a shivering figure. Nothing overflows a fit, so
-   nothing needs to scroll (docs/adr/ADR-0039-one-editor-for-everything-drawn.md). */
+   nothing needs to scroll (docs/adr/ADR-0028-one-editor-for-everything-drawn.md). */
 .stage-frame {
   flex: 1;
   min-height: 0;
@@ -589,7 +589,7 @@ button.small {
 
    The transparency checker is *not* here: a CSS background is a fixed number of
    screen pixels, which contradicts the pixel grid the moment the stage zooms.
-   The draw paints it, in authored pixels (ADR-0030). */
+   The draw paints it, in authored pixels (ADR-0028). */
 .stage-canvas {
   display: block;
   flex: none;
@@ -654,7 +654,7 @@ button.small {
 
 /* A condition an animation sets rather than the player: the same control, told
    apart, because one is a choice and the other is a pose
-   (`docs/adr/ADR-0033-animations-set-pose-values.md`). */
+   (`docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`). */
 .line.when label.pose span {
   color: var(--accent);
 }

@@ -5,12 +5,12 @@
  * shows what its host's state is and reports what was clicked — which is what
  * lets the same bar sit over two very different surfaces: the flat image the
  * {@link PixelEditor} draws, and the composed figure a character is painted on
- * (`docs/adr/ADR-0030-the-editor-paints-its-sprites.md`,
- * `docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+ * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`,
+ * `docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
  *
  * It carries no zoom: that, the fit and the pixel grid live in the file bar,
  * above every surface, so an author finds them in one place whichever one is
- * open (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+ * open (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
  *
  * The guides are optional, because hex guides mean nothing over a cape. The
  * tools are not: a pencil means the same thing wherever this appears.
@@ -29,7 +29,7 @@ export type PixelTool = 'pencil' | 'eraser' | 'picker';
  * Three, and the list is the decision: a fill and a movable rectangular
  * selection were built for tiles and are gone again, because what an author
  * needs here is the last few pixels judged in place. Anything past that is a
- * real pixel editor and the import button (ADR-0030, ADR-0039).
+ * real pixel editor and the import button (ADR-0028).
  */
 export const PIXEL_TOOLS: readonly PixelTool[] = ['pencil', 'eraser', 'picker'];
 
@@ -54,7 +54,7 @@ export class PixelTools {
    * `column` is a strip down the side of the surface, and it exists for one
    * reason: a horizontal bar over a composed character costs a hundred and
    * thirty pixels of the height the figure needs, and the figure is what the
-   * author is judging (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+   * author is judging (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
    * A flat image is wide and short, so it keeps the row.
    */
   readonly orientation = input<'row' | 'column'>('row');
@@ -73,7 +73,7 @@ export class PixelTools {
    *
    * The palette is part of the bar because it is part of the tool: a palette
    * made of the drawing rather than a fixed ramp is what keeps a composed
-   * figure — or a tile set — on one set of tones (ADR-0030).
+   * figure — or a tile set — on one set of tones (ADR-0028).
    */
   readonly palette = input<readonly string[]>([]);
 

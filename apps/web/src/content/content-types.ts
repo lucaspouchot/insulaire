@@ -13,8 +13,8 @@ export type OffsetPair = [number, number];
 /**
  * `3` added authored grid appearance shared by editor and Play; `4` made a map
  * a set of hexes rather than a rectangle
- * (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`); `5` adds the authored
- * {@link RevealStyle} (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+ * (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`); `5` adds the authored
+ * {@link RevealStyle} (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
  */
 export const WORLD_SCHEMA_VERSION = 6;
 
@@ -46,7 +46,7 @@ export const DEFAULT_REVEAL_RADIUS = 1;
  * Largest authored reveal radius.
  *
  * Every revealed hex costs one coverage measurement, so the radius is bounded
- * rather than free (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+ * rather than free (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
  */
 export const MAX_REVEAL_RADIUS = 6;
 /**
@@ -54,7 +54,7 @@ export const MAX_REVEAL_RADIUS = 6;
  *
  * Not `0`: a cell drawn away entirely takes its silhouette with it, and where
  * nothing stands behind it that is a hole in the map rather than a hex seen
- * through (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+ * through (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
  */
 export const DEFAULT_REVEAL_OPACITY = 0.25;
 /** Opacity of the relief in front of a revealed neighbour, when none is authored. */
@@ -66,7 +66,7 @@ export const DEFAULT_REVEAL_NEIGHBOUR_OPACITY = 0.55;
  * Both opacities are those of **what stands in the way**, not of the hex behind
  * it: seeing a buried hex means drawing the relief in front of it see-through,
  * since drawing the hex back over that relief puts it in front of the cliff it
- * is behind (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+ * is behind (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
  *
  * Presentation only, and per map: how tall a map's relief is decides how much
  * of it hides its own hexes, so the dials belong to the map rather than to the
@@ -98,10 +98,10 @@ export function isDefaultRevealStyle(reveal: RevealStyle): boolean {
 
 /**
  * `2` added authored tile art
- * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`); `3` adds
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`); `3` adds
  * the flat view a top-down world is drawn from, and makes `art.flatHeight`
  * required wherever a set declares a grid
- * (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
  */
 export const TILE_SET_SCHEMA_VERSION = 3;
 
@@ -144,12 +144,12 @@ export interface TileVisual {
  *
  * Mirrors `crates/world/src/tile_art.rs`. A **flat** image holds the whole
  * untilted hexagon, which is what a top-down world draws
- * (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`). A **surface**
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`). A **surface**
  * image holds the tilted top face alone. An **elevation** image holds only the
  * side faces: its first row is the hexagon's lower shoulder line, so its top
  * {@link shoulderDepth} rows are the `V` the two lower edges cut, and below
  * that it carries a band {@link faceHeight} thick following the same `V`
- * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`). How far
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`). How far
  * that band lifts a cell is {@link TileArtGeometry.elevationStep}, which may be
  * shorter — one image then spans several levels; see {@link bandLevels}.
  */
@@ -194,7 +194,7 @@ export interface TileElevation {
  * {@link flat} draws a top-down world; {@link surface} and {@link elevation}
  * draw an isometric one. Whatever the world's projection finds nothing for is
  * drawn in `visual.fallbackColor`
- * (`docs/adr/ADR-0037-a-flat-map-is-drawn-from-flat-art.md`).
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
  */
 export interface TileArt {
   /** Images for the untilted hexagon. Top-down worlds only. */
@@ -257,7 +257,7 @@ export function shoulderDepth(geometry: TileArtGeometry): number {
  * narrows again a quarter from the bottom, so the lower shoulders are three
  * quarters down: `surfaceHeight - shoulderDepth`. An elevation image's own row
  * `0` is that line, and its `V` then falls exactly onto the two lower edges
- * (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
  */
 export function shoulderLine(geometry: TileArtGeometry): number {
   return geometry.surfaceHeight - shoulderDepth(geometry);
@@ -277,7 +277,7 @@ export function faceHeight(geometry: TileArtGeometry): number {
  * two were told apart. A **shorter** step means one image covers several
  * levels, which is how the same art draws a lower cliff without being sliced
  * into a repeating strip
- * (`docs/adr/ADR-0041-a-cliff-is-stacked-in-bands.md`).
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
  *
  * Rounds down and never to zero, so a band that does not divide evenly overlaps
  * its neighbour by the remainder rather than leaving a gap.
@@ -306,7 +306,7 @@ export const MAX_ELEVATION = 127;
  * Mirrors `PlacedTileArt` in `crates/world/src/definition.rs`. Three
  * independent choices, all optional, and an absent one means "roll it" — which
  * is what nearly every cell of nearly every map says
- * (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+ * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
  */
 export interface PlacedTileArt {
   /** Id of a surface variant of this cell's own tile. */
@@ -361,7 +361,7 @@ export type LinkTrigger = 'enter' | 'interact';
  *
  * The only cross-file reference in the world schema: `targetWorld` names a
  * world that lives in another file, so the editor can only check it once the
- * whole project is loaded (`docs/adr/ADR-0017-map-links.md`).
+ * whole project is loaded (`docs/adr/ADR-0014-map-links.md`).
  */
 export interface MapLink {
   id: string;
@@ -391,7 +391,7 @@ export type CellPresence = 'present' | 'absent';
  * two ways an author reaches a custom shape are opposites. Carving a coastline
  * out of a full canvas lists holes; drawing an archipelago on an empty one lists
  * hexes. The editor writes whichever list is shorter
- * (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+ * (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
  */
 export interface MapShape {
   /** What a cell is when {@link exceptions} does not name it. */
@@ -406,7 +406,7 @@ export interface MapShape {
  * The *definition* says what a tree looks like and which side of the characters
  * it is drawn on; this says which tree, where, and whether **this** one can be
  * interacted with — the only question that needs the thing to exist in a world
- * (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+ * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
  */
 export interface PlacedDecoration {
   /** Stable id, unique within the world; what a scenario addresses. */
@@ -437,7 +437,7 @@ export interface WorldDefinition {
    * Every map has a zone; absent or empty names the project's default one
    * rather than *no* zone. A zone id only resolves against the project that
    * declares it, so the Rust validator is what checks it
-   * (`docs/adr/ADR-0021-map-zones.md`).
+   * (`docs/adr/ADR-0018-map-zones.md`).
    */
   zone?: string;
   /**
@@ -447,7 +447,7 @@ export interface WorldDefinition {
    * move. Extending a map northwards or westwards moves this rather than
    * renumbering its cells, so an authored coordinate keeps its hex — and its
    * odd-r row parity — forever
-   * (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+   * (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
    */
   origin?: [number, number];
   width: number;
@@ -477,7 +477,7 @@ export interface WorldDefinition {
    *
    * Author order breaks a tie within a plane: two trees from one definition
    * sort equally, and the later one is drawn over the earlier
-   * (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+   * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
    */
   decorations?: PlacedDecoration[];
   locations?: LocationDefinition[];
@@ -499,7 +499,7 @@ export interface ContentRef {
  *
  * It is what lets a client build boot with no editor and no backend — it reads
  * this file and loads exactly what it lists
- * (`docs/adr/ADR-0018-client-delivery-build.md`).
+ * (`docs/adr/ADR-0015-client-delivery-build.md`).
  */
 /**
  * Id of the zone a project falls back on when it declares none.
@@ -512,7 +512,7 @@ export const DEFAULT_ZONE_ID = 'default';
  * A group of maps that belong together.
  *
  * The unit of simulated scope: a tick advances the maps of one zone, not only
- * the map the player stands on (`docs/adr/ADR-0021-map-zones.md`). Zones are
+ * the map the player stands on (`docs/adr/ADR-0018-map-zones.md`). Zones are
  * declared by the project, and every map names exactly one.
  */
 export interface ZoneDefinition {
@@ -525,7 +525,7 @@ export interface ZoneDefinition {
  *
  * Each file's {@link ContentRef.id} is its **namespace**: `locales/fr/menu.json`
  * registered as `menu` provides the keys under `menu.`
- * (`docs/adr/ADR-0023-localised-content-keys.md`).
+ * (`docs/adr/ADR-0020-localised-content-keys.md`).
  */
 export interface LanguageDefinition {
   id: string;
@@ -574,7 +574,7 @@ export const TITLE_SCREEN_SCHEMA_VERSION = 1;
  *
  * A closed set: an action is something the application implements, so a new one
  * is a code change, not a content field
- * (`docs/adr/ADR-0024-authored-title-screen.md`).
+ * (`docs/adr/ADR-0021-authored-title-screen.md`).
  */
 export type TitleAction = 'newGame' | 'continue' | 'settings' | 'credits' | 'quit';
 
@@ -656,7 +656,7 @@ export const SETTINGS_SCHEMA_VERSION = 2;
  *
  * Mirrors `crates/world/src/settings.rs`. The **same** vocabulary describes the
  * application's own settings and the game's, so one component renders both
- * (`docs/adr/ADR-0025-settings.md`).
+ * (`docs/adr/ADR-0022-settings.md`).
  */
 export type ControlKind =
   | 'toggle'
@@ -737,7 +737,7 @@ export const MAX_SPRITE_RESOLUTION = 256;
  * Filing, not behaviour: neither the resolver nor the renderer reads it. It
  * exists so an editor can group definitions and a later feature can ask for
  * "the playable ones" without a naming convention
- * (`docs/adr/ADR-0028-character-definitions.md`).
+ * (`docs/adr/ADR-0024-character-definitions.md`).
  */
 export type CharacterCategory = 'player' | 'npc' | 'enemy' | 'monster' | 'other';
 
@@ -746,7 +746,7 @@ export type CharacterCategory = 'player' | 'npc' | 'enemy' | 'monster' | 'other'
  *
  * Every {@link PixelRect} is a position on *this* grid, so a host knows how big
  * the character is without loading a single image
- * (`docs/adr/ADR-0029-characters-are-composed-sprites.md`).
+ * (`docs/adr/ADR-0024-character-definitions.md`).
  */
 export interface SpriteResolution {
   width: number;
@@ -794,7 +794,7 @@ export interface LayerVariant {
    *
    * A child measures from its parent's `parentAnchor`, so a sprite drawn to sit
    * on that joint is `[0, 0, width, height]`; a root measures from the canvas
-   * origin (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`).
+   * origin (`docs/adr/ADR-0024-character-definitions.md`).
    */
   rect?: PixelRect;
   /**
@@ -818,7 +818,7 @@ export interface LayerVariant {
  * read as canvas positions; every other layer's anchors travel with it.
  *
  * It is what a child is **placed from**
- * (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`). It is also what
+ * (`docs/adr/ADR-0024-character-definitions.md`). It is also what
  * lets the editor draw the skeleton through the joints, and it is the pivot a
  * rotation will turn about the day there is one.
  */
@@ -910,7 +910,7 @@ export interface AnimationTrack {
  *
  * Exact hex directions override the corresponding left/right role. The latter
  * two are therefore enough for a complete character, while all six remain
- * authorable (`docs/adr/ADR-0043-gameplay-selects-character-animations-by-role.md`).
+ * authorable (`docs/adr/ADR-0030-gameplay-selects-character-animations-by-role.md`).
  */
 export type AnimationRole =
   | 'idle'
@@ -932,7 +932,7 @@ export type AnimationRole =
  * {@link poses} say what is **drawn**: values that join the customisation for
  * as long as the animation is playing, so a layer picks its sprite through the
  * same `when` conditions it already uses for hair colour or armour
- * (`docs/adr/ADR-0033-animations-set-pose-values.md`).
+ * (`docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`).
  */
 export interface Animation {
   /** Stable id, unique within the definition — `idle`, `walk`, `attack`. */
@@ -1154,7 +1154,7 @@ export const DEFAULT_DECORATION_RESOLUTION: Readonly<SpriteResolution> = {
  * What a decoration is, for filing.
  *
  * Filing, not behaviour — the same role {@link CharacterCategory} plays
- * (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+ * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
  */
 export type DecorationCategory = 'nature' | 'building' | 'prop' | 'container' | 'other';
 
@@ -1267,7 +1267,7 @@ export type ObjectKind = 'consumable' | 'equipment' | 'quest' | 'material' | 'ot
  * Mirrors `crates/world/src/object.rs`. The sibling of
  * {@link DecorationDefinition} and its opposite: a decoration stands on a hex
  * and is drawn in the world, an object travels in an inventory and is drawn in
- * a panel (`docs/adr/ADR-0049-an-object-is-carried-not-placed.md`).
+ * a panel (`docs/adr/ADR-0036-an-object-is-carried-not-placed.md`).
  */
 export interface ObjectDefinition {
   id: string;
@@ -1283,7 +1283,7 @@ export interface ObjectDefinition {
    * The images of the icon, in play order. One frame is a still icon.
    *
    * Empty is an object blocked out before its art exists
-   * (`docs/adr/ADR-0050-an-object-icon-is-a-flipbook.md`).
+   * (`docs/adr/ADR-0036-an-object-is-carried-not-placed.md`).
    */
   frames?: string[];
   /** How long each frame lasts, in milliseconds. Unread by a still icon. */

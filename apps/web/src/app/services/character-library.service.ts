@@ -6,7 +6,7 @@
  * decoration or object library does — and what is left here is what makes a
  * character one: the manifest list it reads, the engine call that registers
  * one, and the category a picker groups by
- * (`docs/adr/ADR-0028-character-definitions.md`).
+ * (`docs/adr/ADR-0024-character-definitions.md`).
  */
 
 import { Injectable } from '@angular/core';

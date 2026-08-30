@@ -30,7 +30,7 @@
 //! animation says which by setting **pose values** — an ordinary key/value map
 //! that joins the customisation for the moment it is in force, so a layer picks
 //! its sprite through the same `when` conditions it already uses for hair
-//! colour or armour (`docs/adr/ADR-0033-animations-set-pose-values.md`).
+//! colour or armour (`docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`).
 //!
 //! [`Animation::pose`] holds for the whole animation (`view: side`), and
 //! [`Animation::poses`] overrides it frame by frame (`step: contact`). A
@@ -42,8 +42,8 @@
 //!
 //! A [`Transform`] is a translation in canvas pixels and nothing else. Rotation
 //! and scale are absent on purpose: rotating pixel art resamples it, and
-//! resampling is what ADR-0029 exists to prevent
-//! (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`). The
+//! resampling is what ADR-0024 exists to prevent
+//! (`docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`). The
 //! shape that leaves room for them is [`Transform`] itself — a node's local
 //! transform is *a struct*, so a rotation is a field appearing there rather
 //! than a change to what a keyframe is.
@@ -125,7 +125,7 @@ pub fn flipbook_index_at(
 /// Ids stay author-owned: a cycle called `shuffle` can be the idle and one
 /// called `stride` can be movement to the west. This role is the validated seam
 /// gameplay uses instead of guessing from either name
-/// (`docs/adr/ADR-0043-gameplay-selects-character-animations-by-role.md`).
+/// (`docs/adr/ADR-0030-gameplay-selects-character-animations-by-role.md`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum AnimationRole {
@@ -258,7 +258,7 @@ impl PixelOffset {
 /// has to have somewhere for a rotation to go the day the renderer can honour
 /// one without resampling — the same reasoning that made a layer's image a
 /// `Sprite` rather than a path
-/// (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+/// (`docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Transform {
@@ -603,7 +603,7 @@ impl Animation {
     /// These are the values a layer's `when` conditions are tested against
     /// alongside the customisation, which is what lets one line of a variant
     /// answer a whole animation and four lines answer a walk cycle
-    /// (`docs/adr/ADR-0033-animations-set-pose-values.md`).
+    /// (`docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`).
     #[must_use]
     pub fn pose_at(&self, time_ms: u32) -> BTreeMap<String, Value> {
         let mut merged = self.pose.clone();

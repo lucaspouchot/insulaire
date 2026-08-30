@@ -6,12 +6,12 @@
  * new game starts from. They are declared here rather than in content because
  * the *application* implements each one — a game cannot invent "make the text
  * faster" without code — and because the engine has no business knowing that a
- * screen has a size (`docs/adr/ADR-0025-settings.md`).
+ * screen has a size (`docs/adr/ADR-0022-settings.md`).
  *
  * They use the **same** {@link ControlDefinition} vocabulary the game's settings
  * use, so one component renders both and an author learns one set of concepts.
  * Labels are keys, like all displayed text; content may override any of them by
- * defining the same key (ADR-0023).
+ * defining the same key (ADR-0020).
  */
 
 import { ControlDefinition, SettingsSection, SettingValue } from '../../content/content-types';
@@ -49,7 +49,7 @@ export const ENGINE_SHORTCUT = {
  * that walks can hold it while the other points. A binding rather than a
  * modifier because a browser gives `Alt` to its own menu bar and takes the
  * focus out of the game with it
- * (`docs/adr/ADR-0047-relief-never-hides-a-hex.md`).
+ * (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
  */
 export const DEFAULT_PEEK_CODE = 'KeyS';
 
@@ -144,7 +144,7 @@ export function engineSettingsSections(
 
   // Only a shell with a window can resize it or leave fullscreen: in a browser
   // tab, and in a phone application, these would be controls that do nothing
-  // (`docs/adr/ADR-0020-desktop-executable.md`). The interface scale above is
+  // (`docs/adr/ADR-0017-desktop-executable.md`). The interface scale above is
   // offered everywhere, because everywhere can zoom.
   if (hasWindow) {
     display.unshift(

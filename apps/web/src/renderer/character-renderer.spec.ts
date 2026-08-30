@@ -60,7 +60,7 @@ const CANVAS = { width: 64, height: 128 };
  * `offset` is filled in here rather than at every call: it is what the
  * animation moved a layer by and `origin` is the frame its box was measured
  * from — both already applied to `rect`, and the renderer reads neither
- * (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`).
+ * (`docs/adr/ADR-0024-character-definitions.md`).
  */
 function character(
   layers: Omit<ResolvedLayer, 'offset' | 'origin'>[],
@@ -148,7 +148,7 @@ describe('drawCharacter', () => {
   /**
    * The one drawing decision this file makes: a mirrored character is the
    * whole canvas reflected about its own centre line, layers and pixels
-   * together (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+   * together (`docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`).
    */
   it('reflects a mirrored character about its own canvas, not its box', () => {
     const context = recordingContext();
@@ -322,8 +322,8 @@ describe('drawCharacter', () => {
   });
 
   /**
-   * The reason ADR-0030 forbade partial alpha on a character, and the reason
-   * ADR-0039 could allow it.
+   * The reason ADR-0028 forbade partial alpha on a character, and the reason
+   * ADR-0028 could allow it.
    *
    * The old pipeline multiplied an opaque fill over the scratch canvas, which
    * blends *and* composites: where a pixel was half there, half the tint
@@ -390,7 +390,7 @@ describe('drawCharacter', () => {
 /**
  * The cache's two jobs beyond holding images: fetching what is about to be
  * needed, and not shouting about it
- * (`docs/adr/ADR-0038-a-map-is-drawn-from-shared-pictures.md`).
+ * (`docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`).
  */
 describe('SpriteCache', () => {
   /** An `Image` whose loads are fired by the test, not by a network. */
@@ -478,7 +478,7 @@ describe('SpriteCache', () => {
       await nextFrame();
 
       // The old fetch answered into a cache that no longer wants it, and the
-      // next request goes back to the file (ADR-0030).
+      // next request goes back to the file (ADR-0028).
       expect(cache.image('hair.png')).toBeNull();
       expect(ScriptedImage.pending).toHaveLength(2);
     });
@@ -551,7 +551,7 @@ describe('SpriteCache', () => {
         expect(cache.image('grass.png')).not.toBeNull();
 
         // The point of the bundle: warming the map now asks the network for
-        // nothing at all (ADR-0040).
+        // nothing at all (ADR-0027).
         await cache.preload(['grass.png', 'rock.png']);
         expect(ScriptedImage.pending).toHaveLength(0);
       });
@@ -589,7 +589,7 @@ describe('SpriteCache', () => {
         await expect(cache.loadBundle('/content/tile-art.bundle')).rejects.toThrow(/404/);
 
         // The optimisation failed and the map still loads: this is the fallback
-        // every caller catches into (ADR-0040).
+        // every caller catches into (ADR-0027).
         void cache.preload(['grass.png']);
         expect(ScriptedImage.pending.map((image) => image.url)).toEqual(['grass.png']);
       });
@@ -607,7 +607,7 @@ describe('SpriteCache', () => {
       await scripted(async () => {
         const cache = new SpriteCache((asset) => asset);
         // An open editing session started this one; the file behind it is the
-        // version the author has already moved past (ADR-0030).
+        // version the author has already moved past (ADR-0028).
         cache.image('grass.png');
         await cache.loadBundle('/content/tile-art.bundle');
 

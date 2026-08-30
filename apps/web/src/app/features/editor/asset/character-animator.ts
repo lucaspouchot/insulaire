@@ -11,7 +11,7 @@
  * It draws nothing. The preview belongs to the page, which resolves the
  * definition through the Rust engine at the moment this component names, so an
  * author watches the *runtime's* answer rather than a mock-up of one
- * (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`). A
+ * (`docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`). A
  * preview with an evaluator of its own would be a second answer, and the one an
  * author trusted would be the wrong one.
  *
@@ -23,7 +23,7 @@
  * The second one it has to keep visible is **moving against redrawing**. A
  * track moves a node; a *pose* says what the character is drawn as, and it is
  * read by whichever layers have something to say about it rather than aimed at
- * one (`docs/adr/ADR-0033-animations-set-pose-values.md`). So the pose has its
+ * one (`docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`). So the pose has its
  * own row at the top of the timeline, above every node, and its own editor —
  * because it belongs to the animation and not to a node.
  */
@@ -125,7 +125,7 @@ export class CharacterAnimator {
    * On by default: an author reading a keyframe scrolls to the pose editor and
    * back constantly, and the grid is what they are reading against. Off is
    * there because a tall timeline pinned to the top of a short column is the
-   * opposite of helpful (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+   * opposite of helpful (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
    */
   protected readonly pinned = signal(true);
 

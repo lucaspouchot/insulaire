@@ -26,13 +26,13 @@ import {
  * *what they do* — which categories exist, the id a tile proposes, the art it
  * writes, the rule it records — lives in the two modules this exercises, which
  * is the same split `character-editor.types.ts` uses
- * (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+ * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
  */
 describe('asset categories', () => {
   it('opens tiles and characters, and declares the ones still coming', () => {
     expect(ASSET_CATEGORIES[0]).toMatchObject({ id: 'tiles', status: 'available' });
     // Characters used to be a module of their own; they are a category now
-    // (`docs/adr/ADR-0039-one-editor-for-everything-drawn.md`).
+    // (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
     expect(assetCategory('characters')).toMatchObject({ status: 'available' });
     // Declared rather than hidden: the rail is the map of what the tool will be.
     expect(ASSET_CATEGORIES.filter((entry) => entry.status === 'planned').length).toBeGreaterThan(

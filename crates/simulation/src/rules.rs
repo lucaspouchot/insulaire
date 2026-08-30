@@ -177,7 +177,7 @@ mod tests {
     fn a_hole_in_the_map_is_outside_it() {
         // The whole payoff of `WorldGrid::contains` meaning "the map has this
         // hex": no rule here learned anything about shapes
-        // (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+        // (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
         let hole = OffsetCoord::new(3, 2);
         let mut world = testing::sample_world();
         world.entities[0].at = OffsetCoord::new(2, 2);

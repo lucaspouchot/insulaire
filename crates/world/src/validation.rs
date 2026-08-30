@@ -3,7 +3,7 @@
 //! There is exactly one implementation of "is this world loadable?", and it
 //! lives here in Rust. The Angular editor calls it through WASM before
 //! exporting, so a world that the editor accepts is a world the runtime accepts
-//! (see `docs/adr/ADR-0015-shared-content-validation.md`).
+//! (see `docs/adr/ADR-0012-shared-content-validation.md`).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -248,7 +248,7 @@ pub fn validate_tile_set(tile_set: &TileSetDefinition) -> ValidationReport {
 ///   faces it exists to hold;
 /// * a step taller than those faces stacks levels with a gap between them, and
 ///   the background shows through the cliff
-///   (`docs/adr/ADR-0035-tile-art-is-authored-and-resolved-by-level.md`).
+///   (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
 fn geometry_issues(art: &TileArtGeometry) -> Vec<ValidationIssue> {
     let mut issues = Vec::new();
 
@@ -564,7 +564,7 @@ fn validate_world_header(world: &WorldDefinition, issues: &mut Vec<ValidationIss
 /// least one hex left over.
 ///
 /// Connectivity is deliberately not checked — an archipelago is a legitimate
-/// map (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+/// map (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
 fn validate_shape(world: &WorldDefinition, issues: &mut Vec<ValidationIssue>) {
     let bounds = world.bounds();
     let mut named: BTreeSet<(i32, i32)> = BTreeSet::new();
@@ -648,7 +648,7 @@ fn validate_tiles(
         } else if !world.has_cell(placed.at) {
             // A warning, not an error: paint deliberately outlives a hole, so
             // that carving a coastline and changing your mind costs nothing
-            // (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+            // (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
             issues.push(ValidationIssue::warning(
                 "tile.absentCell",
                 format!("{path}.at"),
@@ -676,7 +676,7 @@ fn validate_tiles(
             ));
         }
         // Elevation is packed as one signed byte per cell for the renderer
-        // (`docs/adr/ADR-0016-isometric-projection.md`), so the schema cannot
+        // (`docs/adr/ADR-0013-isometric-projection.md`), so the schema cannot
         // carry more than a byte's worth of relief.
         if !(MIN_ELEVATION..=MAX_ELEVATION).contains(&placed.elevation) {
             issues.push(ValidationIssue::error(
@@ -698,7 +698,7 @@ fn validate_tiles(
 /// cell its *choice*, not its picture — the grid leaves the field unset and it
 /// rolls as it always did — so a map that lost a variant to a repainted tile
 /// set still loads and still plays, and the author is told what stopped meaning
-/// something (`docs/adr/ADR-0036-a-cell-may-choose-its-tile-art.md`).
+/// something (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
 fn validate_cell_art(
     placed: &crate::definition::PlacedTile,
     tile_set: &TileSetDefinition,
@@ -789,7 +789,7 @@ fn validate_cell_art(
 /// on its own it cannot know which decorations exist.
 ///
 /// Nothing here rejects two decorations on one cell: sharing a cell is the
-/// point (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+/// point (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
 fn validate_decorations(world: &WorldDefinition, issues: &mut Vec<ValidationIssue>) {
     let mut ids: BTreeSet<&str> = BTreeSet::new();
 
@@ -1008,7 +1008,7 @@ fn validate_locations(world: &WorldDefinition, issues: &mut Vec<ValidationIssue>
 /// Everything here is intra-file: ids, bounds, duplicates, trigger support. The
 /// *target* of a link lives in another file and is checked by
 /// [`validate_project_links`] once every world is loaded
-/// (`docs/adr/ADR-0017-map-links.md`).
+/// (`docs/adr/ADR-0014-map-links.md`).
 fn validate_links(
     world: &WorldDefinition,
     tile_set: &TileSetDefinition,
@@ -1120,7 +1120,7 @@ fn validate_links(
 /// perform: a world names a decoration by id, and whether that id exists is a
 /// fact about the *project*, exactly as `targetWorld` is
 /// ([`validate_project_links`],
-/// `docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+/// `docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
 ///
 /// `decorations` is the id of everything currently registered.
 #[must_use]
@@ -1252,7 +1252,7 @@ pub fn validate_project_links<'a>(
 ///
 /// The other half of zone validation, and the half no single file can perform:
 /// a world names a zone id, and only the project says whether that zone exists
-/// (`docs/adr/ADR-0021-map-zones.md`). A world naming none is not an error —
+/// (`docs/adr/ADR-0018-map-zones.md`). A world naming none is not an error —
 /// it belongs to the project's default zone, which is what makes zones
 /// mandatory in the model without making the field mandatory in the file.
 #[must_use]
@@ -1585,7 +1585,7 @@ fn locale_declaration_issues(project: &ProjectDefinition) -> Vec<ValidationIssue
 /// language. A gap is a warning, not an error — the default language stands in
 /// so a player never sees a raw key — but it is reported, because the editor's
 /// language screen is built out of this report
-/// (`docs/adr/ADR-0023-localised-content-keys.md`).
+/// (`docs/adr/ADR-0020-localised-content-keys.md`).
 ///
 /// `bundles` is what the host actually loaded, in any order.
 #[must_use]
@@ -1666,7 +1666,7 @@ pub fn validate_locales<'a>(
 /// — its actions, its numbers, its asset paths — but not whether the keys it
 /// names exist, which needs the loaded languages
 /// ([`validate_referenced_keys`]), nor whether its images are on disk, which no
-/// build of the engine can see (`docs/adr/ADR-0024-authored-title-screen.md`).
+/// build of the engine can see (`docs/adr/ADR-0021-authored-title-screen.md`).
 #[must_use]
 pub fn validate_title_screen(screen: &TitleScreenDefinition) -> ValidationReport {
     let mut issues = Vec::new();
@@ -1823,7 +1823,7 @@ fn unusable_asset_path(path: &str) -> Option<&'static str> {
 /// What it cannot check is deliberate: whether the label keys resolve needs the
 /// loaded languages ([`validate_referenced_keys`]), and what a setting *means*
 /// is the game's business, not the engine's
-/// (`docs/adr/ADR-0025-settings.md`).
+/// (`docs/adr/ADR-0022-settings.md`).
 #[must_use]
 pub fn validate_settings(settings: &SettingsDefinition) -> ValidationReport {
     let mut issues = Vec::new();
@@ -1890,7 +1890,7 @@ pub fn validate_settings(settings: &SettingsDefinition) -> ValidationReport {
 /// `kind` namespaces the codes: the very same checks report `settings.noOptions`
 /// on a settings file and `character.noOptions` on a character's parameters, so
 /// one implementation serves both vocabularies without either pretending to be
-/// the other (`docs/adr/ADR-0028-character-definitions.md`).
+/// the other (`docs/adr/ADR-0024-character-definitions.md`).
 fn field_issues(kind: &str, path: &str, field: &ControlDefinition) -> Vec<ValidationIssue> {
     field_issues_with_nullable(kind, path, field, false)
 }
@@ -1905,7 +1905,7 @@ fn field_issues_with_nullable(
 
     // A shortcut configures input; it is not a value that can describe a
     // character or a character-creation answer. The Rust type stays shared so
-    // settings keep the one ControlDefinition vocabulary of ADR-0025, while
+    // settings keep the one ControlDefinition vocabulary of ADR-0022, while
     // validation keeps the new presentation control in its meaningful domain.
     if kind != "settings" && field.control == ControlKind::KeyBinding {
         issues.push(ValidationIssue::error(
@@ -2385,7 +2385,7 @@ fn validate_creation_preview(
 /// a variant that names a parameter nobody declared, a colour bound to a
 /// number, a sprite with no path, a box of zero size. None of them know what
 /// the character is for — the same rules judge a player, a merchant and a
-/// dragon (`docs/adr/ADR-0028-character-definitions.md`).
+/// dragon (`docs/adr/ADR-0024-character-definitions.md`).
 #[must_use]
 pub fn validate_character(character: &CharacterDefinition) -> ValidationReport {
     let mut issues = Vec::new();
@@ -2478,7 +2478,7 @@ fn layer_issues(character: &CharacterDefinition) -> Vec<ValidationIssue> {
     let poses = pose_keys(character);
     // Boxes are measured from the joint their layer hangs off, so whether one
     // fits the canvas is a question about where it *lands*, not about the
-    // numbers in the file (`docs/adr/ADR-0034-layer-boxes-are-anchor-relative.md`).
+    // numbers in the file (`docs/adr/ADR-0024-character-definitions.md`).
     let places = character.placements(None, 0);
 
     if character.layers.is_empty() {
@@ -2571,7 +2571,7 @@ fn layer_issues(character: &CharacterDefinition) -> Vec<ValidationIssue> {
 /// A cycle is the check that matters. The resolver survives one — it stops at
 /// the repeat — but a character whose body hangs off its own hair is not a
 /// character anybody meant to author
-/// (`docs/adr/ADR-0031-characters-animate-by-hierarchy-and-offsets.md`).
+/// (`docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`).
 fn hierarchy_issues(character: &CharacterDefinition) -> Vec<ValidationIssue> {
     let mut issues = Vec::new();
 
@@ -2723,7 +2723,7 @@ fn animation_issues(character: &CharacterDefinition) -> Vec<ValidationIssue> {
 /// The last of those is the check that matters. A pose is only ever felt
 /// through a `when` condition, so a key nothing tests is an animation that
 /// changes nothing — almost always a typo on one side or the other, and
-/// otherwise invisible (`docs/adr/ADR-0033-animations-set-pose-values.md`).
+/// otherwise invisible (`docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`).
 fn pose_issues(
     character: &CharacterDefinition,
     path: &str,
@@ -3096,7 +3096,7 @@ fn parameter_allows(parameter: &ControlDefinition, required: &Value) -> bool {
 /// An unknown key is a **warning**, not an error: the resolution rule renders a
 /// key nobody defines as itself, so the content still loads and still says
 /// something on screen, and authoring a label before its text exists is the
-/// normal order of work (`docs/adr/ADR-0027-authoring-creates-keys.md`). An
+/// normal order of work (`docs/adr/ADR-0020-localised-content-keys.md`). An
 /// *empty* key stays an error — it names nothing, and nothing is what it would
 /// render.
 #[must_use]
@@ -3157,7 +3157,7 @@ fn tile_at_is_passable(
 /// What it does **not** check is deliberate: whether the images it names exist
 /// on disk is the host's business, and what interacting with it does is the
 /// scenario's
-/// (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+/// (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
 #[must_use]
 pub fn validate_decoration(
     decoration: &DecorationDefinition,
@@ -3270,7 +3270,7 @@ pub fn validate_decoration(
 /// nothing about whether it fits. What is worth reporting is the *drawing*
 /// leaving the hexagon — and even that is only a **warning**, because a big
 /// tree is supposed to overhang its cell
-/// (`docs/adr/ADR-0048-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+/// (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
 ///
 /// Measured against the **flat** hexagon, the larger of the two footprints a
 /// projection gives it: the permissive reading, so a decoration that fits on a
@@ -3389,7 +3389,7 @@ fn decoration_frame_issues(
 /// What it cannot check is the same limit every other file has: whether the
 /// icon's frames exist on disk is the host's business, and whether the keys resolve
 /// needs the loaded languages ([`validate_referenced_keys`],
-/// `docs/adr/ADR-0049-an-object-is-carried-not-placed.md`).
+/// `docs/adr/ADR-0036-an-object-is-carried-not-placed.md`).
 #[must_use]
 pub fn validate_object(object: &ObjectDefinition) -> ValidationReport {
     let mut issues = Vec::new();
@@ -3427,7 +3427,7 @@ pub fn validate_object(object: &ObjectDefinition) -> ValidationReport {
 
     // Warnings, both of them: an object is routinely written before its art and
     // its text exist, and an editor that refused to save one would send the
-    // author back to a text editor (`docs/adr/ADR-0027-authoring-creates-keys.md`).
+    // author back to a text editor (`docs/adr/ADR-0020-localised-content-keys.md`).
     if object.name_key.trim().is_empty() {
         issues.push(ValidationIssue::warning(
             "object.missingNameKey",
@@ -3766,7 +3766,7 @@ mod tests {
         let mut world = testing::sample_world();
         // Carve a bay, then drop a rock away from the shore. Neither is an
         // error: connectivity is never checked
-        // (`docs/adr/ADR-0046-a-map-is-a-set-of-hexes.md`).
+        // (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
         world.shape.exceptions = vec![
             OffsetCoord::new(0, 0),
             OffsetCoord::new(1, 0),
@@ -5453,7 +5453,7 @@ mod tests {
 
     /// A placement is addressed by a scenario, so its id has to be unique, and
     /// it has to stand somewhere the map actually has
-    /// (`docs/adr/ADR-0051-a-decoration-is-placed-and-the-placement-decides.md`).
+    /// (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
     #[test]
     fn a_placement_needs_a_unique_id_and_a_hex_under_it() {
         let mut world = testing::sample_world();
@@ -5571,7 +5571,7 @@ mod tests {
     }
 
     /// An object written before its art and its text exist still saves: both
-    /// are warnings (`docs/adr/ADR-0027-authoring-creates-keys.md`).
+    /// are warnings (`docs/adr/ADR-0020-localised-content-keys.md`).
     #[test]
     fn a_nameless_iconless_object_is_only_warned_about() {
         let mut potion = potion();
@@ -5586,7 +5586,7 @@ mod tests {
 
     /// An animated icon is held to the rules a decoration's flipbook is held
     /// to, because it is the same flipbook
-    /// (`docs/adr/ADR-0050-an-object-icon-is-a-flipbook.md`).
+    /// (`docs/adr/ADR-0036-an-object-is-carried-not-placed.md`).
     #[test]
     fn an_icon_that_would_never_advance_is_an_error() {
         let mut gem = potion();

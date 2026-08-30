@@ -5,7 +5,7 @@
  * bytes are nothing; the round trips are the wait. The bundle collapses them
  * into one request, and this module turns what comes back into the individual
  * images the renderer already knows how to draw
- * (`docs/adr/ADR-0040-tile-art-travels-as-one-bundle.md`).
+ * (`docs/adr/ADR-0027-a-map-is-drawn-from-shared-pictures.md`).
  *
  * It is a **transport format, not an atlas**: no grid, no source rectangles,
  * no composition. What the renderer blits after unpacking is byte-identical to
