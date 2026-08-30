@@ -5,6 +5,7 @@ import {
   fallbackKeyboardLabel,
   ignoresGameplayShortcut,
   isKeyboardCode,
+  undoRedoIntent,
 } from './keyboard-shortcuts';
 
 describe('physical keyboard shortcuts', () => {
@@ -35,6 +36,41 @@ describe('physical keyboard shortcuts', () => {
     input.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', key: 'z', bubbles: true }));
 
     expect(ignored).toBe(true);
+  });
+
+  it('reads an editor chord by its printed letter, not by its position', () => {
+    // The other half of ADR-0032: an author on AZERTY presses the key marked Z
+    // to undo, and the browser reports `{ code: 'KeyW', key: 'z' }` for it.
+    const azerty = new KeyboardEvent('keydown', { code: 'KeyW', key: 'z', ctrlKey: true });
+
+    expect(undoRedoIntent(azerty)).toBe('undo');
+  });
+
+  it('knows both spellings of redo, and both modifiers', () => {
+    const chord = (init: KeyboardEventInit): KeyboardEvent =>
+      new KeyboardEvent('keydown', { code: 'KeyZ', ...init });
+
+    expect(undoRedoIntent(chord({ key: 'z', ctrlKey: true, shiftKey: true }))).toBe('redo');
+    expect(undoRedoIntent(chord({ key: 'Z', metaKey: true, shiftKey: true }))).toBe('redo');
+    expect(undoRedoIntent(chord({ key: 'y', ctrlKey: true }))).toBe('redo');
+    expect(undoRedoIntent(chord({ key: 'z', metaKey: true }))).toBe('undo');
+  });
+
+  it('is nothing without a modifier, and nothing for another letter', () => {
+    expect(undoRedoIntent(new KeyboardEvent('keydown', { key: 'z' }))).toBeNull();
+    expect(undoRedoIntent(new KeyboardEvent('keydown', { key: 'a', ctrlKey: true }))).toBeNull();
+  });
+
+  it('leaves an undo typed into a form to the form', () => {
+    const input = document.createElement('input');
+    let intent: 'undo' | 'redo' | null = 'undo';
+    input.addEventListener('keydown', (event) => {
+      intent = undoRedoIntent(event);
+    });
+
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }));
+
+    expect(intent).toBeNull();
   });
 
   it('formats common codes when the layout map is unavailable', () => {

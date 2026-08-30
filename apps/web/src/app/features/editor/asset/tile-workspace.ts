@@ -62,7 +62,8 @@ import {
 import { SpriteDocument } from '../../../../content/sprite-document';
 import { serializeTileSet } from '../../../../content/tile-set-serializer';
 import { ValidationReport } from '../../../../engine/engine.types';
-import { zoomBy } from '../../../../renderer/canvas-surface';
+import { undoRedoIntent } from '../../../../core/keyboard-shortcuts';
+import { prepareSurface, zoomBy } from '../../../../renderer/canvas-surface';
 import { SpriteCache, SpriteSource } from '../../../../renderer/character-renderer';
 import { CellArt } from '../../../../renderer/tile-art';
 import {
@@ -126,6 +127,11 @@ const MAX_PREVIEW_ELEVATION = 24;
   templateUrl: './tile-workspace.html',
   styleUrl: './tile-workspace.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  // Undo is a keystroke wherever the pointer happens to be. This screen had
+  // toolbar buttons and no listener at all, so Ctrl+Z did nothing on it while
+  // it did something on every other painting surface in the editor
+  // (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
+  host: { '(document:keydown)': 'onKeyDown($event)' },
 })
 export class TileWorkspace implements AfterViewInit, OnDestroy {
   private readonly store = inject(ProjectStoreService);
@@ -1074,6 +1080,25 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
     return this.openSprite()?.canRedo === true;
   });
 
+  /**
+   * Undo and redo, wherever the pointer is — but never while typing.
+   *
+   * The screen's only keyboard listener, and the same chord every other
+   * painting surface answers to (`core/keyboard-shortcuts.ts`).
+   */
+  protected onKeyDown(event: KeyboardEvent): void {
+    const intent = undoRedoIntent(event);
+    if (intent === null) {
+      return;
+    }
+    event.preventDefault();
+    if (intent === 'redo') {
+      this.redo();
+    } else {
+      this.undo();
+    }
+  }
+
   protected undo(): void {
     if (this.openSprite()?.undo() === true) {
       this.onPainted();
@@ -1238,18 +1263,14 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
     const height =
       zoom === null ? boxHeight : Math.max(boxHeight, Math.ceil(measured.contentHeight));
 
-    const ratio = window.devicePixelRatio || 1;
-    canvas.width = Math.round(width * ratio);
-    canvas.height = Math.round(height * ratio);
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
-
     const context = canvas.getContext('2d');
     if (context === null) {
       return;
     }
-    context.setTransform(ratio, 0, 0, ratio, 0, 0);
-    context.clearRect(0, 0, width, height);
+    // One policy for every canvas in the application
+    // (`renderer/canvas-surface.ts`). This board used to read the device ratio
+    // uncapped, so a 3x screen was asking a tab for nine times the pixels.
+    prepareSurface(context, { width, height });
     if (cells.length === 0) {
       return;
     }

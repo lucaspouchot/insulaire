@@ -45,6 +45,7 @@ import {
 } from '../../../../content/content-types';
 import { serializeObject } from '../../../../content/object-serializer';
 import { SpriteDocument } from '../../../../content/sprite-document';
+import { undoRedoIntent } from '../../../../core/keyboard-shortcuts';
 import { zoomBy } from '../../../../renderer/canvas-surface';
 import { assetUrl } from '../../../../core/asset-url';
 import { I18nService } from '../../../i18n/i18n.service';
@@ -80,7 +81,10 @@ const DEFAULT_ZOOM = 8;
   templateUrl: './object-workspace.html',
   styleUrl: './object-workspace.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { '(window:beforeunload)': 'onUnload($event)' },
+  host: {
+    '(document:keydown)': 'onKeyDown($event)',
+    '(window:beforeunload)': 'onUnload($event)',
+  },
 })
 export class ObjectWorkspace implements OnDestroy {
   private readonly store = inject(ProjectStoreService);
@@ -592,6 +596,39 @@ export class ObjectWorkspace implements OnDestroy {
 
   protected onPainted(): void {
     this.touchSprites();
+  }
+
+  /**
+   * Undo and redo, wherever the pointer is — but never while typing.
+   *
+   * The screen's only keyboard listener. The chord is parsed in one place
+   * (`core/keyboard-shortcuts.ts`); acting on it is the screen's, because only
+   * the screen knows which surface is open
+   * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
+   */
+  protected onKeyDown(event: KeyboardEvent): void {
+    const intent = undoRedoIntent(event);
+    if (intent === null) {
+      return;
+    }
+    event.preventDefault();
+    if (intent === 'redo') {
+      this.redo();
+    } else {
+      this.undo();
+    }
+  }
+
+  protected undo(): void {
+    if (this.sprite()?.undo() === true) {
+      this.touchSprites();
+    }
+  }
+
+  protected redo(): void {
+    if (this.sprite()?.redo() === true) {
+      this.touchSprites();
+    }
   }
 
   protected zoomBy(delta: number): void {

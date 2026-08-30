@@ -47,7 +47,6 @@ import { TileArtGeometry } from '../../../../content/content-types';
 import { PALETTE_SIZE, SpriteDocument } from '../../../../content/sprite-document';
 import { PIXEL_ZOOMS, zoomBy } from '../../../../renderer/canvas-surface';
 import { ImageKind, drawChecker, drawGuides } from '../../../../renderer/tile-preview';
-import { isEditableTarget } from '../../../../core/keyboard-shortcuts';
 import { I18nService } from '../../../i18n/i18n.service';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
 import { PixelTool, PixelTools } from './pixel-tools';
@@ -118,8 +117,6 @@ export class PixelEditor implements AfterViewInit, OnDestroy {
   private painting = false;
   private frame = 0;
 
-  private readonly onKey = (event: KeyboardEvent): void => this.handleKey(event);
-
   constructor(private readonly i18n: I18nService) {
     effect(() => {
       // Re-read every input the stage draws from, then repaint.
@@ -135,12 +132,10 @@ export class PixelEditor implements AfterViewInit, OnDestroy {
   }
 
   ngAfterViewInit(): void {
-    window.addEventListener('keydown', this.onKey);
     this.schedule();
   }
 
   ngOnDestroy(): void {
-    window.removeEventListener('keydown', this.onKey);
     cancelAnimationFrame(this.frame);
   }
 
@@ -326,20 +321,6 @@ export class PixelEditor implements AfterViewInit, OnDestroy {
     this.pickedColor.emit(color);
     if (this.tool() === 'picker') {
       this.tool.set('pencil');
-    }
-  }
-
-  private handleKey(event: KeyboardEvent): void {
-    if (isEditableTarget(event.target)) {
-      return;
-    }
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
-      event.preventDefault();
-      if (event.shiftKey) {
-        this.redo();
-      } else {
-        this.undo();
-      }
     }
   }
 

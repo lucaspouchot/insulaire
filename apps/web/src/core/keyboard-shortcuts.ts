@@ -70,6 +70,34 @@ export function ignoresGameplayShortcut(event: KeyboardEvent): boolean {
   );
 }
 
+/**
+ * What an editor chord asks for: to undo, to redo, or nothing.
+ *
+ * `event.key`, not `event.code` — and that is not an inconsistency with
+ * {@link capturedKeyboardCode} above, it is the other half of the same rule.
+ * A game action is a *position* on the keyboard, so it stores `code`
+ * (`docs/adr/ADR-0032-shortcuts-use-physical-keys.md`). An editor chord is the
+ * **printed letter**: an author on AZERTY presses the key marked Z to undo,
+ * wherever the hardware puts it, because Ctrl+Z is a name and not a place.
+ * ADR-0032's scope is rebindable one-key game actions and does not govern this.
+ *
+ * Ctrl and Cmd both, Shift+Z and Y both — the two spellings of redo every
+ * platform's users arrive with. Nothing while a form field holds the caret.
+ */
+export function undoRedoIntent(event: KeyboardEvent): 'undo' | 'redo' | null {
+  if (isEditableTarget(event.target) || !(event.ctrlKey || event.metaKey)) {
+    return null;
+  }
+  const key = event.key.toLowerCase();
+  if (key === 'y') {
+    return 'redo';
+  }
+  if (key === 'z') {
+    return event.shiftKey ? 'redo' : 'undo';
+  }
+  return null;
+}
+
 /** Readable fallback when the browser cannot expose its keyboard layout map. */
 export function fallbackKeyboardLabel(code: string): string {
   if (/^Key[A-Z]$/.test(code)) {

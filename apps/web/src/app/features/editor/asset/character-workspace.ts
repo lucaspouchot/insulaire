@@ -95,7 +95,7 @@ import {
 import { serializeCharacter } from '../../../../content/character-serializer';
 import { PALETTE_SIZE, SpriteDocument } from '../../../../content/sprite-document';
 import { assetUrl } from '../../../../core/asset-url';
-import { isEditableTarget } from '../../../../core/keyboard-shortcuts';
+import { isEditableTarget, undoRedoIntent } from '../../../../core/keyboard-shortcuts';
 import {
   CharacterBox,
   SpriteCache,
@@ -118,7 +118,7 @@ import { CONTENT_ROOT, ProjectStoreService } from '../../../services/project-sto
 import { DraftSet } from '../../../editing/draft-set';
 import { DraftSource } from '../../../editing/draft-source';
 import { freeId } from '../../../editing/ids';
-import { zoomBy } from '../../../../renderer/canvas-surface';
+import { prepareSurface, zoomBy } from '../../../../renderer/canvas-surface';
 
 /**
  * Smallest drawing box the fit will work with, in CSS pixels.
@@ -2006,22 +2006,25 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
     }
   }
 
-  /** Undo and redo, wherever the pointer is — but never while typing. */
+  /**
+   * Undo and redo, wherever the pointer is — but never while typing.
+   *
+   * The screen's **only** keyboard listener. The embedded {@link PixelEditor}
+   * used to attach one of its own to the window, so on the flat scene both
+   * fired and one Ctrl+Z undid two strokes. The chord is parsed in one place
+   * now (`core/keyboard-shortcuts.ts`); acting on it is the screen's, because
+   * only the screen knows which surface is open.
+   */
   protected onKeyDown(event: KeyboardEvent): void {
-    if (isEditableTarget(event.target) || !(event.ctrlKey || event.metaKey)) {
+    const intent = undoRedoIntent(event);
+    if (intent === null) {
       return;
     }
-    const key = event.key.toLowerCase();
-    if (key === 'z') {
-      event.preventDefault();
-      if (event.shiftKey) {
-        this.redo();
-      } else {
-        this.undo();
-      }
-    } else if (key === 'y') {
-      event.preventDefault();
+    event.preventDefault();
+    if (intent === 'redo') {
       this.redo();
+    } else {
+      this.undo();
     }
   }
 
@@ -2226,22 +2229,19 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
     const measured =
       frame.clientWidth > 0 ? frame.getBoundingClientRect().width / frame.clientWidth : 1;
     const shell = Math.round(measured * 100) / 100;
-    // A device ratio buys nothing once one authored pixel is a block four
-    // screen pixels wide, and at these sizes it costs a great deal of memory.
-    const dense =
-      explicit !== null && explicit >= 4 ? 1 : Math.min(window.devicePixelRatio || 1, 3);
-    const ratio = Math.min(dense * shell, MAX_BACKING / Math.max(width, height));
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
-    canvas.width = Math.floor(width * ratio);
-    canvas.height = Math.floor(height * ratio);
-
     const context = canvas.getContext('2d');
     if (context === null) {
       return;
     }
-    context.setTransform(ratio, 0, 0, ratio, 0, 0);
-    context.clearRect(0, 0, width, height);
+    // One policy for every canvas in the application
+    // (`renderer/canvas-surface.ts`). What is this stage's own is the three
+    // arguments: the zoom already being applied, whatever is scaling the page,
+    // and the largest backing store it will ask a tab for.
+    prepareSurface(
+      context,
+      { width, height },
+      { zoom: explicit ?? 1, scale: shell, maxSide: MAX_BACKING },
+    );
     if (resolved === null) {
       return;
     }

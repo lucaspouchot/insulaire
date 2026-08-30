@@ -23,6 +23,7 @@ import {
   ResolvedCharacter,
   SettingValue,
 } from '../../../content/content-types';
+import { surfaceDensity } from '../../../renderer/canvas-surface';
 import { SpriteCache, drawCharacter } from '../../../renderer/character-renderer';
 import { I18nService } from '../../i18n/i18n.service';
 import { TranslatePipe } from '../../i18n/translate.pipe';
@@ -289,7 +290,10 @@ export class CharacterCreationPage implements OnDestroy {
       const canvas = reference.nativeElement;
       const width = Math.max(1, Math.round(canvas.clientWidth || 360));
       const height = Math.max(1, Math.round(canvas.clientHeight || 480));
-      const density = Math.max(1, window.devicePixelRatio || 1);
+      // One policy for every canvas in the application
+      // (`renderer/canvas-surface.ts`). The element's CSS size is not set here:
+      // this canvas is laid out by CSS, and a pixel width would freeze it.
+      const density = surfaceDensity({ width, height });
       canvas.width = Math.round(width * density);
       canvas.height = Math.round(height * density);
       const context = canvas.getContext('2d');

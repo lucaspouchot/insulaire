@@ -66,7 +66,8 @@ import { serializeDecoration } from '../../../../content/decoration-serializer';
 import { SpriteDocument } from '../../../../content/sprite-document';
 import { assetUrl } from '../../../../core/asset-url';
 import { Point } from '../../../../core/hex/hex-layout';
-import { zoomBy } from '../../../../renderer/canvas-surface';
+import { undoRedoIntent } from '../../../../core/keyboard-shortcuts';
+import { prepareSurface, zoomBy } from '../../../../renderer/canvas-surface';
 import { SpriteCache, drawCharacter } from '../../../../renderer/character-renderer';
 import { flatHexagon, surfaceHexagon } from '../../../../renderer/tile-preview';
 import { I18nService } from '../../../i18n/i18n.service';
@@ -147,7 +148,10 @@ const FIGURE_ASPECT = 0.38;
   templateUrl: './decoration-workspace.html',
   styleUrl: './decoration-workspace.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { '(window:beforeunload)': 'onUnload($event)' },
+  host: {
+    '(document:keydown)': 'onKeyDown($event)',
+    '(window:beforeunload)': 'onUnload($event)',
+  },
 })
 export class DecorationWorkspace implements AfterViewInit, OnDestroy {
   private readonly store = inject(ProjectStoreService);
@@ -893,6 +897,39 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
   }
 
   /**
+   * Undo and redo, wherever the pointer is — but never while typing.
+   *
+   * The screen's only keyboard listener. The chord is parsed in one place
+   * (`core/keyboard-shortcuts.ts`); acting on it is the screen's, because only
+   * the screen knows which surface is open
+   * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
+   */
+  protected onKeyDown(event: KeyboardEvent): void {
+    const intent = undoRedoIntent(event);
+    if (intent === null) {
+      return;
+    }
+    event.preventDefault();
+    if (intent === 'redo') {
+      this.redo();
+    } else {
+      this.undo();
+    }
+  }
+
+  protected undo(): void {
+    if (this.sprite()?.undo() === true) {
+      this.touchSprites();
+    }
+  }
+
+  protected redo(): void {
+    if (this.sprite()?.redo() === true) {
+      this.touchSprites();
+    }
+  }
+
+  /**
    * Writes the edited frames, one PNG each.
    *
    * @returns how many were written
@@ -1043,18 +1080,16 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
     const box = frame.getBoundingClientRect();
     const width = Math.max(MIN_STAGE, Math.floor(box.width));
     const height = Math.max(MIN_STAGE, Math.floor(box.height));
-    const density = Math.min(2, window.devicePixelRatio || 1);
-    canvas.width = Math.floor(width * density);
-    canvas.height = Math.floor(height * density);
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
 
     const context = canvas.getContext('2d');
     if (context === null) {
       return;
     }
-    context.setTransform(density, 0, 0, density, 0, 0);
-    context.clearRect(0, 0, width, height);
+    // One policy for every canvas in the application
+    // (`renderer/canvas-surface.ts`). This stage used to cap at 2 where the map
+    // capped at 3, which is why a decoration and the map it stands on rendered
+    // at two resolutions on the same screen.
+    prepareSurface(context, { width, height });
     context.imageSmoothingEnabled = false;
 
     const geometry = this.geometry();
