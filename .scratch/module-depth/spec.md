@@ -59,7 +59,7 @@ these tickets remove.
 | [06](issues/06-one-canonical-writer.md) | One canonical writer, not seven | Worth exploring |
 | [07](issues/07-lift-the-session-presentation.md) | Lift the session presentation out of the play page | Worth exploring |
 | [08](issues/08-adr-references-must-resolve.md) | ADR references must resolve, and be checkable | Strong · **done** |
-| [09](issues/09-tile-and-locale-do-not-fit-the-draft-set.md) | Tile and locale do not fit the draft set | Strong · split out of 04 |
+| [09](issues/09-tile-and-locale-do-not-fit-the-draft-set.md) | Tile and locale do not fit the draft set | Strong · split out of 04 · **done** |
 
 ## Order
 
@@ -82,6 +82,14 @@ the row should go. Its second half waits on 05.
 
 **Then 05, and done** — five modules under `app/project/`, no forwarding, 22
 caller files moved. It gives 02 somewhere to land and unblocks 09's tile half.
+
+**Then 09's second half, and done.** `tile-workspace.ts` is the seventh adapter:
+the draft is the *set*, its list is `TileSetLibrary`'s — read in eagerly, which
+is what 05 made possible — and its thirty mutate-then-touch sites are
+`edit(mutate)`. It was for tile's own sake rather than to evidence the seam: one
+definition of unsaved, and six pure functions moved into `tile-editor.types.ts`
+where a spec reaches them without a canvas.
+
 Then **02**, with **01** falling
 out of it as the mechanical half. **03** and **06** sequence together: the
 default table 06 needs is the fact 03 generates. **07** is independent and can

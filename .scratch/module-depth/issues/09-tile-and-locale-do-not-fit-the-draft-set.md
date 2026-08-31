@@ -1,6 +1,6 @@
 # 09 — Tile and locale do not fit the draft set
 
-Status: ready-for-agent
+Status: done
 Strength: strong
 Blocked by: — ([05](05-close-the-project-store-read-side.md) landed; the tile half is unblocked)
 
@@ -119,3 +119,116 @@ struck through, with the reason above, and `spec.md`'s Order says so.
 - `tile-workspace.ts` holds no `load`/`save` choreography of its own.
 - Its dirtiness is the session's, not a hand-rolled boolean.
 - `npm run check` and the smoke run pass, with unchanged screenshots.
+
+## Comments
+
+**Both halves are closed.** The locale half was closed as not-to-do when this
+ticket was written — 04's seam table shows the row struck through and `spec.md`
+says why. The two remaining items are done:
+
+**1. Character's playback clock — left alone, and it already says so.**
+`character-workspace.ts:701` carries the paragraph this ticket asked for: *"it is
+this screen's own rather than `app/editing/flipbook-clock.ts` … A flipbook is a
+list of images at a rate; a character animation is a frame **count** with tracks
+over it, played at a speed the author sets, and it stops itself at the end when
+it does not loop."* Nothing to change; the deepening named here — a clock over
+`Animation` rather than over `Flipbook` — is still the one to write if anybody
+wants it.
+
+**2. `tile-workspace.ts` is on `DraftSet`.** Not a line-count win, and worth
+saying so plainly: the file went 1,374 lines to 1,409, because the prose grew
+more than the code shrank. The code itself went **965 statements to 937**, and
+across the pair with `tile-editor.types.ts` it went *up*, 1,095 to 1,118 — a new
+`assetsOf` and `hasLevel` have real bodies, and the adapter is fifty lines.
+
+What was bought is depth, not size: the twenty steps of load and save are no
+longer written here at all, and what replaced them is a description of what a
+tile set *is* to the pipeline. The fourth copy is what went.
+
+- **The draft is the *set*.** `DraftSet<TileSetDefinition>`; the tile inside it
+  stays the screen's own business, which is what 04 predicted for tile's nesting.
+- **The list is `TileSetLibrary`'s**, read in eagerly at load and cloned per
+  draft. That is the choice 05 unblocked: no lazy-overlay hook, no `working` map,
+  and nothing edits the definition the library handed out.
+- **Thirty mutate-then-touch sites became `edit(mutate)`**, through one
+  `editTile(mutate)` helper that finds the tile in the set's copy. `revision`,
+  `working`, `editable()`, `editableTile()`, `touch()`, `dirty`, `status` and
+  `failure` are all gone, and with them the two `equal: () => false` signals that
+  existed only because the working copy was mutated in place.
+- **One definition of unsaved.** `dirtySprites` answers which images the set
+  owns; `SpriteDocument.unsaved` is an input rather than a second answer. The
+  clearest case: importing an image used to call `touch()` and mark the
+  *definition* changed, when only pixels had moved.
+- **A spec that runs without a canvas.** `listFor`, `hasLevel`, `imageHeight`,
+  `dropOf`, `levelOfTab` and a new `assetsOf` moved into
+  `tile-editor.types.ts` — the file that exists for exactly this split — and
+  `tile-editor.types.spec.ts` grew six cases over them, from 12 to 18.
+
+### Decisions taken while doing it
+
+- **`declaredInManifest: false`.** A tile set *is* listed in `project.json`, so
+  the flag reads oddly, but the flag's own documentation asks the narrower
+  question — *can saving this kind move the manifest?* — and the answer for this
+  screen is no: it edits the sets a project declares and creates or removes none.
+  `true` would have been a behaviour change, letting a tile save flush a
+  `project.json` the map editor had left half-edited. `declare`, `undeclare`,
+  `forget` and `removed` are empty for the same reason, under one comment.
+  `CONTEXT.md`'s **manifest** entry now says this, because the vocabulary as
+  written implied the opposite.
+- **The save order changed, as this ticket said it would.** `DraftSet` writes the
+  definition and then the images; tile wrote the images first. Both orders keep
+  art and definition one act of authoring (ADR-0028); they cannot both be the
+  pipeline, and the pipeline's is the one that stands.
+- **One scope for every question about pixels.** `dirtySprites`, the toolbar's
+  count and `writeSprites` all answer over `assetsOf(openSet)`, through one
+  `unwritten(set)`. The first draft of this change had the count and the write
+  spanning all of `sessions` — the object editor's looser answer — and the
+  review found what that costs with two declared sets: the toolbar claims
+  unwritten pixels for a set nobody is looking at, and saving *this* one writes
+  the other's PNG and counts it in its own message. The seam already says which
+  scope is meant — *"images this draft owns"* — and the honest reading of it was
+  the right one.
+- **No unload guard was added.** `anyUnsaved` is now available and the other
+  workspaces use it, but this screen never had one and adding it is a behaviour
+  change nothing here asked for. Worth a ticket, not a smuggled line.
+
+### What the review caught
+
+Three real defects, all fixed before the commit:
+
+- **The error banner was still wrapped.** It rendered `error()` through
+  `ui.editor.asset.failed` — *"Nothing was written: {message}"* — but the
+  session's error signal is not only about writes: `refresh()` puts a failing
+  serialize or validate there while an author is still typing, and `save()` puts
+  the already-complete `invalid` sentence there. It now renders raw, as the three
+  sibling workspaces do. `ui.editor.asset.failed` had no other caller and is
+  gone.
+- **The sprite scope disagreed with itself** — the entry above.
+- **`importImage` read a stale draft.** It captured `this.tile()`, awaited the
+  decode, then resolved the variant from that snapshot. Under the old code that
+  snapshot *was* the live working object; a copy-on-edit draft is not, so a
+  variant moved during the decode would have stored the pixels under a path the
+  set no longer names. It re-reads after the awaits.
+
+The review also asked whether the flipped save order was intended: it is, and it
+is written down two entries up.
+
+### Verification
+
+`npm run check` passes: 36 ADRs resolve across 2,232 files, clippy and rustfmt
+clean, 450 Rust tests, 518 web tests in 41 files, 61 script tests. The smoke run
+is `clean` — transcript identical, no console problems.
+
+One screen moved and it is explained: `editor-locale` reads **974 keys → 975**,
+because the Languages tab lists application strings and this change is net one
+key — two added (`ui.editor.asset.invalid`, `ui.editor.asset.imagesSaved`), one
+removed (`ui.editor.asset.failed`, which lost its last caller). All are defined
+in both languages, so `0 untranslated` is unchanged.
+
+The tile screens are `similar` rather than `identical`, at a maximum channel
+delta of 4 over at most 44 pixels. That is pre-existing run-to-run noise, not
+this change: the same run on a stashed tree moves the same screens *more* — 89
+pixels on `editor-asset-tiles-surface` against 44 here — and the `play*` screens
+drift identically with and without the change. Looked at side by side, the tile
+screens are the same picture: the same tile selected, the same tab open, the
+same variants listed, the same verdict.

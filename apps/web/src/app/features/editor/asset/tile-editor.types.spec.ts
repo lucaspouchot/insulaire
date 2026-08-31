@@ -1,14 +1,21 @@
 import { describe, expect, it } from 'vitest';
 
-import { TileDefinition } from '../../../../content/content-types';
+import { TileDefinition, tileArtGeometry } from '../../../../content/content-types';
 import { ASSET_CATEGORIES, assetCategory } from './asset-categories';
 import {
+  FLAT_LEVEL,
   SURFACE_LEVEL,
   artOf,
+  assetsOf,
   blankTile,
+  dropOf,
   duplicateTile,
+  hasLevel,
+  imageHeight,
   imagePath,
   isUsableId,
+  levelOfTab,
+  listFor,
   matching,
   pruneArt,
   repeatModeOf,
@@ -148,5 +155,91 @@ describe('tile workspace', () => {
     expect(matching(set, 'difficult').map((entry) => entry.id)).toEqual(['stone']);
     expect(matching(set, 'nothing')).toEqual([]);
     expect(matching(null, 'grass')).toEqual([]);
+  });
+});
+
+/**
+ * The arithmetic and the lists the tile screen edits through.
+ *
+ * These moved out of `tile-workspace.ts` when it took the shared editing
+ * session on: the component no longer answers where a band sits or which
+ * images a set names, so the answers can be checked without a canvas
+ * (`.scratch/module-depth/issues/09-tile-and-locale-do-not-fit-the-draft-set.md`).
+ */
+describe('tile art lists', () => {
+  const geometry = tileArtGeometry({});
+
+  it('finds the list a level names, and only one that exists', () => {
+    const current = blankTile('grass', 'Grass');
+    const art = artOf(current);
+    art.flat.push({ id: 'a', asset: 'flat_a.png' });
+    art.elevation.levels.push({ variants: [{ id: 'a', asset: 'level_1_a.png' }] });
+
+    expect(listFor(art, FLAT_LEVEL)).toHaveLength(1);
+    expect(listFor(art, SURFACE_LEVEL)).toEqual([]);
+    expect(listFor(art, 1)?.[0]?.asset).toBe('level_1_a.png');
+    expect(listFor(art, 2)).toBeUndefined();
+  });
+
+  it('always has the two pseudo-levels, and an elevation level only once declared', () => {
+    const current = blankTile('grass', 'Grass');
+    expect(hasLevel(current, FLAT_LEVEL)).toBe(true);
+    expect(hasLevel(current, SURFACE_LEVEL)).toBe(true);
+    // A tile with no art at all has no level 1 to add a variant to, and asking
+    // must not be what creates one.
+    expect(hasLevel(current, 1)).toBe(false);
+    expect(current.art).toBeUndefined();
+
+    artOf(current).elevation.levels.push({ variants: [] });
+    expect(hasLevel(current, 1)).toBe(true);
+    expect(hasLevel(current, 2)).toBe(false);
+  });
+
+  it('sizes a new image by the list it joins', () => {
+    expect(imageHeight(geometry, FLAT_LEVEL)).toBe(geometry.flatHeight);
+    expect(imageHeight(geometry, SURFACE_LEVEL)).toBe(geometry.surfaceHeight);
+    expect(imageHeight(geometry, 1)).toBe(geometry.elevationHeight);
+    expect(imageHeight(geometry, 7)).toBe(geometry.elevationHeight);
+  });
+
+  it('drops an elevation band one band per level, and nothing for a pseudo-level', () => {
+    // A band spans `bandLevels` levels, so level 1 on a cell of that height
+    // lands at its foot, and a taller cell pushes it down.
+    const band = dropOf(0, 1, geometry) * -1;
+    expect(band).toBeGreaterThan(0);
+    expect(dropOf(band, 1, geometry)).toBe(0);
+    expect(dropOf(band * 2, 2, geometry)).toBe(0);
+    expect(dropOf(5, FLAT_LEVEL, geometry)).toBe(0);
+    expect(dropOf(5, SURFACE_LEVEL, geometry)).toBe(0);
+  });
+
+  it('opens the image a panel edits, and none for the panels that edit none', () => {
+    expect(levelOfTab('flat')).toBe(FLAT_LEVEL);
+    expect(levelOfTab('surface')).toBe(SURFACE_LEVEL);
+    // The ladder's first rung: every raised cell shows it, whatever its height.
+    expect(levelOfTab('elevation')).toBe(1);
+    expect(levelOfTab('definition')).toBeNull();
+    expect(levelOfTab('geometry')).toBeNull();
+  });
+
+  it('lists every image a set names, once each', () => {
+    const grass = blankTile('grass', 'Grass');
+    const grassArt = artOf(grass);
+    grassArt.flat.push({ id: 'a', asset: 'grass_flat.png' });
+    grassArt.surface.push({ id: 'a', asset: 'shared.png' });
+    grassArt.elevation.levels.push({ variants: [{ id: 'a', asset: 'grass_1.png' }] });
+
+    const stone = blankTile('stone', 'Stone');
+    // Two tiles are allowed to point at one file; writing it twice is not.
+    artOf(stone).surface.push({ id: 'a', asset: 'shared.png' });
+
+    expect(assetsOf({ id: 'demo', schemaVersion: 2, tiles: [grass, stone] })).toEqual([
+      'grass_flat.png',
+      'shared.png',
+      'grass_1.png',
+    ]);
+    expect(assetsOf({ id: 'empty', schemaVersion: 2, tiles: [blankTile('bare', 'Bare')] })).toEqual(
+      [],
+    );
   });
 });

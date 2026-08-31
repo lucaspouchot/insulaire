@@ -26,6 +26,14 @@
  * loaded tile set and rebuilds the open maps, so the palette next door grows
  * the moment this screen writes (`docs/adr/ADR-0006-assets-tilesets.md`).
  *
+ * The draft it edits is the *set*, and the tile within it is this screen's own
+ * business — one set holding many tiles is nesting the editing session does not
+ * have to know about. What it did carry, and no longer does, was a fourth copy
+ * of load and save: it held its own working overlay, its own `dirty` boolean and
+ * its own thirty mutate-then-touch sites, and the copies had drifted
+ * (`app/editing/draft-set.ts`,
+ * `.scratch/module-depth/issues/09-tile-and-locale-do-not-fit-the-draft-set.md`).
+ *
  * Labels are keys, like everywhere else
  * (`docs/adr/ADR-0020-localised-content-keys.md`).
  */
@@ -51,7 +59,6 @@ import {
   TILE_SET_SCHEMA_VERSION,
   ProjectionMode,
   TileArtGeometry,
-  TileArtVariant,
   TileDefinition,
   TileSetDefinition,
   tileArtGeometry,
@@ -61,7 +68,6 @@ import {
 } from '../../../../content/content-types';
 import { SpriteDocument } from '../../../../content/sprite-document';
 import { serializeTileSet } from '../../../../content/tile-set-serializer';
-import { ValidationReport } from '../../../../engine/engine.types';
 import { routeUndoRedo } from '../../../../core/keyboard-shortcuts';
 import { prepareSurface, zoomBy } from '../../../../renderer/canvas-surface';
 import { SpriteCache, SpriteSource } from '../../../../renderer/character-renderer';
@@ -75,10 +81,14 @@ import {
   previewImageBox,
   previewPointOf,
 } from '../../../../renderer/tile-preview';
+import { I18nService } from '../../../i18n/i18n.service';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
 import { ContentWorkspaceService } from '../../../services/content-workspace.service';
 import { EngineService } from '../../../services/engine.service';
+import { LocaleAuthoringService } from '../../../services/locale-authoring.service';
+import { ProjectManifest } from '../../../project/project-manifest';
 import { TileSetLibrary } from '../../../project/tile-set-library';
+import { WriteLedger } from '../../../project/write-ledger';
 import {
   CONTENT_ROOT,
   ProjectStoreService,
@@ -94,10 +104,16 @@ import {
   TILE_EDITOR_TABS,
   TileEditorTab,
   artOf,
+  assetsOf,
   blankTile,
+  dropOf,
   duplicateTile,
+  hasLevel,
+  imageHeight,
   imagePath,
   isUsableId,
+  levelOfTab,
+  listFor,
   variantLetter,
   matching,
   pruneArt,
@@ -106,8 +122,9 @@ import {
   variantAt,
   variantsOf,
 } from './tile-editor.types';
+import { DraftSet } from '../../../editing/draft-set';
+import { DraftSource } from '../../../editing/draft-source';
 import { slugId } from '../../../editing/ids';
-import { describeError } from '../../../../core/errors';
 
 /** The board the multi-tile preview lays out, in offset coordinates. */
 const BOARD_WIDTH = 3;
@@ -136,9 +153,13 @@ const MAX_PREVIEW_ELEVATION = 24;
 })
 export class TileWorkspace implements AfterViewInit, OnDestroy {
   private readonly store = inject(ProjectStoreService);
+  private readonly manifest = inject(ProjectManifest);
+  private readonly ledger = inject(WriteLedger);
   private readonly tileSets = inject(TileSetLibrary);
   private readonly workspace = inject(ContentWorkspaceService);
   private readonly engine = inject(EngineService);
+  private readonly i18n = inject(I18nService);
+  private readonly locales = inject(LocaleAuthoringService);
 
   private readonly previewRef = viewChild<ElementRef<HTMLCanvasElement>>('preview');
 
@@ -150,7 +171,6 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
 
   protected readonly tab = signal<TileEditorTab>('definition');
   protected readonly search = signal('');
-  protected readonly tileSetId = signal<string | null>(null);
   protected readonly selectedTileId = signal<string | null>(null);
   /**
    * How tall the painted cell stands.
@@ -207,22 +227,30 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
    * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
    */
   private view: { layout: PreviewLayout; width: number; height: number } | null = null;
-  protected readonly status = signal<string | null>(null);
-  protected readonly failure = signal<string | null>(null);
-  protected readonly dirty = signal(false);
-  /** Bumped by every edit, so the computeds above re-read the working copy. */
-  protected readonly revision = signal(0);
 
-  /** The working copies, by tile set id: what this screen is editing. */
-  private readonly working = new Map<string, TileSetDefinition>();
   /** The buffers the pixel editor writes into, by asset path. */
   private readonly sessions = new Map<string, SpriteDocument>();
+  /** Bumped by every stroke, so what is read off the pixels is re-read. */
+  private readonly strokes = signal(0);
   /** Files loaded from the content directory, for everything not being edited. */
   private readonly cache = new SpriteCache(
     (asset) => contentUrl(asset),
     () => this.schedulePreview(),
   );
   private frame = 0;
+
+  /**
+   * The editing session: what is held, what is open, what is unwritten.
+   *
+   * The whole of load and save, which this screen only supplies the tile set's
+   * half of (`app/editing/draft-set.ts`).
+   */
+  private readonly drafts = new DraftSet<TileSetDefinition>(this.draftSource(), {
+    i18n: this.i18n,
+    workspace: this.workspace,
+    ledger: this.ledger,
+    locales: this.locales,
+  });
 
   /**
    * What the preview draws with: the session buffer where there is one.
@@ -238,21 +266,18 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
   };
 
   constructor() {
-    void this.store.ensureLoaded().then(() => {
-      this.tileSetId.set(this.tileSets.tileSetDefinitions()[0]?.id ?? null);
-      this.selectedTileId.set(this.tileSet()?.tiles[0]?.id ?? null);
-      this.revision.update((value) => value + 1);
-    });
-    void this.workspace.ensureProbed().catch(() => undefined);
+    void this.drafts.load();
 
     effect(() => {
-      // Everything the preview reads, so a change to any of it repaints.
-      this.revision();
+      // Everything the preview reads, so a change to any of it repaints. The
+      // open set is read by identity: an edit is a copy, so the draft that
+      // comes back is a different object from the one before it.
+      this.tileSet();
+      this.strokes();
       this.selectedTileId();
       this.previewElevation();
       this.previewBoard();
       this.previewMode();
-      this.tileSetId();
       this.schedulePreview();
     });
   }
@@ -284,42 +309,91 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
   /** Watches the preview's own box, which the layout may resize on its own. */
   private watching: ResizeObserver | null = null;
 
+  // ------------------------------------------------------------------ source
+
+  /**
+   * What a *tile set* means by reading, validating, writing and declaring.
+   *
+   * Everything else about the session — the order of the steps, the bail-out on
+   * a failing verdict, one definition of unsaved — is `DraftSet`'s.
+   *
+   * The list is {@link TileSetLibrary}'s, not a file read of this screen's own:
+   * the project already loaded every declared set, and which module owns that
+   * read is what
+   * `.scratch/module-depth/issues/05-close-the-project-store-read-side.md`
+   * settled. A copy is taken per draft, because nothing may edit the definition
+   * the library handed out — half-finished work must never reach a map.
+   */
+  private draftSource(): DraftSource<TileSetDefinition> {
+    return {
+      // A tile set *is* listed in `project.json`, but this screen edits the sets
+      // a project declares and creates or removes none — so nothing it does can
+      // move the manifest, and it must not flush one the map editor next door
+      // has left half-edited. The same fact is why `declare`, `undeclare`,
+      // `forget` and `removed` have nothing to do.
+      declaredInManifest: false,
+      // A list: a project shipping no tile set opens on an empty picker.
+      blank: () => null,
+      messages: {
+        invalid: 'ui.editor.asset.invalid',
+        saved: 'ui.editor.asset.saved',
+        spritesSaved: 'ui.editor.asset.imagesSaved',
+      },
+      prepare: async () => {
+        await this.engine.ready();
+        await this.i18n.ensureAdopted();
+        await this.store.ensureLoaded();
+        await this.workspace.ensureProbed();
+      },
+      declared: () => this.manifest.tileSets(),
+      read: async (entry) => {
+        const loaded = this.tileSets
+          .tileSetDefinitions()
+          .find((candidate) => candidate.id === entry.id);
+        if (loaded === undefined) {
+          return null;
+        }
+        const draft = structuredClone(loaded);
+        // Written at the version this editor writes, whatever the file said.
+        draft.schemaVersion = TILE_SET_SCHEMA_VERSION;
+        return draft;
+      },
+      pathOf: (id) => this.tileSets.tileSetPath(id),
+      serialize: (set) => serializeTileSet(set),
+      validate: (_set, json) => this.engine.validateTileSet(json),
+      // Replacing the loaded set is what rebuilds the open maps, so the palette
+      // in the map editor grows without a reload (ADR-0006); loading it into
+      // the engine is what makes the *runtime* agree with the file.
+      adopt: (_id, json) => {
+        this.tileSets.replaceTileSet(JSON.parse(json) as TileSetDefinition);
+        this.engine.loadTileSet(json);
+      },
+      forget: () => {},
+      declare: () => {},
+      undeclare: () => {},
+      dirtySprites: (set) => this.unwritten(set),
+      writeSprites: (set) => this.writeSprites(set),
+      // A tile set names no player-facing text: a tile's `visualId` is an art
+      // id and its name is authored in place, so there is no key to create.
+      keysOf: () => [],
+      removed: () => {},
+      refresh: () => this.schedulePreview(),
+    };
+  }
+
   // ------------------------------------------------------------------ browse
 
   /** `true` once a writable authoring server has answered. */
   protected readonly writable = computed(() => this.workspace.status() !== null);
 
-  /** Ids of every tile set the project loaded. */
-  protected readonly tileSetIds = computed(() => {
-    this.revision();
-    return this.tileSets.tileSetDefinitions().map((set) => set.id);
-  });
+  /** Ids of every tile set the project declared. */
+  protected readonly tileSetIds = computed(() => this.drafts.drafts().map((set) => set.id));
 
-  /**
-   * The set being edited: the working copy if there is one, else the loaded file.
-   *
-   * `equal: () => false` because the working copy is edited **in place**, so its
-   * reference never changes and a signal comparing references would decide
-   * nothing had happened — the list of variants would stay empty on screen
-   * while the file gained one. {@link revision} is what actually identifies the
-   * state here, and everything derived from this set says the same, for the
-   * same reason.
-   */
-  protected readonly tileSet = computed<TileSetDefinition | null>(
-    () => {
-      this.revision();
-      const id = this.tileSetId();
-      if (id === null) {
-        return null;
-      }
-      const working = this.working.get(id);
-      if (working !== undefined) {
-        return working;
-      }
-      return this.tileSets.tileSetDefinitions().find((set) => set.id === id) ?? null;
-    },
-    { equal: () => false },
-  );
+  /** The set being edited, or `null` before the first read has finished. */
+  protected readonly tileSet = this.drafts.open;
+
+  /** Id of that set, for the picker and the path line. */
+  protected readonly tileSetId = computed(() => this.tileSet()?.id ?? null);
 
   /** The pixel grid the set's images are authored on. */
   protected readonly geometry = computed<TileArtGeometry>(() =>
@@ -335,14 +409,20 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
   /** The tiles the browser lists, filtered by the search box. */
   protected readonly tiles = computed(() => matching(this.tileSet(), this.search()));
 
-  /** The tile being edited. Always-changed, like {@link tileSet}. */
-  protected readonly tile = computed<TileDefinition | null>(
-    () => {
-      const id = this.selectedTileId();
-      return this.tileSet()?.tiles.find((tile) => tile.id === id) ?? null;
-    },
-    { equal: () => false },
-  );
+  /**
+   * The tile being edited, or `null` when the set holds none.
+   *
+   * Falls back to the first rather than to nothing when the selected id names
+   * nothing — the same fallback `DraftSet.open` makes one level up, and for the
+   * same reason: removing the open tile leaves the form showing its neighbour
+   * instead of an empty screen, and a set that has just loaded opens on a tile
+   * rather than on nothing.
+   */
+  protected readonly tile = computed<TileDefinition | null>(() => {
+    const tiles = this.tileSet()?.tiles ?? [];
+    const id = this.selectedTileId();
+    return tiles.find((tile) => tile.id === id) ?? tiles[0] ?? null;
+  });
 
   /** `false` when the id in the field is not one a content file may carry. */
   protected readonly idUsable = computed(() => {
@@ -350,8 +430,6 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
     return tile === null || isUsableId(tile.id);
   });
 
-  // Fresh arrays, so `@for` sees a new list rather than the one it is already
-  // rendering: these are the in-place arrays the editor pushes into.
   protected readonly flatVariants = computed(() => {
     const tile = this.tile();
     return tile === null ? [] : [...variantsOf(tile, FLAT_LEVEL)];
@@ -362,7 +440,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
     return tile === null ? [] : [...variantsOf(tile, SURFACE_LEVEL)];
   });
 
-  protected readonly levels = computed(() => [...(this.tile()?.art?.elevation?.levels ?? [])]);
+  protected readonly levels = computed(() => this.tile()?.art?.elevation?.levels ?? []);
 
   protected readonly repeatMode = computed<RepeatMode>(() =>
     repeatModeOf(this.tile()?.art?.elevation?.repeat),
@@ -384,7 +462,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
   protected readonly levelNumbers = computed(() => this.levels().map((_level, index) => index + 1));
 
   protected selectTileSet(event: Event): void {
-    this.tileSetId.set((event.target as HTMLSelectElement).value);
+    this.drafts.select((event.target as HTMLSelectElement).value);
     this.selectedTileId.set(this.tileSet()?.tiles[0]?.id ?? null);
     this.openImage.set(null);
   }
@@ -427,42 +505,34 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
   // ---------------------------------------------------------------- mutation
 
   /**
-   * The set as this screen may write to it.
+   * Applies a change to the open set.
    *
-   * A deep copy the first time, so nothing edits the object the store handed
-   * out and half-finished work never reaches a map (the editor never mutates a
-   * loaded definition in place — `content-types.ts`).
+   * A copy per edit, not a mutation in place: the session is what decides that
+   * the set differs from its file, and `OnPush` only redraws what changed
+   * identity. This screen used to keep a working overlay and bump a revision
+   * counter instead, which is what let a half-converted list stay on screen
+   * (`app/editing/draft-set.ts`).
    */
-  private editable(): TileSetDefinition | null {
-    const id = this.tileSetId();
-    const current = this.tileSet();
-    if (id === null || current === null) {
-      return null;
-    }
-    let working = this.working.get(id);
-    if (working === undefined) {
-      working = structuredClone(current);
-      working.schemaVersion = TILE_SET_SCHEMA_VERSION;
-      this.working.set(id, working);
-    }
-    return working;
+  private edit(mutate: (set: TileSetDefinition) => void): void {
+    this.drafts.edit(mutate);
   }
 
-  /** The tile being edited, as a writable copy, or `null`. */
-  private editableTile(): TileDefinition | null {
-    const id = this.selectedTileId();
-    return this.editable()?.tiles.find((tile) => tile.id === id) ?? null;
-  }
-
-  /** Records a change: the working copy moved, so redraw and re-validate. */
-  private touch(): void {
-    this.dirty.set(true);
-    this.status.set(null);
-    this.revision.update((value) => value + 1);
+  /** Applies a change to the selected tile, inside the open set's copy. */
+  private editTile(mutate: (tile: TileDefinition) => void): void {
+    const id = this.tile()?.id;
+    if (id === undefined) {
+      return;
+    }
+    this.edit((set) => {
+      const tile = set.tiles.find((candidate) => candidate.id === id);
+      if (tile !== undefined) {
+        mutate(tile);
+      }
+    });
   }
 
   protected createTile(): void {
-    const set = this.editable();
+    const set = this.tileSet();
     if (set === null) {
       return;
     }
@@ -471,15 +541,16 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
       set.tiles.map((tile) => tile.id),
       'tile',
     );
-    set.tiles.push(blankTile(id, id));
+    this.edit((draft) => {
+      draft.tiles.push(blankTile(id, id));
+    });
     this.selectedTileId.set(id);
     this.tab.set('definition');
-    this.touch();
   }
 
   protected duplicateSelected(): void {
-    const set = this.editable();
-    const tile = this.editableTile();
+    const set = this.tileSet();
+    const tile = this.tile();
     if (set === null || tile === null) {
       return;
     }
@@ -488,29 +559,30 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
       set.tiles.map((entry) => entry.id),
       'tile',
     );
-    set.tiles.push(duplicateTile(tile, id, `${tile.name ?? tile.id} copy`));
+    this.edit((draft) => {
+      draft.tiles.push(duplicateTile(tile, id, `${tile.name ?? tile.id} copy`));
+    });
     this.selectedTileId.set(id);
-    this.touch();
   }
 
   protected removeSelected(): void {
-    const set = this.editable();
-    const id = this.selectedTileId();
+    const set = this.tileSet();
+    const id = this.tile()?.id ?? null;
     if (set === null || id === null || set.tiles.length <= 1) {
       return;
     }
-    set.tiles = set.tiles.filter((tile) => tile.id !== id);
-    this.selectedTileId.set(set.tiles[0]?.id ?? null);
+    this.edit((draft) => {
+      draft.tiles = draft.tiles.filter((tile) => tile.id !== id);
+    });
+    this.selectedTileId.set(this.tileSet()?.tiles[0]?.id ?? null);
     this.openImage.set(null);
-    this.touch();
   }
 
   protected renameTile(event: Event): void {
-    const tile = this.editableTile();
-    if (tile !== null) {
-      tile.name = (event.target as HTMLInputElement).value;
-      this.touch();
-    }
+    const name = (event.target as HTMLInputElement).value;
+    this.editTile((tile) => {
+      tile.name = name;
+    });
   }
 
   /**
@@ -520,113 +592,111 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
    * field that can break content. It is offered anyway — a tile authored as
    * `tile_2` has to be renameable — and validation reports the maps that no
    * longer resolve, which is the honest answer.
+   *
+   * By position rather than by id, because the id is what is moving: the
+   * selection follows it in the same breath, so the form never falls back to a
+   * neighbour on the way past.
    */
   protected changeTileId(event: Event): void {
-    const set = this.editable();
-    const tile = this.editableTile();
+    const set = this.tileSet();
+    const tile = this.tile();
     const next = (event.target as HTMLInputElement).value.trim();
     if (set === null || tile === null || next.length === 0 || next === tile.id) {
       return;
     }
     if (set.tiles.some((entry) => entry.id === next)) {
-      this.failure.set(null);
+      this.drafts.clearError();
       return;
     }
-    tile.id = next;
+    const at = set.tiles.findIndex((entry) => entry.id === tile.id);
+    this.edit((draft) => {
+      const moved = draft.tiles[at];
+      if (moved !== undefined) {
+        moved.id = next;
+      }
+    });
     this.selectedTileId.set(next);
-    this.touch();
   }
 
   protected changeField(field: 'terrain' | 'visualId' | 'fallbackColor', event: Event): void {
-    const tile = this.editableTile();
-    if (tile === null) {
-      return;
-    }
     const value = (event.target as HTMLInputElement).value;
-    if (field === 'terrain') {
-      tile.terrain = value;
-    } else if (field === 'visualId') {
-      tile.visual.visualId = value;
-    } else {
-      tile.visual.fallbackColor = value;
-    }
-    this.touch();
+    this.editTile((tile) => {
+      if (field === 'terrain') {
+        tile.terrain = value;
+      } else if (field === 'visualId') {
+        tile.visual.visualId = value;
+      } else {
+        tile.visual.fallbackColor = value;
+      }
+    });
   }
 
   protected changeMovementCost(event: Event): void {
-    const tile = this.editableTile();
-    if (tile !== null) {
-      tile.movementCost = Math.max(0, Number((event.target as HTMLInputElement).value) || 0);
-      this.touch();
-    }
+    const cost = Math.max(0, Number((event.target as HTMLInputElement).value) || 0);
+    this.editTile((tile) => {
+      tile.movementCost = cost;
+    });
   }
 
   protected changeTags(event: Event): void {
-    const tile = this.editableTile();
-    if (tile !== null) {
-      tile.tags = (event.target as HTMLInputElement).value
-        .split(',')
-        .map((tag) => tag.trim())
-        .filter((tag) => tag.length > 0);
-      this.touch();
-    }
+    const tags = (event.target as HTMLInputElement).value
+      .split(',')
+      .map((tag) => tag.trim())
+      .filter((tag) => tag.length > 0);
+    this.editTile((tile) => {
+      tile.tags = tags;
+    });
   }
 
   protected changeGeometry(field: keyof TileArtGeometry, event: Event): void {
-    const set = this.editable();
-    if (set === null) {
-      return;
-    }
     const value = Math.max(1, Math.round(Number((event.target as HTMLInputElement).value) || 1));
-    set.art = { ...tileArtGeometry(set), [field]: Math.min(MAX_TILE_IMAGE_SIZE, value) };
-    this.touch();
+    this.edit((draft) => {
+      draft.art = { ...tileArtGeometry(draft), [field]: Math.min(MAX_TILE_IMAGE_SIZE, value) };
+    });
   }
 
   // ----------------------------------------------------------------- variants
 
   /** Adds a variant with a blank, transparent image the right size for it. */
   protected addVariant(level: number): void {
-    const tile = this.editableTile();
-    if (tile === null) {
+    const tile = this.tile();
+    if (tile === null || !hasLevel(tile, level)) {
       return;
     }
-    const art = artOf(tile);
-    const list = listFor(art, level);
-    if (list === undefined || list.length >= MAX_TILE_VARIANTS) {
+    const list = variantsOf(tile, level);
+    if (list.length >= MAX_TILE_VARIANTS) {
       return;
     }
+    const at = list.length;
     const id = slugId(
-      variantLetter(list.length),
+      variantLetter(at),
       list.map((entry) => entry.id),
       'tile',
     );
     const asset = imagePath(tile.id, level, id);
-    list.push({ id, asset });
+
+    this.editTile((draft) => {
+      listFor(artOf(draft), level)?.push({ id, asset });
+    });
 
     const geometry = this.geometry();
     const sprite = SpriteDocument.blank(geometry.width, imageHeight(geometry, level));
+    // It exists nowhere else, so it owes the disk a write from the moment it is
+    // created rather than from its first stroke.
     sprite.markUnsaved();
     this.sessions.set(asset, sprite);
-    this.openImage.set({ level, variant: list.length - 1 });
-    this.touch();
+    this.touchSprites();
+    this.openImage.set({ level, variant: at });
   }
 
   protected removeVariant(level: number, index: number): void {
-    const tile = this.editableTile();
-    if (tile === null) {
-      return;
-    }
-    const art = artOf(tile);
-    const list = listFor(art, level);
-    if (list === undefined) {
-      return;
-    }
-    list.splice(index, 1);
-    pruneArt(tile);
+    this.editTile((draft) => {
+      listFor(artOf(draft), level)?.splice(index, 1);
+      pruneArt(draft);
+    });
     if (sameTarget(this.openImage(), { level, variant: index })) {
       this.openImage.set(null);
     }
-    this.touch();
   }
 
   protected openVariant(level: number, variant: number): void {
@@ -658,22 +728,22 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
     const tile = this.tile();
     const entry = tile === null ? null : (variantsOf(tile, level)[variant] ?? null);
     if (entry === null || this.sessions.has(entry.asset)) {
-      this.revision.update((value) => value + 1);
+      this.touchSprites();
       return;
     }
     const image = await loadImage(contentUrl(entry.asset));
     const sprite = image === null ? null : SpriteDocument.fromImage(image);
     if (sprite === null) {
-      this.failure.set(entry.asset);
+      this.drafts.fail(entry.asset);
       return;
     }
     this.sessions.set(entry.asset, sprite);
-    this.revision.update((value) => value + 1);
+    this.touchSprites();
   }
 
   /** The image the pixel editor is holding. */
   protected readonly openSprite = computed<SpriteDocument | null>(() => {
-    this.revision();
+    this.strokes();
     const tile = this.tile();
     const target = this.openImage();
     if (tile === null || target === null) {
@@ -711,7 +781,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
 
   /** Every colour the set's open images use, so its tiles keep one palette. */
   protected readonly sharedPalette = computed<readonly string[]>(() => {
-    this.revision();
+    this.strokes();
     const counts = new Map<string, number>();
     for (const sprite of this.sessions.values()) {
       for (const color of sprite.palette(8)) {
@@ -722,103 +792,105 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
   });
 
   protected onPainted(): void {
-    this.dirty.set(true);
-    this.revision.update((value) => value + 1);
+    this.touchSprites();
+  }
+
+  /**
+   * Tells the view, and the session, that the pixels moved.
+   *
+   * The session decides what "unsaved" means and a stroke is half of it, so a
+   * painted buffer is not a second answer kept beside the draft's
+   * (`app/editing/draft-set.ts`).
+   */
+  private touchSprites(): void {
+    this.strokes.update((count) => count + 1);
+    this.drafts.touchSprites();
   }
 
   // ----------------------------------------------------------------- levels
 
   protected addLevel(): void {
-    const tile = this.editableTile();
+    const tile = this.tile();
     if (tile === null) {
       return;
     }
-    const art = artOf(tile);
-    if (art.elevation.levels.length >= MAX_ELEVATION_LEVELS) {
+    const count = tile.art?.elevation?.levels.length ?? 0;
+    if (count >= MAX_ELEVATION_LEVELS) {
       return;
     }
-    art.elevation.levels.push({ variants: [] });
-    this.addVariant(art.elevation.levels.length);
+    this.editTile((draft) => {
+      artOf(draft).elevation.levels.push({ variants: [] });
+    });
+    this.addVariant(count + 1);
   }
 
   protected removeLevel(level: number): void {
-    const tile = this.editableTile();
-    if (tile === null) {
-      return;
-    }
-    const art = artOf(tile);
-    art.elevation.levels.splice(level - 1, 1);
-    // A rule naming a level that is gone is a rule the author has to revisit;
-    // dropping it is less surprising than silently repointing it.
-    const repeat = art.elevation.repeat;
-    if (repeat !== null && repeat !== undefined) {
-      const names = 'level' in repeat ? [repeat.level] : repeat.pattern;
-      if (names.some((named) => named > art.elevation.levels.length)) {
-        delete art.elevation.repeat;
+    this.editTile((draft) => {
+      const art = artOf(draft);
+      art.elevation.levels.splice(level - 1, 1);
+      // A rule naming a level that is gone is a rule the author has to revisit;
+      // dropping it is less surprising than silently repointing it.
+      const repeat = art.elevation.repeat;
+      if (repeat !== null && repeat !== undefined) {
+        const names = 'level' in repeat ? [repeat.level] : repeat.pattern;
+        if (names.some((named) => named > art.elevation.levels.length)) {
+          delete art.elevation.repeat;
+        }
       }
-    }
-    pruneArt(tile);
+      pruneArt(draft);
+    });
     this.openImage.set(null);
-    this.touch();
   }
 
   protected renameLevel(level: number, event: Event): void {
-    const tile = this.editableTile();
-    if (tile === null) {
-      return;
-    }
-    const entry = artOf(tile).elevation.levels[level - 1];
-    if (entry !== undefined) {
-      entry.name = (event.target as HTMLInputElement).value;
-      this.touch();
-    }
+    const name = (event.target as HTMLInputElement).value;
+    this.editTile((draft) => {
+      const entry = artOf(draft).elevation.levels[level - 1];
+      if (entry !== undefined) {
+        entry.name = name;
+      }
+    });
   }
 
   protected setRepeatMode(mode: RepeatMode): void {
-    const tile = this.editableTile();
-    if (tile === null) {
-      return;
-    }
-    const art = artOf(tile);
-    const count = art.elevation.levels.length;
-    if (mode === 'last') {
-      delete art.elevation.repeat;
-    } else if (mode === 'level') {
-      art.elevation.repeat = { level: Math.max(1, count) };
-    } else {
-      art.elevation.repeat = { pattern: count > 1 ? [count - 1, count] : [1] };
-    }
-    this.touch();
+    this.editTile((draft) => {
+      const art = artOf(draft);
+      const count = art.elevation.levels.length;
+      if (mode === 'last') {
+        delete art.elevation.repeat;
+      } else if (mode === 'level') {
+        art.elevation.repeat = { level: Math.max(1, count) };
+      } else {
+        art.elevation.repeat = { pattern: count > 1 ? [count - 1, count] : [1] };
+      }
+    });
   }
 
   protected setRepeatLevel(event: Event): void {
-    const tile = this.editableTile();
-    if (tile === null) {
-      return;
-    }
-    artOf(tile).elevation.repeat = { level: Number((event.target as HTMLSelectElement).value) };
-    this.touch();
+    const level = Number((event.target as HTMLSelectElement).value);
+    this.editTile((draft) => {
+      artOf(draft).elevation.repeat = { level };
+    });
   }
 
   /** Adds or removes a level from the repeating pattern, keeping it ordered. */
   protected togglePatternLevel(level: number): void {
-    const tile = this.editableTile();
-    if (tile === null) {
-      return;
-    }
-    const art = artOf(tile);
-    const current = art.elevation.repeat;
-    const pattern =
-      current !== null && current !== undefined && 'pattern' in current ? [...current.pattern] : [];
-    const at = pattern.indexOf(level);
-    if (at >= 0) {
-      pattern.splice(at, 1);
-    } else {
-      pattern.push(level);
-      pattern.sort((left, right) => left - right);
-    }
-    art.elevation.repeat = { pattern } satisfies ElevationRepeat;
-    this.touch();
+    this.editTile((draft) => {
+      const art = artOf(draft);
+      const current = art.elevation.repeat;
+      const pattern =
+        current !== null && current !== undefined && 'pattern' in current
+          ? [...current.pattern]
+          : [];
+      const at = pattern.indexOf(level);
+      if (at >= 0) {
+        pattern.splice(at, 1);
+      } else {
+        pattern.push(level);
+        pattern.sort((left, right) => left - right);
+      }
+      art.elevation.repeat = { pattern } satisfies ElevationRepeat;
+    });
   }
 
   protected inPattern(level: number): boolean {
@@ -839,7 +911,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
     input.value = '';
-    const tile = this.editableTile();
+    const tile = this.tile();
     if (file === undefined || tile === null) {
       return;
     }
@@ -847,99 +919,112 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
     const image = await loadImage(URL.createObjectURL(file));
     const sprite = image === null ? null : SpriteDocument.fromImage(image);
     if (sprite === null) {
-      this.failure.set(file.name);
+      this.drafts.fail(file.name);
       return;
     }
 
     const geometry = this.geometry();
     const expected = { width: geometry.width, height: imageHeight(geometry, level) };
     if (sprite.width !== expected.width || sprite.height !== expected.height) {
-      this.failure.set(
+      this.drafts.fail(
         `${file.name}: ${sprite.width}×${sprite.height} ≠ ${expected.width}×${expected.height}`,
       );
       return;
     }
 
-    const entry = variantsOf(tile, level)[index];
+    // Read again rather than from `tile`: decoding is awaited, the draft is a
+    // copy per edit, and a variant added or removed in between would leave the
+    // pixels stored under a path the open set no longer names.
+    const current = this.tile();
+    const entry = current === null ? undefined : variantsOf(current, level)[index];
     if (entry === undefined) {
       return;
     }
+    // The definition is untouched: the variant already names this file, and
+    // what changed is its pixels — which is the other half of unsaved.
     sprite.markUnsaved();
     this.sessions.set(entry.asset, sprite);
     this.cache.clear();
-    this.failure.set(null);
+    this.drafts.clearError();
     this.openImage.set({ level, variant: index });
-    this.touch();
+    this.touchSprites();
   }
 
   // ------------------------------------------------------------------ saving
 
   /** What the engine says about the set as it stands. */
-  protected readonly report = computed<ValidationReport | null>(() => {
-    this.revision();
-    const set = this.tileSet();
-    if (set === null || !this.engine.isReady) {
-      return null;
-    }
-    try {
-      return this.engine.validateTileSet(serializeTileSet(set));
-    } catch {
-      return null;
-    }
-  });
-
+  protected readonly report = this.drafts.report;
   protected readonly issues = computed(() => this.report()?.issues ?? []);
   protected readonly valid = computed(() => this.report()?.valid !== false);
 
-  /** Images edited here that the content directory does not have yet. */
+  /** `true` when the open set, or an image it owns, differs from disk. */
+  protected readonly dirty = this.drafts.dirty;
+
+  /** What the last write did, as one line. */
+  protected readonly message = this.drafts.message;
+
+  /** What went wrong, in the author's language where the author's language said it. */
+  protected readonly error = this.drafts.error;
+
+  /**
+   * Images of the open set that the content directory does not have yet.
+   *
+   * The **open set's**, which is the same scope `dirtySprites` answers in and
+   * the same one a save writes. `sessions` is keyed by path and outlives the
+   * picker, so counting all of it would let the toolbar claim unwritten pixels
+   * that belong to a set nobody is looking at — and a save on this one would
+   * then write them and count them in its own message.
+   */
   protected readonly unsavedImages = computed(() => {
-    this.revision();
-    return [...this.sessions.entries()].filter(([, sprite]) => sprite.unsaved).length;
+    const set = this.tileSet();
+    return set === null ? 0 : this.unwritten(set).length;
   });
 
   /**
-   * Writes the images, then the tile set, then hands both to the rest of the
-   * editor.
+   * Paths of one set's images whose pixels are not on disk.
    *
-   * Art and definition are one act of authoring, so they are written together
-   * (ADR-0028). The set is replaced in the store *after* the write, which is
-   * what makes the map editor's palette grow without a reload.
+   * Takes the set rather than reading the open one, because the session asks
+   * this of every draft it holds and not only of the one on screen.
    */
-  protected async save(): Promise<void> {
-    const set = this.tileSet();
-    if (set === null || !this.valid()) {
-      this.failure.set(null);
-      return;
-    }
-    try {
-      let written = 0;
-      for (const [asset, sprite] of this.sessions) {
-        if (!sprite.unsaved) {
-          continue;
-        }
-        await this.workspace.write(asset, await sprite.toBlob());
-        sprite.markSaved();
-        written += 1;
-      }
-      const path = this.tileSets.tileSetPath(set.id);
-      await this.workspace.writeJson(path, serializeTileSet(set));
+  private unwritten(set: TileSetDefinition): readonly string[] {
+    this.strokes();
+    return assetsOf(set).filter((asset) => this.sessions.get(asset)?.unsaved === true);
+  }
 
-      this.tileSets.replaceTileSet(structuredClone(set));
-      this.engine.loadTileSet(serializeTileSet(set));
-      this.working.delete(set.id);
-      this.cache.clear();
-      this.dirty.set(false);
-      this.failure.set(null);
-      this.status.set(written > 0 ? `${path} · ${written}` : path);
-      this.revision.update((value) => value + 1);
-    } catch (error) {
-      this.failure.set(describeError(error));
+  /**
+   * Writes the open set's edited images, one PNG each.
+   *
+   * Art and definition are one act of authoring, so they go together (ADR-0028)
+   * — the session decides the order, and it writes the file first.
+   *
+   * @returns how many were written
+   */
+  private async writeSprites(set: TileSetDefinition): Promise<number> {
+    const pending = this.unwritten(set);
+    for (const asset of pending) {
+      const sprite = this.sessions.get(asset);
+      if (sprite === undefined) {
+        continue;
+      }
+      await this.workspace.write(asset, await sprite.toBlob());
+      sprite.markSaved();
     }
+    if (pending.length > 0) {
+      // The decoded copies hold the bytes these paths used to have.
+      this.cache.clear();
+      this.touchSprites();
+    }
+    return pending.length;
+  }
+
+  /** Writes the open set into the content directory. */
+  protected save(): Promise<void> {
+    return this.drafts.save();
   }
 
   protected dismiss(): void {
-    this.failure.set(null);
-    this.status.set(null);
+    this.drafts.clearError();
+    this.drafts.announce(null);
   }
 
   // ----------------------------------------------------------------- preview
@@ -951,17 +1036,12 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
   }
 
   /** The zoom on screen: the one asked for, or the one the fit settled on. */
-  protected readonly shownZoom = computed(() => {
-    this.revision();
-    return this.previewZoom() ?? Math.round((this.fittedZoom() ?? 1) * 10) / 10;
-  });
+  protected readonly shownZoom = computed(
+    () => this.previewZoom() ?? Math.round((this.fitted() ?? 1) * 10) / 10,
+  );
 
   /** What the last fit worked out, in screen pixels per authored pixel. */
   private readonly fitted = signal<number | null>(null);
-
-  private fittedZoom(): number | null {
-    return this.fitted();
-  }
 
   protected zoomBy(delta: number): void {
     this.previewZoom.set(zoomBy(this.previewZoom() ?? this.fitted() ?? 1, delta));
@@ -1073,12 +1153,12 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
   protected readonly paintable = computed(() => this.openSprite() !== null);
 
   protected readonly canUndo = computed(() => {
-    this.revision();
+    this.strokes();
     return this.openSprite()?.canUndo === true;
   });
 
   protected readonly canRedo = computed(() => {
-    this.revision();
+    this.strokes();
     return this.openSprite()?.canRedo === true;
   });
 
@@ -1318,35 +1398,6 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
   }
 }
 
-/** The list of variants a pseudo-level or an elevation level names. */
-function listFor(art: ReturnType<typeof artOf>, level: number): TileArtVariant[] | undefined {
-  if (level === FLAT_LEVEL) {
-    return art.flat;
-  }
-  return level === SURFACE_LEVEL ? art.surface : art.elevation.levels[level - 1]?.variants;
-}
-
-/**
- * Where the band drawing `level` sits on a preview cell of this height.
- *
- * In steps under the top face, the same number `resolveTileRender` gives the
- * renderer: a band spans `bandLevels` levels, so level `n` starts `n` bands
- * above the cell's foot. Negative once the band overshoots the top face, which
- * is drawn last and covers it — the pixels stay clickable either way, because
- * the box the pointer is measured against is this same number.
- */
-function dropOf(elevation: number, level: number, geometry: TileArtGeometry): number {
-  return level >= 1 ? elevation - level * bandLevels(geometry) : 0;
-}
-
-/** How tall an image of this level is, on the set's own grid. */
-function imageHeight(geometry: TileArtGeometry, level: number): number {
-  if (level === FLAT_LEVEL) {
-    return geometry.flatHeight;
-  }
-  return level === SURFACE_LEVEL ? geometry.surfaceHeight : geometry.elevationHeight;
-}
-
 /** Loads an image, resolving to `null` rather than rejecting when it will not. */
 function loadImage(url: string): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
@@ -1355,20 +1406,4 @@ function loadImage(url: string): Promise<HTMLImageElement | null> {
     image.addEventListener('error', () => resolve(null));
     image.src = url;
   });
-}
-
-/**
- * The image level a panel edits, or `null` for the ones that edit no image.
- *
- * `elevation` opens level 1: the ladder's first rung is the one every raised
- * cell shows, whatever its height.
- */
-function levelOfTab(tab: TileEditorTab): number | null {
-  if (tab === 'flat') {
-    return FLAT_LEVEL;
-  }
-  if (tab === 'surface') {
-    return SURFACE_LEVEL;
-  }
-  return tab === 'elevation' ? 1 : null;
 }

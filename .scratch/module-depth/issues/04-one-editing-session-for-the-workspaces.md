@@ -201,17 +201,19 @@ three is an evidenced one:
 | Adapter | Owns the list | For |
 |---|---|---|
 | owned | `DraftSet` itself, calling `ContentLibrary` to register | character, decoration, object |
-| store | `ProjectStoreService` | tile |
+| library | `TileSetLibrary` | tile |
 | ~~locale~~ | ~~`LocaleAuthoringService`~~ | ~~locale~~ |
 
 **The locale row is withdrawn.** Read against `locale-editor-page.ts` there is
 no draft to hold: no path, no serializer, no validator, no report, no per-id
 dirtiness. `LocaleAuthoringService` already is that screen's session and has a
 spec. The adapter would have answered six members with stubs so that `DraftSet`
-could own nothing. `store` is still wanted, and waits on
-[05](05-close-the-project-store-read-side.md); see
-[09](09-tile-and-locale-do-not-fit-the-draft-set.md). Six `owned` adapters
-shipped, which is the evidence the seam needed.
+could own nothing. The second row landed in
+[09](09-tile-and-locale-do-not-fit-the-draft-set.md) once
+[05](05-close-the-project-store-read-side.md) had given the read a home: it is
+`TileSetLibrary` rather than `ProjectStoreService`, and it reads the loaded sets
+in eagerly instead of gaining the lazy-overlay hook no other adapter wanted. Six
+`owned` adapters shipped before it, which is the evidence the seam needed.
 
 `ContentLibrary` is untouched and stays a peer. It passes the deletion test on
 its own — delete it and re-registration reappears in three places — and it is

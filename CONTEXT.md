@@ -102,7 +102,11 @@ neither is called an "entity".
 - **manifest** — `content/project.json`: which files make one game
   (`ProjectDefinition`). A kind is *declared in the manifest* when it lists one
   entry per draft; the settings file and the title screen live at a fixed path
-  and are not.
+  and are not. The flag a draft source carries answers the narrower question of
+  whether **saving** this kind can move the manifest, which is not the same: a
+  tile set is listed, but the tile editor creates and removes none, so saving
+  one cannot move it either — and must not flush an edit the map editor next
+  door has left half-finished.
 - **content library** — what holds a kind's registered definitions and puts them
   back after a content reset (`app/services/content-library.ts`). A peer of the
   draft set, not a part of it: a running game has libraries and no drafts.

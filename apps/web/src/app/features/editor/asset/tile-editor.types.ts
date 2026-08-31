@@ -15,9 +15,11 @@ import {
   ElevationLevel,
   ElevationRepeat,
   TileArt,
+  TileArtGeometry,
   TileArtVariant,
   TileDefinition,
   TileSetDefinition,
+  bandLevels,
 } from '../../../../content/content-types';
 
 /** Which panel of the tile editor is open. */
@@ -206,4 +208,96 @@ export function matching(set: TileSetDefinition | null, search: string): readonl
       .toLowerCase()
       .includes(needle),
   );
+}
+
+/**
+ * The list of variants a pseudo-level or an elevation level names.
+ *
+ * Takes the *filled* art {@link artOf} returns, because a caller adding a
+ * variant needs a list to push into and an absent one is not that.
+ */
+export function listFor(
+  art: ReturnType<typeof artOf>,
+  level: number,
+): TileArtVariant[] | undefined {
+  if (level === FLAT_LEVEL) {
+    return art.flat;
+  }
+  return level === SURFACE_LEVEL ? art.surface : art.elevation.levels[level - 1]?.variants;
+}
+
+/**
+ * `true` when a tile already has the list this level names.
+ *
+ * Asked before a variant is added, so that adding one to a level nobody
+ * declared is refused rather than filling `art` in on the way past: the two
+ * pseudo-levels always exist, an elevation level only once it is declared.
+ */
+export function hasLevel(tile: TileDefinition, level: number): boolean {
+  if (level === FLAT_LEVEL || level === SURFACE_LEVEL) {
+    return true;
+  }
+  return level >= 1 && level <= (tile.art?.elevation?.levels.length ?? 0);
+}
+
+/** How tall an image of this level is, on the set's own grid. */
+export function imageHeight(geometry: TileArtGeometry, level: number): number {
+  if (level === FLAT_LEVEL) {
+    return geometry.flatHeight;
+  }
+  return level === SURFACE_LEVEL ? geometry.surfaceHeight : geometry.elevationHeight;
+}
+
+/**
+ * Where the band drawing `level` sits on a preview cell of this height.
+ *
+ * In steps under the top face, the same number `resolveTileRender` gives the
+ * renderer: a band spans `bandLevels` levels, so level `n` starts `n` bands
+ * above the cell's foot. Negative once the band overshoots the top face, which
+ * is drawn last and covers it — the pixels stay clickable either way, because
+ * the box the pointer is measured against is this same number.
+ */
+export function dropOf(elevation: number, level: number, geometry: TileArtGeometry): number {
+  return level >= 1 ? elevation - level * bandLevels(geometry) : 0;
+}
+
+/**
+ * The image level a panel edits, or `null` for the ones that edit no image.
+ *
+ * `elevation` opens level 1: the ladder's first rung is the one every raised
+ * cell shows, whatever its height.
+ */
+export function levelOfTab(tab: TileEditorTab): number | null {
+  if (tab === 'flat') {
+    return FLAT_LEVEL;
+  }
+  if (tab === 'surface') {
+    return SURFACE_LEVEL;
+  }
+  return tab === 'elevation' ? 1 : null;
+}
+
+/**
+ * Every image a set names, once each, in the order its tiles name them.
+ *
+ * What the editing session asks when it wants to know which painted buffers
+ * belong to *this* set — which is half of what makes a draft dirty
+ * (`app/editing/draft-source.ts`). Deduplicated because two tiles are allowed
+ * to point at one file, and it would otherwise be written twice.
+ */
+export function assetsOf(set: TileSetDefinition): readonly string[] {
+  const assets = new Set<string>();
+  for (const tile of set.tiles) {
+    for (const level of [FLAT_LEVEL, SURFACE_LEVEL]) {
+      for (const variant of variantsOf(tile, level)) {
+        assets.add(variant.asset);
+      }
+    }
+    for (const level of tile.art?.elevation?.levels ?? []) {
+      for (const variant of level.variants ?? []) {
+        assets.add(variant.asset);
+      }
+    }
+  }
+  return [...assets];
 }

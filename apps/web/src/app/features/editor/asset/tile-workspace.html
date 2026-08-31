@@ -44,15 +44,19 @@
     </button>
   </div>
 
-  @if (failure(); as message) {
+  <!-- Already a sentence, and not always about a write: the session puts a
+       failing verdict here while an author is still typing (app/editing/draft-set.ts). -->
+  @if (error(); as failure) {
     <p banner class="banner error">
-      {{ 'ui.editor.asset.failed' | t: { message: message } }}
+      {{ failure }}
       <button type="button" (click)="dismiss()">{{ 'ui.common.dismiss' | t }}</button>
     </p>
   }
-  @if (status(); as saved) {
+  <!-- Already one line, composed by the editing session: the file, and the
+       images that went with it (app/editing/draft-set.ts). -->
+  @if (message(); as saved) {
     <p banner class="banner ok">
-      {{ 'ui.editor.asset.saved' | t: { file: saved } }}
+      {{ saved }}
       <button type="button" (click)="dismiss()">{{ 'ui.common.dismiss' | t }}</button>
     </p>
   }
@@ -71,7 +75,7 @@
         <li>
           <button
             type="button"
-            [class.active]="entry.id === selectedTileId()"
+            [class.active]="entry.id === tile()?.id"
             (click)="selectTile(entry.id)"
           >
             <span class="swatch" [style.background]="entry.visual.fallbackColor"></span>
