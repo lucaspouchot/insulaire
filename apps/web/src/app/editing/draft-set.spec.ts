@@ -174,7 +174,7 @@ function harness(
         written.set(path, json);
       },
     },
-    manifest: {
+    ledger: {
       manifestNeedsWriting: () => manifestDirty.value,
       projectJson: () => '{"project":true}',
       markManifestWritten: () => {

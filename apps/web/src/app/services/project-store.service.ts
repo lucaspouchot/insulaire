@@ -1,41 +1,39 @@
 /**
- * Owns the project being authored or played: several maps, one tile set per
- * map, and the manifest that ties them together.
+ * Loads the project being authored or played, and mirrors it into
+ * `localStorage` so a refresh does not lose work.
  *
  * This is *editor* state, kept strictly apart from the engine's runtime state
- * (`CLAUDE.md`). It holds one {@link WorldDocument} per map, mirrors them into
- * `localStorage` so a refresh does not lose work, and produces the
- * {@link WorldDefinition}s Play mode feeds to the engine.
+ * (`CLAUDE.md`). What the project **is** belongs to four modules under
+ * `app/project/`, and this one composes them:
  *
- * That last point is the important one: Play does not re-read the shipped files
- * when documents exist — it consumes the editor's own export. So "a world
- * created in the editor loads in the runtime unmodified" is exercised every
- * time someone presses Play, not just in tests.
+ * - {@link ProjectManifest} — `project.json` as loaded, and what it declares
+ * - {@link WorldLibrary} — the maps held open, and which one is being edited
+ * - {@link TileSetLibrary} — the sets those maps paint with
+ * - {@link WriteLedger} — the content directory as a baseline, and every
+ *   question a save asks of it
  *
- * Several maps rather than one is what map links require: a door names another
- * map, so authoring one means having the others in hand
- * (`docs/adr/ADR-0014-map-links.md`).
+ * It forwards none of them. A caller injects the one it needs
+ * (`.scratch/module-depth/issues/05-close-the-project-store-read-side.md`).
  *
  * Content is loaded from static files (`content/` mirrored into `public/`).
  * There is no backend and no database; `localStorage` is a convenience for
  * in-progress documents, and only the dev build writes to it.
  */
 
-import { Injectable, computed, signal } from '@angular/core';
+import { Injectable, computed, effect, inject, signal } from '@angular/core';
 
 import {
   ContentRef,
-  DEFAULT_ZONE_ID,
-  LanguageDefinition,
-  PROJECT_SCHEMA_VERSION,
   ProjectDefinition,
   TileSetDefinition,
   WorldDefinition,
-  ZoneDefinition,
 } from '../../content/content-types';
 import { WorldDocument } from '../../content/world-document';
-import { serializeProject, serializeWorld } from '../../content/world-serializer';
 import { assetUrl } from '../../core/asset-url';
+import { ProjectManifest } from '../project/project-manifest';
+import { ProjectSource, WorldLibrary } from '../project/world-library';
+import { TileSetLibrary } from '../project/tile-set-library';
+import { WriteLedger } from '../project/write-ledger';
 import { BUILD_FEATURES } from '../build-features';
 
 /** Where the mirrored authored content is served from, relative to the base. */
@@ -46,29 +44,7 @@ export function contentUrl(path: string): string {
   return assetUrl(`${CONTENT_ROOT}/${path}`);
 }
 
-/**
- * A map's file content, ignoring the `updatedAt` stamp.
- *
- * `toDefinition` takes the clock precisely so callers can pin it; pinning it to
- * the epoch is what lets two versions of a map be compared for a *real*
- * difference rather than for the second having been serialised later.
- */
-function fingerprint(document: WorldDocument): string {
-  return serializeWorld(document.toDefinition(() => new Date(0)));
-}
-
 const STORAGE_KEY = 'insulaire.editor.project.v1';
-
-/** Where the current documents came from. */
-export type ProjectSource = 'shipped' | 'restored' | 'imported' | 'new';
-
-/**
- * The manifest lists that hold one file per definition.
- *
- * Also the directory each one lives in by convention, which is what lets
- * {@link ProjectStoreService.characterPath} and its siblings be one function.
- */
-type LibraryKind = 'characters' | 'decorations' | 'objects';
 
 /**
  * One locale file as authored, ready to hand to the engine.
@@ -82,19 +58,6 @@ export interface LocaleFile {
   /** The file's id in the manifest, which is the key prefix it provides. */
   readonly namespace: string;
   readonly json: string;
-}
-
-/**
- * One map's file as it stands in the content directory.
- *
- * The fingerprint is the file **as the editor would write it**, timestamp
- * excluded: `toDefinition` stamps `updatedAt` on every call, so comparing raw
- * output would call every map changed on every save and rewrite the lot.
- */
-interface DiskWorld {
-  /** Path relative to the content directory, from the manifest. */
-  readonly path: string;
-  readonly fingerprint: string;
 }
 
 /** The shape mirrored into `localStorage`. */
@@ -112,51 +75,38 @@ interface DiskFile {
 
 @Injectable({ providedIn: 'root' })
 export class ProjectStoreService {
-  private readonly projectSignal = signal<ProjectDefinition | null>(null);
-  private readonly documentsSignal = signal<readonly WorldDocument[]>([]);
-  private readonly activeIdSignal = signal<string | null>(null);
-  private readonly dirtySignal = signal(false);
-  private readonly sourceSignal = signal<ProjectSource>('shipped');
-  private tileSets = new Map<string, TileSetDefinition>();
+  private readonly manifest = inject(ProjectManifest);
+  private readonly worlds = inject(WorldLibrary);
+  private readonly tileSets = inject(TileSetLibrary);
+  private readonly ledger = inject(WriteLedger);
+
   private readonly localeFilesSignal = signal<readonly LocaleFile[]>([]);
   private loading: Promise<void> | null = null;
-  /**
-   * What the content directory holds, as the editor would write it.
-   *
-   * This is the baseline every save compares against, and it is what makes a
-   * save touch **only** the files that moved: a map whose fingerprint still
-   * matches is not rewritten, and a file whose map is gone from the editor is
-   * deleted. It is read from disk at load time — never from `localStorage`,
-   * which describes edits that have *not* been written yet.
-   */
-  private diskWorlds = new Map<string, DiskWorld>();
-  /** The manifest as it stands in the content directory, canonically serialised. */
-  private diskProjectJson: string | null = null;
 
-  /** The manifest, once loaded. */
-  readonly project = this.projectSignal.asReadonly();
-  /** Every map in the project, in load order. */
-  readonly documents = this.documentsSignal.asReadonly();
-  /** Id of the map currently open in the editor. */
-  readonly activeWorldId = this.activeIdSignal.asReadonly();
-  /** `true` when a document has changed since the last save to disk. */
-  readonly dirty = this.dirtySignal.asReadonly();
-  /** Where the current documents came from. */
-  readonly source = this.sourceSignal.asReadonly();
   /** Every locale file the manifest lists, as fetched. */
   readonly localeFiles = this.localeFilesSignal.asReadonly();
 
-  /** The map currently open, or `null` before loading. */
-  readonly document = computed<WorldDocument | null>(() => {
-    const id = this.activeIdSignal();
-    return this.documentsSignal().find((document) => document.id === id) ?? null;
-  });
+  /** Every edit made to the project, however it was made. */
+  private readonly edits = computed(() => this.manifest.edits() + this.worlds.edits());
+  /**
+   * The edit count this session opened at.
+   *
+   * The counters are monotonic for the life of the process — nothing resets
+   * them, because the ledger dates its own clean point against them — so "has
+   * anything been edited" has to be asked *against the current session*, not
+   * against zero.
+   */
+  private openedAt = 0;
 
-  /** Short label for the UI. */
-  readonly title = computed(() => {
-    const document = this.document();
-    return document === null ? 'No map' : `${document.name} (${document.width}x${document.height})`;
-  });
+  constructor() {
+    // The mirror follows the edit counters rather than being written by each
+    // mutation, so no module can change the project and forget to mirror it —
+    // which is what a hand-called `touch()` allowed.
+    effect(() => {
+      this.edits();
+      this.persist();
+    });
+  }
 
   /**
    * Loads the project, its tile sets and every map it lists, at most once.
@@ -171,17 +121,9 @@ export class ProjectStoreService {
 
   private async load(): Promise<void> {
     const project = await fetchJson<ProjectDefinition>(contentUrl('project.json'));
-    this.projectSignal.set(project);
+    this.manifest.adopt(project);
 
-    this.tileSets = new Map(
-      await Promise.all(
-        project.tileSets.map(
-          async (entry) =>
-            [entry.id, await fetchJson<TileSetDefinition>(contentUrl(entry.path))] as const,
-        ),
-      ),
-    );
-
+    this.tileSets.adopt(await fetchTileSets(project));
     this.localeFilesSignal.set(await fetchLocaleFiles(project));
 
     // The files are read even when documents are restored: they are what a save
@@ -199,7 +141,7 @@ export class ProjectStoreService {
         }
       }),
     );
-    this.captureDiskBaseline(project, onDisk);
+    this.captureBaseline(project, onDisk);
 
     if (BUILD_FEATURES.editor && this.restore(project, onDisk)) {
       return;
@@ -215,30 +157,30 @@ export class ProjectStoreService {
   }
 
   /**
-   * Records what the content directory holds, so a later save can write only
-   * what moved.
-   *
-   * A map whose fingerprint cannot be computed — an unknown tile set, most
-   * likely — is left out rather than guessed at: absent from the baseline it
-   * counts as changed, and a needless write is a far better failure than a
-   * skipped one.
+   * Hands the ledger the content directory as documents, so it can fingerprint
+   * what is there. A file that will not rebuild is passed as `null`, which is
+   * how it stays out of the baseline.
    */
-  private captureDiskBaseline(project: ProjectDefinition, onDisk: readonly DiskFile[]): void {
-    this.diskProjectJson = serializeProject(project);
-    this.diskWorlds = new Map();
-    for (const { entry, definition } of onDisk) {
-      if (definition === null) {
-        continue;
-      }
-      try {
-        const document = WorldDocument.fromDefinition(
-          definition,
-          this.requireTileSetFor(definition.tileSetId),
-        );
-        this.diskWorlds.set(entry.id, { path: entry.path, fingerprint: fingerprint(document) });
-      } catch {
-        continue;
-      }
+  private captureBaseline(project: ProjectDefinition, onDisk: readonly DiskFile[]): void {
+    this.ledger.captureBaseline(
+      project,
+      onDisk.map(({ entry, definition }) => ({
+        id: entry.id,
+        path: entry.path,
+        document: definition === null ? null : this.rebuild(definition),
+      })),
+    );
+  }
+
+  /** A document for this definition, or `null` when its tile set is unknown. */
+  private rebuild(definition: WorldDefinition): WorldDocument | null {
+    try {
+      return WorldDocument.fromDefinition(
+        definition,
+        this.tileSets.requireTileSetFor(definition.tileSetId),
+      );
+    } catch {
+      return null;
     }
   }
 
@@ -270,8 +212,10 @@ export class ProjectStoreService {
         .filter((file) => file.definition !== null && !restored.has(file.entry.id))
         .map((file) => file.definition as WorldDefinition);
 
+      // Documents first: a failure to rebuild them must leave the manifest as
+      // the files describe it, which is what `load` adopted before calling here.
       this.adopt([...stored.worlds, ...added], stored.activeWorldId, 'restored');
-      this.projectSignal.set(mergeManifest(onDisk, stored.project));
+      this.manifest.adopt(mergeManifest(onDisk, stored.project));
       return true;
     } catch {
       // Stored content that no longer matches the tile sets is discarded rather
@@ -286,339 +230,19 @@ export class ProjectStoreService {
     activeId: string,
     source: ProjectSource,
   ): void {
-    const documents = definitions.map((definition) =>
-      WorldDocument.fromDefinition(definition, this.requireTileSetFor(definition.tileSetId)),
+    // A session starts here, so nothing is owed the mirror yet.
+    this.openedAt = this.edits();
+    this.worlds.adopt(
+      definitions.map((definition) =>
+        WorldDocument.fromDefinition(
+          definition,
+          this.tileSets.requireTileSetFor(definition.tileSetId),
+        ),
+      ),
+      activeId,
+      source,
     );
-    this.documentsSignal.set(documents);
-    this.activeIdSignal.set(
-      documents.some((document) => document.id === activeId)
-        ? activeId
-        : (documents[0]?.id ?? null),
-    );
-    this.sourceSignal.set(source);
-    this.dirtySignal.set(false);
-  }
-
-  // ------------------------------------------------------------- accessors
-
-  /** The tile set with this id, or throws. */
-  requireTileSetFor(tileSetId: string): TileSetDefinition {
-    const tileSet = this.tileSets.get(tileSetId);
-    if (tileSet === undefined) {
-      throw new Error(`Tile set "${tileSetId}" is not part of this project.`);
-    }
-    return tileSet;
-  }
-
-  /** The tile set the open map paints with. */
-  requireTileSet(): TileSetDefinition {
-    return this.requireTileSetFor(this.requireDocument().tileSetId);
-  }
-
-  /** Every loaded tile set, in project order. */
-  tileSetDefinitions(): readonly TileSetDefinition[] {
-    return [...this.tileSets.values()];
-  }
-
-  /** The file the manifest lists for a tile set, or a conventional path. */
-  tileSetPath(tileSetId: string): string {
-    const declared = this.projectSignal()?.tileSets.find((entry) => entry.id === tileSetId);
-    return declared?.path ?? `tilesets/${tileSetId}.json`;
-  }
-
-  /**
-   * Replaces a loaded tile set, and rebuilds every map that paints with it.
-   *
-   * A {@link WorldDocument} resolves its palette once, when it is built, so a
-   * tile added or renamed in the asset editor is invisible to the map editor
-   * until the documents are rebuilt. Rebuilding from `toDefinition()` keeps
-   * every painted cell — a cell holds a palette *index*, and the definition it
-   * exports holds the tile *id*, which is exactly the indirection ADR-0006
-   * exists for.
-   *
-   * A map that no longer resolves — its tile was deleted out from under it — is
-   * left as it was rather than dropped: the map editor still shows it, and
-   * validation reports `tile.unknownReference`, which is where that belongs.
-   */
-  replaceTileSet(tileSet: TileSetDefinition): void {
-    this.tileSets.set(tileSet.id, tileSet);
-    this.documentsSignal.update((documents) =>
-      documents.map((document) => {
-        if (document.tileSetId !== tileSet.id) {
-          return document;
-        }
-        try {
-          return WorldDocument.fromDefinition(document.toDefinition(), tileSet);
-        } catch {
-          return document;
-        }
-      }),
-    );
-  }
-
-  /** The open map, or throws when called before {@link ensureLoaded}. */
-  requireDocument(): WorldDocument {
-    const document = this.document();
-    if (document === null) {
-      throw new Error('No map is open; await ensureLoaded() first.');
-    }
-    return document;
-  }
-
-  /** The manifest, or throws when called before {@link ensureLoaded}. */
-  requireProject(): ProjectDefinition {
-    const project = this.projectSignal();
-    if (project === null) {
-      throw new Error('No project is loaded; await ensureLoaded() first.');
-    }
-    return project;
-  }
-
-  /** The authored file for the open map. */
-  currentDefinition(): WorldDefinition {
-    return this.requireDocument().toDefinition();
-  }
-
-  /** The authored file for the open map, in the canonical layout. */
-  currentJson(): string {
-    return serializeWorld(this.currentDefinition());
-  }
-
-  /** The authored files for every map, in project order. */
-  definitions(): WorldDefinition[] {
-    return this.documentsSignal().map((document) => document.toDefinition());
-  }
-
-  /**
-   * The manifest as it stands, regenerated from the open documents.
-   *
-   * Maps added or renamed in the editor are reflected here, which is what makes
-   * "save the project" write a manifest a client build can boot.
-   */
-  projectDefinition(): ProjectDefinition {
-    const project = this.requireProject();
-    const documents = this.documentsSignal();
-    const startWorld = documents.some((document) => document.id === project.startWorld)
-      ? project.startWorld
-      : (documents[0]?.id ?? project.startWorld);
-
-    return {
-      id: project.id,
-      schemaVersion: PROJECT_SCHEMA_VERSION,
-      name: project.name,
-      startWorld,
-      // Always written out, implicit default included: a map's zone id has to
-      // resolve against the manifest it ships with.
-      zones: [...this.zones()],
-      tileSets: project.tileSets,
-      worlds: documents.map((document) => ({
-        id: document.id,
-        path: `worlds/${document.id}.json`,
-      })),
-      // Carried through untouched, like the title screen below: each asset
-      // editor owns its own list and declares its own files.
-      characters: project.characters,
-      decorations: project.decorations,
-      objects: project.objects,
-      characterCreation: project.characterCreation,
-      // Carried through untouched, like the languages below: these name files
-      // the editor does not hold documents for, so regenerating them from what
-      // happens to be loaded would drop the title screen and the settings on
-      // the first save — and, because this is also what is mirrored into
-      // `localStorage`, on the first reload after any edit.
-      titleScreen: project.titleScreen,
-      settings: project.settings,
-      // Carried through untouched: the editor never regenerates the language
-      // list from what happens to be loaded, or an export would quietly drop a
-      // language whose files failed to fetch.
-      locales: project.locales,
-    };
-  }
-
-  /** The manifest, in the canonical layout. */
-  projectJson(): string {
-    return serializeProject(this.projectDefinition());
-  }
-
-  /**
-   * The project's zones, never empty.
-   *
-   * A project that declares none has one implicit zone, so the editor always
-   * has something to put a new map in — zones are mandatory in the model even
-   * where the file leaves them out (`docs/adr/ADR-0018-map-zones.md`).
-   */
-  readonly zones = computed<readonly ZoneDefinition[]>(() => {
-    const declared = this.projectSignal()?.zones ?? [];
-    return declared.length > 0 ? declared : [{ id: DEFAULT_ZONE_ID, name: 'Default' }];
-  });
-
-  /** Id of the zone a map without one belongs to: the first declared. */
-  readonly defaultZoneId = computed(() => this.zones()[0]?.id ?? DEFAULT_ZONE_ID);
-
-  /** Ids, names and zones of every map, for pickers and link targets. */
-  readonly worldChoices = computed(() => {
-    const fallback = this.defaultZoneId();
-    return this.documentsSignal().map((document) => ({
-      id: document.id,
-      name: document.name,
-      // The *resolved* zone: a map that names none is in the default one, and
-      // callers group maps without having to know that rule.
-      zone: document.zone.length > 0 ? document.zone : fallback,
-    }));
-  });
-
-  // --------------------------------------------------------------- mutation
-
-  /** Opens another map of the project. */
-  selectWorld(worldId: string): void {
-    if (this.documentsSignal().some((document) => document.id === worldId)) {
-      this.activeIdSignal.set(worldId);
-    }
-  }
-
-  /** Marks the project as changed and mirrors it into `localStorage`. */
-  touch(): void {
-    this.dirtySignal.set(true);
-    this.persist();
-  }
-
-  /** Adds a map to the project and opens it. */
-  addWorld(document: WorldDocument, source: ProjectSource = 'new'): void {
-    this.documentsSignal.update((documents) => [
-      ...documents.filter((existing) => existing.id !== document.id),
-      document,
-    ]);
-    this.activeIdSignal.set(document.id);
-    this.sourceSignal.set(source);
-    this.touch();
-  }
-
-  /**
-   * Removes a map.
-   *
-   * Links pointing at it are deliberately left alone: silently rewriting them
-   * would hide the breakage, and `validateLinks` reports it as
-   * `link.unknownTargetWorld` — which is the author's cue to fix or repoint it.
-   *
-   * @returns `false` when it was the last map, which the project may not lose.
-   */
-  removeWorld(worldId: string): boolean {
-    const remaining = this.documentsSignal().filter((document) => document.id !== worldId);
-    if (remaining.length === 0 || remaining.length === this.documentsSignal().length) {
-      return false;
-    }
-    this.documentsSignal.set(remaining);
-    if (this.activeIdSignal() === worldId) {
-      this.activeIdSignal.set(remaining[0]?.id ?? null);
-    }
-    this.touch();
-    return true;
-  }
-
-  /**
-   * Renames the open map, repointing every link that targeted it.
-   *
-   * @returns `false` when the id is already taken.
-   */
-  renameWorld(nextId: string, nextName: string): boolean {
-    const document = this.requireDocument();
-    const previousId = document.id;
-    const documents = this.documentsSignal();
-    if (nextId !== previousId && documents.some((other) => other.id === nextId)) {
-      return false;
-    }
-
-    document.id = nextId;
-    document.name = nextName;
-    for (const other of documents) {
-      other.retargetLinks(previousId, nextId);
-    }
-
-    const project = this.projectSignal();
-    if (project !== null && project.startWorld === previousId) {
-      // The renamed map is still where a session starts; leaving the old id in
-      // the manifest would silently move the start elsewhere on export.
-      this.projectSignal.set({ ...project, startWorld: nextId });
-    }
-
-    // Documents are mutable objects held in a signal, so an in-place edit is
-    // invisible to `computed`s until the array identity changes.
-    this.documentsSignal.set([...documents]);
-    this.activeIdSignal.set(nextId);
-    this.touch();
-    return true;
-  }
-
-  /**
-   * Declares a zone.
-   *
-   * The zones a project declares are content, not a derived list: a zone has to
-   * exist before a map can be put in it, which is the whole point of creating
-   * one. Materialising the implicit default alongside it keeps every map that
-   * named no zone exactly where it was — the default is the *first* zone.
-   *
-   * @returns `false` when the id is empty or already taken.
-   */
-  addZone(id: string, name: string): boolean {
-    if (id.length === 0 || this.zones().some((zone) => zone.id === id)) {
-      return false;
-    }
-    this.projectSignal.set({
-      ...this.requireProject(),
-      zones: [...this.zones(), { id, name: name.trim() || id }],
-    });
-    this.touch();
-    return true;
-  }
-
-  /**
-   * Removes a zone.
-   *
-   * @returns `false` when it is the last zone or a map is still in it — moving
-   * those maps somewhere is the author's decision, not this method's.
-   */
-  removeZone(id: string): boolean {
-    const zones = this.zones();
-    if (zones.length <= 1 || !zones.some((zone) => zone.id === id)) {
-      return false;
-    }
-    if (this.worldChoices().some((world) => world.zone === id)) {
-      return false;
-    }
-    this.projectSignal.set({
-      ...this.requireProject(),
-      zones: zones.filter((zone) => zone.id !== id),
-    });
-    this.touch();
-    return true;
-  }
-
-  /**
-   * Moves the open map into a zone.
-   *
-   * @returns `true` when the zone changed.
-   */
-  setZone(zone: string): boolean {
-    const document = this.requireDocument();
-    if (document.zone === zone) {
-      return false;
-    }
-    document.zone = zone;
-    // In-place edit of a document held in a signal, as in `renameWorld`: the
-    // array identity has to change for `worldChoices` to see it.
-    this.documentsSignal.set([...this.documentsSignal()]);
-    this.touch();
-    return true;
-  }
-
-  /** Rebuilds a map from an imported world file, replacing one with the same id. */
-  importDefinition(definition: WorldDefinition): WorldDocument {
-    const document = WorldDocument.fromDefinition(
-      definition,
-      this.requireTileSetFor(definition.tileSetId),
-    );
-    this.addWorld(document, 'imported');
-    return document;
+    this.ledger.markClean();
   }
 
   /**
@@ -633,21 +257,13 @@ export class ProjectStoreService {
     const definitions = await Promise.all(
       project.worlds.map((entry) => fetchJson<WorldDefinition>(contentUrl(entry.path))),
     );
-    const tileSets = new Map(
-      await Promise.all(
-        project.tileSets.map(
-          async (entry) =>
-            [entry.id, await fetchJson<TileSetDefinition>(contentUrl(entry.path))] as const,
-        ),
-      ),
-    );
-
+    const tileSets = await fetchTileSets(project);
     const localeFiles = await fetchLocaleFiles(project);
 
-    this.tileSets = tileSets;
-    this.projectSignal.set(project);
+    this.tileSets.adopt(tileSets);
+    this.manifest.adopt(project);
     this.localeFilesSignal.set(localeFiles);
-    this.captureDiskBaseline(
+    this.captureBaseline(
       project,
       project.worlds.map((entry, index) => ({ entry, definition: definitions[index] })),
     );
@@ -667,262 +283,28 @@ export class ProjectStoreService {
     this.localeFilesSignal.set([...files]);
   }
 
-  /**
-   * Declares a locale file in the manifest, so the namespace it provides is
-   * loaded next time the project is.
-   *
-   * A key names its namespace — `menu.title.credits` lives in `menu` — and an
-   * author writing the first key of a new namespace should not have to hand-edit
-   * `project.json` for it to exist.
-   *
-   * @returns `false` when the language already declares that namespace.
-   */
-  declareLocaleFile(language: string, namespace: string, path: string): boolean {
-    const project = this.requireProject();
-    const languages = project.locales?.languages ?? [];
-    const declared = languages.find((candidate) => candidate.id === language);
-    if (declared?.files?.some((file) => file.id === namespace)) {
-      return false;
-    }
-
-    const file = { id: namespace, path };
-    const next: LanguageDefinition[] =
-      declared === undefined
-        ? [...languages, { id: language, files: [file] }]
-        : languages.map((candidate) =>
-            candidate.id === language
-              ? { ...candidate, files: [...(candidate.files ?? []), file] }
-              : candidate,
-          );
-
-    this.projectSignal.set({
-      ...project,
-      locales: { default: project.locales?.default, languages: next },
-    });
-    this.touch();
-    return true;
-  }
-
-  /**
-   * Declares a definition in one of the manifest's libraries, so it is loaded
-   * next time the project is.
-   *
-   * The same door `declareLocaleFile` opens, for the same reason: creating a
-   * character — or a decoration, or an object — in the editor should not mean
-   * hand-editing `project.json` for it to exist
-   * (`docs/adr/ADR-0024-character-definitions.md`,
-   * `docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
-   *
-   * @returns `false` when the project already declares that id.
-   */
-  private declareIn(library: LibraryKind, id: string, path: string): boolean {
-    const project = this.requireProject();
-    const declared = project[library] ?? [];
-    if (declared.some((entry) => entry.id === id)) {
-      return false;
-    }
-    this.projectSignal.set({ ...project, [library]: [...declared, { id, path }] });
-    this.touch();
-    return true;
-  }
-
-  /**
-   * Removes a definition from one of the manifest's libraries.
-   *
-   * @returns `false` when the project does not declare it.
-   */
-  private undeclareFrom(library: LibraryKind, id: string): boolean {
-    const project = this.requireProject();
-    const declared = project[library] ?? [];
-    if (!declared.some((entry) => entry.id === id)) {
-      return false;
-    }
-    this.projectSignal.set({
-      ...project,
-      [library]: declared.filter((entry) => entry.id !== id),
-    });
-    this.touch();
-    return true;
-  }
-
-  /** Where a definition's file lives, declared or by convention. */
-  private pathIn(library: LibraryKind, id: string): string {
-    const declared = this.projectSignal()?.[library]?.find((entry) => entry.id === id);
-    return declared?.path ?? `${library}/${id}.json`;
-  }
-
-  /** Declares a character definition in the manifest. */
-  declareCharacter(id: string, path: string): boolean {
-    return this.declareIn('characters', id, path);
-  }
-
-  /** Removes a character definition from the manifest. */
-  undeclareCharacter(id: string): boolean {
-    return this.undeclareFrom('characters', id);
-  }
-
-  /** Where a character's file lives, declared or by convention. */
-  characterPath(id: string): string {
-    return this.pathIn('characters', id);
-  }
-
-  /** Declares a decoration definition in the manifest. */
-  declareDecoration(id: string, path: string): boolean {
-    return this.declareIn('decorations', id, path);
-  }
-
-  /** Removes a decoration definition from the manifest. */
-  undeclareDecoration(id: string): boolean {
-    return this.undeclareFrom('decorations', id);
-  }
-
-  /** Where a decoration's file lives, declared or by convention. */
-  decorationPath(id: string): string {
-    return this.pathIn('decorations', id);
-  }
-
-  /** Declares an object definition in the manifest. */
-  declareObject(id: string, path: string): boolean {
-    return this.declareIn('objects', id, path);
-  }
-
-  /** Removes an object definition from the manifest. */
-  undeclareObject(id: string): boolean {
-    return this.undeclareFrom('objects', id);
-  }
-
-  /** Where an object's file lives, declared or by convention. */
-  objectPath(id: string): string {
-    return this.pathIn('objects', id);
-  }
-
-  /** Declares or replaces the project's single character-creation file. */
-  declareCharacterCreation(id: string, path: string): void {
-    const project = this.requireProject();
-    this.projectSignal.set({ ...project, characterCreation: { id, path } });
-    this.touch();
-  }
-
-  /** Where the character-creation declaration lives. */
-  characterCreationPath(): string {
-    return this.projectSignal()?.characterCreation?.path ?? 'character-creation.json';
-  }
-
-  // ------------------------------------------------------------------ saving
-  //
-  // What a save has to write is a *difference* between the documents and the
-  // content directory, not the documents themselves: authored content is kept
-  // under version control, and a save that rewrites forty untouched files is a
-  // diff nobody can read.
-
-  /** Where a map's file lives in the content directory. */
-  worldPath(worldId: string): string {
-    const onDisk = this.diskWorlds.get(worldId);
-    if (onDisk !== undefined) {
-      return onDisk.path;
-    }
-    const declared = this.projectSignal()?.worlds.find((entry) => entry.id === worldId);
-    return declared?.path ?? `worlds/${worldId}.json`;
-  }
-
-  /**
-   * `true` when this map's file does not match the document — including when
-   * there is no file yet, which is the case for a map just added or imported.
-   */
-  worldNeedsWriting(worldId: string): boolean {
-    const document = this.documentsSignal().find((candidate) => candidate.id === worldId);
-    if (document === undefined) {
-      return false;
-    }
-    return this.diskWorlds.get(worldId)?.fingerprint !== fingerprint(document);
-  }
-
-  /** Ids of every map whose file does not match the document, in project order. */
-  changedWorldIds(): readonly string[] {
-    return this.documentsSignal()
-      .filter((document) => this.diskWorlds.get(document.id)?.fingerprint !== fingerprint(document))
-      .map((document) => document.id);
-  }
-
-  /**
-   * Files in the content directory whose map no longer exists here — removed,
-   * or renamed, which leaves the old file behind just the same.
-   *
-   * An id the editor still holds is never orphaned, so renaming a map away and
-   * back does not queue its own file for deletion.
-   */
-  orphanedWorlds(): readonly { id: string; path: string }[] {
-    const live = new Set(this.documentsSignal().map((document) => document.id));
-    return [...this.diskWorlds]
-      .filter(([id]) => !live.has(id))
-      .map(([id, onDisk]) => ({ id, path: onDisk.path }));
-  }
-
-  /**
-   * `true` when `project.json` on disk no longer describes the project as
-   * edited — a map was added, renamed, removed, or moved between zones.
-   */
-  manifestNeedsWriting(): boolean {
-    return this.projectJson() !== this.diskProjectJson;
-  }
-
-  /** `true` when anything at all is waiting to be written or deleted. */
-  hasUnwrittenChanges(): boolean {
-    return (
-      this.changedWorldIds().length > 0 ||
-      this.orphanedWorlds().length > 0 ||
-      this.manifestNeedsWriting()
-    );
-  }
-
-  /** Records that a map's file was written back to the content directory. */
-  markWorldWritten(worldId: string): void {
-    const document = this.documentsSignal().find((candidate) => candidate.id === worldId);
-    if (document !== undefined) {
-      this.diskWorlds.set(worldId, {
-        path: this.worldPath(worldId),
-        fingerprint: fingerprint(document),
-      });
-    }
-  }
-
-  /** Records that a map's file was deleted from the content directory. */
-  markWorldDeleted(worldId: string): void {
-    this.diskWorlds.delete(worldId);
-  }
-
-  /** Records that `project.json` was written back to the content directory. */
-  markManifestWritten(): void {
-    this.diskProjectJson = this.projectJson();
-  }
-
-  /**
-   * Re-reads whether anything is still unwritten, and lowers the flag if not.
-   *
-   * `touch` raises it on the first edit without fingerprinting anything — it
-   * runs on every brush stroke. Lowering it means fingerprinting every map, so
-   * a save calls this **once**, when it is done: doing it per file would make a
-   * save of N maps cost N² serialisations.
-   */
-  refreshDirty(): void {
-    this.dirtySignal.set(this.hasUnwrittenChanges());
-  }
-
   // --------------------------------------------------------------- storage
 
   private persist(): void {
-    if (!BUILD_FEATURES.editor) {
+    // Nothing edited yet is nothing to recover: a project just loaded is
+    // already on disk, and mirroring it here would make the *next* load call
+    // itself `restored` when it had restored nothing.
+    //
+    // Against `openedAt` rather than zero, because an effect runs *after* the
+    // signals it watches settle: `resetToShipped` adopts, clears storage, and
+    // this then runs — so a session that had edited anything before the reset
+    // would write the mirror straight back over the clearing.
+    if (!BUILD_FEATURES.editor || !this.manifest.loaded() || this.edits() === this.openedAt) {
       return;
     }
-    const project = this.projectSignal();
-    const activeWorldId = this.activeIdSignal();
-    if (project === null || activeWorldId === null) {
+    const activeWorldId = this.worlds.activeWorldId();
+    if (activeWorldId === null) {
       return;
     }
     try {
       const stored: StoredProject = {
-        project: this.projectDefinition(),
-        worlds: this.definitions(),
+        project: this.ledger.projectDefinition(),
+        worlds: this.worlds.definitions(),
         activeWorldId,
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
@@ -948,6 +330,20 @@ export class ProjectStoreService {
       // Nothing to do; see persist().
     }
   }
+}
+
+/** Fetches every tile set the manifest lists, keyed by id. */
+async function fetchTileSets(
+  project: ProjectDefinition,
+): Promise<ReadonlyMap<string, TileSetDefinition>> {
+  return new Map(
+    await Promise.all(
+      project.tileSets.map(
+        async (entry) =>
+          [entry.id, await fetchJson<TileSetDefinition>(contentUrl(entry.path))] as const,
+      ),
+    ),
+  );
 }
 
 /**

@@ -57,6 +57,8 @@ import {
 import { EngineService } from '../../../services/engine.service';
 import { LocaleAuthoringService } from '../../../services/locale-authoring.service';
 import { ObjectLibraryService } from '../../../services/object-library.service';
+import { ProjectManifest } from '../../../project/project-manifest';
+import { WriteLedger } from '../../../project/write-ledger';
 import { CONTENT_ROOT, ProjectStoreService } from '../../../services/project-store.service';
 import { AssetWorkspace } from './asset-workspace';
 import { clampResolution, move } from './asset-editing';
@@ -88,6 +90,8 @@ const DEFAULT_ZOOM = 8;
 })
 export class ObjectWorkspace implements OnDestroy {
   private readonly store = inject(ProjectStoreService);
+  private readonly manifest = inject(ProjectManifest);
+  private readonly ledger = inject(WriteLedger);
   private readonly engine = inject(EngineService);
   private readonly i18n = inject(I18nService);
   private readonly workspace = inject(ContentWorkspaceService);
@@ -123,7 +127,7 @@ export class ObjectWorkspace implements OnDestroy {
   private readonly drafts = new DraftSet<ObjectDefinition>(this.draftSource(), {
     i18n: this.i18n,
     workspace: this.workspace,
-    manifest: this.store,
+    ledger: this.ledger,
     locales: this.locales,
   });
 
@@ -157,7 +161,7 @@ export class ObjectWorkspace implements OnDestroy {
   /** Path this definition's file has, declared or by convention. */
   protected readonly path = computed(() => {
     const document = this.document();
-    return document === null ? '' : this.store.objectPath(document.id);
+    return document === null ? '' : this.manifest.objectPath(document.id);
   });
 
   /** `true` when the open definition, or a frame it owns, differs from disk. */
@@ -172,7 +176,7 @@ export class ObjectWorkspace implements OnDestroy {
     if (document === null) {
       return false;
     }
-    return !(this.store.project()?.objects ?? []).some((entry) => entry.id === document.id);
+    return !this.manifest.objects().some((entry) => entry.id === document.id);
   });
 
   /** The canvas every frame of the open icon is drawn on. */
@@ -262,15 +266,15 @@ export class ObjectWorkspace implements OnDestroy {
         await this.library.ensureLoaded();
         await this.refreshFiles();
       },
-      declared: () => this.store.project()?.objects ?? [],
+      declared: () => this.manifest.objects(),
       read: (entry) => this.fetchObject(entry),
-      pathOf: (id) => this.store.objectPath(id),
+      pathOf: (id) => this.manifest.objectPath(id),
       serialize: (document) => serializeObject(document),
       validate: (_document, json) => this.engine.validateObject(json),
       adopt: (id, json) => this.library.adopt(id, json),
       forget: (id) => this.library.forget(id),
-      declare: (id, path) => this.store.declareObject(id, path),
-      undeclare: (id) => this.store.undeclareObject(id),
+      declare: (id, path) => this.manifest.declareObject(id, path),
+      undeclare: (id) => this.manifest.undeclareObject(id),
       dirtySprites: (document) => {
         this.strokes();
         return (document.frames ?? []).filter(

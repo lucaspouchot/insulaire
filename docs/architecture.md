@@ -169,7 +169,7 @@ browser. `cargo test` runs the entire simulation without WASM.
   **files win**: storage restores the maps it holds and contributes manifest
   entries the file does not have, but never removes or redirects one. Anything
   else hides what an author wrote by hand and lets the next save overwrite it.
-  See ADR-0019 and `project-store.service.ts`.
+  See ADR-0019, `project-store.service.ts` and `app/project/write-ledger.ts`.
 - **Text ↔ language** — no string is written where it is displayed: a template
   names a key, the engine flattens the project's locale files and applies the
   default-language fallback. See ADR-0020.

@@ -14,6 +14,7 @@ import { ContentWorkspaceService } from './content-workspace.service';
 import { EngineService } from './engine.service';
 import { LocaleAuthoringService } from './locale-authoring.service';
 import { ProjectStoreService } from './project-store.service';
+import { ProjectManifest } from '../project/project-manifest';
 import { LocaleView } from '../../engine/engine.types';
 import { I18nService } from '../i18n/i18n.service';
 
@@ -80,7 +81,7 @@ function setup(): {
   locales: LocaleAuthoringService;
   engine: FakeEngine;
   workspace: FakeWorkspace;
-  store: ProjectStoreService;
+  manifest: ProjectManifest;
 } {
   const engine = new FakeEngine();
   const workspace = new FakeWorkspace();
@@ -95,7 +96,8 @@ function setup(): {
   // The manifest as if it had been fetched, with no files to load behind it.
   store.setLocaleFiles([]);
   Reflect.set(store, 'loading', Promise.resolve());
-  Reflect.get(store, 'projectSignal').set(PROJECT);
+  const manifest = TestBed.inject(ProjectManifest);
+  manifest.adopt(PROJECT);
 
   const i18n = TestBed.inject(I18nService);
   i18n.adopt(
@@ -107,7 +109,7 @@ function setup(): {
     'en',
   );
 
-  return { locales: TestBed.inject(LocaleAuthoringService), engine, workspace, store };
+  return { locales: TestBed.inject(LocaleAuthoringService), engine, workspace, manifest };
 }
 
 describe('LocaleAuthoringService', () => {
@@ -168,7 +170,7 @@ describe('LocaleAuthoringService', () => {
   });
 
   it('declares a namespace the manifest did not have, so its keys survive', async () => {
-    const { locales, workspace, store } = setup();
+    const { locales, workspace, manifest } = setup();
     await locales.ensureLoaded();
 
     locales.ensureKeys(['credits.author']);
@@ -177,7 +179,7 @@ describe('LocaleAuthoringService', () => {
     expect(outcome.manifestChanged).toBe(true);
     expect(workspace.written.has('locales/fr/credits.json')).toBe(true);
     expect(workspace.written.get('project.json')).toContain('locales/en/credits.json');
-    const files = store.project()?.locales?.languages?.[0]?.files ?? [];
+    const files = manifest.languages()[0]?.files ?? [];
     expect(files.map((file) => file.id)).toEqual(['menu', 'credits']);
   });
 });

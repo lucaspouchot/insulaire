@@ -17,12 +17,13 @@ import { Injectable, inject, signal } from '@angular/core';
 
 import { TitleScreenDefinition } from '../../content/content-types';
 import { EngineService } from './engine.service';
-import { ProjectStoreService, contentUrl } from './project-store.service';
+import { ProjectManifest } from '../project/project-manifest';
+import { contentUrl } from './project-store.service';
 
 @Injectable({ providedIn: 'root' })
 export class TitleScreenService {
   private readonly engine = inject(EngineService);
-  private readonly store = inject(ProjectStoreService);
+  private readonly manifest = inject(ProjectManifest);
 
   /** The registered screen, defaults filled in by the engine; `null` when none. */
   readonly screen = signal<TitleScreenDefinition | null>(null);
@@ -44,8 +45,8 @@ export class TitleScreenService {
 
   private async load(): Promise<TitleScreenDefinition | null> {
     await this.engine.ready();
-    const declared = this.store.project()?.titleScreen;
-    if (declared === undefined) {
+    const declared = this.manifest.titleScreen();
+    if (declared === null) {
       return null;
     }
 

@@ -70,6 +70,9 @@ import { ignoresGameplayShortcut } from '../../../core/keyboard-shortcuts';
 import { describeError } from '../../../core/errors';
 import { TranslatePipe } from '../../i18n/translate.pipe';
 import { EngineService } from '../../services/engine.service';
+import { TileSetLibrary } from '../../project/tile-set-library';
+import { WorldLibrary } from '../../project/world-library';
+import { WriteLedger } from '../../project/write-ledger';
 import { ProjectStoreService, contentUrl } from '../../services/project-store.service';
 import { CharacterLibraryService } from '../../services/character-library.service';
 import { DecorationLibraryService } from '../../services/decoration-library.service';
@@ -124,6 +127,9 @@ export class PlayPage implements AfterViewInit, OnDestroy {
   private readonly canvasRef = viewChild.required<ElementRef<HTMLCanvasElement>>('canvas');
   private readonly engine = inject(EngineService);
   private readonly store = inject(ProjectStoreService);
+  private readonly worlds = inject(WorldLibrary);
+  private readonly tileSets = inject(TileSetLibrary);
+  private readonly ledger = inject(WriteLedger);
   private readonly route = inject(ActivatedRoute);
   private readonly i18n = inject(I18nService);
   private readonly settings = inject(SettingsService);
@@ -362,13 +368,13 @@ export class PlayPage implements AfterViewInit, OnDestroy {
     this.decorations.register();
     this.objects.register();
     this.characterCreation.register();
-    for (const tileSet of this.store.tileSetDefinitions()) {
+    for (const tileSet of this.tileSets.tileSetDefinitions()) {
       this.engine.loadTileSet(JSON.stringify(tileSet));
     }
-    for (const definition of this.store.definitions()) {
+    for (const definition of this.worlds.definitions()) {
       this.engine.loadWorld(serializeWorld(definition));
     }
-    this.engine.loadProject(this.store.projectJson());
+    this.engine.loadProject(this.ledger.projectJson());
 
     // Dangling doors are worth saying out loud rather than discovering by
     // walking into one: the runtime degrades, it does not crash.
@@ -387,8 +393,8 @@ export class PlayPage implements AfterViewInit, OnDestroy {
    */
   private startWorldId(): string {
     const requested = this.route.snapshot.queryParamMap.get('world');
-    const known = this.store.documents().some((document) => document.id === requested);
-    return known && requested !== null ? requested : this.store.requireProject().startWorld;
+    const known = this.worlds.documents().some((document) => document.id === requested);
+    return known && requested !== null ? requested : this.ledger.projectDefinition().startWorld;
   }
 
   /**

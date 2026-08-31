@@ -78,6 +78,7 @@ import {
 import { TranslatePipe } from '../../../i18n/translate.pipe';
 import { ContentWorkspaceService } from '../../../services/content-workspace.service';
 import { EngineService } from '../../../services/engine.service';
+import { TileSetLibrary } from '../../../project/tile-set-library';
 import {
   CONTENT_ROOT,
   ProjectStoreService,
@@ -135,6 +136,7 @@ const MAX_PREVIEW_ELEVATION = 24;
 })
 export class TileWorkspace implements AfterViewInit, OnDestroy {
   private readonly store = inject(ProjectStoreService);
+  private readonly tileSets = inject(TileSetLibrary);
   private readonly workspace = inject(ContentWorkspaceService);
   private readonly engine = inject(EngineService);
 
@@ -237,7 +239,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
 
   constructor() {
     void this.store.ensureLoaded().then(() => {
-      this.tileSetId.set(this.store.tileSetDefinitions()[0]?.id ?? null);
+      this.tileSetId.set(this.tileSets.tileSetDefinitions()[0]?.id ?? null);
       this.selectedTileId.set(this.tileSet()?.tiles[0]?.id ?? null);
       this.revision.update((value) => value + 1);
     });
@@ -290,7 +292,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
   /** Ids of every tile set the project loaded. */
   protected readonly tileSetIds = computed(() => {
     this.revision();
-    return this.store.tileSetDefinitions().map((set) => set.id);
+    return this.tileSets.tileSetDefinitions().map((set) => set.id);
   });
 
   /**
@@ -314,7 +316,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
       if (working !== undefined) {
         return working;
       }
-      return this.store.tileSetDefinitions().find((set) => set.id === id) ?? null;
+      return this.tileSets.tileSetDefinitions().find((set) => set.id === id) ?? null;
     },
     { equal: () => false },
   );
@@ -919,10 +921,10 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
         sprite.markSaved();
         written += 1;
       }
-      const path = this.store.tileSetPath(set.id);
+      const path = this.tileSets.tileSetPath(set.id);
       await this.workspace.writeJson(path, serializeTileSet(set));
 
-      this.store.replaceTileSet(structuredClone(set));
+      this.tileSets.replaceTileSet(structuredClone(set));
       this.engine.loadTileSet(serializeTileSet(set));
       this.working.delete(set.id);
       this.cache.clear();

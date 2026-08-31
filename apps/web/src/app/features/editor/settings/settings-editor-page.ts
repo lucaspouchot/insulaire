@@ -50,7 +50,9 @@ import { ContentWorkspaceService } from '../../../services/content-workspace.ser
 import { EngineService } from '../../../services/engine.service';
 import { LocaleAuthoringService } from '../../../services/locale-authoring.service';
 import { SettingsService } from '../../../settings/settings.service';
-import { CONTENT_ROOT, ProjectStoreService } from '../../../services/project-store.service';
+import { ProjectManifest } from '../../../project/project-manifest';
+import { WriteLedger } from '../../../project/write-ledger';
+import { CONTENT_ROOT } from '../../../services/project-store.service';
 import { assetUrl } from '../../../../core/asset-url';
 import { DraftSet } from '../../../editing/draft-set';
 import { DraftSource } from '../../../editing/draft-source';
@@ -67,7 +69,8 @@ const DEFAULT_PATH = 'settings.json';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SettingsEditorPage {
-  private readonly store = inject(ProjectStoreService);
+  private readonly manifest = inject(ProjectManifest);
+  private readonly ledger = inject(WriteLedger);
   private readonly engine = inject(EngineService);
   private readonly i18n = inject(I18nService);
   private readonly workspace = inject(ContentWorkspaceService);
@@ -85,7 +88,7 @@ export class SettingsEditorPage {
   private readonly drafts = new DraftSet<SettingsDefinition>(this.draftSource(), {
     i18n: this.i18n,
     workspace: this.workspace,
-    manifest: this.store,
+    ledger: this.ledger,
     locales: this.locales,
   });
 
@@ -108,7 +111,7 @@ export class SettingsEditorPage {
   protected readonly isNumeric = isNumeric;
 
   /** Path the manifest gives the settings, or the conventional one. */
-  protected readonly path = computed(() => this.store.project()?.settings?.path ?? DEFAULT_PATH);
+  protected readonly path = computed(() => this.manifest.settings()?.path ?? DEFAULT_PATH);
 
   /**
    * The id the manifest expects, when it declares one.
@@ -117,10 +120,10 @@ export class SettingsEditorPage {
    * `project.unloadedSettings` — but it is this screen's job to make it
    * impossible to walk into by accident.
    */
-  protected readonly declaredId = computed(() => this.store.project()?.settings?.id ?? null);
+  protected readonly declaredId = computed(() => this.manifest.settings()?.id ?? null);
 
   /** `true` when the manifest does not point at this file at all. */
-  protected readonly unlisted = computed(() => this.store.project()?.settings === undefined);
+  protected readonly unlisted = computed(() => this.manifest.settings() === null);
 
   /** `true` when files can actually be written — the editor is honest about it. */
   protected readonly writable = computed(() => this.workspace.status() !== null);
@@ -208,8 +211,8 @@ export class SettingsEditorPage {
         await this.locales.ensureLoaded();
       },
       declared: () => {
-        const declared = this.store.project()?.settings;
-        return declared === undefined ? [] : [declared];
+        const declared = this.manifest.settings();
+        return declared === null ? [] : [declared];
       },
       read: async (entry) => {
         const json = await fetchText(assetUrl(`${CONTENT_ROOT}/${entry.path}`));

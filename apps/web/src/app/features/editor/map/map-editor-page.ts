@@ -80,6 +80,10 @@ import { ObjectLibraryService } from '../../../services/object-library.service';
 import { TitleScreenService } from '../../../services/title-screen.service';
 import { EngineService } from '../../../services/engine.service';
 import { ContentWorkspaceService } from '../../../services/content-workspace.service';
+import { ProjectManifest } from '../../../project/project-manifest';
+import { TileSetLibrary } from '../../../project/tile-set-library';
+import { WorldLibrary } from '../../../project/world-library';
+import { WriteLedger } from '../../../project/write-ledger';
 import { ProjectStoreService, contentUrl } from '../../../services/project-store.service';
 import { slugId } from '../../../editing/ids';
 
@@ -128,6 +132,10 @@ const EXTENT_STEP = 4;
 export class MapEditorPage implements AfterViewInit, OnDestroy {
   private readonly canvasRef = viewChild.required<ElementRef<HTMLCanvasElement>>('canvas');
   private readonly store = inject(ProjectStoreService);
+  private readonly manifest = inject(ProjectManifest);
+  private readonly worlds = inject(WorldLibrary);
+  private readonly tileSets = inject(TileSetLibrary);
+  private readonly ledger = inject(WriteLedger);
   private readonly engine = inject(EngineService);
   private readonly i18n = inject(I18nService);
   private readonly settings = inject(SettingsService);
@@ -166,11 +174,11 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   /** Set once the map has been framed; see {@link frameOnce}. */
   private framed = false;
 
-  protected readonly document = this.store.document;
-  protected readonly dirty = this.store.dirty;
-  protected readonly source = this.store.source;
-  protected readonly maps = this.store.worldChoices;
-  protected readonly activeWorldId = this.store.activeWorldId;
+  protected readonly document = this.worlds.document;
+  protected readonly dirty = this.ledger.dirty;
+  protected readonly source = this.worlds.source;
+  protected readonly maps = this.worlds.worldChoices;
+  protected readonly activeWorldId = this.worlds.activeWorldId;
 
   protected readonly tool = signal<EditorTool>('paint');
   protected readonly selectedTile = signal<string | null>(null);
@@ -298,7 +306,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     for (const map of this.maps()) {
       counts.set(map.zone, (counts.get(map.zone) ?? 0) + 1);
     }
-    return this.store.zones().map((zone) => ({
+    return this.manifest.zones().map((zone) => ({
       id: zone.id,
       label: zone.name === undefined || zone.name.length === 0 ? zone.id : zone.name,
       count: counts.get(zone.id) ?? 0,
@@ -314,7 +322,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   protected readonly openZoneId = computed(() => {
     this.revision();
     const zone = this.document()?.zone ?? '';
-    return zone.length > 0 ? zone : this.store.defaultZoneId();
+    return zone.length > 0 ? zone : this.manifest.defaultZoneId();
   });
 
   /** The maps the picker lists: those of the chosen zone, or all of them. */
@@ -483,11 +491,11 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
    */
   protected setPlacementInteractive(id: string, interactive: boolean): void {
-    const document = this.store.document();
+    const document = this.worlds.document();
     if (document === null || !document.updateDecoration(id, { interactive })) {
       return;
     }
-    this.store.touch();
+    this.ledger.touch();
     this.report.set(null);
     this.message.set(null);
     this.refresh();
@@ -502,7 +510,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
    */
   protected setPlacementId(id: string, input: HTMLInputElement): void {
-    const document = this.store.document();
+    const document = this.worlds.document();
     const next = input.value.trim();
     if (document === null || next === id) {
       return;
@@ -519,7 +527,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       this.selectedPlacement.set(next);
     }
     this.error.set(null);
-    this.store.touch();
+    this.ledger.touch();
     this.report.set(null);
     this.message.set(null);
     this.refresh();
@@ -559,7 +567,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   }
 
   private movePlacement(id: string, move: (offset: PixelOffset) => PixelOffset): void {
-    const document = this.store.document();
+    const document = this.worlds.document();
     const placed = document?.placedDecorations.find((candidate) => candidate.id === id);
     if (document === null || placed === undefined) {
       return;
@@ -568,7 +576,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       return;
     }
     this.selectedPlacement.set(id);
-    this.store.touch();
+    this.ledger.touch();
     this.report.set(null);
     this.message.set(null);
     this.refresh();
@@ -576,14 +584,14 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
 
   /** Removes one placement, whatever else stands on its cell. */
   protected removePlacement(id: string): void {
-    const document = this.store.document();
+    const document = this.worlds.document();
     if (document === null || !document.removeDecoration(id)) {
       return;
     }
     if (this.selectedPlacement() === id) {
       this.selectedPlacement.set(null);
     }
-    this.store.touch();
+    this.ledger.touch();
     this.report.set(null);
     this.message.set(null);
     this.refresh();
@@ -633,7 +641,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       .catch(() => undefined);
     void this.objects.ensureLoaded().catch(() => undefined);
 
-    const document = this.store.requireDocument();
+    const document = this.worlds.requireDocument();
     this.selectedTile.set(document.palette[0]?.id ?? null);
     this.syncPreviewBrushes(document);
 
@@ -732,7 +740,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     const next = character.length === 0 ? null : character;
     (tool === 'player' ? this.playerPreviewCharacter : this.monsterPreviewCharacter).set(next);
 
-    const document = this.store.document();
+    const document = this.worlds.document();
     if (document === null) {
       return;
     }
@@ -748,11 +756,11 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       entity.templateId === tool &&
       document.setEntityPreviewCharacter(entity.id, next)
     ) {
-      this.store.touch();
+      this.ledger.touch();
       // Choosing the marker again is a real undo; unlike brush strokes this is
       // rare enough that checking every map here is cheap and keeps `dirty`
       // honest.
-      this.store.refreshDirty();
+      this.ledger.refreshDirty();
       this.report.set(null);
       this.message.set(null);
     }
@@ -762,11 +770,11 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   /**
    * Applies the active tool to a cell.
    *
-   * Every branch that changes something calls {@link ProjectStoreService.touch},
+   * Every branch that changes something calls {@link WriteLedger.touch},
    * which persists the project and marks it dirty.
    */
   private applyTool(cell: Offset): void {
-    const document = this.store.document();
+    const document = this.worlds.document();
     if (document === null) {
       return;
     }
@@ -833,7 +841,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     }
 
     if (changed) {
-      this.store.touch();
+      this.ledger.touch();
       this.report.set(null);
       this.message.set(null);
     }
@@ -887,7 +895,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    * cells arrive absent: blank canvas, not a slab of terrain.
    */
   protected extend(side: 'north' | 'south' | 'east' | 'west', steps: number): void {
-    const document = this.store.document();
+    const document = this.worlds.document();
     if (document === null) {
       return;
     }
@@ -917,7 +925,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     if (!document.resize(next)) {
       return;
     }
-    this.store.touch();
+    this.ledger.touch();
     this.report.set(null);
     this.message.set(null);
     this.framed = false;
@@ -949,14 +957,14 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    */
   protected setCellArt(field: 'surface' | 'elevationTile' | 'elevation', value: string): void {
     const cell = this.selected();
-    const document = this.store.document();
+    const document = this.worlds.document();
     if (cell === null || document === null) {
       return;
     }
     if (!document.setArt(cell, { [field]: value.length === 0 ? null : value })) {
       return;
     }
-    this.store.touch();
+    this.ledger.touch();
     this.report.set(null);
     this.refresh();
   }
@@ -964,14 +972,14 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   /** Puts every choice on the selected hex back on the roll. */
   protected rollCellArt(): void {
     const cell = this.selected();
-    const document = this.store.document();
+    const document = this.worlds.document();
     if (cell === null || document === null) {
       return;
     }
     if (!document.setArt(cell, { surface: null, elevationTile: null, elevation: null })) {
       return;
     }
-    this.store.touch();
+    this.ledger.touch();
     this.report.set(null);
     this.refresh();
   }
@@ -1004,11 +1012,11 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   /** Removes the selected door. */
   protected removeSelectedLink(): void {
     const cell = this.selected();
-    const document = this.store.document();
+    const document = this.worlds.document();
     if (cell === null || document === null || !document.removeLinkAt(cell)) {
       return;
     }
-    this.store.touch();
+    this.ledger.touch();
     this.report.set(null);
     this.rebuild();
   }
@@ -1022,11 +1030,11 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
 
   private updateSelectedLink(patch: Partial<Omit<DocumentLink, 'id' | 'at'>>): void {
     const cell = this.selected();
-    const document = this.store.document();
+    const document = this.worlds.document();
     if (cell === null || document === null || !document.updateLink(cell, patch)) {
       return;
     }
-    this.store.touch();
+    this.ledger.touch();
     this.report.set(null);
     this.rebuild();
   }
@@ -1078,7 +1086,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     revealOpacity: string,
     revealNeighbourOpacity: string,
   ): void {
-    if (this.store.setZone(zone)) {
+    if (this.worlds.setZone(zone)) {
       // Follow the map into its new zone rather than letting the picker filter
       // out the map it is meant to be showing.
       if (this.zoneFilter() !== null) {
@@ -1086,7 +1094,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       }
       this.message.set(this.i18n.t('ui.editor.map.message.movedToZone', { zone }));
     }
-    const document = this.store.document();
+    const document = this.worlds.document();
     const parsedHeight = Number(characterHeightTiles);
     if (document !== null && Number.isFinite(parsedHeight)) {
       const nextHeight = Math.min(
@@ -1095,7 +1103,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       );
       if (document.characterHeightTiles !== nextHeight) {
         document.characterHeightTiles = nextHeight;
-        this.store.touch();
+        this.ledger.touch();
         this.report.set(null);
       }
     }
@@ -1103,7 +1111,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       document !== null &&
       this.applyReveal(document, revealRadius, revealOpacity, revealNeighbourOpacity)
     ) {
-      this.store.touch();
+      this.ledger.touch();
       this.report.set(null);
     }
     this.renameWorld(id, name);
@@ -1146,7 +1154,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   /** Declares a zone, named by the author; the id is derived from the name. */
   protected createZone(name: string): void {
     const id = slugify(name);
-    if (!this.store.addZone(id, name)) {
+    if (!this.worlds.addZone(id, name)) {
       this.error.set(
         id.length === 0
           ? 'Give the zone a name.'
@@ -1165,7 +1173,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     if (zone === null) {
       return;
     }
-    if (!this.store.removeZone(zone)) {
+    if (!this.worlds.removeZone(zone)) {
       this.error.set(
         `Zone "${zone}" still holds maps, or is the project's only zone. Move its maps first.`,
       );
@@ -1177,8 +1185,8 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   }
 
   protected switchMap(worldId: string): void {
-    this.store.selectWorld(worldId);
-    const document = this.store.document();
+    this.worlds.selectWorld(worldId);
+    const document = this.worlds.document();
     if (document !== null) {
       this.selectedTile.set(document.palette[0]?.id ?? null);
       this.syncPreviewBrushes(document);
@@ -1211,10 +1219,10 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
         name: name.trim() || 'New Map',
         width,
         height,
-        tileSet: this.store.requireTileSet(),
-        zone: zone.length > 0 ? zone : this.store.defaultZoneId(),
+        tileSet: this.tileSets.requireTileSet(),
+        zone: zone.length > 0 ? zone : this.manifest.defaultZoneId(),
       });
-      this.store.addWorld(document);
+      this.worlds.addWorld(document);
       this.selectedTile.set(document.palette[0]?.id ?? null);
       this.syncPreviewBrushes(document);
       if (this.zoneFilter() !== null) {
@@ -1231,8 +1239,8 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   }
 
   protected renameWorld(id: string, name: string): void {
-    const nextId = slugify(id) || this.store.requireDocument().id;
-    if (!this.store.renameWorld(nextId, name.trim() || nextId)) {
+    const nextId = slugify(id) || this.worlds.requireDocument().id;
+    if (!this.worlds.renameWorld(nextId, name.trim() || nextId)) {
       this.error.set(this.i18n.t('ui.editor.map.error.idTaken', { id: nextId }));
       return;
     }
@@ -1241,17 +1249,17 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   }
 
   protected removeWorld(): void {
-    const document = this.store.document();
+    const document = this.worlds.document();
     if (document === null) {
       return;
     }
-    if (!this.store.removeWorld(document.id)) {
+    if (!this.worlds.removeWorld(document.id)) {
       this.error.set(this.i18n.t('ui.editor.map.error.lastMap'));
       return;
     }
     this.message.set(this.i18n.t('ui.editor.map.message.mapRemoved', { id: document.id }));
     this.selected.set(null);
-    const next = this.store.document();
+    const next = this.worlds.document();
     if (next !== null) {
       this.syncPreviewBrushes(next);
     }
@@ -1267,8 +1275,8 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       return;
     }
     this.selected.set(null);
-    this.selectedTile.set(this.store.document()?.palette[0]?.id ?? null);
-    const document = this.store.document();
+    this.selectedTile.set(this.worlds.document()?.palette[0]?.id ?? null);
+    const document = this.worlds.document();
     if (document !== null) {
       this.syncPreviewBrushes(document);
     }
@@ -1291,8 +1299,8 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       // A world is validated *against its tile set*, so the tile set has to be
       // registered first. Loading it again is harmless: the registry replaces
       // an existing entry with the same id.
-      this.engine.loadTileSet(JSON.stringify(this.store.requireTileSet()));
-      const report = this.engine.validateWorld(this.store.currentJson());
+      this.engine.loadTileSet(JSON.stringify(this.tileSets.requireTileSet()));
+      const report = this.engine.validateWorld(this.worlds.currentJson());
       this.report.set(report);
       return report;
     } catch (cause) {
@@ -1312,8 +1320,8 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    * {@link reconcileManifest} for the rest of what a save owes the directory.
    */
   protected async saveWorld(): Promise<void> {
-    const definition = this.store.currentDefinition();
-    const path = this.store.worldPath(definition.id);
+    const definition = this.worlds.currentDefinition();
+    const path = this.ledger.worldPath(definition.id);
 
     await this.write(async () => {
       const report = this.validate();
@@ -1326,9 +1334,9 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       }
 
       const parts: string[] = [];
-      if (this.store.worldNeedsWriting(definition.id)) {
+      if (this.ledger.worldNeedsWriting(definition.id)) {
         await this.workspace.writeJson(path, serializeWorld(definition));
-        this.store.markWorldWritten(definition.id);
+        this.ledger.markWorldWritten(definition.id);
         parts.push(this.i18n.t('ui.editor.map.message.savedMap', { file: path }));
       } else {
         parts.push(this.i18n.t('ui.editor.map.message.mapUpToDate', { file: path }));
@@ -1357,16 +1365,16 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       }
 
       const byId = new Map(
-        this.store.definitions().map((definition) => [definition.id, definition]),
+        this.worlds.definitions().map((definition) => [definition.id, definition]),
       );
-      const changed = this.store.changedWorldIds();
+      const changed = this.ledger.changedWorldIds();
       for (const id of changed) {
         const definition = byId.get(id);
         if (definition === undefined) {
           continue;
         }
-        await this.workspace.writeJson(this.store.worldPath(id), serializeWorld(definition));
-        this.store.markWorldWritten(id);
+        await this.workspace.writeJson(this.ledger.worldPath(id), serializeWorld(definition));
+        this.ledger.markWorldWritten(id);
       }
 
       const parts =
@@ -1393,16 +1401,16 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   private async reconcileManifest(): Promise<string[]> {
     const parts: string[] = [];
 
-    if (this.store.manifestNeedsWriting()) {
-      await this.workspace.writeJson('project.json', this.store.projectJson());
-      this.store.markManifestWritten();
+    if (this.ledger.manifestNeedsWriting()) {
+      await this.workspace.writeJson('project.json', this.ledger.projectJson());
+      this.ledger.markManifestWritten();
       parts.push(this.i18n.t('ui.editor.map.message.savedManifest'));
     }
 
-    const orphans = this.store.orphanedWorlds();
+    const orphans = this.ledger.orphanedWorlds();
     for (const orphan of orphans) {
       await this.workspace.remove(orphan.path);
-      this.store.markWorldDeleted(orphan.id);
+      this.ledger.markWorldDeleted(orphan.id);
     }
     if (orphans.length > 0) {
       parts.push(
@@ -1437,7 +1445,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       // Once, at the end: what is still unwritten is a question about every map,
       // and asking it per file would cost a serialisation of the whole project
       // per file written.
-      this.store.refreshDirty();
+      this.ledger.refreshDirty();
       this.busy.set(false);
     }
   }
@@ -1459,7 +1467,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       // content the validator would reject, and a thrown error is a worse
       // report than the one the validator writes.
       this.resetEngineContent();
-      for (const definition of this.store.definitions()) {
+      for (const definition of this.worlds.definitions()) {
         const json = serializeWorld(definition);
         const report = this.engine.validateWorld(json);
         if (!report.valid) {
@@ -1486,7 +1494,10 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     }
     try {
       const definition = JSON.parse(await file.text()) as WorldDefinition;
-      const document = this.store.importDefinition(definition);
+      const document = this.worlds.importDefinition(
+        definition,
+        this.tileSets.requireTileSetFor(definition.tileSetId),
+      );
       this.selectedTile.set(document.palette[0]?.id ?? null);
       this.syncPreviewBrushes(document);
       this.report.set(null);
@@ -1514,7 +1525,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    */
   private loadProjectIntoEngine(): void {
     this.resetEngineContent();
-    for (const definition of this.store.definitions()) {
+    for (const definition of this.worlds.definitions()) {
       this.engine.loadWorld(serializeWorld(definition));
     }
   }
@@ -1536,7 +1547,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     this.characters.register();
     this.decorations.register();
     this.objects.register();
-    for (const tileSet of this.store.tileSetDefinitions()) {
+    for (const tileSet of this.tileSets.tileSetDefinitions()) {
       this.engine.loadTileSet(JSON.stringify(tileSet));
     }
   }
@@ -1578,12 +1589,12 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   }
 
   private updateGridStyle(patch: { lineWidth?: number; color?: string; alpha?: number }): void {
-    const document = this.store.document();
+    const document = this.worlds.document();
     if (document === null || !document.setGridStyle(patch)) {
       return;
     }
-    this.store.touch();
-    this.store.refreshDirty();
+    this.ledger.touch();
+    this.ledger.refreshDirty();
     this.report.set(null);
     this.message.set(null);
     this.rebuild();
@@ -1606,12 +1617,12 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    * the exported world exactly the way the editor shows it.
    */
   protected toggleProjection(): void {
-    const document = this.store.document();
+    const document = this.worlds.document();
     if (document === null) {
       return;
     }
     document.projection = document.projection === 'isometric' ? 'topDown' : 'isometric';
-    this.store.touch();
+    this.ledger.touch();
     this.report.set(null);
     this.message.set(null);
     this.rebuild();
@@ -1686,7 +1697,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   /** Rebuilds the render model from the document and redraws. */
   private rebuild(): void {
     this.syncZoneFilter();
-    const document = this.store.document();
+    const document = this.worlds.document();
     if (document !== null) {
       this.renderer?.setModel(this.buildModel(document));
     }
@@ -1721,7 +1732,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
 
   /** Redraws with the current model and lets computed views recompute. */
   private refresh(): void {
-    const document = this.store.document();
+    const document = this.worlds.document();
     if (document !== null && this.renderer !== null) {
       this.renderer.setModel(this.buildModel(document));
     }

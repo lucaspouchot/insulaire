@@ -23,7 +23,8 @@ import { inject, signal } from '@angular/core';
 
 import { ContentRef } from '../../content/content-types';
 import { EngineService } from './engine.service';
-import { ProjectStoreService, contentUrl } from './project-store.service';
+import { ProjectManifest } from '../project/project-manifest';
+import { contentUrl } from './project-store.service';
 
 /** The least a picker needs of any definition. */
 export interface LibraryChoice {
@@ -33,7 +34,7 @@ export interface LibraryChoice {
 
 export abstract class ContentLibrary<TChoice extends LibraryChoice> {
   protected readonly engine = inject(EngineService);
-  protected readonly store = inject(ProjectStoreService);
+  protected readonly manifest = inject(ProjectManifest);
 
   /** Ids of the definitions currently held, in manifest order. */
   readonly ids = signal<readonly string[]>([]);

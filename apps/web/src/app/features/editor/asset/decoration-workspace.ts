@@ -80,6 +80,9 @@ import { CharacterLibraryService } from '../../../services/character-library.ser
 import { DecorationLibraryService } from '../../../services/decoration-library.service';
 import { EngineService } from '../../../services/engine.service';
 import { LocaleAuthoringService } from '../../../services/locale-authoring.service';
+import { ProjectManifest } from '../../../project/project-manifest';
+import { TileSetLibrary } from '../../../project/tile-set-library';
+import { WriteLedger } from '../../../project/write-ledger';
 import { CONTENT_ROOT, ProjectStoreService } from '../../../services/project-store.service';
 import { AssetWorkspace } from './asset-workspace';
 import { clampResolution, move } from './asset-editing';
@@ -155,6 +158,9 @@ const FIGURE_ASPECT = 0.38;
 })
 export class DecorationWorkspace implements AfterViewInit, OnDestroy {
   private readonly store = inject(ProjectStoreService);
+  private readonly manifest = inject(ProjectManifest);
+  private readonly ledger = inject(WriteLedger);
+  private readonly tileSets = inject(TileSetLibrary);
   private readonly engine = inject(EngineService);
   private readonly i18n = inject(I18nService);
   private readonly workspace = inject(ContentWorkspaceService);
@@ -182,7 +188,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
   private readonly drafts = new DraftSet<DecorationDefinition>(this.draftSource(), {
     i18n: this.i18n,
     workspace: this.workspace,
-    manifest: this.store,
+    ledger: this.ledger,
     locales: this.locales,
   });
 
@@ -268,7 +274,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
   /** Path this definition's file has, declared or by convention. */
   protected readonly path = computed(() => {
     const document = this.document();
-    return document === null ? '' : this.store.decorationPath(document.id);
+    return document === null ? '' : this.manifest.decorationPath(document.id);
   });
 
   /** `true` when the open definition, or a frame it owns, differs from disk. */
@@ -283,7 +289,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
     if (document === null) {
       return false;
     }
-    return !(this.store.project()?.decorations ?? []).some((entry) => entry.id === document.id);
+    return !this.manifest.decorations().some((entry) => entry.id === document.id);
   });
 
   /** The canvas the open definition's frames are drawn on. */
@@ -302,7 +308,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
    * (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
    */
   protected readonly geometry = computed<TileArtGeometry>(() => {
-    const tileSet = this.store.tileSetDefinitions()[0];
+    const tileSet = this.tileSets.tileSetDefinitions()[0];
     return tileArtGeometry(tileSet ?? {});
   });
 
@@ -452,17 +458,17 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
         this.figureId.set(this.characters.choices()[0]?.id ?? GENERIC_FIGURE);
         await this.refreshFiles();
       },
-      declared: () => this.store.project()?.decorations ?? [],
+      declared: () => this.manifest.decorations(),
       read: (entry) => this.fetchDecoration(entry),
-      pathOf: (id) => this.store.decorationPath(id),
+      pathOf: (id) => this.manifest.decorationPath(id),
       serialize: (document) => serializeDecoration(document),
       // The project's own grid goes with it: `decoration.overflowsCell` is the
       // one check that needs to know what a hex is.
       validate: (_document, json) => this.engine.validateDecoration(json, this.geometry()),
       adopt: (id, json) => this.library.adopt(id, json),
       forget: (id) => this.library.forget(id),
-      declare: (id, path) => this.store.declareDecoration(id, path),
-      undeclare: (id) => this.store.undeclareDecoration(id),
+      declare: (id, path) => this.manifest.declareDecoration(id, path),
+      undeclare: (id) => this.manifest.undeclareDecoration(id),
       dirtySprites: (document) => {
         this.strokes();
         return (document.animations ?? [])

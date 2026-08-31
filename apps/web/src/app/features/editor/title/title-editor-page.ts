@@ -35,7 +35,9 @@ import {
 } from '../../../services/content-workspace.service';
 import { EngineService } from '../../../services/engine.service';
 import { LocaleAuthoringService } from '../../../services/locale-authoring.service';
-import { CONTENT_ROOT, ProjectStoreService } from '../../../services/project-store.service';
+import { ProjectManifest } from '../../../project/project-manifest';
+import { WriteLedger } from '../../../project/write-ledger';
+import { CONTENT_ROOT } from '../../../services/project-store.service';
 import { assetUrl } from '../../../../core/asset-url';
 import { TitleScreenService } from '../../../services/title-screen.service';
 import { TitlePage } from '../../title/title-page';
@@ -56,7 +58,8 @@ const ACTIONS: readonly TitleAction[] = ['newGame', 'continue', 'settings', 'cre
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class TitleEditorPage {
-  private readonly store = inject(ProjectStoreService);
+  private readonly manifest = inject(ProjectManifest);
+  private readonly ledger = inject(WriteLedger);
   private readonly engine = inject(EngineService);
   private readonly i18n = inject(I18nService);
   private readonly workspace = inject(ContentWorkspaceService);
@@ -74,7 +77,7 @@ export class TitleEditorPage {
   private readonly drafts = new DraftSet<TitleScreenDefinition>(this.draftSource(), {
     i18n: this.i18n,
     workspace: this.workspace,
-    manifest: this.store,
+    ledger: this.ledger,
     locales: this.locales,
   });
 
@@ -95,7 +98,7 @@ export class TitleEditorPage {
 
   /** Path the manifest gives the title screen, or the conventional one. */
   protected readonly path = computed(
-    () => this.store.project()?.titleScreen?.path ?? 'menu/title-screen.json',
+    () => this.manifest.titleScreen()?.path ?? 'menu/title-screen.json',
   );
 
   protected readonly images = computed(() =>
@@ -135,8 +138,8 @@ export class TitleEditorPage {
         await this.refreshFiles();
       },
       declared: () => {
-        const declared = this.store.project()?.titleScreen;
-        return declared === undefined ? [] : [declared];
+        const declared = this.manifest.titleScreen();
+        return declared === null ? [] : [declared];
       },
       read: async (entry) => {
         const response = await fetch(assetUrl(`${CONTENT_ROOT}/${entry.path}`));

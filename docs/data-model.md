@@ -449,17 +449,29 @@ definitions; the library goes on doing its own job for callers with no drafts
 at all.
 
 Two editors are deliberately **not** draft sets. `tile-workspace.ts` edits its
-working copy in place over a lazy overlay on `ProjectStoreService`, and
+working copy in place over a lazy overlay on `TileSetLibrary`, and
 `locale-editor-page.ts` has no draft at all — `LocaleAuthoringService` already
 owns the entries, the dirty flag and the write.
 
-The editor holds **one document per map**, not one document
-(`ProjectStoreService`, `apps/web/src/app/services/project-store.service.ts`),
-together with the manifest and the loaded tile sets. Map links require it: a
-door names another map, so authoring one means having the others in hand, and
-the whole set is what `validateLinks` judges. The store also owns which map is
-open, whether anything is dirty, and the `localStorage` mirror — which only the
-dev build writes (ADR-0015).
+The editor holds **one document per map**, not one document. Map links require
+it: a door names another map, so authoring one means having the others in hand,
+and the whole set is what `validateLinks` judges.
+
+The project the editor holds is **four modules** under
+`apps/web/src/app/project/`, each with its own interface and its own spec, plus
+the service that loads them:
+
+| Module | Owns |
+|---|---|
+| `ProjectManifest` | `project.json` as loaded: one read accessor per list, the declarations the editor makes, the zone list. `ProjectDefinition`'s field names stop here — nothing else reads them. |
+| `WorldLibrary` | the open documents, the active map, add/remove/rename/import, and which zone each map is in |
+| `TileSetLibrary` | the loaded tile sets, their paths, and the document rebuild a replacement forces |
+| `WriteLedger` | the content directory as a baseline, the manifest **as it would be written**, and every question a save asks — including `dirty` |
+| `ProjectStoreService` | loading, `resetToShipped`, and the `localStorage` mirror, which only the dev build writes (ADR-0015) |
+
+A caller injects the one it needs; the store forwards none of them. `dirty` is
+derived from an edit counter each of the first two modules keeps, so a module
+below the ledger can mark the project changed without reaching up to it.
 
 Editor state and runtime state never mix. The only things that cross between
 them are a `WorldDefinition` and a `ProjectDefinition`: files.

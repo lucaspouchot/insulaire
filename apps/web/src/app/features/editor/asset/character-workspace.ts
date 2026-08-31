@@ -114,6 +114,8 @@ import {
 import { CharacterPose, EngineService } from '../../../services/engine.service';
 import { LocaleAuthoringService } from '../../../services/locale-authoring.service';
 import { CharacterLibraryService } from '../../../services/character-library.service';
+import { ProjectManifest } from '../../../project/project-manifest';
+import { WriteLedger } from '../../../project/write-ledger';
 import { CONTENT_ROOT, ProjectStoreService } from '../../../services/project-store.service';
 import { DraftSet } from '../../../editing/draft-set';
 import { DraftSource } from '../../../editing/draft-source';
@@ -202,6 +204,8 @@ const JOINT_COLOR = '#7ac0ff';
 })
 export class CharacterWorkspace implements AfterViewInit, OnDestroy {
   private readonly store = inject(ProjectStoreService);
+  private readonly manifest = inject(ProjectManifest);
+  private readonly ledger = inject(WriteLedger);
   private readonly engine = inject(EngineService);
   private readonly i18n = inject(I18nService);
   private readonly workspace = inject(ContentWorkspaceService);
@@ -220,7 +224,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
   private readonly drafts = new DraftSet<CharacterDefinition>(this.draftSource(), {
     i18n: this.i18n,
     workspace: this.workspace,
-    manifest: this.store,
+    ledger: this.ledger,
     locales: this.locales,
   });
 
@@ -362,7 +366,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
   /** Path this definition's file has, declared or by convention. */
   protected readonly path = computed(() => {
     const document = this.document();
-    return document === null ? '' : this.store.characterPath(document.id);
+    return document === null ? '' : this.manifest.characterPath(document.id);
   });
 
   /** `true` when the open definition, or a sprite it owns, differs from disk. */
@@ -376,7 +380,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
     const document = this.document();
     return (
       document !== null &&
-      !(this.store.project()?.characters ?? []).some((entry) => entry.id === document.id)
+      !this.manifest.characters().some((entry) => entry.id === document.id)
     );
   });
 
@@ -811,15 +815,15 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
         await this.library.ensureLoaded();
         await this.refreshFiles();
       },
-      declared: () => this.store.project()?.characters ?? [],
+      declared: () => this.manifest.characters(),
       read: (entry) => this.fetchCharacter(entry),
-      pathOf: (id) => this.store.characterPath(id),
+      pathOf: (id) => this.manifest.characterPath(id),
       serialize: (document) => serializeCharacter(document),
       validate: (_document, json) => this.engine.validateCharacter(json),
       adopt: (id, json) => this.library.adopt(id, json),
       forget: (id) => this.library.forget(id),
-      declare: (id, path) => this.store.declareCharacter(id, path),
-      undeclare: (id) => this.store.undeclareCharacter(id),
+      declare: (id, path) => this.manifest.declareCharacter(id, path),
+      undeclare: (id) => this.manifest.undeclareCharacter(id),
       dirtySprites: (document) => {
         this.strokes();
         return spriteAssets(document).filter((asset) => this.sessions.get(asset)?.unsaved === true);

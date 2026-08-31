@@ -28,7 +28,7 @@ export interface DecorationChoice extends LibraryChoice {
 @Injectable({ providedIn: 'root' })
 export class DecorationLibraryService extends ContentLibrary<DecorationChoice> {
   protected declared(): readonly ContentRef[] {
-    return this.store.project()?.decorations ?? [];
+    return this.manifest.decorations();
   }
 
   protected registerOne(json: string): void {

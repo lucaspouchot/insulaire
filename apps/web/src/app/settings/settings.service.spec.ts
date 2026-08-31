@@ -12,9 +12,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SettingsService } from './settings.service';
 import { ENGINE_SETTING } from './engine-settings.schema';
-import { ControlDefinition, SettingsValues } from '../../content/content-types';
+import { ControlDefinition, ProjectDefinition, SettingsValues } from '../../content/content-types';
 import { EngineService } from '../services/engine.service';
 import { NativeShellService } from '../services/native-shell.service';
+import { ProjectManifest } from '../project/project-manifest';
 import { ProjectStoreService } from '../services/project-store.service';
 
 /** A stand-in engine that answers with a fixed settings declaration. */
@@ -99,25 +100,24 @@ class FakeEngine {
   }
 }
 
-/** A store whose project declares a settings file. */
+/** A store with nothing fetched behind it; the manifest is adopted directly. */
 class FakeStore {
-  project() {
-    return {
-      id: 'p',
-      schemaVersion: 1,
-      startWorld: 'w',
-      tileSets: [],
-      worlds: [],
-      settings: { id: 'game', path: 'settings.json' },
-    };
-  }
-
   localeFiles() {
     return [];
   }
 
   async ensureLoaded(): Promise<void> {}
 }
+
+/** A project that declares a settings file, for the manifest to answer from. */
+const PROJECT: ProjectDefinition = {
+  id: 'p',
+  schemaVersion: 1,
+  startWorld: 'w',
+  tileSets: [],
+  worlds: [],
+  settings: { id: 'game', path: 'settings.json' },
+};
 
 /** A stand-in shell: `hasWindow` is the whole question the settings ask it. */
 function fakeShell(hasWindow: boolean): Partial<NativeShellService> {
@@ -143,6 +143,7 @@ function setup(shell?: Partial<NativeShellService>): {
       ...(shell === undefined ? [] : [{ provide: NativeShellService, useValue: shell }]),
     ],
   });
+  TestBed.inject(ProjectManifest).adopt(PROJECT);
   return { settings: TestBed.inject(SettingsService), engine };
 }
 

@@ -289,7 +289,7 @@ export class DraftSet<TDraft extends Draft> {
     if (draft === null) {
       return;
     }
-    const { i18n, workspace, manifest, locales } = this.services;
+    const { i18n, workspace, ledger, locales } = this.services;
 
     this.busySignal.set(true);
     this.errorSignal.set(null);
@@ -324,16 +324,16 @@ export class DraftSet<TDraft extends Draft> {
       // rather than flushing an edit another screen has not finished.
       if (this.source.declaredInManifest) {
         this.source.declare(draft.id, path);
-        if (manifest.manifestNeedsWriting()) {
-          await workspace.writeJson('project.json', manifest.projectJson());
-          manifest.markManifestWritten();
+        if (ledger.manifestNeedsWriting()) {
+          await workspace.writeJson('project.json', ledger.projectJson());
+          ledger.markManifestWritten();
           const savedManifest = this.source.messages.savedManifest;
           if (savedManifest !== undefined) {
             parts.push(i18n.t(savedManifest));
           }
         }
       }
-      manifest.refreshDirty();
+      ledger.refreshDirty();
 
       // Every label this file names now exists as a key, in every language, so
       // the Languages tab lists it and a translator can fill it in. A kind with

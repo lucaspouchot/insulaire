@@ -24,6 +24,7 @@ import { Injectable, computed, effect, inject, signal } from '@angular/core';
 
 import { APP_DEFAULT_LANGUAGE, APP_LANGUAGES, APP_STRINGS, flattenStrings } from './app-strings';
 import { EngineService } from '../services/engine.service';
+import { ProjectManifest } from '../project/project-manifest';
 import { LocaleFile, ProjectStoreService } from '../services/project-store.service';
 
 /** Where the language in use came from. */
@@ -46,6 +47,7 @@ const APP_ENTRIES: Record<string, Record<string, string>> = Object.fromEntries(
 export class I18nService {
   private readonly engine = inject(EngineService);
   private readonly store = inject(ProjectStoreService);
+  private readonly manifest = inject(ProjectManifest);
 
   /** Language currently displayed. */
   readonly language = signal<string>(initialLanguage());
@@ -174,13 +176,13 @@ export class I18nService {
   private async runAdoption(): Promise<void> {
     await Promise.all([this.engine.ready(), this.store.ensureLoaded()]);
 
-    const locales = this.store.project()?.locales;
-    const declared = (locales?.languages ?? []).map((language) => ({
+    const declared = this.manifest.languages().map((language) => ({
       id: language.id,
       name: language.name ?? language.id,
     }));
+    const fallback = this.manifest.locales()?.default;
 
-    this.adopt(this.store.localeFiles(), declared, locales?.default ?? declared[0]?.id ?? null);
+    this.adopt(this.store.localeFiles(), declared, fallback ?? declared[0]?.id ?? null);
   }
 
   /**

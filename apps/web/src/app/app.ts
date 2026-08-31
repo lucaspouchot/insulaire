@@ -7,7 +7,7 @@ import { BUILD_FEATURES } from './build-features';
 import { I18nService } from './i18n/i18n.service';
 import { TranslatePipe } from './i18n/translate.pipe';
 import { EngineService } from './services/engine.service';
-import { ProjectStoreService } from './services/project-store.service';
+import { ProjectManifest } from './project/project-manifest';
 import { SettingsService } from './settings/settings.service';
 
 /**
@@ -32,7 +32,7 @@ import { SettingsService } from './settings/settings.service';
 })
 export class App {
   protected readonly engine = inject(EngineService);
-  private readonly store = inject(ProjectStoreService);
+  private readonly manifest = inject(ProjectManifest);
   private readonly i18n = inject(I18nService);
   private readonly router = inject(Router);
   /**
@@ -55,7 +55,7 @@ export class App {
    * The engine's own name stands in until the manifest has been fetched, so the
    * bar never flickers through an empty slot on a cold load.
    */
-  protected readonly projectName = computed(() => this.store.project()?.name ?? 'Insulaire');
+  protected readonly projectName = computed(() => this.manifest.name() ?? 'Insulaire');
 
   /** The route being shown, so the shell can step out of a screen's way. */
   private readonly url = toSignal(

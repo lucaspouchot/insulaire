@@ -36,6 +36,8 @@ import { CharacterLibraryService } from '../../../services/character-library.ser
 import { ContentWorkspaceService } from '../../../services/content-workspace.service';
 import { EngineService } from '../../../services/engine.service';
 import { LocaleAuthoringService } from '../../../services/locale-authoring.service';
+import { ProjectManifest } from '../../../project/project-manifest';
+import { WriteLedger } from '../../../project/write-ledger';
 import {
   CONTENT_ROOT,
   ProjectStoreService,
@@ -72,6 +74,8 @@ const BLOCK_TYPES: readonly CreationBlock['type'][] = [
 export class CharacterCreationEditorPage {
   private readonly engine = inject(EngineService);
   private readonly store = inject(ProjectStoreService);
+  private readonly manifest = inject(ProjectManifest);
+  private readonly ledger = inject(WriteLedger);
   private readonly library = inject(CharacterLibraryService);
   private readonly creation = inject(CharacterCreationService);
   private readonly workspace = inject(ContentWorkspaceService);
@@ -94,7 +98,7 @@ export class CharacterCreationEditorPage {
   private readonly drafts = new DraftSet<CharacterCreationDefinition>(this.draftSource(), {
     i18n: this.i18n,
     workspace: this.workspace,
-    manifest: this.store,
+    ledger: this.ledger,
     locales: this.locales,
   });
 
@@ -118,10 +122,10 @@ export class CharacterCreationEditorPage {
   protected readonly usesOptions = usesOptions;
   protected readonly isNumeric = isNumeric;
 
-  protected readonly path = computed(() => this.store.characterCreationPath());
+  protected readonly path = computed(() => this.manifest.characterCreationPath());
   protected readonly writable = computed(() => this.workspace.status() !== null);
   protected readonly unlisted = computed(
-    () => this.store.project()?.characterCreation === undefined,
+    () => this.manifest.characterCreation() === null,
   );
   protected readonly errorCount = this.drafts.errorCount;
   protected readonly choices = computed(() => this.document()?.choices ?? []);
@@ -245,8 +249,8 @@ export class CharacterCreationEditorPage {
         await this.workspace.ensureProbed();
       },
       declared: () => {
-        const declared = this.store.project()?.characterCreation;
-        return declared === undefined ? [] : [declared];
+        const declared = this.manifest.characterCreation();
+        return declared === null ? [] : [declared];
       },
       read: async (entry) => {
         const response = await fetch(contentUrl(entry.path));
@@ -260,7 +264,7 @@ export class CharacterCreationEditorPage {
       validate: (_document, json) => this.engine.validateCharacterCreation(json),
       adopt: (_id, json) => this.creation.adopt(json),
       forget: () => {},
-      declare: (id) => this.store.declareCharacterCreation(id, this.path()),
+      declare: (id) => this.manifest.declareCharacterCreation(id, this.path()),
       undeclare: () => {},
       dirtySprites: () => [],
       writeSprites: async () => 0,

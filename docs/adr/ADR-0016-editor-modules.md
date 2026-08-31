@@ -51,8 +51,10 @@ future module is one entry now and one component later.
 `character` was a module until the asset editor absorbed it as a category
 (ADR-0028), and that is the same property — one entry left, nothing else moved.
 
-**Modules do not talk to each other.** Shared state belongs in a service
-(`ProjectStoreService`); shared rules belong in Rust.
+**Modules do not talk to each other.** Shared state belongs in a service — the
+project itself in the four modules under `app/project/` (`ProjectManifest`,
+`WorldLibrary`, `TileSetLibrary`, `WriteLedger`), each injected by the modules
+that need it; shared rules belong in Rust.
 
 ## Consequences
 

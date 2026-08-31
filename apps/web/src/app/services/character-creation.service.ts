@@ -8,12 +8,14 @@ import { Injectable, inject, signal } from '@angular/core';
 import { CharacterCreationDefinition, CharacterCreationResult } from '../../content/content-types';
 import { CharacterLibraryService } from './character-library.service';
 import { EngineService } from './engine.service';
+import { ProjectManifest } from '../project/project-manifest';
 import { ProjectStoreService, contentUrl } from './project-store.service';
 
 @Injectable({ providedIn: 'root' })
 export class CharacterCreationService {
   private readonly engine = inject(EngineService);
   private readonly store = inject(ProjectStoreService);
+  private readonly manifest = inject(ProjectManifest);
   private readonly characters = inject(CharacterLibraryService);
 
   readonly definition = signal<CharacterCreationDefinition | null>(null);
@@ -33,8 +35,8 @@ export class CharacterCreationService {
     await this.engine.ready();
     await this.store.ensureLoaded();
     await this.characters.ensureLoaded();
-    const declared = this.store.project()?.characterCreation;
-    if (declared === undefined) {
+    const declared = this.manifest.characterCreation();
+    if (declared === null) {
       return null;
     }
     const response = await fetch(contentUrl(declared.path));

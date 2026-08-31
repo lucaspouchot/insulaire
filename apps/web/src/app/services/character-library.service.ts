@@ -22,7 +22,7 @@ export interface CharacterChoice extends LibraryChoice {
 @Injectable({ providedIn: 'root' })
 export class CharacterLibraryService extends ContentLibrary<CharacterChoice> {
   protected declared(): readonly ContentRef[] {
-    return this.store.project()?.characters ?? [];
+    return this.manifest.characters();
   }
 
   protected registerOne(json: string): void {

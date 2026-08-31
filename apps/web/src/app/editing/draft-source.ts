@@ -166,8 +166,14 @@ export interface DraftWriter {
   writeJson(path: string, json: string): Promise<void>;
 }
 
-/** What a session needs of the manifest — `ProjectStoreService`'s own names. */
-export interface DraftManifest {
+/**
+ * What a session needs of the write ledger — `WriteLedger`'s own names.
+ *
+ * The manifest as it *would be written* is regenerated from the open documents,
+ * so it belongs to the ledger rather than to `ProjectManifest`
+ * (`.scratch/module-depth/issues/05-close-the-project-store-read-side.md`).
+ */
+export interface DraftLedger {
   manifestNeedsWriting(): boolean;
   projectJson(): string;
   markManifestWritten(): void;
@@ -184,6 +190,6 @@ export interface DraftLocales {
 export interface DraftServices {
   readonly i18n: DraftTranslator;
   readonly workspace: DraftWriter;
-  readonly manifest: DraftManifest;
+  readonly ledger: DraftLedger;
   readonly locales: DraftLocales;
 }

@@ -40,7 +40,8 @@ import { TranslatePipe } from '../../i18n/translate.pipe';
 import { AudioService } from '../../services/audio.service';
 import { EngineService } from '../../services/engine.service';
 import { NativeShellService } from '../../services/native-shell.service';
-import { CONTENT_ROOT, ProjectStoreService } from '../../services/project-store.service';
+import { ProjectManifest } from '../../project/project-manifest';
+import { CONTENT_ROOT } from '../../services/project-store.service';
 import { SaveCatalogService } from '../../services/save-catalog.service';
 import { TitleScreenService } from '../../services/title-screen.service';
 
@@ -79,7 +80,7 @@ const FALLBACK_BUTTONS: readonly TitleButton[] = [
 })
 export class TitlePage implements OnDestroy {
   private readonly engine = inject(EngineService);
-  private readonly store = inject(ProjectStoreService);
+  private readonly manifest = inject(ProjectManifest);
   private readonly i18n = inject(I18nService);
   private readonly audio = inject(AudioService);
   private readonly shell = inject(NativeShellService);
@@ -106,7 +107,7 @@ export class TitlePage implements OnDestroy {
   private splashTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** The project's name, for the fallback title. */
-  protected readonly projectName = computed(() => this.store.project()?.name ?? 'Insulaire');
+  protected readonly projectName = computed(() => this.manifest.name() ?? 'Insulaire');
 
   /** Buttons to draw, with what this build and this session make possible. */
   protected readonly entries = computed<readonly MenuEntry[]>(() => {

@@ -26,6 +26,7 @@ import { serializeProject } from '../../content/world-serializer';
 import { I18nService } from '../i18n/i18n.service';
 import { ContentWorkspaceService } from './content-workspace.service';
 import { EngineService } from './engine.service';
+import { ProjectManifest } from '../project/project-manifest';
 import { LocaleFile, ProjectStoreService } from './project-store.service';
 
 /** What one save wrote. */
@@ -39,6 +40,7 @@ export interface LocaleSaveOutcome {
 @Injectable({ providedIn: 'root' })
 export class LocaleAuthoringService {
   private readonly store = inject(ProjectStoreService);
+  private readonly manifest = inject(ProjectManifest);
   private readonly engine = inject(EngineService);
   private readonly i18n = inject(I18nService);
   private readonly workspace = inject(ContentWorkspaceService);
@@ -62,7 +64,7 @@ export class LocaleAuthoringService {
   /** Paths the manifest gives each `<language>/<namespace>` file. */
   private readonly declaredPaths = computed(() => {
     const paths = new Map<string, string>();
-    for (const language of this.store.project()?.locales?.languages ?? []) {
+    for (const language of this.manifest.languages()) {
       for (const file of language.files ?? []) {
         paths.set(`${language.id}/${file.id}`, file.path);
       }
@@ -195,7 +197,7 @@ export class LocaleAuthoringService {
     for (const target of targets) {
       if (target.declare) {
         manifestChanged =
-          this.store.declareLocaleFile(target.language, target.namespace, target.path) ||
+          this.manifest.declareLocaleFile(target.language, target.namespace, target.path) ||
           manifestChanged;
       }
     }
@@ -216,7 +218,7 @@ export class LocaleAuthoringService {
     }
 
     if (manifestChanged) {
-      await this.workspace.writeJson('project.json', serializeProject(this.store.requireProject()));
+      await this.workspace.writeJson('project.json', serializeProject(this.manifest.require()));
     }
 
     // Disk is only half of it: the engine still holds the text it was given at

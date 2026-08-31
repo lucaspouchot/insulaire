@@ -26,7 +26,8 @@ import { I18nService } from '../i18n/i18n.service';
 import { AudioService } from '../services/audio.service';
 import { EngineService } from '../services/engine.service';
 import { NativeShellService } from '../services/native-shell.service';
-import { ProjectStoreService, contentUrl } from '../services/project-store.service';
+import { ProjectManifest } from '../project/project-manifest';
+import { contentUrl } from '../services/project-store.service';
 import {
   ENGINE_SETTING,
   WINDOW_SIZES,
@@ -51,7 +52,7 @@ const APPLIED_ON_RELEASE: ReadonlySet<string> = new Set([ENGINE_SETTING.scale]);
 @Injectable({ providedIn: 'root' })
 export class SettingsService {
   private readonly engine = inject(EngineService);
-  private readonly store = inject(ProjectStoreService);
+  private readonly manifest = inject(ProjectManifest);
   private readonly i18n = inject(I18nService);
   private readonly audio = inject(AudioService);
   private readonly shell = inject(NativeShellService);
@@ -112,8 +113,8 @@ export class SettingsService {
   private async load(): Promise<void> {
     await this.i18n.ensureAdopted();
 
-    const declared = this.store.project()?.settings;
-    if (declared === undefined) {
+    const declared = this.manifest.settings();
+    if (declared === null) {
       return;
     }
 
