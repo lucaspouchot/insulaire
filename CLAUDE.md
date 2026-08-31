@@ -136,9 +136,15 @@ Every push that changes shipped code carries a **patch or minor** bump; the
 `commit-and-push` skill owns that step and its script writes all nine version
 sites at once. **Major bumps are the author's, by hand** — never bump it.
 
-## Language Rules
-- Write all source code, code comments, variable names, and git commit messages in **English**.
-- Converse, answer questions, and explain thoughts during the session in language describe in env AGENT_LANG=<lang> in .env, default to **en** for english
+## Language policy
+
+Everything written or modified inside the project MUST be in English, including code, identifiers, comments, documentation, tests, logs, configuration, and generated project content.
+
+For user-facing communication, use the language specified in `.agent-lang`. Read only this file for the language preference.
+
+Keep standard software engineering terminology in English when it is commonly used as such by developers. Do not force localized translations of terms such as `commit`, `branch`, `pull request`, `endpoint`, `middleware`, `runtime`, `build`, or `deploy`.
+
+The user's language applies only to conversation. Project content MUST always remain in English.
 
 ## Rules for Claude
 

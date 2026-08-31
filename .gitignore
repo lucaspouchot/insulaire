@@ -29,6 +29,9 @@ npm-debug.log*
 Thumbs.db
 *.swp
 
+# Agent language configuration file
+.agent-lang
+
 # Client deliveries produced by `just deliver`
 /deliveries/
 
