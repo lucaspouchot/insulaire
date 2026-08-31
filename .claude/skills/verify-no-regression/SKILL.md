@@ -112,6 +112,21 @@ Reading the report:
   ```bash
   node .claude/skills/verify-no-regression/scripts/smoke.mjs --accept
   ```
+- **Diff a consolidation produced** → often *correct*, and sometimes the
+  evidence the work succeeded. When three screens did the same job three ways
+  and now share one module, the two that were drifting are the ones that move:
+  a preview that rendered at a different resolution, a button whose label came
+  from a second copy of the same string, a panel that had lost a spacing rule.
+  A refactor whose whole point is "these were not the same and should have
+  been" **cannot** leave all three pixel-identical — that would mean nothing
+  was actually shared.
+
+  So do not read a screen diff here as failure. Read it the same way as any
+  other: name which module absorbed which, say which of the copies was wrong
+  and why the survivor is the right one, and *then* accept. What still counts
+  as a regression is a screen changing that the consolidation does not
+  explain, or the diff landing on the copy that was already correct.
+
 - **Diff you did not intend** → that is the regression. Fix the code and re-run.
   Never accept a baseline to make a red run go green, and never accept one you
   have not explained line by line — the baseline is the memory of what "working"

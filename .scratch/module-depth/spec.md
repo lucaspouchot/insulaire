@@ -2,7 +2,16 @@
 
 Findings from an architecture review of `main` at `2680070` (2026-08-30). The
 subject is **depth** — how much behaviour sits behind an interface — not
-features. Nothing here changes what the game does.
+features. Nothing here changes what the game does *on purpose*.
+
+That is not the same as "no screen may move". Several of these tickets replace
+N copies of one job with one module, and copies drift: where they had, the
+screens that were wrong are the ones that change, and the smoke run showing it
+is the work being confirmed rather than a regression. A consolidation that left
+every screen pixel-identical would more likely mean nothing was really shared.
+The bar is that each moved pixel is *explained by the consolidation* and lands
+on the copy that was wrong — see `## 6` of
+`.claude/skills/verify-no-regression/SKILL.md`.
 
 ## Vocabulary
 
