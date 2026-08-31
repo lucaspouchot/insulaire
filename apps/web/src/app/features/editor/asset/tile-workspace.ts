@@ -734,7 +734,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
     const image = await loadImage(contentUrl(entry.asset));
     const sprite = image === null ? null : SpriteDocument.fromImage(image);
     if (sprite === null) {
-      this.drafts.fail(entry.asset);
+      this.drafts.fail(this.i18n.t('ui.editor.asset.imageUnreadable', { file: entry.asset }));
       return;
     }
     this.sessions.set(entry.asset, sprite);
@@ -919,7 +919,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
     const image = await loadImage(URL.createObjectURL(file));
     const sprite = image === null ? null : SpriteDocument.fromImage(image);
     if (sprite === null) {
-      this.drafts.fail(file.name);
+      this.drafts.fail(this.i18n.t('ui.editor.asset.importUnreadable', { file: file.name }));
       return;
     }
 
@@ -927,7 +927,11 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
     const expected = { width: geometry.width, height: imageHeight(geometry, level) };
     if (sprite.width !== expected.width || sprite.height !== expected.height) {
       this.drafts.fail(
-        `${file.name}: ${sprite.width}×${sprite.height} ≠ ${expected.width}×${expected.height}`,
+        this.i18n.t('ui.editor.asset.importWrongSize', {
+          file: file.name,
+          actual: `${sprite.width}×${sprite.height}`,
+          expected: `${expected.width}×${expected.height}`,
+        }),
       );
       return;
     }

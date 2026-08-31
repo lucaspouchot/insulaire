@@ -232,3 +232,24 @@ pixels on `editor-asset-tiles-surface` against 44 here — and the `play*` scree
 drift identically with and without the change. Looked at side by side, the tile
 screens are the same picture: the same tile selected, the same tab open, the
 same variants listed, the same verdict.
+
+### Follow-up — the three bare-path failures (2026-08-31)
+
+A code review of 01 reached back into this ticket's commit and found that
+dropping `ui.editor.asset.failed` left three `drafts.fail` call sites in
+`tile-workspace.ts` passing a bare path instead of a sentence: an undecodable
+variant reported `assets/tiles/dirt/flat/dirt_a.png`, an undecodable import
+reported `dirt.png`, and a size mismatch reported
+`dirt.png: 32×48 ≠ 32×64`. `DraftSet.fail` runs its argument through
+`describeError`, which returns a string unchanged, so that is what the banner
+read — no verb, and untranslated for a French author.
+
+**The wrapper stays discarded.** The reason this ticket gave for removing it
+holds: the error signal also carries a failing verdict while an author is still
+typing, where "Nothing was written" would be false. What was wrong was not the
+removal but these three arguments — every other `drafts.fail` in the editor
+passes a thrown `cause`, which is already a sentence, or an `i18n.t(...)`.
+
+Fixed by giving the three their own keys rather than by restoring a wrapper:
+`ui.editor.asset.imageUnreadable`, `importUnreadable` and `importWrongSize`,
+defined in both languages. The Languages tab reads 978 keys where it read 975.
