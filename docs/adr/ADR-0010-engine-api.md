@@ -55,6 +55,16 @@ fifty, and a list copied here would be wrong within a week. `docs/wasm-api.md` i
 the reference, parameter by parameter; this decision governs the *shape* every
 addition to it must take.
 
+It is, however, written down exactly once. `crates/engine/seam.json` declares
+each method — name, parameters, return shape and documentation — and
+`scripts/generate-seam.mjs` renders the four copies that used to be kept by
+hand: `JsonEngine`, the `#[wasm_bindgen]` methods, `RawInsulaireEngine` and the
+reference's method table. `EngineService` stays hand-written, because it returns
+typed values and marshals its arguments, but the generator fails if it does not
+reach every declared method. That is this decision's consequence list being
+acted on, not a change to it: the shape rules above are what a declaration may
+express.
+
 ## Consequences
 
 Positive:

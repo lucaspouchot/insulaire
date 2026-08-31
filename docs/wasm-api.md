@@ -17,7 +17,8 @@ The engine's whole public surface. Decided in ADR-0010.
 ```
 
 TypeScript types for everything below: `apps/web/src/engine/engine.types.ts`.
-Rust types: `crates/engine/src/dto.rs`.
+Rust types: `crates/engine/src/dto.rs`. The **method list itself is declared once**,
+in `crates/engine/seam.json` — see [Adding a method](#adding-a-method).
 
 ---
 
@@ -35,8 +36,9 @@ const engine = new module.InsulaireEngine();
 ```
 
 Rebuilding the engine is `npm run wasm:build` plus a refresh — no Angular
-rebuild. The cost is that generated typings are not used; `engine.types.ts`
-states the contract by hand instead, which is also what this document specifies.
+rebuild. `wasm-pack`'s own typings are not used: `RawInsulaireEngine` in
+`engine.types.ts` is generated from the seam declaration, alongside the two Rust
+transports and the table below.
 
 ---
 
@@ -72,7 +74,104 @@ never sees a raw string.
 
 ---
 
+## Adding a method
+
+The boundary's method list is declared once, in `crates/engine/seam.json`.
+Adding a method is:
+
+1. implement it on `Engine` in `crates/engine/src/lib.rs` — that is the module
+   with behaviour in it, and it stays hand-written;
+2. add an entry to `crates/engine/seam.json`;
+3. write its `###` section below;
+4. run `node scripts/generate-seam.mjs`;
+5. wire it into `EngineService`, which parses the string into a typed value.
+
+`npm run check:seam` fails when any generated copy is stale, when a declared
+method has no section in this document, or when `EngineService` never reaches
+it. An entry states:
+
+| Field | Meaning |
+|---|---|
+| `name` | The Rust name. The JavaScript one is its camelCase. |
+| `mutates` | `true` for `&mut self`. |
+| `params` | `name` plus `type`: `str`, `str?`, `u32` or `i32`. |
+| `returns` | `json`, `bytes_u8`, `bytes_i8`, `void` or `bool`. |
+| `payload` | What the JSON decodes to. Required by `json`, refused by the rest. |
+| `doc` / `errors` | The documentation, written once for all three languages. |
+| `inner` | The `Engine` method, when it is not `name`. |
+| `infallible` | `true` when `Engine` returns the value rather than a `Result`. |
+| `expr` | A call to emit instead of forwarding to `Engine`. |
+| `params[].adapt` | A parameter that crosses as a string and is parsed at the boundary. |
+
+Types in `doc` and `errors` are written `{crate::LoadOutcome}`: an intra-doc
+link in `insulaire-engine`, a bare name everywhere else.
+
+---
+
 ## Methods
+
+The table is generated from `crates/engine/seam.json`; the section under each
+method is authored. A method with no section fails generation, so the index and
+the prose cannot come apart.
+
+<!-- generated:seam -->
+| Method | Arguments | Returns |
+|---|---|---|
+| [`engineInfo`](#engineinfo-engineinfo) | — | `EngineInfo` |
+| [`loadTileSet`](#loadtilesetjson-string-loadoutcome) | `json` | `LoadOutcome` |
+| [`loadWorld`](#loadworldjson-string-loadoutcome) | `json` | `LoadOutcome` |
+| [`loadProject`](#loadprojectjson-string-loadoutcome) | `json` | `LoadOutcome` |
+| [`loadLocale`](#loadlocalelanguage-string-namespace-string-json-string-loadoutcome) | `language`, `namespace`, `json` | `LoadOutcome` |
+| [`locale`](#localelanguage-string-localeview) | `language` | `LocaleView` |
+| [`validateLocales`](#validatelocales-validationreport) | — | `ValidationReport` |
+| [`loadTitleScreen`](#loadtitlescreenjson-string-loadoutcome) | `json` | `LoadOutcome` |
+| [`validateTitleScreen`](#validatetitlescreenjson-string-validationreport) | `json` | `ValidationReport` |
+| [`validateTileSet`](#validatetilesetjson-string-validationreport) | `json` | `ValidationReport` |
+| [`previewTileRender`](#previewtilerendertilesetjson-tileid-projection-elevation-base-roll-choicejson-resolvedtilerender) | `tileSetJson`, `tileId`, `projection`, `elevation`, `base`, `roll`, `choiceJson` | `ResolvedTileRender` |
+| [`titleScreen`](#titlescreen-titlescreendefinition) | — | `TitleScreenDefinition` |
+| [`resetContent`](#resetcontent-void) | — | `void` |
+| [`resetLocales`](#resetlocales-void) | — | `void` |
+| [`validateLinks`](#validatelinks-validationreport) | — | `ValidationReport` |
+| [`validateWorld`](#validateworldjson-string-validationreport) | `json` | `ValidationReport` |
+| [`contentSummary`](#contentsummary-contentsummary) | — | `ContentSummary` |
+| [`worldView`](#worldviewworldid-string-worldview) | `worldId` | `WorldView` |
+| [`terrainBuffer`](#terrainbufferworldid-string-uint8array) | `worldId` | `Uint8Array` |
+| [`elevationBuffer`](#elevationbufferworldid-string-int8array) | `worldId` | `Int8Array` |
+| [`presenceBuffer`](#presencebufferworldid-string-uint8array) | `worldId` | `Uint8Array` |
+| [`createGame`](#creategameworldid-string-seed-number-settingsjson-string-gamesnapshot) | `worldId`, `seed`, `settingsJson` | `GameSnapshot` |
+| [`loadSettings`](#loadsettingsjson-string-loadoutcome) | `json` | `LoadOutcome` |
+| [`validateSettings`](#validatesettingsjson-string-validationreport) | `json` | `ValidationReport` |
+| [`settings`](#settings-settingsdefinition) | — | `SettingsDefinition` |
+| [`resolveSettings`](#resolvesettingsvaluesjson-string-recordstring-unknown) | `valuesJson` | `Record<string, unknown>` |
+| [`loadCharacter`](#loadcharacterjson-string-loadoutcome) | `json` | `LoadOutcome` |
+| [`validateCharacter`](#validatecharacterjson-string-validationreport) | `json` | `ValidationReport` |
+| [`character`](#characterid-string-characterdefinition) | `id` | `CharacterDefinition` |
+| [`characterIds`](#characterids-string) | — | `string[]` |
+| [`loadDecoration`](#loaddecorationjson-string-loadoutcome) | `json` | `LoadOutcome` |
+| [`validateDecoration`](#validatedecorationjson-string-celljson-string-validationreport) | `json`, `cellJson` | `ValidationReport` |
+| [`decoration`](#decorationid-string-decorationdefinition) | `id` | `DecorationDefinition` |
+| [`decorationIds`](#decorationids-string) | — | `string[]` |
+| [`resolveDecoration`](#resolvedecorationid-animation-timems-resolveddecoration) | `id`, `animation?`, `timeMs` | `ResolvedDecoration` |
+| [`previewDecoration`](#previewdecorationdecorationjson-animation-timems-resolveddecoration) | `decorationJson`, `animation?`, `timeMs` | `ResolvedDecoration` |
+| [`loadObject`](#loadobjectjson-string-loadoutcome) | `json` | `LoadOutcome` |
+| [`validateObject`](#validateobjectjson-string-validationreport) | `json` | `ValidationReport` |
+| [`object`](#objectid-string-objectdefinition) | `id` | `ObjectDefinition` |
+| [`objectIds`](#objectids-string) | — | `string[]` |
+| [`resolveObject`](#resolveobjectid-string-timems-number-resolvedobject) | `id`, `timeMs` | `ResolvedObject` |
+| [`previewObject`](#previewobjectobjectjson-timems-resolvedobject) | `objectJson`, `timeMs` | `ResolvedObject` |
+| [`loadCharacterCreation`](#loadcharactercreationjson-string-loadoutcome) | `json` | `LoadOutcome` |
+| [`validateCharacterCreation`](#validatecharactercreationjson-string-validationreport) | `json` | `ValidationReport` |
+| [`characterCreation`](#charactercreation-charactercreationdefinition) | — | `CharacterCreationDefinition` |
+| [`resolveCharacterCreation`](#resolvecharactercreationchoicesjson-characteristicsjson-charactercreationresult) | `choicesJson`, `characteristicsJson` | `CharacterCreationResult` |
+| [`previewCharacterCreation`](#previewcharactercreationcreationjson-choicesjson-characteristicsjson-charactercreationresult) | `creationJson`, `choicesJson`, `characteristicsJson` | `CharacterCreationResult` |
+| [`previewCharacter`](#previewcharactercharacterjson-valuesjson-animation-timems-resolvedcharacter) | `characterJson`, `valuesJson`, `animation?`, `timeMs` | `ResolvedCharacter` |
+| [`resolveCharacter`](#resolvecharacterid-valuesjson-animation-timems-resolvedcharacter) | `id`, `valuesJson`, `animation?`, `timeMs` | `ResolvedCharacter` |
+| [`resolveCharacterRole`](#resolvecharacterroleid-valuesjson-role-timems-resolvedcharacter) | `id`, `valuesJson`, `role`, `timeMs` | `ResolvedCharacter` |
+| [`snapshot`](#snapshot-gamesnapshot) | — | `GameSnapshot` |
+| [`dispatch`](#dispatchcommandjson-string-commandresult) | `commandJson` | `CommandResult` |
+| [`endGame`](#endgame-void--hasgame-boolean) | — | `void` |
+| [`hasGame`](#endgame-void--hasgame-boolean) | — | `boolean` |
+<!-- /generated:seam -->
 
 ### `engineInfo(): EngineInfo`
 
@@ -943,8 +1042,9 @@ RNG. Asserted in `tick.rs`, `lib.rs`, `shipped_content.rs` and
 ## Testing the boundary
 
 The string contract lives in `insulaire_engine::JsonEngine`, not in the WASM crate, so
-it is covered by plain `cargo test` — `crates/engine/src/json.rs` exercises
-every method, both success and failure. `insulaire-wasm` adds no logic to test.
+it is covered by plain `cargo test` — `crates/engine/src/json/tests.rs`
+exercises every method, both success and failure. `insulaire-wasm` adds no logic
+to test.
 
 `apps/web/src/engine/engine-integration.spec.ts` then drives the **real**
 `wasm-pack` output with the **real** files from `content/`, through the same

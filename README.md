@@ -314,10 +314,11 @@ In Play mode:
 | `npm test` | Rust tests, then TypeScript tests, then the script tests. |
 | `npm run test:rust` | `cargo test --workspace` (368 tests, no browser needed). |
 | `npm run test:web` | Vitest (236 tests, including real WASM integration). |
-| `npm run test:scripts` | `node --test` over `scripts/` — the content server's path rules, the shape of the shipped tile art, and the ADR citation rules. |
+| `npm run test:scripts` | `node --test` over `scripts/` — the content server's path rules, the shape of the shipped tile art, the ADR citation rules, and the engine seam's renderers. |
 | `npm run lint:rust` | `cargo clippy -D warnings` and `cargo fmt --check`. |
 | `npm run check:adr` | Every ADR citation resolves, and the index below matches the corpus. |
-| `npm run check` | The ADR check, lint, plus every test. |
+| `npm run check:seam` | The four generated copies of the engine seam are in sync with `crates/engine/seam.json`. |
+| `npm run check` | The ADR and seam checks, lint, plus every test. |
 | `just check-desktop` | The desktop shell's own clippy, rustfmt and tests. |
 
 `node scripts/generate-tile-art.mjs` redraws the shipped tile art in

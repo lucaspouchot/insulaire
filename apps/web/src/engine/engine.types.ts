@@ -340,6 +340,7 @@ export class EngineError extends Error {
   }
 }
 
+// <generated:seam>
 /**
  * The raw class exported by the generated `wasm-bindgen` glue.
  *
@@ -349,6 +350,13 @@ export class EngineError extends Error {
 export interface RawInsulaireEngine {
   engineInfo(): string;
   loadTileSet(json: string): string;
+  loadWorld(json: string): string;
+  loadProject(json: string): string;
+  loadLocale(language: string, namespace: string, json: string): string;
+  locale(language: string): string;
+  validateLocales(): string;
+  loadTitleScreen(json: string): string;
+  validateTitleScreen(json: string): string;
   validateTileSet(json: string): string;
   previewTileRender(
     tileSetJson: string,
@@ -361,14 +369,21 @@ export interface RawInsulaireEngine {
     /** A `PlacedTileArt`; `"{}"` rolls everything. */
     choiceJson: string,
   ): string;
-  loadWorld(json: string): string;
-  loadProject(json: string): string;
-  loadLocale(language: string, namespace: string, json: string): string;
-  locale(language: string): string;
-  validateLocales(): string;
-  loadTitleScreen(json: string): string;
-  validateTitleScreen(json: string): string;
   titleScreen(): string;
+  resetContent(): void;
+  resetLocales(): void;
+  validateLinks(): string;
+  validateWorld(json: string): string;
+  contentSummary(): string;
+  worldView(worldId: string): string;
+  terrainBuffer(worldId: string): Uint8Array;
+  elevationBuffer(worldId: string): Int8Array;
+  presenceBuffer(worldId: string): Uint8Array;
+  createGame(worldId: string, seed: number, settingsJson: string): string;
+  loadSettings(json: string): string;
+  validateSettings(json: string): string;
+  settings(): string;
+  resolveSettings(valuesJson: string): string;
   loadCharacter(json: string): string;
   validateCharacter(json: string): string;
   character(id: string): string;
@@ -394,44 +409,27 @@ export interface RawInsulaireEngine {
     choicesJson: string,
     characteristicsJson: string,
   ): string;
-  resolveCharacter(
-    id: string,
-    valuesJson: string,
-    animation: string | undefined,
-    timeMs: number,
-  ): string;
-  resolveCharacterRole(
-    id: string,
-    valuesJson: string,
-    role: string,
-    timeMs: number,
-  ): string;
   previewCharacter(
     characterJson: string,
     valuesJson: string,
     animation: string | undefined,
     timeMs: number,
   ): string;
-  loadSettings(json: string): string;
-  validateSettings(json: string): string;
-  settings(): string;
-  resolveSettings(valuesJson: string): string;
-  resetContent(): void;
-  resetLocales(): void;
-  validateLinks(): string;
-  validateWorld(json: string): string;
-  contentSummary(): string;
-  worldView(worldId: string): string;
-  terrainBuffer(worldId: string): Uint8Array;
-  elevationBuffer(worldId: string): Int8Array;
-  presenceBuffer(worldId: string): Uint8Array;
-  createGame(worldId: string, seed: number, settingsJson: string): string;
+  resolveCharacter(
+    id: string,
+    valuesJson: string,
+    animation: string | undefined,
+    timeMs: number,
+  ): string;
+  resolveCharacterRole(id: string, valuesJson: string, role: string, timeMs: number): string;
   snapshot(): string;
   dispatch(commandJson: string): string;
   endGame(): void;
   hasGame(): boolean;
+  /** Releases the Rust-side instance; `wasm-bindgen` adds it, the seam does not. */
   free(): void;
 }
+// </generated:seam>
 
 /** The module shape produced by `wasm-pack build --target web`. */
 export interface InsulaireEngineModule {

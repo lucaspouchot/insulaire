@@ -51,7 +51,7 @@ these tickets remove.
 
 | # | Deepening | Strength |
 |---|---|---|
-| [01](issues/01-declare-the-engine-seam-once.md) | Declare the engine seam once | Strong |
+| [01](issues/01-declare-the-engine-seam-once.md) | Declare the engine seam once | Strong · **done** |
 | [02](issues/02-content-kind-is-a-module.md) | Make the content kind a module | Strong |
 | [03](issues/03-derive-content-types-from-definitions.md) | Derive the content types from the definitions | Strong |
 | [04](issues/04-one-editing-session-for-the-workspaces.md) | Give the asset workspaces one editing session | Strong · **done** |
@@ -90,10 +90,14 @@ is what 05 made possible — and its thirty mutate-then-touch sites are
 definition of unsaved, and six pure functions moved into `tile-editor.types.ts`
 where a spec reaches them without a canvas.
 
-Then **02**, with **01** falling
-out of it as the mechanical half. **03** and **06** sequence together: the
-default table 06 needs is the fact 03 generates. **07** is independent and can
-go at any point.
+**Then 01, and done** — taken before 02 rather than out of it, on the ticket's
+own note that "doing 01 first makes 02 smaller". One declaration,
+`crates/engine/seam.json`, and a generator for the four copies; `EngineService`
+stays hand-written but can no longer fall behind it. 02 now adds a kind to a
+list instead of to five.
+
+Then **02**. **03** and **06** sequence together: the default table 06 needs is
+the fact 03 generates. **07** is independent and can go at any point.
 
 ## What is deliberately not proposed
 

@@ -80,6 +80,7 @@ The MVP implements the marked parts. Unmarked entries are the planned shape.
 │   ├── world/                   # hexes, content definitions, validation     [MVP]
 │   ├── simulation/              # GameState, ticks, rules, AI, RNG           [MVP]
 │   ├── engine/                  # facade, DTOs, content registry             [MVP]
+│   │   └── seam.json            # the boundary's method list, declared once   [MVP]
 │   ├── wasm/                    # wasm-bindgen pass-through                  [MVP]
 │   ├── scenario/                # acts, triggers, events
 │   └── combat/                  # deck/cards/effects
@@ -119,8 +120,10 @@ browser. `cargo test` runs the entire simulation without WASM.
 
 ## Where the seams are
 
-- **Angular ↔ engine** — commands in, compact snapshots out. See
-  `docs/wasm-api.md` and ADR-0010.
+- **Angular ↔ engine** — commands in, compact snapshots out. The method list is
+  declared once in `crates/engine/seam.json`; `JsonEngine`, the `wasm-bindgen`
+  methods, `RawInsulaireEngine` and the reference's table are rendered from it.
+  See `docs/wasm-api.md` and ADR-0010.
 - **Content ↔ runtime** — `WorldDefinition` is immutable reference data;
   `GameState` is the mutable runtime. See `docs/data-model.md` and ADR-0002.
 - **Editor ↔ runtime** — one validator, in Rust, used by both. See ADR-0012.

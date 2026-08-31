@@ -57,7 +57,7 @@ them in the same change, and a doc claim that no test defends is worth a test:
 
 | Test | Pins |
 |---|---|
-| `crates/engine/src/json.rs` | Every boundary method, success and failure, incl. error codes |
+| `crates/engine/src/json/tests.rs` | Every boundary method, success and failure, incl. error codes |
 | `crates/engine/tests/shipped_content.rs` | That the real files in `content/` still load and play |
 | `apps/web/src/engine/engine-integration.spec.ts` | The real WASM build against the real content, through the TS types |
 | `apps/web/src/content/world-serializer.spec.ts` | That an editor export is byte-identical to the checked-in world |
