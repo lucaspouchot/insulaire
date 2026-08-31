@@ -46,7 +46,7 @@ these tickets remove.
 | [02](issues/02-content-kind-is-a-module.md) | Make the content kind a module | Strong |
 | [03](issues/03-derive-content-types-from-definitions.md) | Derive the content types from the definitions | Strong |
 | [04](issues/04-one-editing-session-for-the-workspaces.md) | Give the asset workspaces one editing session | Strong · **done** |
-| [05](issues/05-close-the-project-store-read-side.md) | Close the project store's read side | Strong |
+| [05](issues/05-close-the-project-store-read-side.md) | Close the project store's read side | Strong · **done** |
 | [06](issues/06-one-canonical-writer.md) | One canonical writer, not seven | Worth exploring |
 | [07](issues/07-lift-the-session-presentation.md) | Lift the session presentation out of the play page | Worth exploring |
 | [08](issues/08-adr-references-must-resolve.md) | ADR references must resolve, and be checkable | Strong · **done** |
@@ -71,7 +71,9 @@ for the commit order.
 adapter 04 proposed does not survive contact with `locale-editor-page.ts`, and
 the row should go. Its second half waits on 05.
 
-Then **05**, which gives 02 somewhere to land, and unblocks 09's tile half. Then **02**, with **01** falling
+**Then 05, and done** — five modules under `app/project/`, no forwarding, 22
+caller files moved. It gives 02 somewhere to land and unblocks 09's tile half.
+Then **02**, with **01** falling
 out of it as the mechanical half. **03** and **06** sequence together: the
 default table 06 needs is the fact 03 generates. **07** is independent and can
 go at any point.

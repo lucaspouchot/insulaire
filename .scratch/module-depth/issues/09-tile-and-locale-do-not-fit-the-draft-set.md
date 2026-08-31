@@ -2,7 +2,7 @@
 
 Status: ready-for-agent
 Strength: strong
-Blocked by: [05](05-close-the-project-store-read-side.md) — for the tile half
+Blocked by: — ([05](05-close-the-project-store-read-side.md) landed; the tile half is unblocked)
 
 Split out of [04](04-one-editing-session-for-the-workspaces.md) during 04e, on
 the instruction 04 gives for exactly this case: *"If those three do not fit the
@@ -73,12 +73,13 @@ screen edits, and the repaint path is driven by `revision()` rather than by
 document identity, so a half-converted screen still compiles and still draws —
 which is the worst failure mode to hand a reviewer.
 
-**Its list belongs to `ProjectStoreService`, which is 05's subject.** `working`
+**Its list belonged to `ProjectStoreService`, which was 05's subject.** `working`
 is a lazy overlay: a `Map<string, TileSetDefinition>` of edited copies over
-`store.tileSetDefinitions()`, with `tileSet()` reading through it. A `DraftSet`
-would have to either copy the store's array in eagerly at load — deciding who
-owns that read, which is exactly what [05](05-close-the-project-store-read-side.md)
-is for — or gain a lazy-overlay hook no other adapter wants.
+`tileSets.tileSetDefinitions()`, with `tileSet()` reading through it. A `DraftSet`
+would have to either copy that array in eagerly at load — deciding who owns that
+read, which is exactly what [05](05-close-the-project-store-read-side.md) was
+for — or gain a lazy-overlay hook no other adapter wants. **05 has since landed**,
+and the read now belongs to `TileSetLibrary`, a 5-member module.
 
 **Its save is a different order for a stated reason.** Sprites are written
 *before* the definition, and the comment says why: *"Art and definition are one
@@ -102,8 +103,10 @@ struck through, with the reason above, and `spec.md`'s Order says so.
    deepening, if one is wanted, is a clock over `Animation` rather than over
    `Flipbook`; the two would share the ticker and the play/pause, not the
    frame arithmetic.
-2. **After [05](05-close-the-project-store-read-side.md) lands**, move
-   `tile-workspace.ts` onto `DraftSet` with a store-backed `DraftSource`,
+2. **[05](05-close-the-project-store-read-side.md) has landed**, so the tile
+   half is now unblocked: move
+   `tile-workspace.ts` onto `DraftSet` with a `DraftSource` backed by
+   `TileSetLibrary`,
    converting its thirty mutate-then-touch sites to `edit(mutate)` in the same
    change. The seam already has six adapters without it, so this is for tile's
    own sake — one definition of unsaved and a spec that runs without a canvas —
