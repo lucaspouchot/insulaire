@@ -357,22 +357,6 @@ export type LayerVariant = {
 };
 
 /**
- * Where a node's local coordinate frame ended up.
- */
-export type Placement = {
-  /**
-   * The frame's position on the canvas, animation included. A layer's box
-   * and its anchors are both measured from here.
-   */
-  origin: PixelOffset;
-  /**
-   * How much of that came from the animation, inherited transforms
-   * included — the static placement taken out.
-   */
-  offset: PixelOffset;
-};
-
-/**
  * The pose values one frame of an animation sets.
  *
  * The values are flattened into the entry, so a file reads

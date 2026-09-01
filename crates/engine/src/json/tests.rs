@@ -1121,7 +1121,7 @@ fn characters_load_and_resolve_through_the_string_api() {
     // writes no `resolution`, which is what makes the field optional in the
     // generated TypeScript. What the default *is* stays the engine's answer:
     // the resolved character below carries it.
-    assert!(definition["resolution"].is_null());
+    assert!(definition.get("resolution").is_none());
 
     // The customisation crosses as values and comes back as geometry: the
     // host blits what Rust resolved, and resolves nothing itself.

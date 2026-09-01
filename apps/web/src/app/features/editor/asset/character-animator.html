@@ -17,7 +17,7 @@
             @if (entry.mirrorOf) {
               ⇄ {{ entry.mirrorOf }}
             } @else {
-              {{ 'ui.editor.character.frameCount' | t: { count: entry.frames ?? 0 } }}
+              {{ 'ui.editor.character.frameCount' | t: { count: entry.frames ?? 1 } }}
               @if (entry.looping) {
                 · {{ 'ui.editor.character.loops' | t }}
               }
@@ -166,7 +166,7 @@
           ▶
         </button>
         <span class="readout">
-          {{ 'ui.editor.character.frameOf' | t: { frame: frame(), total: played()?.frames ?? 0 } }}
+          {{ 'ui.editor.character.frameOf' | t: { frame: frame(), total: played()?.frames ?? 1 } }}
         </span>
         <label class="speed">
           <span>{{ 'ui.editor.character.speed' | t }}</span>
@@ -183,7 +183,7 @@
       because a node with no track is exactly the one about to get one.
     -->
       <div class="timeline" role="grid">
-        <div class="grid" [style.--frames]="played()?.frames ?? 0">
+        <div class="grid" [style.--frames]="played()?.frames ?? 1">
           <div class="head" role="row">
             <span class="node-name"></span>
             @for (index of frames(); track index) {

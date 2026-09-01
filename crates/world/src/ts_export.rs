@@ -267,9 +267,15 @@ mod tests {
     fn every_public_bound_is_accounted_for() {
         for (source, published, held_back) in declared_bounds() {
             for line in source.lines() {
-                let Some(rest) = line.strip_prefix("pub const ") else {
+                // `trim_start`, so a bound declared inside a nested `mod` is
+                // held to the same rule as one at the top of the file; and not
+                // `pub const fn`, which declares no value to publish.
+                let Some(rest) = line.trim_start().strip_prefix("pub const ") else {
                     continue;
                 };
+                if rest.starts_with("fn ") {
+                    continue;
+                }
                 let name = rest.split(':').next().unwrap_or_default();
                 assert!(
                     published.contains(&name) || held_back.contains(&name),

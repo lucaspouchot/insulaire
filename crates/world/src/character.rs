@@ -736,8 +736,7 @@ impl CharacterDefinition {
 }
 
 /// Where a node's local coordinate frame ended up.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, TS)]
-#[ts(export, export_to = "character.ts")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Placement {
     /// The frame's position on the canvas, animation included. A layer's box
     /// and its anchors are both measured from here.

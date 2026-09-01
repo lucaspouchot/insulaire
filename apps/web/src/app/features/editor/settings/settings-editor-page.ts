@@ -520,13 +520,6 @@ export class SettingsEditorPage {
   // ----------------------------------------------------------------- preview
 
   /**
-   * Sets a setting's **declared default** from the preview.
-   *
-   * The preview is the control a player will use, so it is also the honest way
-   * to enter a default: a colour is picked, a slider is dragged, and the value
-   * cannot be one the control does not accept.
-   */
-  /**
    * The value the preview shows for a field, which is its declared default.
    *
    * A declaration may carry no value at all: the shape is shared with character
@@ -541,6 +534,13 @@ export class SettingsEditorPage {
     );
   }
 
+  /**
+   * Sets a setting's **declared default** from the preview.
+   *
+   * The preview is the control a player will use, so it is also the honest way
+   * to enter a default: a colour is picked, a slider is dragged, and the value
+   * cannot be one the control does not accept.
+   */
   protected setDefault(fieldId: string, value: SettingValue): void {
     this.edit((draft) => {
       for (const section of draft.sections) {

@@ -948,6 +948,14 @@ character creation keeps starting play directly. Their `transition` is `none`,
 | `preview` | `animation?`, `parameters?` | Real character preview. Parameters are temporary overrides, useful for equipment previews without making equipment a creation choice. |
 | `summary` | — | Recap of the generic resolved result. |
 
+`text` blocks were spelled `textKey` here and by the editor, but the Rust reader
+asked for `text_key` until `bd50bd0`: `rename_all` on an enum renames the
+variants, not the fields of its struct variants. No shipped file carried a text
+block, so nothing depended on the wrong spelling and
+`CHARACTER_CREATION_SCHEMA_VERSION` does not move — the schema this page
+describes never changed. A hand-written file that had worked around the bug with
+`text_key` no longer parses.
+
 Resolution returns `{ character, choices, parameters, characteristics }`. The
 engine applies defaults, backwards conditions and declared bindings; it never
 interprets an id. This declaration is authored and resolved today, but the
@@ -1196,7 +1204,7 @@ join the customisation while it plays, so layers pick their sprites through the
 | `id` | string | yes | Stable id, unique in the definition — `idle`, `walk`, `attack`. |
 | `name` | string | no | Shown in the editor. Not player-facing, so not a key. |
 | `role` | see below | no | Gameplay situation this animation illustrates. A role may be assigned only once per character. |
-| `frames` | integer | yes | How long it is, `1..=240`. |
+| `frames` | integer | no | How long it is, `1..=240`. Default `1`. |
 | `frameDurationMs` | integer | no | How long each frame lasts. Default `120`. |
 | `looping` | boolean | no | Whether it starts again when it ends. Default `false`. |
 | `tracks[]` | see below | no | What moves, and when. |

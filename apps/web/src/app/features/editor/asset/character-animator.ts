@@ -180,7 +180,7 @@ export class CharacterAnimator {
 
   /** `0 … frames - 1`, for the timeline's header and every row. */
   protected readonly frames = computed<readonly number[]>(() => {
-    const count = this.played()?.frames ?? 0;
+    const count = this.played()?.frames ?? 1;
     return Array.from({ length: count }, (_value, index) => index);
   });
 
@@ -431,7 +431,7 @@ export class CharacterAnimator {
   }
 
   protected step(delta: number): void {
-    const frames = this.animation()?.frames ?? 0;
+    const frames = this.animation()?.frames ?? 1;
     if (frames === 0) {
       return;
     }
