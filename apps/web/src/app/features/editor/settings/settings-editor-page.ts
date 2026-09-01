@@ -526,6 +526,21 @@ export class SettingsEditorPage {
    * to enter a default: a colour is picked, a slider is dragged, and the value
    * cannot be one the control does not accept.
    */
+  /**
+   * The value the preview shows for a field, which is its declared default.
+   *
+   * A declaration may carry no value at all: the shape is shared with character
+   * creation, where a characteristic that declares itself `nullable` starts
+   * empty. The preview still has to draw the control, so it draws the empty
+   * value of its kind — and `validate_settings` is what says whether a settings
+   * field was allowed to be null in the first place.
+   */
+  protected previewValue(field: ControlDefinition): SettingValue {
+    return (
+      field.default ?? defaultFor(field.control, field.options?.map((option) => option.value))
+    );
+  }
+
   protected setDefault(fieldId: string, value: SettingValue): void {
     this.edit((draft) => {
       for (const section of draft.sections) {

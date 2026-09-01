@@ -122,8 +122,13 @@ pub struct ShowIf {
 /// question for [`crate::validate_settings`] and its error messages, not for
 /// the parser (`docs/adr/ADR-0012-shared-content-validation.md`). This enum
 /// exists so that *what is representable* is declared once here rather than
-/// retyped in TypeScript: the fields it stands in for carry `#[ts(as =
-/// "SettingValue")]`, and the editor's narrower view is generated from it.
+/// retyped in TypeScript: the fields it stands in for reach it through
+/// `#[ts(as = ...)]`, and the editor's narrower view is generated from it.
+///
+/// It carries no `Null` variant. A field that may hold one says so itself, with
+/// `#[ts(as = "Option<SettingValue>")]` — which is what
+/// [`ControlDefinition::default`] does, because a nullable characteristic
+/// starts empty.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(untagged)]
 #[ts(export, export_to = "settings.ts")]

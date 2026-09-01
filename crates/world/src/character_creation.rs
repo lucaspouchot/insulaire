@@ -117,10 +117,10 @@ pub enum CreationBlock {
     /// overrides. An armour preview is, generically, `{ "armor": "plate" }`.
     Preview {
         /// Animation id. Empty shows the rest pose.
-        #[serde(default)]
+        #[serde(default, skip_serializing_if = "String::is_empty")]
         animation: String,
         /// Values used only while drawing this preview.
-        #[serde(default)]
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         #[ts(as = "BTreeMap<String, crate::settings::SettingValue>")]
         parameters: BTreeMap<String, Value>,
     },

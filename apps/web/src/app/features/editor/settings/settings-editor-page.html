@@ -398,7 +398,7 @@
                   @if (isVisible(field)) {
                     <app-control-field
                       [field]="field"
-                      [value]="field.default"
+                      [value]="previewValue(field)"
                       (changed)="setDefault(field.id, $event)"
                     />
                   }

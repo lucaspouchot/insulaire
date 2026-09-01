@@ -177,11 +177,11 @@ export type CreationBlock =
       /**
        * Animation id. Empty shows the rest pose.
        */
-      animation: string;
+      animation?: string;
       /**
        * Values used only while drawing this preview.
        */
-      parameters: { [key in string]: SettingValue };
+      parameters?: { [key in string]: SettingValue };
     }
   | { type: 'summary' };
 
