@@ -180,7 +180,9 @@ export function rowOf<Definition extends object>(
  * A field the definition does not hold is written as what an absent one means,
  * which is what makes `"kind": "other"` land in a file blocked out before its
  * author chose one. A field that means nothing either way — no value held and
- * none stated as absent — is left out rather than written as `undefined`.
+ * none stated as absent — is a refusal rather than a quiet omission: a writer
+ * that drops a required field produces a file that will not parse back, which
+ * is worse than an export that fails and says why.
  */
 export function membersOf<Definition extends object>(
   definition: Definition,
@@ -224,7 +226,12 @@ export function membersOf<Definition extends object>(
     }
 
     if (stated === undefined) {
-      continue;
+      // Silence here would write a file missing a field it needs — the failure
+      // the `null` case below was one instance of. Better to refuse the export.
+      throw new Error(
+        `\`${key}\` is written, but the definition holds nothing and nothing says what ` +
+          'an absent one would have meant, so there is no value to write.',
+      );
     }
     written.push({ key, value: spec.as ? spec.as(stated, definition) : value(stated) });
   }
@@ -302,6 +309,11 @@ function text(held: unknown): string {
 function same(left: unknown, right: unknown): boolean {
   if (left === right) {
     return true;
+  }
+  // A list and a record are never the same value, and both count as records to
+  // `typeof`: without this, an empty list would equal an empty object.
+  if (Array.isArray(left) !== Array.isArray(right)) {
+    return false;
   }
   if (Array.isArray(left) && Array.isArray(right)) {
     return left.length === right.length && left.every((item, at) => same(item, right[at]));

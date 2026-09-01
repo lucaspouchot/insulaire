@@ -61,6 +61,23 @@ describe('valuesByModule', () => {
 });
 
 describe('assembleModule', () => {
+  it('keeps an import that wraps over several lines whole', () => {
+    const wrapped = `import type {\n  OffsetCoord,\n  PixelOffset,\n} from "./shared";\n\nexport type PlacedTile = { at: OffsetCoord };\n`;
+
+    const assembled = assembleModule('world.ts', wrapped, [
+      { name: 'MAX_ELEVATION', doc: '', value: '127' },
+    ]);
+
+    assert.match(assembled, /} from ".\/shared";\n\nexport const MAX_ELEVATION/);
+    assert.ok(assembled.indexOf('PixelOffset,') < assembled.indexOf('MAX_ELEVATION'));
+  });
+
+  it('writes a module that is imports and nothing else without losing a line', () => {
+    const assembled = assembleModule('world.ts', 'import type { A } from "./a";\n', []);
+
+    assert.match(assembled, /import type \{ A \} from ".\/a";\n$/);
+  });
+
   it('replaces the ts-rs banner with one naming the command that rewrites it', () => {
     const assembled = assembleModule('world.ts', GENERATED, []);
 

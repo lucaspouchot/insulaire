@@ -136,6 +136,30 @@ describe('canonicalJson', () => {
     expect(canonicalJson(blockOf({ id: 'x', note: null }, shape))).toContain('"note": null');
   });
 
+  it('refuses to write a field nothing can supply a value for', () => {
+    const shape: Shape<{ id: string; note: string }> = {
+      fields: { id: 'always', note: 'always' },
+    };
+
+    // A file missing `note` would not parse back, so the export fails instead.
+    expect(() => blockOf({ id: 'x' } as { id: string; note: string }, shape)).toThrow(
+      /there is no value to write/,
+    );
+  });
+
+  /** Both are records to `typeof`, and neither is the other's absent value. */
+  it('never reads an empty list as an empty record', () => {
+    const shape: Shape<{ id: string; tags?: string[] }> = {
+      absent: { tags: [] },
+      fields: { id: 'always', tags: 'unless-redundant' },
+    };
+
+    expect(canonicalJson(blockOf({ id: 'x', tags: [] }, shape))).not.toContain('"tags"');
+    expect(
+      canonicalJson(blockOf({ id: 'x', tags: {} as unknown as string[] }, shape)),
+    ).toContain('"tags": {}');
+  });
+
   it('spaces a value the way the rest of the format does', () => {
     expect(value([4, 10]).text).toBe('[4, 10]');
     expect(value({ surface: 'f' }).text).toBe('{ "surface": "f" }');

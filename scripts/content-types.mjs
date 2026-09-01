@@ -58,6 +58,26 @@ export function valuesByModule(values) {
 }
 
 /**
+ * Where `ts-rs`'s import block ends, counted in lines.
+ *
+ * An import is followed to its `;` rather than assumed to be one line: a long
+ * list wraps, and a module whose imports were cut in half would still be
+ * written out — the bounds would land inside one, and the module would no
+ * longer compile. A module that is imports and nothing else ends at its last
+ * line rather than at `-1`.
+ */
+function importBlockEnd(lines) {
+  let end = 0;
+  let at = 0;
+  while (at < lines.length && lines[at].startsWith('import ')) {
+    while (at < lines.length && !lines[at].trimEnd().endsWith(';')) at += 1;
+    end = at + 1;
+    at = end;
+  }
+  return end;
+}
+
+/**
  * One finished module: the banner, the imports, the bounds, then the shapes.
  *
  * The bounds go above the shapes because that is the order they are read in —
@@ -68,7 +88,7 @@ export function assembleModule(name, generated, values) {
   const body = generated.replace(TS_RS_BANNER, '').trimStart();
 
   const lines = body.split('\n');
-  const afterImports = lines.findIndex((line) => !line.startsWith('import '));
+  const afterImports = importBlockEnd(lines);
   const imports = lines.slice(0, afterImports).join('\n');
   const shapes = lines.slice(afterImports).join('\n').trimStart();
 
