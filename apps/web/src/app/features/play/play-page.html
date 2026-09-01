@@ -109,7 +109,7 @@
       <section class="panel">
         <h2>{{ 'ui.play.controls.heading' | t }}</h2>
         <div class="button-row">
-          <button type="button" (click)="wait()" [disabled]="busy() || moving()">
+          <button type="button" (click)="wait()" [disabled]="busy() || session.moving()">
             {{ 'ui.play.controls.wait' | t }}
           </button>
         </div>
@@ -147,7 +147,7 @@
       <section class="panel log-panel">
         <h2>{{ 'ui.play.log.heading' | t }}</h2>
         <ul class="log">
-          @for (entry of log(); track entry.id) {
+          @for (entry of session.log(); track entry.id) {
             <li [class]="entry.kind">
               <span class="tick">{{ entry.tick }}</span>
               <span class="text">{{ entry.key | t: entry.params }}</span>

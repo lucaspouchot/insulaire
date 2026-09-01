@@ -57,7 +57,7 @@ these tickets remove.
 | [04](issues/04-one-editing-session-for-the-workspaces.md) | Give the asset workspaces one editing session | Strong · **done** |
 | [05](issues/05-close-the-project-store-read-side.md) | Close the project store's read side | Strong · **done** |
 | [06](issues/06-one-canonical-writer.md) | One canonical writer, not seven | Worth exploring · **done** |
-| [07](issues/07-lift-the-session-presentation.md) | Lift the session presentation out of the play page | Worth exploring |
+| [07](issues/07-lift-the-session-presentation.md) | Lift the session presentation out of the play page | Worth exploring · **done** |
 | [08](issues/08-adr-references-must-resolve.md) | ADR references must resolve, and be checkable | Strong · **done** |
 | [09](issues/09-tile-and-locale-do-not-fit-the-draft-set.md) | Tile and locale do not fit the draft set | Strong · split out of 04 · **done** |
 
@@ -126,7 +126,14 @@ Two files moved, both onto the copy that was wrong — `character-creation.json`
 the one content file still written by `JSON.stringify`, and a world's `grid`,
 which was compact against the rule its own writer documented.
 
-**07** is independent and can go at any point.
+**Then 07, and done.** `app/features/play/session-presentation.ts` holds what a
+session *shows* between two ticks — the animation and its role, the glide and
+its interpolation, the resolved appearance, and the log — and `play-page.ts`
+keeps the canvas, the camera, the input and the lifecycle, 918 lines down to
+714. The clock stayed with the page and the time is passed in, which is what
+makes the module's 15 tests possible: the feature had no spec at all before.
+Nothing crossed into Angular that was not already there — interpolating between
+two engine-supplied positions is presentation, and ADR-0010 is untouched.
 
 ## What is deliberately not proposed
 

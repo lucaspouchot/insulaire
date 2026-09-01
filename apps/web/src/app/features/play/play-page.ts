@@ -20,6 +20,12 @@
  * The world it plays is whatever the editor currently holds — the editor's own
  * export, fed straight into `loadWorld`.
  *
+ * What this component holds is the **canvas, the camera, the input and the
+ * lifecycle**. What the session *shows* between two ticks — which drawing of the
+ * player is on screen, how far along a glide an entity is, what the log says —
+ * is `session-presentation.ts`, which needs no DOM and has a spec that starts no
+ * browser. The clock stays here, because a page knows when it is on screen.
+ *
  * The **session outlives this component**. The engine owns the game (ADR-0001),
  * so opening the settings or the editor and coming back resumes what was left,
  * and leaving the route is not a way to throw a game away. A game ends where a
@@ -45,11 +51,10 @@ import { ActivatedRoute } from '@angular/router';
 
 import { Offset, hexDistance, offsetNeighbor, offsetToAxial } from '../../../core/hex/hex-coords';
 import { HexLayout } from '../../../core/hex/hex-layout';
-import { EntitySnapshot, GameSnapshot, SimEvent, WorldView } from '../../../engine/engine.types';
+import { EntitySnapshot, GameSnapshot, WorldView } from '../../../engine/engine.types';
 import { Camera } from '../../../renderer/camera';
 import { CanvasView } from '../../../renderer/canvas-view';
 import { SpriteCache } from '../../../renderer/character-renderer';
-import { movementProgress, roleForMove } from '../../../renderer/character-animation';
 import { HexMapRenderer } from '../../../renderer/hex-map-renderer';
 import { toProjectionMode } from '../../../renderer/projection';
 import { renderDecorations } from '../../../renderer/decoration-model';
@@ -76,42 +81,9 @@ import { DecorationLibraryService } from '../../services/decoration-library.serv
 import { ObjectLibraryService } from '../../services/object-library.service';
 import { CharacterCreationService } from '../../services/character-creation.service';
 import { TitleScreenService } from '../../services/title-screen.service';
+import { PRESENTATION_FRAME_MS, SessionPresentation } from './session-presentation';
 
 const HEX_SIZE = 28;
-const MAX_LOG_ENTRIES = 60;
-/** Character poses are sampled at 30 fps; authored sprite frames are slower. */
-const PRESENTATION_FRAME_MS = 1000 / 30;
-/** Glide used when no authored player movement cycle supplies a duration. */
-const DEFAULT_ENTITY_MOVE_MS = 400;
-
-interface PlayerAnimation {
-  readonly role: AnimationRole;
-  readonly startedAt: number;
-  /** `null` for idle; movement returns to idle after one pass. */
-  readonly endsAt: number | null;
-}
-
-/** Presentation-only interpolation of one authoritative movement event. */
-interface EntityMotion {
-  readonly from: readonly [number, number];
-  readonly startedAt: number;
-  readonly durationMs: number;
-}
-
-/**
- * One rendered line in the event log.
- *
- * A line is a **key and its values**, not a sentence: the log is on screen, so
- * it is translated like everything else, and switching language rewrites the
- * lines already logged (`docs/adr/ADR-0020-localised-content-keys.md`).
- */
-interface LogEntry {
-  readonly id: number;
-  readonly tick: number;
-  readonly key: string;
-  readonly params?: Readonly<Record<string, string | number>>;
-  readonly kind: 'move' | 'hold' | 'tick' | 'reject';
-}
 
 @Component({
   selector: 'app-play-page',
@@ -162,25 +134,31 @@ export class PlayPage implements AfterViewInit, OnDestroy {
     () => this.refresh(),
   );
 
-  private logCounter = 0;
-  private playerAnimation: PlayerAnimation | null = null;
-  private playerCharacter: ResolvedCharacter | null = null;
+  /**
+   * What the session *shows*, between the ticks the engine decides.
+   *
+   * The page keeps the canvas, the camera, the input and the lifecycle; which
+   * drawing is on screen, how far along a glide an entity is and what the log
+   * says are all in there, where a spec reaches them without a browser
+   * (`docs/adr/ADR-0023-session-outlives-the-route.md`).
+   */
+  protected readonly session = new SessionPresentation({
+    resolve: (role, timeMs) => this.resolvePlayerCharacter(role, timeMs),
+    preload: (assets) => void this.tileImages.preload(assets),
+  });
+
+  /** The frame this page has asked the browser for, and when it last sampled. */
   private presentationFrame = 0;
   private presentationSampledAt = 0;
-  private readonly entityMotions = new Map<string, EntityMotion>();
-  private readonly warmedCharacterAssets = new Set<string>();
 
   protected readonly worldView = signal<WorldView | null>(null);
   protected readonly snapshot = signal<GameSnapshot | null>(null);
   protected readonly hover = signal<Offset | null>(null);
   protected readonly selected = signal<Offset | null>(null);
   protected readonly seed = signal(2026);
-  protected readonly log = signal<readonly LogEntry[]>([]);
   protected readonly lastRejection = signal<string | null>(null);
   protected readonly error = signal<string | null>(null);
   protected readonly busy = signal(true);
-  /** True while accepted entity movements are being presented between cells. */
-  protected readonly moving = signal(false);
   /** Set while the map is waiting for the pictures it is painted from. */
   protected readonly loadingArt = signal(false);
   protected readonly showGrid = signal(true);
@@ -272,7 +250,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
     this.view?.dispose();
     cancelAnimationFrame(this.presentationFrame);
     this.presentationFrame = 0;
-    this.entityMotions.clear();
+    this.session.reset();
   }
 
   // ------------------------------------------------------------------- game
@@ -287,8 +265,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
     this.busy.set(true);
     this.error.set(null);
     this.lastRejection.set(null);
-    this.log.set([]);
-    this.resetPresentation();
+    this.session.restart();
 
     try {
       this.registerContent();
@@ -297,11 +274,12 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       const snapshot = this.engine.createGame(worldId, seed, this.settings.gameSettings());
 
       this.snapshot.set(snapshot);
-      this.startPlayerAnimation('idle');
+      this.session.idle(performance.now());
+      this.ensurePresentationClock();
       this.selected.set(null);
       const view = this.loadWorldIntoRenderer(worldId, true);
 
-      this.pushLog(0, 'ui.play.log.started', 'tick', { world: view.name, seed });
+      this.session.note(0, 'ui.play.log.started', 'tick', { world: view.name, seed });
       this.busy.set(false);
     } catch (cause) {
       this.error.set(describeError(cause));
@@ -321,20 +299,20 @@ export class PlayPage implements AfterViewInit, OnDestroy {
     this.busy.set(true);
     this.error.set(null);
     this.lastRejection.set(null);
-    this.log.set([]);
-    this.resetPresentation();
+    this.session.restart();
 
     try {
       this.registerContent();
 
       const snapshot = this.engine.snapshot();
       this.snapshot.set(snapshot);
-      this.startPlayerAnimation('idle');
+      this.session.idle(performance.now());
+      this.ensurePresentationClock();
       this.seed.set(snapshot.seed);
       this.selected.set(null);
       const view = this.loadWorldIntoRenderer(snapshot.worldId, true);
 
-      this.pushLog(snapshot.tick, 'ui.play.log.resumed', 'tick', {
+      this.session.note(snapshot.tick, 'ui.play.log.resumed', 'tick', {
         world: view.name,
         tick: snapshot.tick,
       });
@@ -379,7 +357,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
     // walking into one: the runtime degrades, it does not crash.
     const links = this.engine.validateLinks();
     for (const issue of links.issues) {
-      this.pushLog(0, 'ui.play.log.issue', 'reject', {
+      this.session.note(0, 'ui.play.log.issue', 'reject', {
         code: issue.code,
         message: issue.message,
       });
@@ -468,7 +446,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
    * and a refusal comes back as `accepted: false` with the tick untouched.
    */
   private send(command: { type: 'moveTo'; to: [number, number] } | { type: 'wait' }): void {
-    if (this.busy() || this.moving() || !this.engine.isReady) {
+    if (this.busy() || this.session.moving() || !this.engine.isReady) {
       return;
     }
     try {
@@ -477,30 +455,21 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       this.snapshot.set(result.state);
       this.lastRejection.set(result.accepted ? null : (result.rejection?.message ?? 'Refused.'));
       for (const event of result.events) {
-        this.logEvent(result.state.tick, event);
+        this.session.record(result.state.tick, event);
       }
-      const movement = result.events.find(
-        (event) => event.type === 'entityMoved' && event.contentId === playerId,
-      );
       const changedWorld = result.state.worldId !== this.worldView()?.worldId;
 
       // A door changed the map: the engine already swapped the session, the UI
       // just has to draw the world it now says it is on.
       if (changedWorld) {
-        this.entityMotions.clear();
-        this.moving.set(false);
-        this.startPlayerAnimation('idle');
+        this.session.idle(performance.now());
         this.view?.clearHover();
         this.selected.set(null);
         this.loadWorldIntoRenderer(result.state.worldId, false);
       } else {
-        const now = performance.now();
-        const duration =
-          movement?.type === 'entityMoved'
-            ? this.startPlayerAnimation(roleForMove(movement.from, movement.to), now)
-            : DEFAULT_ENTITY_MOVE_MS;
-        this.startEntityMotions(result.events, now, duration);
+        this.session.advance(result.events, playerId, performance.now());
       }
+      this.ensurePresentationClock();
       this.refresh();
     } catch (cause) {
       this.error.set(describeError(cause));
@@ -547,7 +516,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       // `CanvasView` before this runs.
       onHover: (cell) => this.hover.set(cell),
       onClick: (cell) => {
-        if (this.moving()) {
+        if (this.session.moving()) {
           return;
         }
         this.selected.set(cell);
@@ -658,7 +627,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       elevation,
       elevationRange,
       artChoices: cellArtChoicesOf(view.artChoices ?? []),
-      entities: this.renderEntities(snapshot?.entities ?? []),
+      entities: this.session.frame(snapshot?.entities ?? [], performance.now()),
       // Placement is content and definitions are content; putting the two
       // together is the shared helper's, so Play and the editor draw a forest
       // in the same order
@@ -694,27 +663,6 @@ export class PlayPage implements AfterViewInit, OnDestroy {
     };
   }
 
-  /**
-   * Starts one semantic animation and resolves its first pose immediately.
-   *
-   * Movement lasts one authored pass even when the source is marked looping;
-   * after that the player returns to idle. Time stays presentation-only and no
-   * tick is spent (`docs/adr/ADR-0030-gameplay-selects-character-animations-by-role.md`).
-   */
-  private startPlayerAnimation(role: AnimationRole, now = performance.now()): number {
-    const first = this.resolvePlayerCharacter(role, 0);
-    this.playerCharacter = first;
-    const duration = Math.max(first?.pose?.durationMs ?? 0, DEFAULT_ENTITY_MOVE_MS);
-    this.playerAnimation = {
-      role,
-      startedAt: now,
-      endsAt: role === 'idle' ? null : now + duration,
-    };
-    this.preloadCharacter(first);
-    this.ensurePresentationClock();
-    return duration;
-  }
-
   /** Resolves the selected or base player appearance through Rust. */
   private resolvePlayerCharacter(role: AnimationRole, timeMs: number): ResolvedCharacter | null {
     const creation = this.characterCreation.result();
@@ -729,190 +677,38 @@ export class PlayPage implements AfterViewInit, OnDestroy {
     return this.engine.resolveCharacterRole(id, values, role, timeMs);
   }
 
-  /** Keeps an authored idle alive and samples linear tracks smoothly. */
+  /**
+   * Keeps the presentation sampled while anything on screen is still moving.
+   *
+   * The clock is the page's because a page knows when it is on screen; what to
+   * draw at a given moment is {@link SessionPresentation}'s, which is why the
+   * time is passed in rather than read there.
+   */
   private ensurePresentationClock(): void {
-    if (
-      this.presentationFrame !== 0 ||
-      (this.playerCharacter === null && this.entityMotions.size === 0)
-    ) {
+    if (this.presentationFrame !== 0 || !this.session.presenting) {
       return;
     }
     const tick = (now: number): void => {
       this.presentationFrame = 0;
       if (now - this.presentationSampledAt >= PRESENTATION_FRAME_MS) {
         this.presentationSampledAt = now;
-        this.advancePresentation(now);
+        this.session.sample(now);
+        this.updateRenderedEntities(now);
       }
-      if (this.playerCharacter?.pose !== undefined || this.entityMotions.size > 0) {
+      if (this.session.changing) {
         this.presentationFrame = requestAnimationFrame(tick);
       }
     };
     this.presentationFrame = requestAnimationFrame(tick);
   }
 
-  private advancePresentation(now: number): void {
-    let state = this.playerAnimation;
-    if (state !== null) {
-      if (state.endsAt !== null && now >= state.endsAt) {
-        state = { role: 'idle', startedAt: now, endsAt: null };
-        this.playerAnimation = state;
-      }
-      const character = this.resolvePlayerCharacter(state.role, now - state.startedAt);
-      this.playerCharacter = character;
-      this.preloadCharacter(character);
-    }
-
-    for (const [id, motion] of this.entityMotions) {
-      if (movementProgress(motion.startedAt, motion.durationMs, now) >= 1) {
-        this.entityMotions.delete(id);
-      }
-    }
-    if (this.entityMotions.size === 0 && this.moving()) {
-      this.moving.set(false);
-    }
-    this.updateRenderedEntities(now);
-  }
-
-  private updateRenderedEntities(now = performance.now()): void {
+  /** Redraws the entities alone, without rebuilding the whole model. */
+  private updateRenderedEntities(now: number): void {
     const snapshot = this.snapshot();
     if (snapshot === null || this.renderer === null) {
       return;
     }
-    this.renderer.setEntities(this.renderEntities(snapshot.entities, now));
+    this.renderer.setEntities(this.session.frame(snapshot.entities, now));
     this.view?.invalidate();
-  }
-
-  /** Starts every movement emitted by one tick on the same visual clock. */
-  private startEntityMotions(
-    events: readonly SimEvent[],
-    startedAt: number,
-    durationMs: number,
-  ): void {
-    this.entityMotions.clear();
-    for (const event of events) {
-      if (event.type === 'entityMoved') {
-        this.entityMotions.set(event.contentId, {
-          from: event.from,
-          startedAt,
-          durationMs,
-        });
-      }
-    }
-    this.moving.set(this.entityMotions.size > 0);
-    this.ensurePresentationClock();
-  }
-
-  /** Builds the entities at their authoritative cells plus visual transitions. */
-  private renderEntities(
-    entities: readonly EntitySnapshot[],
-    now = performance.now(),
-  ): RenderModel['entities'] {
-    return entities.map((entity) => {
-      const motion = this.entityMotions.get(entity.contentId);
-      return {
-        id: entity.contentId,
-        at: { col: entity.at[0], row: entity.at[1] },
-        visualId: entity.visualId,
-        fallbackColor: entity.fallbackColor,
-        character: entity.kind === 'player' ? this.playerCharacter : undefined,
-        ...(motion === undefined
-          ? {}
-          : {
-              motion: {
-                from: { col: motion.from[0], row: motion.from[1] },
-                progress: movementProgress(motion.startedAt, motion.durationMs, now),
-              },
-            }),
-        glyph: entity.kind === 'player' ? '@' : 'M',
-        emphasised: entity.kind === 'player',
-      };
-    });
-  }
-
-  /** Clears presentation without touching the engine-owned session. */
-  private resetPresentation(): void {
-    cancelAnimationFrame(this.presentationFrame);
-    this.presentationFrame = 0;
-    this.presentationSampledAt = 0;
-    this.entityMotions.clear();
-    this.moving.set(false);
-    this.playerAnimation = null;
-    this.playerCharacter = null;
-  }
-
-  private preloadCharacter(character: ResolvedCharacter | null): void {
-    if (character === null) {
-      return;
-    }
-    const fresh = character.layers
-      .map((layer) => layer.asset)
-      .filter((asset) => !this.warmedCharacterAssets.has(asset));
-    for (const asset of fresh) {
-      this.warmedCharacterAssets.add(asset);
-    }
-    if (fresh.length > 0) {
-      void this.tileImages.preload(fresh);
-    }
-  }
-
-  // -------------------------------------------------------------------- log
-
-  private logEvent(tick: number, event: SimEvent): void {
-    switch (event.type) {
-      case 'entityMoved':
-        this.pushLog(tick, 'ui.play.log.moved', 'move', {
-          entity: event.contentId,
-          fromCol: event.from[0],
-          fromRow: event.from[1],
-          toCol: event.to[0],
-          toRow: event.to[1],
-        });
-        break;
-      case 'entityHeld':
-        this.pushLog(tick, 'ui.play.log.held', 'hold', {
-          entity: event.contentId,
-          col: event.at[0],
-          row: event.at[1],
-        });
-        break;
-      case 'tickAdvanced':
-        this.pushLog(event.tick, 'ui.play.log.tick', 'tick', { tick: event.tick });
-        break;
-      case 'actionRejected':
-        // The reason comes from Rust already worded; it is quoted, not composed.
-        this.pushLog(tick, 'ui.play.log.refused', 'reject', { reason: event.reason.message });
-        break;
-      case 'linkTriggered':
-        this.pushLog(tick, 'ui.play.log.door', 'move', {
-          link: event.link,
-          world: event.toWorld,
-        });
-        break;
-      case 'worldEntered':
-        this.pushLog(tick, 'ui.play.log.entered', 'tick', {
-          world: event.toWorld,
-          col: event.at[0],
-          row: event.at[1],
-          from: event.fromWorld,
-        });
-        break;
-      case 'linkUnresolved':
-        this.pushLog(tick, 'ui.play.log.doorUnresolved', 'reject', {
-          link: event.link,
-          reason: event.reason,
-        });
-        break;
-    }
-  }
-
-  private pushLog(
-    tick: number,
-    key: string,
-    kind: LogEntry['kind'],
-    params?: Readonly<Record<string, string | number>>,
-  ): void {
-    this.logCounter += 1;
-    const entry: LogEntry = { id: this.logCounter, tick, key, params, kind };
-    this.log.update((entries) => [entry, ...entries].slice(0, MAX_LOG_ENTRIES));
   }
 }

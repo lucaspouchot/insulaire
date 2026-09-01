@@ -77,6 +77,13 @@ neither is called an "entity".
   how dense its backing store is, the whole zoom a drawing fits its frame at,
   and the rungs a zoom button steps through. `renderer/canvas-surface.ts`. Not a
   component, and not a canvas: it takes a `CanvasRenderingContext2D`.
+- **session presentation** — what a session *shows* between two ticks: which
+  drawing of the player is on screen, how far along a glide from the old hex to
+  the new one an entity is, and the lines of the event log.
+  `app/features/play/session-presentation.ts`. The engine still says where
+  everything is, at whole hexes, once per tick
+  (`docs/adr/ADR-0023-session-outlives-the-route.md`); interpolating between two
+  of its answers is presentation, not a rule. The clock belongs to the page.
 - **sprite** — one authored image. A **sprite document** is one open for
   painting, with its own undo history (`content/sprite-document.ts`).
 
