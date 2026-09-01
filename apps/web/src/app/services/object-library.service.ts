@@ -11,7 +11,8 @@
 
 import { Injectable } from '@angular/core';
 
-import { ContentRef, ObjectDefinition, ObjectKind } from '../../content/content-types';
+import { ContentRef } from '../../content/generated/project';
+import { ObjectDefinition, ObjectKind } from '../../content/generated/object';
 import { ContentLibrary, LibraryChoice } from './content-library';
 
 /** One registered object as a picker presents it. */

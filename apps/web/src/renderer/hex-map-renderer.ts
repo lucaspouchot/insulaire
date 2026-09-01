@@ -32,7 +32,8 @@
  * come last, unoccluded; see {@link HexMapRenderer.drawLayered}.
  */
 
-import { MAX_REVEAL_RADIUS, bandLevels, shoulderLine } from '../content/content-types';
+import { MAX_REVEAL_RADIUS } from '../content/generated/world';
+import { bandLevels, shoulderLine } from '../content/tile-set-geometry';
 import {
   MapBounds,
   Offset,
@@ -312,9 +313,7 @@ export class HexMapRenderer {
    */
   setEntityCharacter(id: string, character: RenderEntity['character']): void {
     this.setEntities(
-      this.model.entities.map((entity) =>
-        entity.id === id ? { ...entity, character } : entity,
-      ),
+      this.model.entities.map((entity) => (entity.id === id ? { ...entity, character } : entity)),
     );
   }
 
@@ -573,7 +572,9 @@ export class HexMapRenderer {
         if (!this.hittable(model, cell) || !this.isBuried(model, projection, cell)) {
           continue;
         }
-        if (containsPoint(this.cornersOf(cell, this.elevationOf(model, cell), projection), drawing)) {
+        if (
+          containsPoint(this.cornersOf(cell, this.elevationOf(model, cell), projection), drawing)
+        ) {
           return cell;
         }
       }
@@ -771,7 +772,10 @@ export class HexMapRenderer {
     if (model.showGrid) {
       this.drawGrid(model, range, range.minRow, range.maxRow);
     }
-    this.drawOverlays(model, model.overlays.map((overlay) => ({ overlay, cells: overlay.cells })));
+    this.drawOverlays(
+      model,
+      model.overlays.map((overlay) => ({ overlay, cells: overlay.cells })),
+    );
     this.drawHighlight(model, this.hovered, CHROME.hover, 2);
     this.drawHighlight(model, model.selected, CHROME.selection, 3);
     this.drawLocations(model, model.locations);
@@ -1231,12 +1235,7 @@ export class HexMapRenderer {
   }
 
   /** Draws hex outlines as a single stroked path. */
-  private drawGrid(
-    model: RenderModel,
-    range: VisibleRange,
-    minRow: number,
-    maxRow: number,
-  ): void {
+  private drawGrid(model: RenderModel, range: VisibleRange, minRow: number, maxRow: number): void {
     const ctx = this.context;
     const grid = new Path2D();
     // The cells the extent covers but the map lacks: drawn fainter, and only
@@ -1552,7 +1551,12 @@ export class HexMapRenderer {
         ctx.save();
         ctx.translate(base.x, base.y);
         ctx.scale(scale, scale);
-        drawCharacter(ctx, entity.character, { x: -width / 2, y: -height, width, height }, this.images ?? undefined);
+        drawCharacter(
+          ctx,
+          entity.character,
+          { x: -width / 2, y: -height, width, height },
+          this.images ?? undefined,
+        );
         ctx.restore();
         ctx.restore();
         continue;
@@ -1560,7 +1564,15 @@ export class HexMapRenderer {
 
       if (standing) {
         ctx.beginPath();
-        ctx.ellipse(base.x, base.y, radius * 0.9, radius * 0.9 * this.projection.tilt, 0, 0, Math.PI * 2);
+        ctx.ellipse(
+          base.x,
+          base.y,
+          radius * 0.9,
+          radius * 0.9 * this.projection.tilt,
+          0,
+          0,
+          Math.PI * 2,
+        );
         ctx.fillStyle = CHROME.entityShadow;
         ctx.fill();
       }
@@ -1663,7 +1675,8 @@ export class HexMapRenderer {
       col: entity.at.col,
       row: Math.round(
         entity.motion.from.row +
-          (entity.at.row - entity.motion.from.row) * Math.max(0, Math.min(1, entity.motion.progress)),
+          (entity.at.row - entity.motion.from.row) *
+            Math.max(0, Math.min(1, entity.motion.progress)),
       ),
     };
   }
@@ -1889,7 +1902,10 @@ export class HexMapRenderer {
     );
   }
 
-  private fillFor(model: RenderModel, paletteIndex: number): string | CanvasPattern | CanvasGradient {
+  private fillFor(
+    model: RenderModel,
+    paletteIndex: number,
+  ): string | CanvasPattern | CanvasGradient {
     const tile = model.palette[paletteIndex];
     return tile ? this.sprites.resolve(tile.visualId, tile.fallbackColor) : CHROME.outOfBounds;
   }

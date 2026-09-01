@@ -22,7 +22,7 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 
 import { ProjectManifest } from './project-manifest';
 import { WorldLibrary } from './world-library';
-import { PROJECT_SCHEMA_VERSION, ProjectDefinition } from '../../content/content-types';
+import { PROJECT_SCHEMA_VERSION, ProjectDefinition } from '../../content/generated/project';
 import { WorldDocument } from '../../content/world-document';
 import { serializeProject, serializeWorld } from '../../content/world-serializer';
 

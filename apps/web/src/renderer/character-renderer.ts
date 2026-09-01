@@ -32,7 +32,8 @@
  * only obeys it.
  */
 
-import { ResolvedCharacter, ResolvedLayer, SpriteResolution } from '../content/content-types';
+import { ResolvedCharacter, ResolvedLayer } from '../content/generated/character';
+import { SpriteResolution } from '../content/generated/shared';
 import { unpackSpriteBundle } from '../content/sprite-bundle';
 import { fitZoom } from './canvas-surface';
 

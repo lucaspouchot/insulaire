@@ -14,7 +14,7 @@
  * defining the same key (ADR-0020).
  */
 
-import { ControlDefinition, SettingsSection, SettingValue } from '../../content/content-types';
+import { ControlDefinition, SettingsSection, SettingValue } from '../../content/generated/settings';
 import { HexDirection } from '../../core/hex/hex-coords';
 
 /** Ids of the settings the application implements, for callers that read them. */
@@ -298,7 +298,9 @@ export function engineSettingsDefaults(
   for (const section of engineSettingsSections(languages, hasWindow)) {
     for (const group of section.groups) {
       for (const field of group.fields) {
-        defaults[field.id] = field.default;
+        if (field.default !== null) {
+          defaults[field.id] = field.default;
+        }
       }
     }
   }

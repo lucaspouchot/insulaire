@@ -9,19 +9,18 @@
  */
 
 import {
-  DecorationPlane,
   DEFAULT_CHARACTER_HEIGHT_TILES,
   DEFAULT_GRID_ALPHA,
   DEFAULT_GRID_COLOR,
   DEFAULT_GRID_LINE_WIDTH,
-  DEFAULT_REVEAL_STYLE,
-  PixelRect,
-  ResolvedCharacter,
   RevealStyle,
-  TileArt,
-  TileArtGeometry,
-  tileArtGeometry,
-} from '../content/content-types';
+} from '../content/generated/world';
+import { DEFAULT_REVEAL_STYLE } from '../content/world-defaults';
+import { DecorationPlane } from '../content/generated/decoration';
+import { PixelRect } from '../content/generated/shared';
+import { ResolvedCharacter } from '../content/generated/character';
+import { TileArt, TileArtGeometry } from '../content/generated/tile-set';
+import { tileArtGeometry } from '../content/tile-set-geometry';
 import { EMPTY_BOUNDS, MapBounds, Offset } from '../core/hex/hex-coords';
 import { ProjectionMode } from './projection';
 

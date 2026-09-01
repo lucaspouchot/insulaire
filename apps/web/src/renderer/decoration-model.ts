@@ -13,7 +13,9 @@
  * own way, because the order is content, not presentation.
  */
 
-import { PixelRect, PlacedDecoration, ResolvedDecoration } from '../content/content-types';
+import { PixelRect } from '../content/generated/shared';
+import { PlacedDecoration } from '../content/generated/world';
+import { ResolvedDecoration } from '../content/generated/decoration';
 import { RenderDecoration } from './render-model';
 
 /** Looks up what a decoration definition draws, or `null` when it is unknown. */

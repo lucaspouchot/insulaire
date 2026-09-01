@@ -91,8 +91,13 @@ export type CharacteristicDefinition = {
   control: ControlKind;
   /**
    * The value used until the player changes it.
+   *
+   * `null` is representable, and shipped content uses it: a characteristic
+   * that declares itself [`crate::CharacteristicDefinition::nullable`] starts
+   * empty. Whether a given control *may* be null is the validator's answer
+   * (`docs/adr/ADR-0012-shared-content-validation.md`), not this type's.
    */
-  default: SettingValue;
+  default: SettingValue | null;
   /**
    * Choices, for `select` and `multiSelect`.
    */
@@ -138,6 +143,12 @@ export type CreationBinding =
 
 /**
  * One item placed on a creation screen, in display order.
+ *
+ * `rename_all_fields` is not decoration: `rename_all` on an enum renames the
+ * *variants*, so without it [`CreationBlock::Text`] asks for `text_key` while
+ * the editor — and `docs/content-format.md` — write `textKey`. No shipped file
+ * carries a text block, which is why nothing caught it; deriving the
+ * TypeScript from this enum is what did.
  */
 export type CreationBlock =
   | {
@@ -145,7 +156,7 @@ export type CreationBlock =
       /**
        * Key of the paragraph.
        */
-      text_key: string;
+      textKey: string;
     }
   | {
       type: 'choice';
@@ -205,8 +216,13 @@ export type CreationChoice = {
   control: ControlKind;
   /**
    * The value used until the player changes it.
+   *
+   * `null` is representable, and shipped content uses it: a characteristic
+   * that declares itself [`crate::CharacteristicDefinition::nullable`] starts
+   * empty. Whether a given control *may* be null is the validator's answer
+   * (`docs/adr/ADR-0012-shared-content-validation.md`), not this type's.
    */
-  default: SettingValue;
+  default: SettingValue | null;
   /**
    * Choices, for `select` and `multiSelect`.
    */

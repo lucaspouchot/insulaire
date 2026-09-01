@@ -12,11 +12,24 @@ content/
 └── worlds/demo_world.json        WorldDefinition   — an authored map
 ```
 
+The TypeScript half is **derived**, not written: `ts-rs` renders the shapes from
+the definition structs and `crates/world/src/ts_export.rs` publishes the bounds
+with the values the compiler resolved, into `apps/web/src/content/generated/`.
+That directory is build output kept under version control — edit the Rust, run
+`node scripts/generate-content-types.mjs`, and commit both. `npm run check:types`
+refuses a stale copy, so a bound cannot hold two values at once.
+
+A field that carries its default is written by neither side: the definitions use
+`skip_serializing_if` throughout, so a key holding the default and an absent key
+are the same file. Every such field is optional in the table entries below, and
+reading one back gives the default either way.
+
 Canonical implementations:
 
 | Concern | Rust | TypeScript |
 |---|---|---|
-| Types | `crates/world/src/definition.rs`, `tileset.rs`, `decoration.rs`, `object.rs` | `apps/web/src/content/content-types.ts` |
+| Types | `crates/world/src/definition.rs`, `tileset.rs`, `decoration.rs`, `object.rs` | *(derived — `apps/web/src/content/generated/`)* |
+| Bounds | `crates/world/src/ts_export.rs` publishes them | *(derived — same modules)* |
 | Validation | `crates/world/src/validation.rs` | *(none — see ADR-0012)* |
 | Writing | `serde_json` | `apps/web/src/content/world-serializer.ts`, `decoration-serializer.ts`, `object-serializer.ts` |
 
@@ -381,7 +394,7 @@ since.
 | `entities` | EntityDefinition[] | no | Placed entities. Exactly one player is required to play. |
 | `decorations` | PlacedDecoration[] | no | Trees, houses and chests standing on the map. Several may share a cell. |
 | `locations` | LocationDefinition[] | no | Points of interest. |
-| `links` | MapLink[] | no | Cells that send the player to another map. |
+| `links` | MapLinkDefinition[] | no | Cells that send the player to another map. |
 | `metadata` | object | no | Free text; never read by the simulation. |
 
 ### Zones
@@ -619,7 +632,7 @@ cannot know, so the unresolved reference is reported as
 | `name` | string | no | Display name. |
 | `tags` | string[] | no | Free-form tags. |
 
-### MapLink
+### MapLinkDefinition
 
 A cell that sends the player to another map (ADR-0014). It is the only
 cross-file reference in the world schema.

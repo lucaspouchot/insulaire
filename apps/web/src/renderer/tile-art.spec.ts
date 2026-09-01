@@ -5,7 +5,7 @@ import {
   ElevationRepeat,
   TileArt,
   TileArtVariant,
-} from '../content/content-types';
+} from '../content/generated/tile-set';
 import {
   MAX_STACKED_LEVELS,
   isEmptyRender,
@@ -259,7 +259,7 @@ describe('tile art resolution', () => {
     expect(resolved.layers.every((layer) => layer.asset === 'assets/tiles/a.png')).toBe(true);
   });
 
-  it('cuts a cell out of another tile\'s ladder, keeping its own top face', () => {
+  it("cuts a cell out of another tile's ladder, keeping its own top face", () => {
     // The point of the feature: grass on top, rock underneath.
     const meadow: TileArt = { surface: [variant('turf')] };
     const cliff: TileArt = { elevation: { levels: [{ variants: [variant('granite')] }] } };
@@ -268,9 +268,7 @@ describe('tile art resolution', () => {
 
     expect(resolved.surface).toBe('assets/tiles/turf.png');
     expect(resolved.layers).toHaveLength(2);
-    expect(resolved.layers.every((layer) => layer.asset === 'assets/tiles/granite.png')).toBe(
-      true,
-    );
+    expect(resolved.layers.every((layer) => layer.asset === 'assets/tiles/granite.png')).toBe(true);
   });
 
   it('wraps a chosen variant rather than dropping the layer', () => {

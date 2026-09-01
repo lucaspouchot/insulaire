@@ -19,7 +19,7 @@ import { PROJECT, TILE_SET, world } from './project-fixture';
 import { ProjectManifest } from './project-manifest';
 import { TileSetLibrary } from './tile-set-library';
 import { WorldLibrary } from './world-library';
-import { TileSetDefinition } from '../../content/content-types';
+import { TileSetDefinition } from '../../content/generated/tile-set';
 import { WorldDocument } from '../../content/world-document';
 
 interface Held {

@@ -13,7 +13,7 @@ import { Injectable, inject } from '@angular/core';
 
 import { ProjectManifest } from './project-manifest';
 import { WorldLibrary } from './world-library';
-import { TileSetDefinition } from '../../content/content-types';
+import { TileSetDefinition } from '../../content/generated/tile-set';
 import { WorldDocument } from '../../content/world-document';
 
 @Injectable({ providedIn: 'root' })

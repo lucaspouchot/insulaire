@@ -31,8 +31,13 @@ export type ControlDefinition = {
   control: ControlKind;
   /**
    * The value used until the player changes it.
+   *
+   * `null` is representable, and shipped content uses it: a characteristic
+   * that declares itself [`crate::CharacteristicDefinition::nullable`] starts
+   * empty. Whether a given control *may* be null is the validator's answer
+   * (`docs/adr/ADR-0012-shared-content-validation.md`), not this type's.
    */
-  default: SettingValue;
+  default: SettingValue | null;
   /**
    * Choices, for `select` and `multiSelect`.
    */

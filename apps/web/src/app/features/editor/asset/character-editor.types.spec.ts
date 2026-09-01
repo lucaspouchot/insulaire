@@ -6,7 +6,7 @@ import {
   CharacterLayer,
   DEFAULT_FRAME_DURATION_MS,
   MAX_ANIMATION_FRAMES,
-} from '../../../../content/content-types';
+} from '../../../../content/generated/character';
 import {
   blankAnimation,
   blankVariant,
@@ -33,7 +33,7 @@ import {
  * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
  */
 
-function layer(id: string, parent?: string | null): CharacterLayer {
+function layer(id: string, parent?: string): CharacterLayer {
   return { id, parent, variants: [] };
 }
 

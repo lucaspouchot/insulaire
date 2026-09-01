@@ -21,7 +21,7 @@
 
 import { inject, signal } from '@angular/core';
 
-import { ContentRef } from '../../content/content-types';
+import { ContentRef } from '../../content/generated/project';
 import { EngineService } from './engine.service';
 import { ProjectManifest } from '../project/project-manifest';
 import { contentUrl } from './project-store.service';

@@ -31,18 +31,20 @@ import {
   signal,
 } from '@angular/core';
 
+import { ContentRef } from '../../../../content/generated/project';
 import {
-  ContentRef,
   DEFAULT_FRAME_DURATION_MS,
-  DEFAULT_ICON_RESOLUTION,
   MAX_FLIPBOOK_FRAMES,
+} from '../../../../content/generated/character';
+import {
+  DEFAULT_ICON_RESOLUTION,
   MAX_STACK_SIZE,
   OBJECT_SCHEMA_VERSION,
   ObjectDefinition,
   ObjectKind,
   ResolvedObject,
-  SpriteResolution,
-} from '../../../../content/content-types';
+} from '../../../../content/generated/object';
+import { SpriteResolution } from '../../../../content/generated/shared';
 import { serializeObject } from '../../../../content/object-serializer';
 import { SpriteDocument } from '../../../../content/sprite-document';
 import { routeUndoRedo } from '../../../../core/keyboard-shortcuts';

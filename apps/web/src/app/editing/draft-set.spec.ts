@@ -1,7 +1,7 @@
 import { signal } from '@angular/core';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { ContentRef } from '../../content/content-types';
+import { ContentRef } from '../../content/generated/project';
 import { ValidationReport } from '../../engine/engine.types';
 import { DraftSet } from './draft-set';
 import { Draft, DraftServices, DraftSource } from './draft-source';

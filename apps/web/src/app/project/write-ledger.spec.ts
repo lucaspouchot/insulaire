@@ -20,7 +20,7 @@ import { ProjectManifest } from './project-manifest';
 import { TileSetLibrary } from './tile-set-library';
 import { WorldLibrary } from './world-library';
 import { WriteLedger } from './write-ledger';
-import { ProjectDefinition } from '../../content/content-types';
+import { ProjectDefinition } from '../../content/generated/project';
 import { WorldDocument } from '../../content/world-document';
 import { ProjectStoreService } from '../services/project-store.service';
 
@@ -151,7 +151,9 @@ describe('WriteLedger — what a save has to write', () => {
 
   it('wants a new map written, and the manifest with it', async () => {
     const { ledger, worlds, tileSets } = await open();
-    worlds.addWorld(WorldDocument.fromDefinition(world('north'), tileSets.requireTileSetFor('terrain')));
+    worlds.addWorld(
+      WorldDocument.fromDefinition(world('north'), tileSets.requireTileSetFor('terrain')),
+    );
 
     expect(ledger.changedWorldIds()).toEqual(['north']);
     expect(ledger.worldPath('north')).toBe('worlds/north.json');

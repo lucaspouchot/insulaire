@@ -19,8 +19,8 @@ import {
   TileArtVariant,
   TileDefinition,
   TileSetDefinition,
-  bandLevels,
-} from '../../../../content/content-types';
+} from '../../../../content/generated/tile-set';
+import { bandLevels } from '../../../../content/tile-set-geometry';
 
 /** Which panel of the tile editor is open. */
 export type TileEditorTab = 'definition' | 'flat' | 'surface' | 'elevation' | 'geometry';

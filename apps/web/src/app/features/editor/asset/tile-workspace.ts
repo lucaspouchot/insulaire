@@ -57,15 +57,17 @@ import {
   MAX_TILE_IMAGE_SIZE,
   MAX_TILE_VARIANTS,
   TILE_SET_SCHEMA_VERSION,
-  ProjectionMode,
   TileArtGeometry,
   TileDefinition,
   TileSetDefinition,
-  tileArtGeometry,
+} from '../../../../content/generated/tile-set';
+import { ProjectionMode } from '../../../../content/generated/world';
+import {
   bandLevels,
   faceHeight,
   shoulderDepth,
-} from '../../../../content/content-types';
+  tileArtGeometry,
+} from '../../../../content/tile-set-geometry';
 import { SpriteDocument } from '../../../../content/sprite-document';
 import { serializeTileSet } from '../../../../content/tile-set-serializer';
 import { routeUndoRedo } from '../../../../core/keyboard-shortcuts';

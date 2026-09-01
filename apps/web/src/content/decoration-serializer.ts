@@ -34,13 +34,13 @@
  * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
  */
 
+import { DEFAULT_FRAME_DURATION_MS } from './generated/character';
 import {
   DecorationAnimation,
   DecorationDefinition,
   DEFAULT_DECORATION_RESOLUTION,
-  DEFAULT_FRAME_DURATION_MS,
-  PixelOffset,
-} from './content-types';
+} from './generated/decoration';
+import { PixelOffset } from './generated/shared';
 
 /** The decoration file, in the canonical layout. */
 export function serializeDecoration(decoration: DecorationDefinition): string {

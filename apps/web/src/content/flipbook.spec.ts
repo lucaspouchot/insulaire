@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_FRAME_DURATION_MS } from './content-types';
+import { DEFAULT_FRAME_DURATION_MS } from './generated/character';
 import { Flipbook, frameAt, frameDurationOf } from './flipbook';
 
 /** A four-frame flipbook at the default rate, looping unless told otherwise. */

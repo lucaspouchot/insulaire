@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { ProjectDefinition, TileSetDefinition, WorldDefinition } from './content-types';
+import { ProjectDefinition } from './generated/project';
+import { TileSetDefinition } from './generated/tile-set';
+import { WorldDefinition } from './generated/world';
 import { WorldDocument } from './world-document';
 import { serializeProject, serializeWorld } from './world-serializer';
 
@@ -151,9 +153,7 @@ describe('serializeWorld', () => {
       defaultTile: 'grass',
     });
 
-    expect(json).toContain(
-      '  "projection": "isometric",\n  "characterHeightTiles": 2.5,\n',
-    );
+    expect(json).toContain('  "projection": "isometric",\n  "characterHeightTiles": 2.5,\n');
   });
 
   it('writes the reveal after the grid, where the renderer settings live', () => {
@@ -191,7 +191,13 @@ describe('serializeWorld', () => {
     const shaped = serializeWorld({
       ...base,
       origin: [0, -2],
-      shape: { default: 'absent', exceptions: [[3, 0], [4, 0]] },
+      shape: {
+        default: 'absent',
+        exceptions: [
+          [3, 0],
+          [4, 0],
+        ],
+      },
     });
     // A coordinate reads the way every other coordinate in these files does.
     expect(shaped).toContain('  "origin": [0, -2],\n');

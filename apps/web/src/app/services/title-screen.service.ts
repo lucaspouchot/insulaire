@@ -15,7 +15,7 @@
 
 import { Injectable, inject, signal } from '@angular/core';
 
-import { TitleScreenDefinition } from '../../content/content-types';
+import { TitleScreenDefinition } from '../../content/generated/title-screen';
 import { EngineService } from './engine.service';
 import { ProjectManifest } from '../project/project-manifest';
 import { contentUrl } from './project-store.service';

@@ -14,7 +14,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { PROJECT, TILE_SET, world } from './project-fixture';
 import { ProjectManifest } from './project-manifest';
 import { WorldLibrary } from './world-library';
-import { WorldDefinition } from '../../content/content-types';
+import { WorldDefinition } from '../../content/generated/world';
 import { WorldDocument } from '../../content/world-document';
 
 function documentOf(definition: WorldDefinition): WorldDocument {
@@ -93,7 +93,11 @@ describe('WorldLibrary — the set of maps', () => {
     held.worlds.addZone('north', 'North');
     held.worlds.setZone('north');
 
-    expect(held.worlds.worldChoices()).toContainEqual({ id: 'ridge', name: 'ridge', zone: 'north' });
+    expect(held.worlds.worldChoices()).toContainEqual({
+      id: 'ridge',
+      name: 'ridge',
+      zone: 'north',
+    });
   });
 
   it('refuses a zone that is empty or already declared', () => {

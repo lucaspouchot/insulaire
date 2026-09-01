@@ -10,7 +10,9 @@
  * the application imports it.
  */
 
-import { ProjectDefinition, TileSetDefinition, WorldDefinition } from '../../content/content-types';
+import { ProjectDefinition } from '../../content/generated/project';
+import { TileSetDefinition } from '../../content/generated/tile-set';
+import { WorldDefinition } from '../../content/generated/world';
 
 export const TILE_SET: TileSetDefinition = {
   id: 'terrain',
@@ -81,7 +83,9 @@ export function contentFiles(project: ProjectDefinition): Map<string, unknown> {
 }
 
 /** A `fetch` that answers from `files`, keyed by path under the document base. */
-export function fetchFrom(files: ReadonlyMap<string, unknown>): (input: string) => Promise<Response> {
+export function fetchFrom(
+  files: ReadonlyMap<string, unknown>,
+): (input: string) => Promise<Response> {
   return (input: string) => {
     // `assetUrl` resolves against the document base, so what arrives here is
     // absolute; the path is the part these fixtures are keyed by.

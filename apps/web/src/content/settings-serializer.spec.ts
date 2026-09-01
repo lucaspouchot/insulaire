@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { SettingsDefinition } from './content-types';
+import { SettingsDefinition } from './generated/settings';
 import { serializeSettings } from './settings-serializer';
 
 // Vitest runs with `apps/web` as its root, so the repository root is two levels up.

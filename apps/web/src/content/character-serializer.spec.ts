@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { serializeCharacter } from './character-serializer';
-import { CharacterDefinition } from './content-types';
+import { CharacterDefinition } from './generated/character';
 
 // Vitest runs with `apps/web` as its root, so the repository root is two levels up.
 const repoRoot = resolve(process.cwd(), '../..');

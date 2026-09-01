@@ -12,7 +12,7 @@ export type {
   TitleButton,
   TitleLayout,
   TitleScreenDefinition,
-} from '../../../../content/content-types';
+} from '../../../../content/generated/title-screen';
 
 /** The part of a `ValidationReport` this screen displays. */
 export interface ValidationReportLike {

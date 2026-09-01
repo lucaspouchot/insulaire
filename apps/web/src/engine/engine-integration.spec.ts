@@ -15,24 +15,27 @@ import { pathToFileURL } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import {
-  CharacterDefinition,
   CharacterCreationDefinition,
   CharacterCreationResult,
+} from '../content/generated/character-creation';
+import { CharacterDefinition, ResolvedCharacter } from '../content/generated/character';
+import {
   DECORATION_SCHEMA_VERSION,
   DecorationDefinition,
+  ResolvedDecoration,
+} from '../content/generated/decoration';
+import {
   OBJECT_SCHEMA_VERSION,
   ObjectDefinition,
-  ResolvedCharacter,
-  ResolvedDecoration,
   ResolvedObject,
+} from '../content/generated/object';
+import {
   TILE_SET_SCHEMA_VERSION,
   TileDefinition,
   TileSetDefinition,
-  WORLD_SCHEMA_VERSION,
-  WorldDefinition,
-  bandLevels,
-  tileArtGeometry,
-} from '../content/content-types';
+} from '../content/generated/tile-set';
+import { WORLD_SCHEMA_VERSION, WorldDefinition } from '../content/generated/world';
+import { bandLevels, tileArtGeometry } from '../content/tile-set-geometry';
 import { WorldDocument } from '../content/world-document';
 import { serializeDecoration } from '../content/decoration-serializer';
 import { serializeObject } from '../content/object-serializer';
@@ -151,6 +154,10 @@ describe.skipIf(!built)('engine boundary', () => {
     expect(info.name).toBe('insulaire-engine');
     expect(info.targetArch).toBe('wasm32');
     expect(info.pointerWidth).toBe(32);
+    // Not the same guarantee as `npm run check:types`, which proves the
+    // committed bindings match `crates/world/src/`. This proves the `.wasm`
+    // being loaded was built from them — the one gap a generator cannot close,
+    // since the bundle is built separately and gitignored.
     expect(info.worldSchemaVersion).toBe(WORLD_SCHEMA_VERSION);
   });
 

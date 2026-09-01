@@ -19,7 +19,8 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 
 import { ProjectManifest } from './project-manifest';
-import { TileSetDefinition, WorldDefinition } from '../../content/content-types';
+import { TileSetDefinition } from '../../content/generated/tile-set';
+import { WorldDefinition } from '../../content/generated/world';
 import { WorldDocument } from '../../content/world-document';
 import { serializeWorld } from '../../content/world-serializer';
 

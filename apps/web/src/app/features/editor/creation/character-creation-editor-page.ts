@@ -17,15 +17,17 @@ import {
   CharacterCreationDefinition,
   CharacterCreationResult,
   CharacteristicDefinition,
-  ControlDefinition,
-  ControlKind,
   CreationBinding,
   CreationBlock,
   CreationChoice,
   CreationScreen,
   ScreenTransition,
+} from '../../../../content/generated/character-creation';
+import {
+  ControlDefinition,
+  ControlKind,
   SettingValue,
-} from '../../../../content/content-types';
+} from '../../../../content/generated/settings';
 import { surfaceDensity } from '../../../../renderer/canvas-surface';
 import { SpriteCache, drawCharacter } from '../../../../renderer/character-renderer';
 import { I18nService } from '../../../i18n/i18n.service';
@@ -124,9 +126,7 @@ export class CharacterCreationEditorPage {
 
   protected readonly path = computed(() => this.manifest.characterCreationPath());
   protected readonly writable = computed(() => this.workspace.status() !== null);
-  protected readonly unlisted = computed(
-    () => this.manifest.characterCreation() === null,
-  );
+  protected readonly unlisted = computed(() => this.manifest.characterCreation() === null);
   protected readonly errorCount = this.drafts.errorCount;
   protected readonly choices = computed(() => this.document()?.choices ?? []);
   protected readonly characteristics = computed(() => this.document()?.characteristics ?? []);
@@ -815,7 +815,16 @@ export class CharacterCreationEditorPage {
   private resetPreview(): void {
     this.choiceValues.set(
       Object.fromEntries(
-        this.choices().map((choice) => [choice.id, structuredClone(choice.default)]),
+        this.choices().map((choice) => [
+          choice.id,
+          structuredClone(
+            choice.default ??
+              defaultFor(
+                choice.control,
+                choice.options?.map((o) => o.value),
+              ),
+          ),
+        ]),
       ),
     );
     this.characteristicValues.set(

@@ -13,7 +13,8 @@ import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectStoreService } from './project-store.service';
-import { ProjectDefinition, WorldDefinition } from '../../content/content-types';
+import { ProjectDefinition } from '../../content/generated/project';
+import { WorldDefinition } from '../../content/generated/world';
 import { PROJECT, contentFiles, fetchFrom, world } from '../project/project-fixture';
 import { ProjectManifest } from '../project/project-manifest';
 import { WorldLibrary } from '../project/world-library';
@@ -133,9 +134,7 @@ describe('ProjectStoreService — the files win over the stored session', () => 
 
     // Nothing on disk declares it, so it survives on the strength of the
     // session alone — and the manifest is owed a write.
-    expect(manifest.characters()).toEqual([
-      { id: 'goblin', path: 'characters/goblin.json' },
-    ]);
+    expect(manifest.characters()).toEqual([{ id: 'goblin', path: 'characters/goblin.json' }]);
     expect(ledger.manifestNeedsWriting()).toBe(true);
   });
 
@@ -157,7 +156,9 @@ describe('ProjectStoreService — the files win over the stored session', () => 
   it('loads a map added to the directory while the session was away', async () => {
     // The session knows one map; the manifest now declares two. Merging the
     // manifest without loading the file would declare a map with no document.
-    store({ ...PROJECT, worlds: [{ id: 'valley', path: 'worlds/valley.json' }] }, [world('valley')]);
+    store({ ...PROJECT, worlds: [{ id: 'valley', path: 'worlds/valley.json' }] }, [
+      world('valley'),
+    ]);
 
     const { manifest, worlds, ledger } = await reopen(PROJECT);
 

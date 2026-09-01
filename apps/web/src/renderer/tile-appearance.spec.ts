@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { TileArt, faceHeight, shoulderDepth, shoulderLine } from '../content/content-types';
+import { TileArt } from '../content/generated/tile-set';
+import { faceHeight, shoulderDepth, shoulderLine } from '../content/tile-set-geometry';
 import { mapBounds, offset } from '../core/hex/hex-coords';
 import { SpriteSource } from './character-renderer';
 import { RenderModel, emptyRenderModel } from './render-model';

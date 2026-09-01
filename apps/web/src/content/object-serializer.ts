@@ -34,11 +34,8 @@
  * object being blocked out should show the fields it still owes.
  */
 
-import {
-  DEFAULT_ICON_RESOLUTION,
-  DEFAULT_FRAME_DURATION_MS,
-  ObjectDefinition,
-} from './content-types';
+import { DEFAULT_FRAME_DURATION_MS } from './generated/character';
+import { DEFAULT_ICON_RESOLUTION, ObjectDefinition } from './generated/object';
 
 /** The object file, in the canonical layout. */
 export function serializeObject(object: ObjectDefinition): string {

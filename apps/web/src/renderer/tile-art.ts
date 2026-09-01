@@ -54,12 +54,12 @@
 
 import {
   ElevationLevel,
-  ProjectionMode,
   TileArt,
   TileArtGeometry,
   TileArtVariant,
   TileElevation,
-} from '../content/content-types';
+} from '../content/generated/tile-set';
+import { ProjectionMode } from '../content/generated/world';
 
 /**
  * Most layers {@link resolveTileRender} will stack for one cell.

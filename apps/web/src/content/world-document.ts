@@ -47,33 +47,28 @@ import {
   minRow,
 } from '../core/hex/hex-coords';
 import {
+  CellPresence,
+  DEFAULT_CHARACTER_HEIGHT_TILES,
   EntityDefinition,
   GridStyle,
   LocationDefinition,
-  CellPresence,
-  MapLink,
-  PixelOffset,
-  PlacedDecoration,
+  MapLinkDefinition,
   MapShape,
+  MAX_ELEVATION,
+  MIN_ELEVATION,
+  PlacedDecoration,
   PlacedTile,
   PlacedTileArt,
   ProjectionMode,
-  TileArt,
-  TileArtGeometry,
-  TileDefinition,
-  TileSetDefinition,
-  tileArtGeometry,
+  RevealStyle,
+  WORLD_SCHEMA_VERSION,
   WorldDefinition,
   WorldMetadata,
-  MAX_ELEVATION,
-  MIN_ELEVATION,
-  DEFAULT_CHARACTER_HEIGHT_TILES,
-  DEFAULT_GRID_STYLE,
-  DEFAULT_REVEAL_STYLE,
-  RevealStyle,
-  isDefaultRevealStyle,
-  WORLD_SCHEMA_VERSION,
-} from './content-types';
+} from './generated/world';
+import { DEFAULT_GRID_STYLE, DEFAULT_REVEAL_STYLE, isDefaultRevealStyle } from './world-defaults';
+import { PixelOffset } from './generated/shared';
+import { TileArt, TileArtGeometry, TileDefinition, TileSetDefinition } from './generated/tile-set';
+import { tileArtGeometry } from './tile-set-geometry';
 
 /** A palette entry resolved from the tile set, indexed by position. */
 export interface DocumentTile {
@@ -555,8 +550,16 @@ export class WorldDocument {
     // Copied cell by cell over the overlap rather than row-slice by row-slice:
     // the two extents may differ in both origin and width, so no run of the old
     // buffer lines up with a run of the new one.
-    for (let row = Math.max(minRow(previous), minRow(next)); row <= Math.min(maxRow(previous), maxRow(next)); row += 1) {
-      for (let col = Math.max(minCol(previous), minCol(next)); col <= Math.min(maxCol(previous), maxCol(next)); col += 1) {
+    for (
+      let row = Math.max(minRow(previous), minRow(next));
+      row <= Math.min(maxRow(previous), maxRow(next));
+      row += 1
+    ) {
+      for (
+        let col = Math.max(minCol(previous), minCol(next));
+        col <= Math.min(maxCol(previous), maxCol(next));
+        col += 1
+      ) {
         const from = indexIn({ col, row }, previous);
         const to = indexIn({ col, row }, next);
         cells[to] = this.cells[from] as number;
@@ -887,10 +890,7 @@ export class WorldDocument {
   }
 
   /** Applies an edit to one placement, by its id. */
-  updateDecoration(
-    id: string,
-    patch: Partial<Omit<DocumentDecoration, 'id' | 'at'>>,
-  ): boolean {
+  updateDecoration(id: string, patch: Partial<Omit<DocumentDecoration, 'id' | 'at'>>): boolean {
     const placed = this.decorations.find((candidate) => candidate.id === id);
     if (placed === undefined) {
       return false;
@@ -1070,7 +1070,7 @@ export class WorldDocument {
       ...(placed.tags.length > 0 ? { tags: [...placed.tags] } : {}),
     }));
 
-    const links: MapLink[] = this.links.map((link) => ({
+    const links: MapLinkDefinition[] = this.links.map((link) => ({
       id: link.id,
       at: [link.at.col, link.at.row],
       targetWorld: link.targetWorld,

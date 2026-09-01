@@ -11,7 +11,8 @@
 
 import { Injectable } from '@angular/core';
 
-import { CharacterCategory, CharacterDefinition, ContentRef } from '../../content/content-types';
+import { CharacterCategory, CharacterDefinition } from '../../content/generated/character';
+import { ContentRef } from '../../content/generated/project';
 import { ContentLibrary, LibraryChoice } from './content-library';
 
 /** One registered character as a picker presents it. */

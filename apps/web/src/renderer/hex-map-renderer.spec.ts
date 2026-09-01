@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { TileArt, shoulderDepth, shoulderLine } from '../content/content-types';
+import { TileArt } from '../content/generated/tile-set';
+import { shoulderDepth, shoulderLine } from '../content/tile-set-geometry';
 import { mapBounds, offset } from '../core/hex/hex-coords';
 import { HexLayout } from '../core/hex/hex-layout';
 import { Camera } from './camera';

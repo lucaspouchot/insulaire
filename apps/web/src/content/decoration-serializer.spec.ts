@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { DecorationDefinition, DECORATION_SCHEMA_VERSION } from './content-types';
+import { DECORATION_SCHEMA_VERSION, DecorationDefinition } from './generated/decoration';
 import { serializeDecoration } from './decoration-serializer';
 
 /**

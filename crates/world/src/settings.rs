@@ -153,7 +153,12 @@ pub struct ControlDefinition {
     /// How it is presented.
     pub control: ControlKind,
     /// The value used until the player changes it.
-    #[ts(as = "SettingValue")]
+    ///
+    /// `null` is representable, and shipped content uses it: a characteristic
+    /// that declares itself [`crate::CharacteristicDefinition::nullable`] starts
+    /// empty. Whether a given control *may* be null is the validator's answer
+    /// (`docs/adr/ADR-0012-shared-content-validation.md`), not this type's.
+    #[ts(as = "Option<SettingValue>")]
     pub default: Value,
     /// Choices, for `select` and `multiSelect`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

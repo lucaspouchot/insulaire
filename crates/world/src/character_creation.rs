@@ -84,8 +84,18 @@ pub enum ScreenTransition {
 }
 
 /// One item placed on a creation screen, in display order.
+///
+/// `rename_all_fields` is not decoration: `rename_all` on an enum renames the
+/// *variants*, so without it [`CreationBlock::Text`] asks for `text_key` while
+/// the editor — and `docs/content-format.md` — write `textKey`. No shipped file
+/// carries a text block, which is why nothing caught it; deriving the
+/// TypeScript from this enum is what did.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 #[ts(export, export_to = "character-creation.ts")]
 pub enum CreationBlock {
     /// A paragraph of localised text.
@@ -373,5 +383,24 @@ mod tests {
 
         let result = definition.resolve(&serde_json::json!({}), &serde_json::json!({"age":null}));
         assert_eq!(result.characteristics["age"], Value::Null);
+    }
+    /// A text block is spelled the way the editor writes it, not the way
+    /// `rename_all` on the enum left it.
+    #[test]
+    fn a_text_block_is_keyed_in_camel_case() {
+        let block: CreationBlock =
+            serde_json::from_str(r#"{"type":"text","textKey":"game.creation.intro"}"#)
+                .expect("a text block parses as the editor writes it");
+        assert_eq!(
+            block,
+            CreationBlock::Text {
+                text_key: "game.creation.intro".to_owned()
+            }
+        );
+        assert_eq!(
+            serde_json::to_string(&block).expect("serialise"),
+            r#"{"type":"text","textKey":"game.creation.intro"}"#,
+            "and is written back the same way"
+        );
     }
 }

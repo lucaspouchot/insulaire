@@ -41,7 +41,7 @@ these tickets remove.
 |---|---|
 | Engine method list, written by hand | 5 times (54 / 54 / 55 / 55 / 53) + a 952-line reference doc *(fixed in 01)* |
 | Content kinds threaded through the stack | 9 *(fixed in 02)* |
-| TypeScript types mirroring Rust definitions | 85, with 1 assertion checking a pair |
+| TypeScript types mirroring Rust definitions | 85, with 1 assertion checking a pair *(fixed in 03)* |
 | Asset workspace lines with no spec | 6,303 |
 | Editor modules with no spec | 15 of 17 |
 | `ProjectStoreService` public members | 55, across 6 concerns |
@@ -53,7 +53,7 @@ these tickets remove.
 |---|---|---|
 | [01](issues/01-declare-the-engine-seam-once.md) | Declare the engine seam once | Strong · **done** |
 | [02](issues/02-content-kind-is-a-module.md) | Make the content kind a module | Strong · **done** |
-| [03](issues/03-derive-content-types-from-definitions.md) | Derive the content types from the definitions | Strong |
+| [03](issues/03-derive-content-types-from-definitions.md) | Derive the content types from the definitions | Strong · **done** |
 | [04](issues/04-one-editing-session-for-the-workspaces.md) | Give the asset workspaces one editing session | Strong · **done** |
 | [05](issues/05-close-the-project-store-read-side.md) | Close the project store's read side | Strong · **done** |
 | [06](issues/06-one-canonical-writer.md) | One canonical writer, not seven | Worth exploring |
@@ -105,8 +105,17 @@ locale file turned out not to be a kind at all, for the reasons 09 found on the
 Angular side. `ContentRegistry` went from 48 public members to 18, none of them
 per-kind; `seam.json` from 25 per-kind rows to 9. No rule moved.
 
-Then **03** and **06**, which sequence together: the default table 06 needs is
-the fact 03 generates. **07** is independent and can go at any point.
+**Then 03, and done.** `ts-rs` derives the 86 shapes from the definition structs
+and `crates/world/src/ts_export.rs` publishes the 41 bounds with the values the
+compiler resolved; `content-types.ts` is gone and its 78 callers import from the
+nine schema modules. Nothing parses Rust, which is what made the answer to the
+ticket's first open question decide the other two. It found three disagreements
+the hand-kept file had been hiding, one of them a live bug — `CreationBlock::Text`
+asked for `text_key` while every other side said `textKey` — and it cost 1,401
+bytes of WASM, 0.18%.
+
+Then **06**: the default table it needs is the fact 03 now generates. **07** is
+independent and can go at any point.
 
 ## What is deliberately not proposed
 

@@ -25,8 +25,8 @@ export const DEFAULT_ICON_RESOLUTION = { width: 32, height: 32 };
 /**
  * A kind of thing a character can carry.
  *
- * Mirrors the TypeScript `ObjectDefinition` in
- * `apps/web/src/content/content-types.ts`.
+ * The TypeScript `ObjectDefinition` is derived from this one, into
+ * `apps/web/src/content/generated/object.ts`.
  */
 export type ObjectDefinition = {
   /**

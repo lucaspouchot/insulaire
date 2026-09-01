@@ -43,7 +43,7 @@ import {
   viewChild,
 } from '@angular/core';
 
-import { TileArtGeometry } from '../../../../content/content-types';
+import { TileArtGeometry } from '../../../../content/generated/tile-set';
 import { PALETTE_SIZE, SpriteDocument } from '../../../../content/sprite-document';
 import { PIXEL_ZOOMS, zoomBy } from '../../../../renderer/canvas-surface';
 import { ImageKind, drawChecker, drawGuides } from '../../../../renderer/tile-preview';

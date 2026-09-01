@@ -2,15 +2,15 @@
  * The shapes the settings editor works with, and the small amount of knowledge
  * about the control vocabulary that authoring — as opposed to rendering — needs.
  *
- * The vocabulary itself is `crates/world/src/settings.rs`, mirrored in
- * `content-types.ts` and rendered by `app/settings/control-field`. What lives
+ * The vocabulary itself is `crates/world/src/settings.rs`, derived into
+ * `content/generated/settings.ts` and rendered by `app/settings/control-field`. What lives
  * here is only what a *form for building one* has to know: which control kinds
  * carry options, which carry bounds, and what a freshly added field should
  * default to so that it validates the moment it exists
  * (`docs/adr/ADR-0022-settings.md`).
  */
 
-import { ControlKind, SettingScope, SettingValue } from '../../../../content/content-types';
+import { ControlKind, SettingScope, SettingValue } from '../../../../content/generated/settings';
 
 export type {
   ControlDefinition,
@@ -22,7 +22,7 @@ export type {
   SettingsGroup,
   SettingsSection,
   ShowIf,
-} from '../../../../content/content-types';
+} from '../../../../content/generated/settings';
 
 /** Value controls that may also describe characters and creation answers. */
 export const CONTROL_KINDS: readonly ControlKind[] = [

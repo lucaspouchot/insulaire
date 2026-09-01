@@ -12,7 +12,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SettingsService } from './settings.service';
 import { ENGINE_SETTING } from './engine-settings.schema';
-import { ControlDefinition, ProjectDefinition, SettingsValues } from '../../content/content-types';
+import { ControlDefinition } from '../../content/generated/settings';
+import { ProjectDefinition } from '../../content/generated/project';
+import { SettingsValues } from '../../content/setting-values';
 import { EngineService } from '../services/engine.service';
 import { NativeShellService } from '../services/native-shell.service';
 import { ProjectManifest } from '../project/project-manifest';

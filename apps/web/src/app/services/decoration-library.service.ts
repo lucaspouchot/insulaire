@@ -11,12 +11,12 @@
 
 import { Injectable } from '@angular/core';
 
+import { ContentRef } from '../../content/generated/project';
 import {
-  ContentRef,
   DecorationCategory,
   DecorationDefinition,
   DecorationPlane,
-} from '../../content/content-types';
+} from '../../content/generated/decoration';
 import { ContentLibrary, LibraryChoice } from './content-library';
 
 /** One registered decoration as a picker presents it. */

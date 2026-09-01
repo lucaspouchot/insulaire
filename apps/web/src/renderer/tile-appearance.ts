@@ -44,13 +44,8 @@
  * `tile-art.ts`, mirrored from Rust.
  */
 
-import {
-  MAX_TILE_VARIANTS,
-  TileArt,
-  TileArtGeometry,
-  bandLevels,
-  shoulderLine,
-} from '../content/content-types';
+import { MAX_TILE_VARIANTS, TileArt, TileArtGeometry } from '../content/generated/tile-set';
+import { bandLevels, shoulderLine } from '../content/tile-set-geometry';
 import { Offset } from '../core/hex/hex-coords';
 import { SpriteSource } from './character-renderer';
 import { RenderModel, emptyRenderModel } from './render-model';
@@ -523,9 +518,7 @@ export class TileAppearanceCache {
 
     const surface = render.surface === null ? null : images.image(render.surface);
     if (render.layers.length === 0) {
-      return surface === null
-        ? null
-        : { picture: surface, height: art.surfaceHeight, top: 0 };
+      return surface === null ? null : { picture: surface, height: art.surfaceHeight, top: 0 };
     }
 
     const above = composedTop(render, art);

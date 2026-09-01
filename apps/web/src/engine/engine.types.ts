@@ -9,14 +9,9 @@
  * Positions cross as offset pairs `[col, row]`.
  */
 
-import {
-  GridStyle,
-  PlacedDecoration,
-  RevealStyle,
-  SettingsValues,
-  TileArt,
-  TileArtGeometry,
-} from '../content/content-types';
+import { GridStyle, PlacedDecoration, RevealStyle } from '../content/generated/world';
+import { SettingsValues } from '../content/setting-values';
+import { TileArt, TileArtGeometry } from '../content/generated/tile-set';
 
 /** `[col, row]` in odd-r offset coordinates. */
 export type OffsetWire = [number, number];

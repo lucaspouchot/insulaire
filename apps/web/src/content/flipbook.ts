@@ -23,7 +23,7 @@
  * no signals here (`docs/adr/ADR-0015-client-delivery-build.md`).
  */
 
-import { DEFAULT_FRAME_DURATION_MS } from './content-types';
+import { DEFAULT_FRAME_DURATION_MS } from './generated/character';
 
 /**
  * Anything played as a flipbook.

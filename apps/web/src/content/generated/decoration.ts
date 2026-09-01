@@ -66,8 +66,8 @@ export type DecorationCategory = 'nature' | 'building' | 'prop' | 'container' | 
 /**
  * A kind of thing that stands on a hex.
  *
- * Mirrors the TypeScript `DecorationDefinition` in
- * `apps/web/src/content/content-types.ts`.
+ * The TypeScript `DecorationDefinition` is derived from this one, into
+ * `apps/web/src/content/generated/decoration.ts`.
  */
 export type DecorationDefinition = {
   /**

@@ -86,8 +86,8 @@ pub enum ObjectKind {
 
 /// A kind of thing a character can carry.
 ///
-/// Mirrors the TypeScript `ObjectDefinition` in
-/// `apps/web/src/content/content-types.ts`.
+/// The TypeScript `ObjectDefinition` is derived from this one, into
+/// `apps/web/src/content/generated/object.ts`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "object.ts")]

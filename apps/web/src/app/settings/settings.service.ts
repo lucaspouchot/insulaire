@@ -16,12 +16,8 @@
 
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
 
-import {
-  ControlDefinition,
-  SettingValue,
-  SettingsSection,
-  SettingsValues,
-} from '../../content/content-types';
+import { ControlDefinition, SettingsSection, SettingValue } from '../../content/generated/settings';
+import { SettingsValues } from '../../content/setting-values';
 import { I18nService } from '../i18n/i18n.service';
 import { AudioService } from '../services/audio.service';
 import { EngineService } from '../services/engine.service';
@@ -171,10 +167,41 @@ export class SettingsService {
     this.persist();
   }
 
+  /**
+   * A field's declared default, as a value the surface can show.
+   *
+   * A declaration may carry `null`: the shape is shared with character
+   * creation, where a characteristic that declares itself `nullable` starts
+   * empty. A *setting* that does is content `validate_settings` refuses — but
+   * the panel still has to draw the control, so it draws the empty value of
+   * its kind rather than nothing.
+   */
+  private declaredDefault(field: ControlDefinition): SettingValue {
+    if (field.default !== null) {
+      return field.default;
+    }
+    switch (field.control) {
+      case 'toggle':
+      case 'checkbox':
+        return false;
+      case 'slider':
+      case 'number':
+        return field.min ?? 0;
+      case 'multiSelect':
+        return [];
+      case 'select':
+        return field.options?.[0]?.value ?? '';
+      case 'color':
+      case 'text':
+      case 'keyBinding':
+        return '';
+    }
+  }
+
   /** The value of one setting, falling back to its declared default. */
   value(field: ControlDefinition): SettingValue {
     const stored = this.valuesSignal()[field.id];
-    return this.accepts(field, stored) ? (stored as SettingValue) : field.default;
+    return this.accepts(field, stored) ? (stored as SettingValue) : this.declaredDefault(field);
   }
 
   /**
@@ -205,7 +232,9 @@ export class SettingsService {
       const next = { ...values };
       if (field.control === 'keyBinding' && typeof value === 'string') {
         const stored = values[field.id];
-        const previous = this.accepts(field, stored) ? (stored as SettingValue) : field.default;
+        const previous = this.accepts(field, stored)
+          ? (stored as SettingValue)
+          : this.declaredDefault(field);
         // Rebinding onto an occupied physical key swaps the two commands. This
         // preserves a one-key/one-action map without making the player repair a
         // command that was silently unbound (ADR-0032).
@@ -213,7 +242,9 @@ export class SettingsService {
           if (
             other.id !== field.id &&
             other.control === 'keyBinding' &&
-            (this.accepts(other, values[other.id]) ? values[other.id] : other.default) === value
+            (this.accepts(other, values[other.id])
+              ? values[other.id]
+              : this.declaredDefault(other)) === value
           ) {
             next[other.id] = previous;
           }
@@ -254,7 +285,7 @@ export class SettingsService {
       ...engineSettingsDefaults(this.i18n.languages(), this.shell.hasWindow()),
     };
     for (const field of fieldsOf(this.gameSections())) {
-      defaults[field.id] = field.default;
+      defaults[field.id] = this.declaredDefault(field);
     }
     this.valuesSignal.set(defaults);
     this.releasedSignal.set(defaults);

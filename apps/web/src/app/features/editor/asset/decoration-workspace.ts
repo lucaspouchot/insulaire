@@ -44,24 +44,25 @@ import {
   viewChild,
 } from '@angular/core';
 
+import { ContentRef } from '../../../../content/generated/project';
 import {
-  ContentRef,
   DECORATION_SCHEMA_VERSION,
-  DEFAULT_CHARACTER_HEIGHT_TILES,
-  DEFAULT_DECORATION_RESOLUTION,
   DecorationAnimation,
   DecorationCategory,
   DecorationDefinition,
   DecorationPlane,
-  MAX_FLIPBOOK_FRAMES,
+  DEFAULT_DECORATION_RESOLUTION,
   MAX_DECORATION_ORDER,
-  ProjectionMode,
-  ResolvedCharacter,
   ResolvedDecoration,
-  SpriteResolution,
-  TileArtGeometry,
-  tileArtGeometry,
-} from '../../../../content/content-types';
+} from '../../../../content/generated/decoration';
+import {
+  DEFAULT_CHARACTER_HEIGHT_TILES,
+  ProjectionMode,
+} from '../../../../content/generated/world';
+import { MAX_FLIPBOOK_FRAMES, ResolvedCharacter } from '../../../../content/generated/character';
+import { SpriteResolution } from '../../../../content/generated/shared';
+import { TileArtGeometry } from '../../../../content/generated/tile-set';
+import { tileArtGeometry } from '../../../../content/tile-set-geometry';
 import { serializeDecoration } from '../../../../content/decoration-serializer';
 import { SpriteDocument } from '../../../../content/sprite-document';
 import { assetUrl } from '../../../../core/asset-url';

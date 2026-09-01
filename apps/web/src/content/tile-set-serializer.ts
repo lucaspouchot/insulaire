@@ -35,8 +35,8 @@ import {
   TileArtVariant,
   TileDefinition,
   TileSetDefinition,
-  tileArtGeometry,
-} from './content-types';
+} from './generated/tile-set';
+import { tileArtGeometry } from './tile-set-geometry';
 import { formatValue, inlineObject } from './world-serializer';
 
 /** Serialises a tile set in the canonical layout. */

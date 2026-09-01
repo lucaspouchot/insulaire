@@ -10,9 +10,17 @@
  * ends up — only how a `ControlDefinition` becomes an input and back.
  */
 
-import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  input,
+  output,
+  signal,
+} from '@angular/core';
 
-import { ControlDefinition, SettingValue } from '../../content/content-types';
+import { ControlDefinition, SettingValue } from '../../content/generated/settings';
 import { TranslatePipe } from '../i18n/translate.pipe';
 import { KeyboardLayoutService } from './keyboard-layout.service';
 import { capturedKeyboardCode } from '../../core/keyboard-shortcuts';

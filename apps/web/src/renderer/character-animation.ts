@@ -1,6 +1,6 @@
 /** Presentation helpers for selecting a character's semantic movement role. */
 
-import { AnimationRole } from '../content/content-types';
+import { AnimationRole } from '../content/generated/character';
 import { offsetToAxial } from '../core/hex/hex-coords';
 
 /** The exact axial direction of an accepted one-hex movement event. */

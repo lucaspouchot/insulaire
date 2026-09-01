@@ -87,11 +87,8 @@ import { AssetWorkspace } from './asset-workspace';
 import { CharacterAnimator } from './character-animator';
 import { PixelEditor } from './pixel-editor';
 import { PixelTool, PixelTools } from './pixel-tools';
-import {
-  CHARACTER_SCHEMA_VERSION,
-  ContentRef,
-  ResolvedLayer,
-} from '../../../../content/content-types';
+import { CHARACTER_SCHEMA_VERSION, ResolvedLayer } from '../../../../content/generated/character';
+import { ContentRef } from '../../../../content/generated/project';
 import { serializeCharacter } from '../../../../content/character-serializer';
 import { PALETTE_SIZE, SpriteDocument } from '../../../../content/sprite-document';
 import { assetUrl } from '../../../../core/asset-url';
@@ -379,8 +376,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
   protected readonly unlisted = computed(() => {
     const document = this.document();
     return (
-      document !== null &&
-      !this.manifest.characters().some((entry) => entry.id === document.id)
+      document !== null && !this.manifest.characters().some((entry) => entry.id === document.id)
     );
   });
 
@@ -1682,7 +1678,14 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
    * clamped, exactly as it would in a game.
    */
   protected value(parameter: ControlDefinition): SettingValue {
-    return this.resolved()?.values[parameter.id] ?? parameter.default;
+    return (
+      this.resolved()?.values[parameter.id] ??
+      parameter.default ??
+      defaultFor(
+        parameter.control,
+        parameter.options?.map((option) => option.value),
+      )
+    );
   }
 
   /**

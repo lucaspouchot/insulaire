@@ -22,12 +22,9 @@
 
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
 
-import {
-  ContentRef,
-  ProjectDefinition,
-  TileSetDefinition,
-  WorldDefinition,
-} from '../../content/content-types';
+import { ContentRef, ProjectDefinition } from '../../content/generated/project';
+import { TileSetDefinition } from '../../content/generated/tile-set';
+import { WorldDefinition } from '../../content/generated/world';
 import { WorldDocument } from '../../content/world-document';
 import { assetUrl } from '../../core/asset-url';
 import { ProjectManifest } from '../project/project-manifest';

@@ -1,6 +1,6 @@
 /** Canonical writer for a generic character-creation declaration. */
 
-import { CharacterCreationDefinition } from './content-types';
+import { CharacterCreationDefinition } from './generated/character-creation';
 
 /**
  * The workflow is a nested authored document whose array order is meaningful.

@@ -2,8 +2,8 @@
  * The shapes the character editor works with, and the small amount of knowledge
  * a *form for building a character* needs.
  *
- * The model itself is `crates/world/src/character.rs`, mirrored in
- * `content-types.ts`; what lives here is only which categories the picker
+ * The model itself is `crates/world/src/character.rs`, derived into
+ * `content/generated/character.ts`; what lives here is only which categories the picker
  * offers, and what a freshly added parameter, layer or variant should look like
  * so that it validates the moment it exists
  * (`docs/adr/ADR-0024-character-definitions.md`).
@@ -25,22 +25,20 @@ import {
   AnimationTrack,
   CharacterCategory,
   CharacterLayer,
-  ControlKind,
   DEFAULT_FRAME_DURATION_MS,
   Keyframe,
   LayerVariant,
-  PoseKey,
-  SettingValue,
   MAX_ANIMATION_FRAMES,
-  PixelOffset,
-  SpriteResolution,
-} from '../../../../content/content-types';
+  PoseKey,
+} from '../../../../content/generated/character';
+import { ControlKind, SettingValue } from '../../../../content/generated/settings';
+import { PixelOffset, SpriteResolution } from '../../../../content/generated/shared';
 
 export {
   DEFAULT_FRAME_DURATION_MS,
   MAX_ANIMATION_FRAMES,
   MAX_SPRITE_RESOLUTION,
-} from '../../../../content/content-types';
+} from '../../../../content/generated/character';
 
 export type {
   Animation,
@@ -50,22 +48,26 @@ export type {
   CharacterCategory,
   CharacterDefinition,
   CharacterLayer,
-  CharacterValues,
   ColorSource,
-  ControlDefinition,
-  ControlKind,
   Interpolation,
   Keyframe,
   LayerVariant,
-  PixelOffset,
-  PixelRect,
   PoseKey,
   ResolvedCharacter,
   ResolvedLayer,
-  SettingValue,
   Sprite,
+} from '../../../../content/generated/character';
+export type { CharacterValues } from '../../../../content/setting-values';
+export type {
+  ControlDefinition,
+  ControlKind,
+  SettingValue,
+} from '../../../../content/generated/settings';
+export type {
+  PixelOffset,
+  PixelRect,
   SpriteResolution,
-} from '../../../../content/content-types';
+} from '../../../../content/generated/shared';
 
 /** Gameplay animation roles, in the order the editor offers them. */
 export const ANIMATION_ROLES: readonly {

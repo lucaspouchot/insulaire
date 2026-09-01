@@ -21,7 +21,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 
-import { ControlDefinition, SettingValue } from '../../content/content-types';
+import { ControlDefinition, SettingValue } from '../../content/generated/settings';
 import { TranslatePipe } from '../i18n/translate.pipe';
 import { EngineService } from '../services/engine.service';
 import { ControlField } from './control-field';

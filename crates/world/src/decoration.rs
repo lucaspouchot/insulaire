@@ -202,8 +202,8 @@ impl DecorationAnimation {
 
 /// A kind of thing that stands on a hex.
 ///
-/// Mirrors the TypeScript `DecorationDefinition` in
-/// `apps/web/src/content/content-types.ts`.
+/// The TypeScript `DecorationDefinition` is derived from this one, into
+/// `apps/web/src/content/generated/decoration.ts`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "decoration.ts")]

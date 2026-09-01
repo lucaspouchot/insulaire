@@ -29,7 +29,7 @@ import {
   LocalesDefinition,
   ProjectDefinition,
   ZoneDefinition,
-} from '../../content/content-types';
+} from '../../content/generated/project';
 
 /**
  * The manifest lists that hold one file per definition.
@@ -76,7 +76,9 @@ export class ProjectManifest {
   readonly worlds = computed<readonly ContentRef[]>(() => this.definitionSignal()?.worlds ?? []);
 
   /** Every tile set the file declares, in project order. */
-  readonly tileSets = computed<readonly ContentRef[]>(() => this.definitionSignal()?.tileSets ?? []);
+  readonly tileSets = computed<readonly ContentRef[]>(
+    () => this.definitionSignal()?.tileSets ?? [],
+  );
 
   /** Every character definition the file declares, in project order. */
   readonly characters = computed<readonly ContentRef[]>(() => this.listOf('characters'));

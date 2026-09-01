@@ -12,13 +12,8 @@
  * (`docs/adr/ADR-0011-hex-coordinate-model.md`).
  */
 
-import {
-  TileArt,
-  TileArtGeometry,
-  bandLevels,
-  faceHeight,
-  shoulderLine,
-} from '../content/content-types';
+import { TileArt, TileArtGeometry } from '../content/generated/tile-set';
+import { bandLevels, faceHeight, shoulderLine } from '../content/tile-set-geometry';
 import { Offset } from '../core/hex/hex-coords';
 import { HexLayout, Point } from '../core/hex/hex-layout';
 import { SpriteSource } from './character-renderer';

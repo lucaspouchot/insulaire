@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { TileDefinition, tileArtGeometry } from '../../../../content/content-types';
+import { TileDefinition } from '../../../../content/generated/tile-set';
+import { tileArtGeometry } from '../../../../content/tile-set-geometry';
 import { ASSET_CATEGORIES, assetCategory } from './asset-categories';
 import {
   FLAT_LEVEL,

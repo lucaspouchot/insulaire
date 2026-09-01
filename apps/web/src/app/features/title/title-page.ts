@@ -32,7 +32,7 @@ import {
 } from '@angular/core';
 import { Router } from '@angular/router';
 
-import { TitleAction, TitleButton } from '../../../content/content-types';
+import { TitleAction, TitleButton } from '../../../content/generated/title-screen';
 import { assetUrl } from '../../../core/asset-url';
 import { describeError } from '../../../core/errors';
 import { I18nService } from '../../i18n/i18n.service';
@@ -196,7 +196,7 @@ export class TitlePage implements OnDestroy {
       await this.saves.refresh();
 
       const screen = await this.titleScreen.ensureLoaded();
-      if (screen !== null && screen.splash !== null && !splashPlayed) {
+      if (screen !== null && screen.splash != null && !splashPlayed) {
         splashPlayed = true;
         this.startSplash(screen.splash.durationMs);
       } else {

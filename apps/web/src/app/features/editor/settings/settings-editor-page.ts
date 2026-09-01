@@ -41,7 +41,7 @@ import {
   isNumeric,
   usesOptions,
 } from './settings-editor.types';
-import { SETTINGS_SCHEMA_VERSION } from '../../../../content/content-types';
+import { SETTINGS_SCHEMA_VERSION } from '../../../../content/generated/settings';
 import { serializeSettings } from '../../../../content/settings-serializer';
 import { I18nService } from '../../../i18n/i18n.service';
 import { TranslatePipe } from '../../../i18n/translate.pipe';

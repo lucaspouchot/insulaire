@@ -50,14 +50,12 @@ import {
   AttachmentPoint,
   CharacterDefinition,
   CharacterLayer,
-  ControlDefinition,
   Keyframe,
   LayerVariant,
-  PixelOffset,
-  PixelRect,
   PoseKey,
-  SettingValue,
-} from './content-types';
+} from './generated/character';
+import { ControlDefinition, SettingValue } from './generated/settings';
+import { PixelOffset, PixelRect } from './generated/shared';
 
 /** The canvas a definition that names none is authored on. */
 const DEFAULT_RESOLUTION = { width: 64, height: 128 };

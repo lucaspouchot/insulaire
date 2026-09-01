@@ -17,7 +17,8 @@
  * from the editor diffs cleanly against a hand-edited one.
  */
 
-import { ProjectDefinition, WorldDefinition } from './content-types';
+import { ProjectDefinition } from './generated/project';
+import { WorldDefinition } from './generated/world';
 
 /** Keys written before the record arrays, in this order. */
 const SCALAR_KEYS = [
@@ -123,13 +124,13 @@ export function serializeProject(project: ProjectDefinition): string {
   if (project.objects !== undefined && project.objects.length > 0) {
     lines.push(...recordArray('objects', project.objects));
   }
-  if (project.characterCreation !== undefined) {
+  if (project.characterCreation != null) {
     lines.push(`  "characterCreation": ${inlineObject(project.characterCreation)},`);
   }
-  if (project.titleScreen !== undefined) {
+  if (project.titleScreen != null) {
     lines.push(`  "titleScreen": ${inlineObject(project.titleScreen)},`);
   }
-  if (project.settings !== undefined) {
+  if (project.settings != null) {
     lines.push(`  "settings": ${inlineObject(project.settings)},`);
   }
   lines.push(...localesBlock(project.locales));

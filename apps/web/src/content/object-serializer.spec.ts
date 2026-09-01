@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ObjectDefinition, OBJECT_SCHEMA_VERSION } from './content-types';
+import { OBJECT_SCHEMA_VERSION, ObjectDefinition } from './generated/object';
 import { serializeObject } from './object-serializer';
 
 describe('serializeObject', () => {

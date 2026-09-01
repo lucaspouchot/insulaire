@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { TileArtGeometry, shoulderLine } from '../content/content-types';
+import { TileArtGeometry } from '../content/generated/tile-set';
+import { shoulderLine } from '../content/tile-set-geometry';
 import { HexLayout } from '../core/hex/hex-layout';
 import {
   faceGuides,

@@ -18,7 +18,7 @@
  * files back after a content reset — for callers that have no drafts at all.
  */
 
-import { ContentRef } from '../../content/content-types';
+import { ContentRef } from '../../content/generated/project';
 import { ValidationReport } from '../../engine/engine.types';
 
 /** Anything the editor holds a draft of. Its id is what everything else keys on. */

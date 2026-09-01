@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { PixelRect, ResolvedCharacter, ResolvedLayer } from '../content/content-types';
+import { PixelRect } from '../content/generated/shared';
+import { ResolvedCharacter, ResolvedLayer } from '../content/generated/character';
 import {
   CharacterBox,
   SpriteCache,

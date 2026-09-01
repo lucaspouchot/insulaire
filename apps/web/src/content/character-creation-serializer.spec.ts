@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { CharacterCreationDefinition } from './content-types';
+import { CharacterCreationDefinition } from './generated/character-creation';
 import { serializeCharacterCreation } from './character-creation-serializer';
 
 describe('serializeCharacterCreation', () => {

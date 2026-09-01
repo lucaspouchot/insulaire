@@ -40,18 +40,18 @@ import {
   DEFAULT_GRID_COLOR,
   DEFAULT_GRID_LINE_WIDTH,
   MAX_CHARACTER_HEIGHT_TILES,
+  MAX_DECORATION_OFFSET,
   MAX_GRID_LINE_WIDTH,
   MAX_REVEAL_RADIUS,
   MIN_CHARACTER_HEIGHT_TILES,
-  RevealStyle,
   MIN_GRID_LINE_WIDTH,
   ProjectionMode,
-  ResolvedCharacter,
-  MAX_DECORATION_OFFSET,
-  PixelOffset,
-  ResolvedDecoration,
+  RevealStyle,
   WorldDefinition,
-} from '../../../../content/content-types';
+} from '../../../../content/generated/world';
+import { PixelOffset } from '../../../../content/generated/shared';
+import { ResolvedCharacter } from '../../../../content/generated/character';
+import { ResolvedDecoration } from '../../../../content/generated/decoration';
 import { TILE_ART_BUNDLE } from '../../../../content/sprite-bundle';
 import {
   CellOccupant,
@@ -357,30 +357,28 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   /** Which inspector the left dock shows below the tool picker, if any. */
   protected readonly inspector = computed<
     'brush' | 'elevation' | 'shape' | 'placement' | 'decorations' | 'doors' | 'none'
-  >(
-    () => {
-      switch (this.tool()) {
-        case 'map':
-          // The map tool's whole content — browser, settings, new map — is in the
-          // right dock; repeating any of it on the left would only split it.
-          return 'none';
-        case 'paint':
-          return 'brush';
-        case 'raise':
-        case 'lower':
-          return 'elevation';
-        case 'addCell':
-        case 'removeCell':
-          return 'shape';
-        case 'decoration':
-          return 'decorations';
-        case 'link':
-          return 'doors';
-        default:
-          return 'placement';
-      }
-    },
-  );
+  >(() => {
+    switch (this.tool()) {
+      case 'map':
+        // The map tool's whole content — browser, settings, new map — is in the
+        // right dock; repeating any of it on the left would only split it.
+        return 'none';
+      case 'paint':
+        return 'brush';
+      case 'raise':
+      case 'lower':
+        return 'elevation';
+      case 'addCell':
+      case 'removeCell':
+        return 'shape';
+      case 'decoration':
+        return 'decorations';
+      case 'link':
+        return 'doors';
+      default:
+        return 'placement';
+    }
+  });
 
   /** The palette entry the paint tool is holding. */
   protected readonly brush = computed<DocumentTile | null>(() => {
@@ -811,8 +809,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
         break;
       case 'decoration': {
         const decoration = this.selectedDecoration();
-        const placed =
-          decoration === null ? null : document.placeDecoration(cell, decoration);
+        const placed = decoration === null ? null : document.placeDecoration(cell, decoration);
         if (placed !== null) {
           // Straight into the inspector: the next decision an author makes about
           // a tree they just planted is whether it can be searched
@@ -1271,7 +1268,9 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     try {
       await this.store.resetToShipped();
     } catch (cause) {
-      this.error.set(this.i18n.t('ui.editor.map.error.reloadFailed', { reason: describeError(cause) }));
+      this.error.set(
+        this.i18n.t('ui.editor.map.error.reloadFailed', { reason: describeError(cause) }),
+      );
       return;
     }
     this.selected.set(null);
@@ -1654,9 +1653,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     return this.document()?.grid.alpha ?? DEFAULT_GRID_ALPHA;
   });
 
-  protected readonly gridLineAlphaPercent = computed(() =>
-    Math.round(this.gridLineAlpha() * 100),
-  );
+  protected readonly gridLineAlphaPercent = computed(() => Math.round(this.gridLineAlpha() * 100));
 
   /** Elevation of the hovered cell, for the status bar. */
   protected readonly hoveredElevation = computed<number | null>(() => {

@@ -21,7 +21,7 @@ import {
   SettingsDefinition,
   SettingsGroup,
   SettingsSection,
-} from './content-types';
+} from './generated/settings';
 
 /** The settings file, in the canonical layout. */
 export function serializeSettings(settings: SettingsDefinition): string {

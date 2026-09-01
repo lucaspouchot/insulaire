@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { TileSetDefinition } from './content-types';
+import { TileSetDefinition } from './generated/tile-set';
 import { serializeTileSet } from './tile-set-serializer';
 
 /**

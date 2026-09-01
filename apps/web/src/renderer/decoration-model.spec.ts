@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { PlacedDecoration, ResolvedDecoration } from '../content/content-types';
+import { PlacedDecoration } from '../content/generated/world';
+import { ResolvedDecoration } from '../content/generated/decoration';
 import { renderDecorations } from './decoration-model';
 
 /**

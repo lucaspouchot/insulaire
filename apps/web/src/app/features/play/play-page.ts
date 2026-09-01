@@ -56,12 +56,9 @@ import { renderDecorations } from '../../../renderer/decoration-model';
 import { RenderModel, cellArtChoicesOf, elevationRangeOf } from '../../../renderer/render-model';
 import { SpriteRegistry } from '../../../renderer/sprite-registry';
 import { TILE_ART_BUNDLE } from '../../../content/sprite-bundle';
-import {
-  AnimationRole,
-  CharacterValues,
-  ResolvedCharacter,
-  ResolvedDecoration,
-} from '../../../content/content-types';
+import { AnimationRole, ResolvedCharacter } from '../../../content/generated/character';
+import { CharacterValues } from '../../../content/setting-values';
+import { ResolvedDecoration } from '../../../content/generated/decoration';
 import { serializeWorld } from '../../../content/world-serializer';
 import { I18nService } from '../../i18n/i18n.service';
 import { SettingsService } from '../../settings/settings.service';
@@ -189,7 +186,9 @@ export class PlayPage implements AfterViewInit, OnDestroy {
   protected readonly showGrid = signal(true);
   protected readonly revision = signal(0);
 
-  protected readonly player = computed<EntitySnapshot | null>(() => this.snapshot()?.player ?? null);
+  protected readonly player = computed<EntitySnapshot | null>(
+    () => this.snapshot()?.player ?? null,
+  );
 
   protected readonly monsters = computed<readonly EntitySnapshot[]>(
     () => this.snapshot()?.entities.filter((entity) => entity.kind === 'monster') ?? [],
@@ -459,9 +458,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
       return;
     }
     event.preventDefault();
-    this.moveTo(
-      offsetNeighbor({ col: player.at[0], row: player.at[1] }, shortcut.direction),
-    );
+    this.moveTo(offsetNeighbor({ col: player.at[0], row: player.at[1] }, shortcut.direction));
   }
 
   /**
@@ -719,10 +716,7 @@ export class PlayPage implements AfterViewInit, OnDestroy {
   }
 
   /** Resolves the selected or base player appearance through Rust. */
-  private resolvePlayerCharacter(
-    role: AnimationRole,
-    timeMs: number,
-  ): ResolvedCharacter | null {
+  private resolvePlayerCharacter(role: AnimationRole, timeMs: number): ResolvedCharacter | null {
     const creation = this.characterCreation.result();
     const id =
       creation?.character ||

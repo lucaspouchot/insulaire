@@ -7,7 +7,7 @@
  * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
  */
 
-import { MAX_SPRITE_RESOLUTION } from '../../../../content/content-types';
+import { MAX_SPRITE_RESOLUTION } from '../../../../content/generated/character';
 
 /** A canvas side clamped into what a definition may declare. */
 export function clampResolution(value: number): number {

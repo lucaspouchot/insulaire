@@ -15,22 +15,20 @@ import { Injectable, signal } from '@angular/core';
 
 import {
   AnimationRole,
+  CharacterDefinition,
+  ResolvedCharacter,
+} from '../../content/generated/character';
+import {
   CharacterCreationDefinition,
   CharacterCreationResult,
-  CharacterDefinition,
-  CharacterValues,
-  DecorationDefinition,
-  ObjectDefinition,
-  PlacedTileArt,
-  ProjectionMode,
-  ResolvedCharacter,
-  ResolvedDecoration,
-  ResolvedObject,
-  SettingsDefinition,
-  SettingsValues,
-  TileArtGeometry,
-  TitleScreenDefinition,
-} from '../../content/content-types';
+} from '../../content/generated/character-creation';
+import { CharacterValues, SettingsValues } from '../../content/setting-values';
+import { DecorationDefinition, ResolvedDecoration } from '../../content/generated/decoration';
+import { ObjectDefinition, ResolvedObject } from '../../content/generated/object';
+import { PlacedTileArt, ProjectionMode } from '../../content/generated/world';
+import { SettingsDefinition } from '../../content/generated/settings';
+import { TileArtGeometry } from '../../content/generated/tile-set';
+import { TitleScreenDefinition } from '../../content/generated/title-screen';
 import {
   CommandResult,
   ContentSummary,

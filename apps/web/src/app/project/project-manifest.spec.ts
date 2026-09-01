@@ -15,7 +15,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { PROJECT } from './project-fixture';
 import { ProjectManifest } from './project-manifest';
-import { DEFAULT_ZONE_ID, ProjectDefinition } from '../../content/content-types';
+import { DEFAULT_ZONE_ID, ProjectDefinition } from '../../content/generated/project';
 
 function manifestOf(project: ProjectDefinition = PROJECT): ProjectManifest {
   TestBed.configureTestingModule({});

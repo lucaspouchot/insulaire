@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { mapBounds, offset } from '../core/hex/hex-coords';
-import { TileSetDefinition, WorldDefinition } from './content-types';
+import { TileSetDefinition } from './generated/tile-set';
+import { WorldDefinition } from './generated/world';
 import { WorldDocument, WorldDocumentError } from './world-document';
 
 const tileSet: TileSetDefinition = {

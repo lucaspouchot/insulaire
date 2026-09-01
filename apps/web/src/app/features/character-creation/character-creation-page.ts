@@ -16,13 +16,12 @@ import { Router } from '@angular/router';
 import {
   CharacterCreationResult,
   CharacteristicDefinition,
-  ControlDefinition,
   CreationBlock,
   CreationChoice,
   CreationScreen,
-  ResolvedCharacter,
-  SettingValue,
-} from '../../../content/content-types';
+} from '../../../content/generated/character-creation';
+import { ControlDefinition, SettingValue } from '../../../content/generated/settings';
+import { ResolvedCharacter } from '../../../content/generated/character';
 import { surfaceDensity } from '../../../renderer/canvas-surface';
 import { SpriteCache, drawCharacter } from '../../../renderer/character-renderer';
 import { I18nService } from '../../i18n/i18n.service';
@@ -154,7 +153,7 @@ export class CharacterCreationPage implements OnDestroy {
   }
 
   protected choiceValue(field: CreationChoice): SettingValue {
-    return this.result()?.choices[field.id] ?? field.default;
+    return this.result()?.choices[field.id] ?? fallbackFor(field);
   }
 
   protected characteristicValue(field: CharacteristicDefinition): SettingValue {
@@ -320,7 +319,7 @@ function sameValue(left: unknown, right: unknown): boolean {
 }
 
 /** A valid value to reveal when a nullable characteristic becomes non-null. */
-function fallbackFor(field: CharacteristicDefinition): SettingValue {
+function fallbackFor(field: ControlDefinition): SettingValue {
   if (field.default !== null) {
     return structuredClone(field.default);
   }

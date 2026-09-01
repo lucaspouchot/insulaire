@@ -5,7 +5,10 @@
 
 import { Injectable, inject, signal } from '@angular/core';
 
-import { CharacterCreationDefinition, CharacterCreationResult } from '../../content/content-types';
+import {
+  CharacterCreationDefinition,
+  CharacterCreationResult,
+} from '../../content/generated/character-creation';
 import { CharacterLibraryService } from './character-library.service';
 import { EngineService } from './engine.service';
 import { ProjectManifest } from '../project/project-manifest';
