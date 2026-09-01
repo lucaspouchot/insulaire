@@ -57,6 +57,77 @@ export const DEFAULT_FRAME_DURATION_MS = 120;
 export const MAX_FLIPBOOK_FRAMES = 64;
 
 /**
+ * What an omitted field means in `CharacterDefinition`.
+ *
+ * The value each field parses back to when a file leaves it out, so a writer can
+ * drop what would say nothing without stating a default a second time
+ * (`docs/adr/ADR-0012-shared-content-validation.md`).
+ */
+export const CHARACTER_ABSENT = {
+  name: '',
+  category: 'other',
+  resolution: { width: 64, height: 128 },
+  parameters: [],
+  layers: [],
+  animations: [],
+};
+
+/**
+ * What an omitted field means in `CharacterLayer`.
+ *
+ * The value each field parses back to when a file leaves it out, so a writer can
+ * drop what would say nothing without stating a default a second time
+ * (`docs/adr/ADR-0012-shared-content-validation.md`).
+ */
+export const CHARACTER_LAYER_ABSENT = { parent: null, parentAnchor: null, anchors: [] };
+
+/**
+ * What an omitted field means in `LayerVariant`.
+ *
+ * The value each field parses back to when a file leaves it out, so a writer can
+ * drop what would say nothing without stating a default a second time
+ * (`docs/adr/ADR-0012-shared-content-validation.md`).
+ */
+export const LAYER_VARIANT_ABSENT = { when: {}, rect: [0, 0, 0, 0], order: 0 };
+
+/**
+ * What an omitted field means in `Sprite`.
+ *
+ * The value each field parses back to when a file leaves it out, so a writer can
+ * drop what would say nothing without stating a default a second time
+ * (`docs/adr/ADR-0012-shared-content-validation.md`).
+ */
+export const SPRITE_ABSENT = { tint: null };
+
+/**
+ * What an omitted field means in `Animation`.
+ *
+ * The value each field parses back to when a file leaves it out, so a writer can
+ * drop what would say nothing without stating a default a second time
+ * (`docs/adr/ADR-0012-shared-content-validation.md`).
+ */
+export const ANIMATION_ABSENT = {
+  name: '',
+  role: null,
+  mirrorOf: null,
+  frames: 1,
+  frameDurationMs: 120,
+  looping: false,
+  pose: {},
+  poses: [],
+  tracks: [],
+};
+
+/**
+ * What an omitted field means in `Keyframe`.
+ *
+ * The value each field parses back to when a file leaves it out, so a writer can
+ * drop what would say nothing without stating a default a second time
+ * (`docs/adr/ADR-0012-shared-content-validation.md`).
+ */
+export const KEYFRAME_ABSENT = { interpolation: 'step', offset: [0, 0] };
+
+/**
  * A named movement a character can play.
  */
 export type Animation = {

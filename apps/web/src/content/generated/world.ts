@@ -90,6 +90,31 @@ export const DEFAULT_REVEAL_OPACITY = 0.25;
 export const DEFAULT_REVEAL_NEIGHBOUR_OPACITY = 0.55;
 
 /**
+ * What an omitted field means in `WorldDefinition`.
+ *
+ * The value each field parses back to when a file leaves it out, so a writer can
+ * drop what would say nothing without stating a default a second time
+ * (`docs/adr/ADR-0012-shared-content-validation.md`).
+ */
+export const WORLD_ABSENT = {
+  name: '',
+  zone: '',
+  origin: [0, 0],
+  shape: {},
+  orientation: 'pointy',
+  projection: 'topDown',
+  characterHeightTiles: 2.0,
+  grid: { lineWidth: 1, color: '#000000', alpha: 0.25 },
+  reveal: { radius: 1, opacity: 0.25, neighbourOpacity: 0.55 },
+  tiles: [],
+  entities: [],
+  decorations: [],
+  locations: [],
+  links: [],
+  metadata: {},
+};
+
+/**
  * Whether a cell is part of the map or a hole in it.
  */
 export type CellPresence = 'present' | 'absent';

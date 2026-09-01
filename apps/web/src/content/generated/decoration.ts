@@ -24,6 +24,34 @@ export const MAX_DECORATION_ORDER = 999;
 export const DEFAULT_DECORATION_RESOLUTION = { width: 32, height: 48 };
 
 /**
+ * What an omitted field means in `DecorationDefinition`.
+ *
+ * The value each field parses back to when a file leaves it out, so a writer can
+ * drop what would say nothing without stating a default a second time
+ * (`docs/adr/ADR-0012-shared-content-validation.md`).
+ */
+export const DECORATION_ABSENT = {
+  name: '',
+  category: 'other',
+  resolution: { width: 32, height: 48 },
+  anchor: [0, 0],
+  plane: 'behind',
+  order: 0,
+  tags: [],
+  animations: [],
+  defaultAnimation: '',
+};
+
+/**
+ * What an omitted field means in `DecorationAnimation`.
+ *
+ * The value each field parses back to when a file leaves it out, so a writer can
+ * drop what would say nothing without stating a default a second time
+ * (`docs/adr/ADR-0012-shared-content-validation.md`).
+ */
+export const DECORATION_ANIMATION_ABSENT = { name: '', frameDurationMs: 120, looping: false };
+
+/**
  * One appearance a decoration can play, as an ordered list of images.
  *
  * Both an *animation* (a torch flickering) and a *state* (a chest that is

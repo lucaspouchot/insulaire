@@ -209,6 +209,269 @@ boundary_values! {
     }
 }
 
+/// Declares what an omitted field means, per definition type.
+///
+/// The same trick as [`boundary_values!`], one level in: the table names the
+/// **field**, and a definition parsed from a document that leaves that field out
+/// supplies the value. What crosses is therefore what `serde` fills in, never a
+/// default retyped beside the one in the attribute — a renamed or deleted field
+/// is a compile error, and a changed `#[serde(default = "…")]` changes the
+/// exported table on the next generator run.
+///
+/// `scaffold` is the smallest document the type parses from: the fields `serde`
+/// requires, and nothing else. `flattened` reaches a field the *file* shows at
+/// the top level but the struct holds inside a `#[serde(flatten)]` member.
+macro_rules! absent_values {
+    (
+        $(
+            $ty:ident => $module:literal as $name:ident {
+                scaffold: $scaffold:literal,
+                fields { $($field:ident),* $(,)? }
+                $(flattened { $($flat:ident from $through:ident),* $(,)? })?
+            }
+        )*
+    ) => {
+        /// What an omitted field means, for every type a writer may omit one from.
+        pub(crate) fn absent_values() -> Vec<BoundaryValue> {
+            vec![$({
+                let probe = omitting_everything_optional::<crate::$ty>($scaffold);
+                let table: Vec<(String, String)> = vec![
+                    $((camel_case(stringify!($field)), as_json(&probe.$field)),)*
+                    $($((camel_case(stringify!($flat)), as_json(&probe.$through.$flat)),)*)?
+                ];
+                BoundaryValue {
+                    module: $module,
+                    name: stringify!($name),
+                    doc: absent_doc(stringify!($ty)),
+                    value: as_object(&table),
+                }
+            }),*]
+        }
+
+        /// The guarantee this table exists for: every value in it is already
+        /// what a file leaving that field out means.
+        ///
+        /// Stating them all at once rather than one at a time is the stronger
+        /// claim — the fields are independent, so a table that survives being
+        /// written out in full holds for any subset a real file omits.
+        #[test]
+        fn an_absent_value_is_what_omitting_the_field_already_means() {
+            $({
+                let omitted = omitting_everything_optional::<crate::$ty>($scaffold);
+                let mut document: serde_json::Map<String, serde_json::Value> =
+                    serde_json::from_str($scaffold).expect("the scaffold is an object");
+                $(document.insert(camel_case(stringify!($field)), parsed(&as_json(&omitted.$field)));)*
+                $($(document.insert(
+                    camel_case(stringify!($flat)),
+                    parsed(&as_json(&omitted.$through.$flat)),
+                );)*)?
+                let stated: crate::$ty =
+                    serde_json::from_value(serde_json::Value::Object(document))
+                        .expect("a document stating every absent value parses");
+                assert_eq!(
+                    omitted,
+                    stated,
+                    "`{}` states what a `{}` omitting those fields does not mean",
+                    stringify!($name),
+                    stringify!($ty),
+                );
+            })*
+        }
+    };
+}
+
+absent_values! {
+    ObjectDefinition => "object.ts" as OBJECT_ABSENT {
+        scaffold: r#"{ "id": "", "schemaVersion": 0 }"#,
+        fields {
+            name, kind, name_key, description_key, frames, frame_duration_ms, looping,
+            resolution, stack_size, slot, tags,
+        }
+    }
+
+    DecorationDefinition => "decoration.ts" as DECORATION_ABSENT {
+        scaffold: r#"{ "id": "", "schemaVersion": 0 }"#,
+        fields {
+            name, category, resolution, anchor, plane, order, tags, animations,
+            default_animation,
+        }
+    }
+
+    DecorationAnimation => "decoration.ts" as DECORATION_ANIMATION_ABSENT {
+        scaffold: r#"{ "id": "" }"#,
+        fields { name, frame_duration_ms, looping }
+    }
+
+    CharacterDefinition => "character.ts" as CHARACTER_ABSENT {
+        scaffold: r#"{ "id": "", "schemaVersion": 0 }"#,
+        fields { name, category, resolution, parameters, layers, animations }
+    }
+
+    CharacterLayer => "character.ts" as CHARACTER_LAYER_ABSENT {
+        scaffold: r#"{ "id": "" }"#,
+        fields { parent, parent_anchor, anchors }
+    }
+
+    LayerVariant => "character.ts" as LAYER_VARIANT_ABSENT {
+        scaffold: r#"{ "id": "", "sprite": { "asset": "" } }"#,
+        fields { when, rect, order }
+    }
+
+    Sprite => "character.ts" as SPRITE_ABSENT {
+        scaffold: r#"{ "asset": "" }"#,
+        fields { tint }
+    }
+
+    Animation => "character.ts" as ANIMATION_ABSENT {
+        scaffold: r#"{ "id": "" }"#,
+        fields {
+            name, role, mirror_of, frames, frame_duration_ms, looping, pose, poses, tracks,
+        }
+    }
+
+    Keyframe => "character.ts" as KEYFRAME_ABSENT {
+        scaffold: r#"{ "frame": 0 }"#,
+        fields { interpolation }
+        flattened { offset from transform }
+    }
+
+    ControlDefinition => "settings.ts" as CONTROL_ABSENT {
+        scaffold: r#"{ "id": "", "labelKey": "", "control": "toggle", "default": null }"#,
+        fields { help_key, options, min, max, step, unit, scope, show_if }
+    }
+
+    CharacterCreationDefinition => "character-creation.ts" as CHARACTER_CREATION_ABSENT {
+        scaffold: r#"{ "id": "", "schemaVersion": 0 }"#,
+        fields { base_character, choices, characteristics, screens }
+    }
+
+    // A choice and a characteristic both flatten a `ControlDefinition`, so what
+    // an absent field of *that* means is `CONTROL_ABSENT`, published once above.
+    // Only what the two add to it is stated here.
+    CharacteristicDefinition => "character-creation.ts" as CHARACTERISTIC_ABSENT {
+        scaffold: r#"{ "id": "", "labelKey": "", "control": "toggle", "default": null }"#,
+        fields { nullable }
+    }
+
+    CreationScreen => "character-creation.ts" as CREATION_SCREEN_ABSENT {
+        scaffold: r#"{ "id": "", "titleKey": "" }"#,
+        fields { text_key, transition, blocks }
+    }
+
+    TileSetDefinition => "tile-set.ts" as TILE_SET_ABSENT {
+        scaffold: r#"{ "id": "", "schemaVersion": 0 }"#,
+        fields { name, art }
+    }
+
+    TileDefinition => "tile-set.ts" as TILE_ABSENT {
+        scaffold: r#"{
+            "id": "", "terrain": "", "movementCost": 0,
+            "visual": { "visualId": "", "fallbackColor": "" }
+        }"#,
+        fields { name, tags, art }
+    }
+
+    TileArt => "tile-set.ts" as TILE_ART_ABSENT {
+        scaffold: r#"{}"#,
+        fields { flat, surface, elevation }
+    }
+
+    TileElevation => "tile-set.ts" as TILE_ELEVATION_ABSENT {
+        scaffold: r#"{}"#,
+        fields { repeat }
+    }
+
+    ElevationLevel => "tile-set.ts" as ELEVATION_LEVEL_ABSENT {
+        scaffold: r#"{}"#,
+        fields { name }
+    }
+
+    WorldDefinition => "world.ts" as WORLD_ABSENT {
+        scaffold: r#"{
+            "id": "", "schemaVersion": 0, "width": 0, "height": 0,
+            "tileSetId": "", "defaultTile": ""
+        }"#,
+        fields {
+            name, zone, origin, shape, orientation, projection, character_height_tiles, grid,
+            reveal, tiles, entities, decorations, locations, links, metadata,
+        }
+    }
+
+    ProjectDefinition => "project.ts" as PROJECT_ABSENT {
+        scaffold: r#"{ "id": "", "schemaVersion": 0, "startWorld": "" }"#,
+        fields {
+            name, zones, characters, decorations, objects, character_creation, title_screen,
+            settings, locales,
+        }
+    }
+}
+
+/// A definition parsed from the smallest document it accepts, so every field
+/// that may be left out holds exactly what leaving it out means.
+fn omitting_everything_optional<T: serde::de::DeserializeOwned>(scaffold: &str) -> T {
+    serde_json::from_str(scaffold).unwrap_or_else(|error| {
+        panic!(
+            "the scaffold for `{}` does not parse: {error}",
+            std::any::type_name::<T>()
+        )
+    })
+}
+
+/// One field's value as JSON, which is the TypeScript source for it as well.
+///
+/// Serialised from the field itself rather than through a `serde_json::Value`,
+/// which would sort a nested record's keys and widen an `f32`: a canvas reads
+/// `{"width":32,"height":32}` here because that is the order the struct
+/// declares, and that is the order a file states it in.
+fn as_json<T: serde::Serialize>(value: &T) -> String {
+    serde_json::to_string(value).expect("a definition field serialises")
+}
+
+/// The same value back as JSON, for a test that compares definitions.
+fn parsed(json: &str) -> serde_json::Value {
+    serde_json::from_str(json).expect("a serialised field parses")
+}
+
+/// `frame_duration_ms` as the file spells it: `frameDurationMs`.
+///
+/// Every definition in this crate is `#[serde(rename_all = "camelCase")]`, so
+/// this is the whole of the mapping between a field and its key.
+fn camel_case(field: &str) -> String {
+    let mut key = String::with_capacity(field.len());
+    let mut capitalise = false;
+    for character in field.chars() {
+        if character == '_' {
+            capitalise = true;
+        } else if capitalise {
+            key.extend(character.to_uppercase());
+            capitalise = false;
+        } else {
+            key.push(character);
+        }
+    }
+    key
+}
+
+/// The table as TypeScript source, its fields in the order the struct declares
+/// them rather than the order a `serde_json::Map` would have sorted them into.
+fn as_object(table: &[(String, String)]) -> String {
+    let members: Vec<String> = table
+        .iter()
+        .map(|(key, value)| format!("{key:?}: {value}"))
+        .collect();
+    format!("{{ {} }}", members.join(", "))
+}
+
+/// What an absent-value table says about itself on the TypeScript side.
+fn absent_doc(definition: &str) -> String {
+    format!(
+        "What an omitted field means in `{definition}`.\n\n\
+         The value each field parses back to when a file leaves it out, so a writer can\n\
+         drop what would say nothing without stating a default a second time\n\
+         (`docs/adr/ADR-0012-shared-content-validation.md`)."
+    )
+}
+
 /// The `///` block immediately above `pub const $name`, as Markdown.
 ///
 /// Keyed by a name the table has already made the compiler check, so this looks
@@ -248,7 +511,11 @@ fn export_boundary_values() {
     );
     std::fs::create_dir_all(&directory).expect("the export directory is writable");
 
-    let json = serde_json::to_string_pretty(&boundary_values()).expect("the bounds serialise");
+    let published: Vec<BoundaryValue> = boundary_values()
+        .into_iter()
+        .chain(absent_values())
+        .collect();
+    let json = serde_json::to_string_pretty(&published).expect("the bounds serialise");
     let mut file =
         std::fs::File::create(directory.join("boundary-values.json")).expect("the file is created");
     writeln!(file, "{json}").expect("the bounds are written");

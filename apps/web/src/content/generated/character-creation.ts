@@ -7,6 +7,38 @@ import type { ControlKind, ControlOption, SettingScope, SettingValue, ShowIf } f
 export const CHARACTER_CREATION_SCHEMA_VERSION = 1;
 
 /**
+ * What an omitted field means in `CharacterCreationDefinition`.
+ *
+ * The value each field parses back to when a file leaves it out, so a writer can
+ * drop what would say nothing without stating a default a second time
+ * (`docs/adr/ADR-0012-shared-content-validation.md`).
+ */
+export const CHARACTER_CREATION_ABSENT = {
+  baseCharacter: '',
+  choices: [],
+  characteristics: [],
+  screens: [],
+};
+
+/**
+ * What an omitted field means in `CharacteristicDefinition`.
+ *
+ * The value each field parses back to when a file leaves it out, so a writer can
+ * drop what would say nothing without stating a default a second time
+ * (`docs/adr/ADR-0012-shared-content-validation.md`).
+ */
+export const CHARACTERISTIC_ABSENT = { nullable: false };
+
+/**
+ * What an omitted field means in `CreationScreen`.
+ *
+ * The value each field parses back to when a file leaves it out, so a writer can
+ * drop what would say nothing without stating a default a second time
+ * (`docs/adr/ADR-0012-shared-content-validation.md`).
+ */
+export const CREATION_SCREEN_ABSENT = { textKey: '', transition: 'none', blocks: [] };
+
+/**
  * The authored declaration behind a character-creation workflow.
  */
 export type CharacterCreationDefinition = {

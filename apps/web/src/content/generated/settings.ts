@@ -10,6 +10,24 @@
 export const SETTINGS_SCHEMA_VERSION = 2;
 
 /**
+ * What an omitted field means in `ControlDefinition`.
+ *
+ * The value each field parses back to when a file leaves it out, so a writer can
+ * drop what would say nothing without stating a default a second time
+ * (`docs/adr/ADR-0012-shared-content-validation.md`).
+ */
+export const CONTROL_ABSENT = {
+  helpKey: '',
+  options: [],
+  min: null,
+  max: null,
+  step: null,
+  unit: '',
+  scope: 'session',
+  showIf: null,
+};
+
+/**
  * One setting: what it is called, how it is shown, and what it accepts.
  */
 export type ControlDefinition = {

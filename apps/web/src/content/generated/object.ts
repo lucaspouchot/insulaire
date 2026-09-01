@@ -23,6 +23,27 @@ export const MAX_STACK_SIZE = 9999;
 export const DEFAULT_ICON_RESOLUTION = { width: 32, height: 32 };
 
 /**
+ * What an omitted field means in `ObjectDefinition`.
+ *
+ * The value each field parses back to when a file leaves it out, so a writer can
+ * drop what would say nothing without stating a default a second time
+ * (`docs/adr/ADR-0012-shared-content-validation.md`).
+ */
+export const OBJECT_ABSENT = {
+  name: '',
+  kind: 'other',
+  nameKey: '',
+  descriptionKey: '',
+  frames: [],
+  frameDurationMs: 120,
+  looping: false,
+  resolution: { width: 32, height: 32 },
+  stackSize: 1,
+  slot: '',
+  tags: [],
+};
+
+/**
  * A kind of thing a character can carry.
  *
  * The TypeScript `ObjectDefinition` is derived from this one, into

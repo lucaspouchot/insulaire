@@ -13,6 +13,25 @@ export const PROJECT_SCHEMA_VERSION = 1;
 export const DEFAULT_ZONE_ID = 'default';
 
 /**
+ * What an omitted field means in `ProjectDefinition`.
+ *
+ * The value each field parses back to when a file leaves it out, so a writer can
+ * drop what would say nothing without stating a default a second time
+ * (`docs/adr/ADR-0012-shared-content-validation.md`).
+ */
+export const PROJECT_ABSENT = {
+  name: '',
+  zones: [],
+  characters: [],
+  decorations: [],
+  objects: [],
+  characterCreation: null,
+  titleScreen: null,
+  settings: null,
+  locales: {},
+};
+
+/**
  * One content file the project ships.
  */
 export type ContentRef = {

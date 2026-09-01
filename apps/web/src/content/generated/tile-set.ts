@@ -73,6 +73,54 @@ export const MAX_TILE_VARIANTS = 16;
 export const TILE_SET_SCHEMA_VERSION = 3;
 
 /**
+ * What an omitted field means in `TileSetDefinition`.
+ *
+ * The value each field parses back to when a file leaves it out, so a writer can
+ * drop what would say nothing without stating a default a second time
+ * (`docs/adr/ADR-0012-shared-content-validation.md`).
+ */
+export const TILE_SET_ABSENT = {
+  name: '',
+  art: { width: 32, flatHeight: 37, surfaceHeight: 20, elevationHeight: 13, elevationStep: 8 },
+};
+
+/**
+ * What an omitted field means in `TileDefinition`.
+ *
+ * The value each field parses back to when a file leaves it out, so a writer can
+ * drop what would say nothing without stating a default a second time
+ * (`docs/adr/ADR-0012-shared-content-validation.md`).
+ */
+export const TILE_ABSENT = { name: '', tags: [], art: {} };
+
+/**
+ * What an omitted field means in `TileArt`.
+ *
+ * The value each field parses back to when a file leaves it out, so a writer can
+ * drop what would say nothing without stating a default a second time
+ * (`docs/adr/ADR-0012-shared-content-validation.md`).
+ */
+export const TILE_ART_ABSENT = { flat: [], surface: [], elevation: { levels: [] } };
+
+/**
+ * What an omitted field means in `TileElevation`.
+ *
+ * The value each field parses back to when a file leaves it out, so a writer can
+ * drop what would say nothing without stating a default a second time
+ * (`docs/adr/ADR-0012-shared-content-validation.md`).
+ */
+export const TILE_ELEVATION_ABSENT = { repeat: null };
+
+/**
+ * What an omitted field means in `ElevationLevel`.
+ *
+ * The value each field parses back to when a file leaves it out, so a writer can
+ * drop what would say nothing without stating a default a second time
+ * (`docs/adr/ADR-0012-shared-content-validation.md`).
+ */
+export const ELEVATION_LEVEL_ABSENT = { name: '' };
+
+/**
  * One authored step of relief: the images that may draw it.
  */
 export type ElevationLevel = {
