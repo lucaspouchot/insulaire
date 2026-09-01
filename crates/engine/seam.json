@@ -1,5 +1,5 @@
 {
-  "note": "The Angular<->engine seam, declared once. `scripts/generate-seam.mjs` renders JsonEngine, the wasm-bindgen methods, RawInsulaireEngine and the method table in docs/wasm-api.md from this file. See \"Adding a method\" in docs/wasm-api.md.",
+  "note": "The Angular<->engine seam, declared once. `scripts/generate-seam.mjs` renders JsonEngine, the wasm-bindgen methods, RawInsulaireEngine and the method table in docs/wasm-api.md from this file. A row with a `kind` is one content kind, and expands into the load/validate/read methods that kind has — see \"Adding a content kind\" in docs/wasm-api.md; anything else is one method. See \"Adding a method\" in docs/wasm-api.md.",
   "modules": {
     "json": {
       "doc": [
@@ -26,7 +26,7 @@
         "WebAssembly bindings for the hex engine.",
         "",
         "This crate contains **no game logic and no boundary logic**. The string",
-        "contract \u2014 JSON in, JSON out, errors as serialised `EngineErrorPayload` \u2014",
+        "contract — JSON in, JSON out, errors as serialised `EngineErrorPayload` —",
         "lives in [`insulaire_engine::JsonEngine`], where it is covered by ordinary",
         "`cargo test`. Everything here is a one-line pass-through that converts",
         "`String` errors into `JsValue`.",
@@ -63,59 +63,55 @@
       ]
     },
     {
-      "name": "load_tile_set",
-      "mutates": true,
-      "params": [
-        {
-          "name": "json",
-          "type": "str"
-        }
-      ],
-      "returns": "json",
-      "payload": "LoadOutcome",
-      "doc": [
-        "Parses, validates and registers a tile set. Returns a {crate::LoadOutcome}."
-      ],
-      "errors": [
-        "`parse` for malformed JSON, `invalidContent` for a failing tile set."
+      "kind": "tile_set",
+      "noun": "a tile set",
+      "payload": "TileSetDefinition",
+      "read": "none",
+      "methods": [
+        "load",
+        "validate"
       ]
     },
     {
-      "name": "load_world",
-      "mutates": true,
-      "params": [
-        {
-          "name": "json",
-          "type": "str"
-        }
+      "kind": "world",
+      "noun": "a world",
+      "payload": "WorldDefinition",
+      "read": "none",
+      "methods": [
+        "load",
+        "validate"
       ],
-      "returns": "json",
-      "payload": "LoadOutcome",
-      "doc": [
-        "Parses, validates and registers a world. Returns a {crate::LoadOutcome}."
-      ],
-      "errors": [
-        "`parse` for malformed JSON, `invalidContent` for a failing world. The error payload carries the full validation report."
-      ]
+      "load": {
+        "errors": [
+          "`parse` for malformed JSON, `invalidContent` for a failing world. The error payload carries the full validation report."
+        ]
+      },
+      "validate": {
+        "doc": [
+          "Validates a world *without* registering it — the editor's pre-export check. Returns a `ValidationReport`."
+        ],
+        "errors": [
+          "`parse` for malformed JSON. An unusable world yields an invalid report, not an error."
+        ]
+      }
     },
     {
-      "name": "load_project",
-      "mutates": true,
-      "params": [
-        {
-          "name": "json",
-          "type": "str"
-        }
+      "kind": "project",
+      "noun": "the project manifest",
+      "payload": "ProjectDefinition",
+      "read": "sole",
+      "methods": [
+        "load"
       ],
-      "returns": "json",
-      "payload": "LoadOutcome",
-      "doc": [
-        "Parses, validates and registers the project manifest \u2014 the list of content files that make up the game, and the world it starts on. Returns a {crate::LoadOutcome}.",
-        "Call it after the content it lists has been loaded."
-      ],
-      "errors": [
-        "`parse` for malformed JSON, `invalidContent` when it references content that is not loaded."
-      ]
+      "load": {
+        "doc": [
+          "Parses, validates and registers the project manifest — the list of content files that make up the game, and the world it starts on. Returns a {crate::LoadOutcome}.",
+          "Call it after the content it lists has been loaded."
+        ],
+        "errors": [
+          "`parse` for malformed JSON, `invalidContent` when it references content that is not loaded."
+        ]
+      }
     },
     {
       "name": "load_locale",
@@ -174,56 +170,24 @@
       ]
     },
     {
-      "name": "load_title_screen",
-      "mutates": true,
-      "params": [
-        {
-          "name": "json",
-          "type": "str"
-        }
+      "kind": "title_screen",
+      "noun": "a title screen",
+      "payload": "TitleScreenDefinition",
+      "read": "sole",
+      "keys": true,
+      "methods": [
+        "load",
+        "validate",
+        "get"
       ],
-      "returns": "json",
-      "payload": "LoadOutcome",
-      "doc": [
-        "Registers the title screen a client opens on. Returns a {crate::LoadOutcome}."
-      ],
-      "errors": [
-        "`parse` for malformed JSON, `invalidContent` for a screen that cannot be shown \u2014 no visible `newGame` button, an asset path leaving the content root, a number out of range."
-      ]
-    },
-    {
-      "name": "validate_title_screen",
-      "params": [
-        {
-          "name": "json",
-          "type": "str"
-        }
-      ],
-      "returns": "json",
-      "payload": "ValidationReport",
-      "doc": [
-        "Validates a title screen *without* registering it, keys included. Returns a `ValidationReport`."
-      ],
-      "errors": [
-        "`parse` for malformed JSON."
-      ]
-    },
-    {
-      "name": "validate_tile_set",
-      "params": [
-        {
-          "name": "json",
-          "type": "str"
-        }
-      ],
-      "returns": "json",
-      "payload": "ValidationReport",
-      "doc": [
-        "Validates a tile set **without** registering it. Returns a `ValidationReport`."
-      ],
-      "errors": [
-        "`parse` for malformed JSON."
-      ]
+      "load": {
+        "doc": [
+          "Registers the title screen a client opens on. Returns a {crate::LoadOutcome}."
+        ],
+        "errors": [
+          "`parse` for malformed JSON, `invalidContent` for a screen that cannot be shown — no visible `newGame` button, an asset path leaving the content root, a number out of range."
+        ]
+      }
     },
     {
       "name": "preview_tile_render",
@@ -262,23 +226,11 @@
       "returns": "json",
       "payload": "ResolvedTileRender",
       "doc": [
-        "Resolves what to draw for one cell of a tile set **passed in** \u2014 the asset editor's preview, for content that is not registered yet. Returns a `ResolvedTileRender`.",
-        "`base` is the height the cell's side faces reach down to; `roll` is the cell's variant roll (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`). `projection` is the world's own \u2014 `\"isometric\"` for the surface and the cliff, anything else for the flat image (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`). `choiceJson` is a `PlacedTileArt` \u2014 what the cell picked by hand \u2014 resolved against the set passed in; `\"{}\"` rolls everything (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`)."
+        "Resolves what to draw for one cell of a tile set **passed in** — the asset editor's preview, for content that is not registered yet. Returns a `ResolvedTileRender`.",
+        "`base` is the height the cell's side faces reach down to; `roll` is the cell's variant roll (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`). `projection` is the world's own — `\"isometric\"` for the surface and the cliff, anything else for the flat image (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`). `choiceJson` is a `PlacedTileArt` — what the cell picked by hand — resolved against the set passed in; `\"{}\"` rolls everything (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`)."
       ],
       "errors": [
         "`parse` when either JSON is malformed, `unknownContent` when the set defines no tile with that id."
-      ]
-    },
-    {
-      "name": "title_screen",
-      "params": [],
-      "returns": "json",
-      "payload": "TitleScreenDefinition",
-      "doc": [
-        "Returns the registered `TitleScreenDefinition`."
-      ],
-      "errors": [
-        "`unknownContent` when the project ships no title screen."
       ]
     },
     {
@@ -312,23 +264,6 @@
       ],
       "errors": [
         "Only on serialisation failure."
-      ]
-    },
-    {
-      "name": "validate_world",
-      "params": [
-        {
-          "name": "json",
-          "type": "str"
-        }
-      ],
-      "returns": "json",
-      "payload": "ValidationReport",
-      "doc": [
-        "Validates a world *without* registering it \u2014 the editor's pre-export check. Returns a `ValidationReport`."
-      ],
-      "errors": [
-        "`parse` for malformed JSON. An unusable world yields an invalid report, not an error."
       ]
     },
     {
@@ -439,51 +374,24 @@
       ]
     },
     {
-      "name": "load_settings",
-      "mutates": true,
-      "params": [
-        {
-          "name": "json",
-          "type": "str"
-        }
-      ],
-      "returns": "json",
-      "payload": "LoadOutcome",
-      "doc": [
-        "Registers the game's settings declaration. Returns a {crate::LoadOutcome}."
-      ],
-      "errors": [
-        "`parse` for malformed JSON, `invalidContent` for a declaration that cannot be rendered \u2014 a duplicate id, a default no control accepts."
-      ]
-    },
-    {
-      "name": "validate_settings",
-      "params": [
-        {
-          "name": "json",
-          "type": "str"
-        }
-      ],
-      "returns": "json",
-      "payload": "ValidationReport",
-      "doc": [
-        "Validates a settings declaration *without* registering it, keys included. Returns a `ValidationReport`."
-      ],
-      "errors": [
-        "`parse` for malformed JSON."
-      ]
-    },
-    {
-      "name": "settings",
-      "params": [],
-      "returns": "json",
+      "kind": "settings",
+      "noun": "a settings declaration",
       "payload": "SettingsDefinition",
-      "doc": [
-        "Returns the registered `SettingsDefinition`."
+      "read": "sole",
+      "keys": true,
+      "methods": [
+        "load",
+        "validate",
+        "get"
       ],
-      "errors": [
-        "`unknownContent` when the project declares no settings."
-      ]
+      "load": {
+        "doc": [
+          "Registers the game's settings declaration. Returns a {crate::LoadOutcome}."
+        ],
+        "errors": [
+          "`parse` for malformed JSON, `invalidContent` for a declaration that cannot be rendered — a duplicate id, a default no control accepts."
+        ]
+      }
     },
     {
       "name": "resolve_settings",
@@ -504,86 +412,27 @@
       ]
     },
     {
-      "name": "load_character",
-      "mutates": true,
-      "params": [
-        {
-          "name": "json",
-          "type": "str"
-        }
-      ],
-      "returns": "json",
-      "payload": "LoadOutcome",
-      "doc": [
-        "Parses, validates and registers a character definition. Returns a {crate::LoadOutcome}."
-      ],
-      "errors": [
-        "`parse` for malformed JSON, `invalidContent` for a failing definition."
-      ]
-    },
-    {
-      "name": "validate_character",
-      "params": [
-        {
-          "name": "json",
-          "type": "str"
-        }
-      ],
-      "returns": "json",
-      "payload": "ValidationReport",
-      "doc": [
-        "Validates a character definition *without* registering it, keys included. Returns a `ValidationReport`."
-      ],
-      "errors": [
-        "`parse` when the JSON is malformed."
-      ]
-    },
-    {
-      "name": "character",
-      "params": [
-        {
-          "name": "id",
-          "type": "str"
-        }
-      ],
-      "returns": "json",
+      "kind": "character",
+      "noun": "a character definition",
       "payload": "CharacterDefinition",
-      "doc": [
-        "Returns a registered {insulaire_world::CharacterDefinition}."
-      ],
-      "errors": [
-        "`unknownContent` when no definition has that id."
+      "read": "by_id",
+      "keys": true,
+      "methods": [
+        "load",
+        "validate",
+        "get",
+        "ids"
       ]
     },
     {
-      "name": "character_ids",
-      "params": [],
-      "returns": "json",
-      "payload": "string[]",
-      "infallible": true,
-      "doc": [
-        "Returns the ids of every registered character definition."
-      ],
-      "errors": [
-        "Only on serialisation failure."
-      ]
-    },
-    {
-      "name": "load_decoration",
-      "mutates": true,
-      "params": [
-        {
-          "name": "json",
-          "type": "str"
-        }
-      ],
-      "returns": "json",
-      "payload": "LoadOutcome",
-      "doc": [
-        "Parses, validates and registers a decoration definition. Returns a {crate::LoadOutcome}."
-      ],
-      "errors": [
-        "`parse` for malformed JSON, `invalidContent` for a failing definition."
+      "kind": "decoration",
+      "noun": "a decoration definition",
+      "payload": "DecorationDefinition",
+      "read": "by_id",
+      "methods": [
+        "load",
+        "get",
+        "ids"
       ]
     },
     {
@@ -606,36 +455,6 @@
       ],
       "errors": [
         "`parse` when either JSON is malformed."
-      ]
-    },
-    {
-      "name": "decoration",
-      "params": [
-        {
-          "name": "id",
-          "type": "str"
-        }
-      ],
-      "returns": "json",
-      "payload": "DecorationDefinition",
-      "doc": [
-        "Returns a registered {insulaire_world::DecorationDefinition}."
-      ],
-      "errors": [
-        "`unknownContent` when no definition has that id."
-      ]
-    },
-    {
-      "name": "decoration_ids",
-      "params": [],
-      "returns": "json",
-      "payload": "string[]",
-      "infallible": true,
-      "doc": [
-        "Returns the ids of every registered decoration definition."
-      ],
-      "errors": [
-        "Only on serialisation failure."
       ]
     },
     {
@@ -689,68 +508,16 @@
       ]
     },
     {
-      "name": "load_object",
-      "mutates": true,
-      "params": [
-        {
-          "name": "json",
-          "type": "str"
-        }
-      ],
-      "returns": "json",
-      "payload": "LoadOutcome",
-      "doc": [
-        "Parses, validates and registers an object definition. Returns a {crate::LoadOutcome}."
-      ],
-      "errors": [
-        "`parse` for malformed JSON, `invalidContent` for a failing definition."
-      ]
-    },
-    {
-      "name": "validate_object",
-      "params": [
-        {
-          "name": "json",
-          "type": "str"
-        }
-      ],
-      "returns": "json",
-      "payload": "ValidationReport",
-      "doc": [
-        "Validates an object definition *without* registering it, keys included. Returns a `ValidationReport`."
-      ],
-      "errors": [
-        "`parse` when the JSON is malformed."
-      ]
-    },
-    {
-      "name": "object",
-      "params": [
-        {
-          "name": "id",
-          "type": "str"
-        }
-      ],
-      "returns": "json",
+      "kind": "object",
+      "noun": "an object definition",
       "payload": "ObjectDefinition",
-      "doc": [
-        "Returns a registered {insulaire_world::ObjectDefinition}."
-      ],
-      "errors": [
-        "`unknownContent` when no definition has that id."
-      ]
-    },
-    {
-      "name": "object_ids",
-      "params": [],
-      "returns": "json",
-      "payload": "string[]",
-      "infallible": true,
-      "doc": [
-        "Returns the ids of every registered object definition."
-      ],
-      "errors": [
-        "Only on serialisation failure."
+      "read": "by_id",
+      "keys": true,
+      "methods": [
+        "load",
+        "validate",
+        "get",
+        "ids"
       ]
     },
     {
@@ -796,51 +563,29 @@
       ]
     },
     {
-      "name": "load_character_creation",
-      "mutates": true,
-      "params": [
-        {
-          "name": "json",
-          "type": "str"
-        }
-      ],
-      "returns": "json",
-      "payload": "LoadOutcome",
-      "doc": [
-        "Parses, validates and registers a generic character-creation declaration. Character definitions must be loaded first."
-      ],
-      "errors": [
-        "`parse` for malformed JSON, `invalidContent` for a declaration that cannot be shown."
-      ]
-    },
-    {
-      "name": "validate_character_creation",
-      "params": [
-        {
-          "name": "json",
-          "type": "str"
-        }
-      ],
-      "returns": "json",
-      "payload": "ValidationReport",
-      "doc": [
-        "Validates a character-creation declaration without registering it."
-      ],
-      "errors": [
-        "`parse` when the JSON is malformed."
-      ]
-    },
-    {
-      "name": "character_creation",
-      "params": [],
-      "returns": "json",
+      "kind": "character_creation",
+      "noun": "a character-creation declaration",
       "payload": "CharacterCreationDefinition",
-      "doc": [
-        "Returns the registered `CharacterCreationDefinition`."
+      "read": "sole",
+      "keys": true,
+      "methods": [
+        "load",
+        "validate",
+        "get"
       ],
-      "errors": [
-        "`unknownContent` when the project declares none."
-      ]
+      "load": {
+        "doc": [
+          "Parses, validates and registers a generic character-creation declaration. Character definitions must be loaded first."
+        ],
+        "errors": [
+          "`parse` for malformed JSON, `invalidContent` for a declaration that cannot be shown."
+        ]
+      },
+      "validate": {
+        "doc": [
+          "Validates a character-creation declaration without registering it."
+        ]
+      }
     },
     {
       "name": "resolve_character_creation",
@@ -912,8 +657,8 @@
       "returns": "json",
       "payload": "ResolvedCharacter",
       "doc": [
-        "Resolves a definition **passed in** against a customisation, at a moment of an animation \u2014 the editor's preview, for content that is not registered yet. Returns a {insulaire_world::ResolvedCharacter}.",
-        "`animation` of `undefined` \u2014 or an id the definition does not declare \u2014 is the rest pose. `time_ms` counts from the start of the animation."
+        "Resolves a definition **passed in** against a customisation, at a moment of an animation — the editor's preview, for content that is not registered yet. Returns a {insulaire_world::ResolvedCharacter}.",
+        "`animation` of `undefined` — or an id the definition does not declare — is the rest pose. `time_ms` counts from the start of the animation."
       ],
       "errors": [
         "`parse` when either argument is not JSON."

@@ -1,39 +1,152 @@
-//! The content registry.
+//! The content registry, and the list of content kinds it holds.
 //!
 //! Authored files are parsed and validated once, then kept in memory keyed by
-//! their stable id. Worlds are only registered when validation reports no
+//! their stable id. Content is only registered when validation reports no
 //! errors, which is what makes "the editor exported it, therefore the runtime
 //! can load it" a guarantee rather than a hope.
+//!
+//! The parsing, the refusal and the reading back are [`crate::kind`]'s, written
+//! once for every kind. What is here is the list of kinds — each stating what
+//! it is called, what it parses into, where it lives and which validator judges
+//! it — and the three questions that are about the *set* rather than about one
+//! file: which languages answer which keys, whether the manifest names content
+//! that is actually loaded, and whether every map link resolves.
 
 use std::collections::BTreeMap;
 
 use insulaire_world::{
     validate_character, validate_character_creation, validate_decoration, validate_locales,
     validate_object, validate_placed_decorations, validate_project, validate_project_links,
-    validate_project_zones, validate_referenced_keys, validate_settings, validate_tile_set,
-    validate_title_screen, validate_world, AnimationRole, CharacterCreationDefinition,
-    CharacterCreationResult, CharacterDefinition, DecorationDefinition, LoadedContent,
-    LocaleBundle, ObjectDefinition, ProjectDefinition, ResolvedCharacter, ResolvedDecoration,
-    ResolvedObject, SettingsDefinition, TemplateRegistry, TileArtGeometry, TileSetDefinition,
-    TitleScreenDefinition, ValidationReport, WorldDefinition,
+    validate_project_zones, validate_settings, validate_tile_set, validate_title_screen,
+    validate_world, CharacterCreationDefinition, CharacterDefinition, DecorationDefinition,
+    LoadedContent, LocaleBundle, ObjectDefinition, ProjectDefinition, SettingsDefinition,
+    TemplateRegistry, TileSetDefinition, TitleScreenDefinition, ValidationReport, WorldDefinition,
 };
 
 use crate::error::EngineError;
+use crate::kind::{content_kinds, Keyed, Sole};
 
-/// Parsed, validated content available to the engine.
-#[derive(Debug, Clone, Default)]
-pub struct ContentRegistry {
-    tile_sets: BTreeMap<String, TileSetDefinition>,
-    worlds: BTreeMap<String, WorldDefinition>,
-    locales: BTreeMap<String, LocaleBundle>,
-    characters: BTreeMap<String, CharacterDefinition>,
-    decorations: BTreeMap<String, DecorationDefinition>,
-    objects: BTreeMap<String, ObjectDefinition>,
-    character_creation: Option<CharacterCreationDefinition>,
-    title_screen: Option<TitleScreenDefinition>,
-    settings: Option<SettingsDefinition>,
-    templates: TemplateRegistry,
-    project: Option<ProjectDefinition>,
+content_kinds! {
+    /// Parsed, validated content available to the engine.
+    pub struct ContentRegistry {
+        /// The entity templates this engine build knows, which are code rather
+        /// than content and so survive every reset.
+        templates: TemplateRegistry,
+        /// One merged bundle per language. Not a content kind: a locale file
+        /// has no id, several files merge into one bundle, and it is keyed by
+        /// language and namespace rather than by itself
+        /// (`docs/adr/ADR-0020-localised-content-keys.md`).
+        locales: BTreeMap<String, LocaleBundle>,
+    }
+
+    many {
+        /// The tiles a world paints with.
+        TileSet {
+            what: "tile set",
+            of: TileSetDefinition,
+            at: tile_sets,
+            validate: |_registry, tile_set| validate_tile_set(tile_set),
+        }
+
+        /// One authored map.
+        World {
+            what: "world",
+            of: WorldDefinition,
+            at: worlds,
+            validate: |registry, world| validate_world(
+                world,
+                registry.get::<TileSet>(&world.tile_set_id),
+                registry.templates(),
+            ),
+        }
+
+        /// How a kind of character is drawn, and what may be chosen about one
+        /// (`docs/adr/ADR-0024-character-definitions.md`).
+        Character {
+            what: "character",
+            of: CharacterDefinition,
+            at: characters,
+            validate: |_registry, character| validate_character(character),
+            keys: |character| character.referenced_keys(),
+        }
+
+        /// A thing that stands on a hex — a tree, a chest, a bush
+        /// (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+        Decoration {
+            what: "decoration",
+            of: DecorationDefinition,
+            at: decorations,
+            // No cell in hand at load time: a decoration is not bound to one
+            // tile set, so `decoration.overflowsCell` is the editor's warning
+            // and not the registry's. See `Engine::validate_decoration`.
+            validate: |_registry, decoration| validate_decoration(decoration, None),
+        }
+
+        /// A thing that is carried rather than placed
+        /// (`docs/adr/ADR-0036-an-object-is-carried-not-placed.md`).
+        Object {
+            what: "object",
+            of: ObjectDefinition,
+            at: objects,
+            validate: |_registry, object| validate_object(object),
+            keys: |object| object.referenced_keys(),
+        }
+    }
+
+    one {
+        /// The menu a client opens on (`docs/adr/ADR-0021-authored-title-screen.md`).
+        TitleScreen {
+            what: "title screen",
+            of: TitleScreenDefinition,
+            at: title_screen,
+            validate: |_registry, screen| validate_title_screen(screen),
+            // The one kind whose keys are borrowed from the definition rather
+            // than built with it; the paths are static strings.
+            keys: |screen| screen
+                .referenced_keys()
+                .into_iter()
+                .map(|(path, key)| (path.to_owned(), key))
+                .collect(),
+        }
+
+        /// What a player may set before a game starts (`docs/adr/ADR-0022-settings.md`).
+        Settings {
+            what: "settings",
+            of: SettingsDefinition,
+            at: settings,
+            validate: |_registry, settings| validate_settings(settings),
+            keys: |settings| settings.referenced_keys(),
+        }
+
+        /// The choices offered when a player character is made.
+        ///
+        /// Character definitions must be registered first: bindings and preview
+        /// overrides are cross-file references, checked here rather than left
+        /// for a renderer to discover.
+        CharacterCreation {
+            what: "character creation",
+            of: CharacterCreationDefinition,
+            at: character_creation,
+            validate: |registry, creation| validate_character_creation(
+                creation,
+                registry.all::<Character>(),
+            ),
+            keys: |creation| creation.referenced_keys(),
+        }
+
+        /// The manifest: which files make up the game, and where it starts.
+        ///
+        /// Load it **after** the content it lists — it is validated against
+        /// what is actually in the registry, so a bundle missing a file fails
+        /// at load time rather than when a player walks through a door
+        /// (`docs/adr/ADR-0015-client-delivery-build.md`).
+        Project {
+            what: "project",
+            of: ProjectDefinition,
+            at: project,
+            validate: |registry, project| registry.project_report(project),
+        }
+    }
 }
 
 impl ContentRegistry {
@@ -47,151 +160,6 @@ impl ContentRegistry {
     #[must_use]
     pub const fn templates(&self) -> &TemplateRegistry {
         &self.templates
-    }
-
-    /// Parses and registers a tile set.
-    ///
-    /// # Errors
-    ///
-    /// [`EngineError::Parse`] when the JSON is malformed, or
-    /// [`EngineError::Invalid`] when the tile set fails validation.
-    pub fn load_tile_set(&mut self, json: &str) -> Result<(String, ValidationReport), EngineError> {
-        let tile_set: TileSetDefinition =
-            serde_json::from_str(json).map_err(|source| EngineError::Parse {
-                what: "tile set".to_owned(),
-                message: source.to_string(),
-            })?;
-
-        let report = validate_tile_set(&tile_set);
-        if !report.valid {
-            return Err(EngineError::Invalid {
-                what: format!("tile set `{}`", tile_set.id),
-                report: Box::new(report),
-            });
-        }
-
-        let id = tile_set.id.clone();
-        self.tile_sets.insert(id.clone(), tile_set);
-        Ok((id, report))
-    }
-
-    /// Validates a tile set without registering it.
-    ///
-    /// This is what the asset editor calls before writing a file: the same
-    /// validator the runtime loads with, so a set the editor accepts is a set
-    /// the runtime accepts (`docs/adr/ADR-0012-shared-content-validation.md`).
-    ///
-    /// # Errors
-    ///
-    /// [`EngineError::Parse`] when the JSON is malformed. A set that parses but
-    /// is unusable produces an invalid report rather than an error.
-    pub fn validate_tile_set_json(&self, json: &str) -> Result<ValidationReport, EngineError> {
-        let tile_set: TileSetDefinition =
-            serde_json::from_str(json).map_err(|source| EngineError::Parse {
-                what: "tile set".to_owned(),
-                message: source.to_string(),
-            })?;
-        Ok(validate_tile_set(&tile_set))
-    }
-
-    /// Parses and registers a world, validating it against its tile set.
-    ///
-    /// # Errors
-    ///
-    /// [`EngineError::Parse`] when the JSON is malformed, or
-    /// [`EngineError::Invalid`] when the world fails validation. Warnings do not
-    /// prevent registration.
-    pub fn load_world(&mut self, json: &str) -> Result<(String, ValidationReport), EngineError> {
-        let world = Self::parse_world(json)?;
-        let report = self.validate(&world);
-        if !report.valid {
-            return Err(EngineError::Invalid {
-                what: format!("world `{}`", world.id),
-                report: Box::new(report),
-            });
-        }
-
-        let id = world.id.clone();
-        self.worlds.insert(id.clone(), world);
-        Ok((id, report))
-    }
-
-    /// Validates a world without registering it.
-    ///
-    /// This is what the editor calls before exporting.
-    ///
-    /// # Errors
-    ///
-    /// [`EngineError::Parse`] when the JSON is malformed. A world that parses
-    /// but is unusable produces an invalid report rather than an error.
-    pub fn validate_world_json(&self, json: &str) -> Result<ValidationReport, EngineError> {
-        let world = Self::parse_world(json)?;
-        Ok(self.validate(&world))
-    }
-
-    /// Parses and registers the project manifest.
-    ///
-    /// Load it **after** the content it lists: the project is validated against
-    /// what is actually in the registry, so that a bundle missing a file fails
-    /// at load time rather than when a player walks through a door
-    /// (`docs/adr/ADR-0015-client-delivery-build.md`).
-    ///
-    /// # Errors
-    ///
-    /// [`EngineError::Parse`] when the JSON is malformed, or
-    /// [`EngineError::Invalid`] when the manifest references content that is not
-    /// loaded.
-    pub fn load_project(&mut self, json: &str) -> Result<(String, ValidationReport), EngineError> {
-        let project: ProjectDefinition =
-            serde_json::from_str(json).map_err(|source| EngineError::Parse {
-                what: "project".to_owned(),
-                message: source.to_string(),
-            })?;
-
-        // Three questions, one verdict: does the manifest hold together, does
-        // every loaded map name a zone this project declares, and do the loaded
-        // languages answer the same keys?
-        let report = validate_project(
-            &project,
-            LoadedContent {
-                worlds: &self.world_ids(),
-                tile_sets: &self.tile_set_ids(),
-                characters: &self.character_ids(),
-                decorations: &self.decoration_ids(),
-                objects: &self.object_ids(),
-                character_creation: self
-                    .character_creation
-                    .as_ref()
-                    .map(|creation| creation.id.as_str()),
-                title_screen: self.title_screen.as_ref().map(|screen| screen.id.as_str()),
-                settings: self.settings.as_ref().map(|settings| settings.id.as_str()),
-            },
-        )
-        .merge(validate_project_zones(&project, self.worlds.values()))
-        .merge(validate_placed_decorations(
-            self.worlds.values(),
-            &self.decoration_ids(),
-        ))
-        .merge(validate_locales(&project, self.locales.values()))
-        .merge(self.title_screen_key_report())
-        .merge(self.character_creation_key_report())
-        .merge(self.object_key_report());
-        if !report.valid {
-            return Err(EngineError::Invalid {
-                what: format!("project `{}`", project.id),
-                report: Box::new(report),
-            });
-        }
-
-        let id = project.id.clone();
-        self.project = Some(project);
-        Ok((id, report))
-    }
-
-    /// The registered project manifest, if one was loaded.
-    #[must_use]
-    pub const fn project(&self) -> Option<&ProjectDefinition> {
-        self.project.as_ref()
     }
 
     // ---------------------------------------------------------------- locales
@@ -236,8 +204,7 @@ impl ContentRegistry {
     pub fn locale_bundle(&self, language: &str) -> Option<LocaleBundle> {
         let bundle = self.locales.get(language)?;
         let default = self
-            .project
-            .as_ref()
+            .only::<Project>()
             .and_then(|project| project.locales.default_language())
             .and_then(|id| self.locales.get(id));
 
@@ -258,548 +225,82 @@ impl ContentRegistry {
         self.locales.keys().cloned().collect()
     }
 
-    // ----------------------------------------------------------- title screen
-
-    /// Parses, validates and registers the title screen.
-    ///
-    /// One at a time: a project opens on a single menu, so a second file
-    /// replaces the first rather than accumulating.
-    ///
-    /// # Errors
-    ///
-    /// [`EngineError::Parse`] when the JSON is malformed, or
-    /// [`EngineError::Invalid`] when the screen fails validation.
-    pub fn load_title_screen(
-        &mut self,
-        json: &str,
-    ) -> Result<(String, ValidationReport), EngineError> {
-        let screen: TitleScreenDefinition =
-            serde_json::from_str(json).map_err(|source| EngineError::Parse {
-                what: "title screen".to_owned(),
-                message: source.to_string(),
-            })?;
-
-        let report = validate_title_screen(&screen);
-        if !report.valid {
-            return Err(EngineError::Invalid {
-                what: format!("title screen `{}`", screen.id),
-                report: Box::new(report),
-            });
-        }
-
-        let id = screen.id.clone();
-        self.title_screen = Some(screen);
-        Ok((id, report))
-    }
-
-    /// Validates a title screen without registering it — the editor's check.
-    ///
-    /// # Errors
-    ///
-    /// [`EngineError::Parse`] when the JSON is malformed.
-    pub fn validate_title_screen_json(&self, json: &str) -> Result<ValidationReport, EngineError> {
-        let screen: TitleScreenDefinition =
-            serde_json::from_str(json).map_err(|source| EngineError::Parse {
-                what: "title screen".to_owned(),
-                message: source.to_string(),
-            })?;
-        Ok(validate_title_screen(&screen).merge(self.referenced_key_report(&screen)))
-    }
-
-    /// The registered title screen, if the project ships one.
-    #[must_use]
-    pub const fn title_screen(&self) -> Option<&TitleScreenDefinition> {
-        self.title_screen.as_ref()
-    }
-
-    /// Whether the registered title screen's keys resolve in some language.
-    ///
-    /// Runs as part of loading the project, because that is the first moment
-    /// both halves — the screen and the languages — are in hand.
-    fn title_screen_key_report(&self) -> ValidationReport {
-        match &self.title_screen {
-            Some(screen) => self.referenced_key_report(screen),
-            None => ValidationReport::clean(),
-        }
-    }
-
-    fn referenced_key_report(&self, screen: &TitleScreenDefinition) -> ValidationReport {
-        // With no language loaded there is nothing to check against; the
-        // manifest's own `locale.unloadedLanguage` is the issue to report then,
-        // not a key error against every label.
-        if self.locales.is_empty() {
-            return ValidationReport::clean();
-        }
-        let bundles: Vec<&LocaleBundle> = self.locales.values().collect();
-        validate_referenced_keys(screen.referenced_keys(), &bundles)
-    }
-
-    // ---------------------------------------------------------------- settings
-
-    /// Parses, validates and registers the game's settings declaration.
-    ///
-    /// # Errors
-    ///
-    /// [`EngineError::Parse`] when the JSON is malformed, or
-    /// [`EngineError::Invalid`] when the declaration is unusable.
-    pub fn load_settings(&mut self, json: &str) -> Result<(String, ValidationReport), EngineError> {
-        let settings: SettingsDefinition =
-            serde_json::from_str(json).map_err(|source| EngineError::Parse {
-                what: "settings".to_owned(),
-                message: source.to_string(),
-            })?;
-
-        let report = validate_settings(&settings);
-        if !report.valid {
-            return Err(EngineError::Invalid {
-                what: format!("settings `{}`", settings.id),
-                report: Box::new(report),
-            });
-        }
-
-        let id = settings.id.clone();
-        self.settings = Some(settings);
-        Ok((id, report))
-    }
-
-    /// Validates a settings declaration without registering it, keys included.
-    ///
-    /// # Errors
-    ///
-    /// [`EngineError::Parse`] when the JSON is malformed.
-    pub fn validate_settings_json(&self, json: &str) -> Result<ValidationReport, EngineError> {
-        let settings: SettingsDefinition =
-            serde_json::from_str(json).map_err(|source| EngineError::Parse {
-                what: "settings".to_owned(),
-                message: source.to_string(),
-            })?;
-
-        let report = validate_settings(&settings);
-        if self.locales.is_empty() {
-            return Ok(report);
-        }
-        let bundles: Vec<&LocaleBundle> = self.locales.values().collect();
-        let keys = settings.referenced_keys();
-        let referenced: Vec<(&str, &str)> = keys
-            .iter()
-            .map(|(path, key)| (path.as_str(), *key))
-            .collect();
-        Ok(report.merge(validate_referenced_keys(referenced, &bundles)))
-    }
-
-    /// The registered settings declaration, if the project ships one.
-    #[must_use]
-    pub const fn settings(&self) -> Option<&SettingsDefinition> {
-        self.settings.as_ref()
-    }
-
-    // -------------------------------------------------------------- characters
-
-    /// Parses, validates and registers a character definition.
-    ///
-    /// # Errors
-    ///
-    /// [`EngineError::Parse`] when the JSON is malformed, or
-    /// [`EngineError::Invalid`] when the definition fails validation.
-    pub fn load_character(
-        &mut self,
-        json: &str,
-    ) -> Result<(String, ValidationReport), EngineError> {
-        let character = Self::parse_character(json)?;
-
-        let report = validate_character(&character);
-        if !report.valid {
-            return Err(EngineError::Invalid {
-                what: format!("character `{}`", character.id),
-                report: Box::new(report),
-            });
-        }
-
-        let id = character.id.clone();
-        self.characters.insert(id.clone(), character);
-        Ok((id, report))
-    }
-
-    /// Validates a character definition without registering it, keys included.
-    ///
-    /// # Errors
-    ///
-    /// [`EngineError::Parse`] when the JSON is malformed.
-    pub fn validate_character_json(&self, json: &str) -> Result<ValidationReport, EngineError> {
-        let character = Self::parse_character(json)?;
-
-        let report = validate_character(&character);
-        if self.locales.is_empty() {
-            return Ok(report);
-        }
-        let bundles: Vec<&LocaleBundle> = self.locales.values().collect();
-        let keys = character.referenced_keys();
-        let referenced: Vec<(&str, &str)> = keys
-            .iter()
-            .map(|(path, key)| (path.as_str(), *key))
-            .collect();
-        Ok(report.merge(validate_referenced_keys(referenced, &bundles)))
-    }
-
-    fn parse_character(json: &str) -> Result<CharacterDefinition, EngineError> {
-        serde_json::from_str(json).map_err(|source| EngineError::Parse {
-            what: "character".to_owned(),
-            message: source.to_string(),
-        })
-    }
-
-    /// The registered character definition with this id.
-    #[must_use]
-    pub fn character(&self, id: &str) -> Option<&CharacterDefinition> {
-        self.characters.get(id)
-    }
-
-    /// Ids of every registered character definition, sorted.
-    #[must_use]
-    pub fn character_ids(&self) -> Vec<String> {
-        self.characters.keys().cloned().collect()
-    }
-
-    // ------------------------------------------------------------ decorations
-
-    /// Parses, validates and registers a decoration definition.
-    ///
-    /// # Errors
-    ///
-    /// [`EngineError::Parse`] when the JSON is malformed, or
-    /// [`EngineError::Invalid`] when the definition fails validation.
-    pub fn load_decoration(
-        &mut self,
-        json: &str,
-    ) -> Result<(String, ValidationReport), EngineError> {
-        let decoration = Self::parse_decoration(json)?;
-
-        // No cell in hand at load time: a decoration is not bound to one tile
-        // set, so `decoration.overflowsCell` is the editor's warning, not the
-        // registry's (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
-        let report = validate_decoration(&decoration, None);
-        if !report.valid {
-            return Err(EngineError::Invalid {
-                what: format!("decoration `{}`", decoration.id),
-                report: Box::new(report),
-            });
-        }
-
-        let id = decoration.id.clone();
-        self.decorations.insert(id.clone(), decoration);
-        Ok((id, report))
-    }
-
-    /// Validates a decoration definition without registering it.
-    ///
-    /// `cell_json` is the pixel grid it will stand among, as a
-    /// [`TileArtGeometry`]; an empty string means there is none in hand and
-    /// skips the cell check alone.
-    ///
-    /// # Errors
-    ///
-    /// [`EngineError::Parse`] when either JSON is malformed.
-    pub fn validate_decoration_json(
-        &self,
-        json: &str,
-        cell_json: &str,
-    ) -> Result<ValidationReport, EngineError> {
-        let cell = if cell_json.trim().is_empty() {
-            None
-        } else {
-            Some(
-                serde_json::from_str::<TileArtGeometry>(cell_json).map_err(|source| {
-                    EngineError::Parse {
-                        what: "decoration cell".to_owned(),
-                        message: source.to_string(),
-                    }
-                })?,
-            )
-        };
-        Ok(validate_decoration(&Self::parse_decoration(json)?, cell))
-    }
-
-    fn parse_decoration(json: &str) -> Result<DecorationDefinition, EngineError> {
-        serde_json::from_str(json).map_err(|source| EngineError::Parse {
-            what: "decoration".to_owned(),
-            message: source.to_string(),
-        })
-    }
-
-    /// The registered decoration definition with this id.
-    #[must_use]
-    pub fn decoration(&self, id: &str) -> Option<&DecorationDefinition> {
-        self.decorations.get(id)
-    }
-
-    /// Ids of every registered decoration definition, sorted.
-    #[must_use]
-    pub fn decoration_ids(&self) -> Vec<String> {
-        self.decorations.keys().cloned().collect()
-    }
-
-    /// Resolves a registered decoration at a moment of one of its animations.
-    ///
-    /// The resolver lives in `insulaire_world`; this only finds the definition,
-    /// so the editor's preview and the map renderer place a tree with the same
-    /// arithmetic (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
-    #[must_use]
-    pub fn resolve_decoration(
-        &self,
-        id: &str,
-        animation: Option<&str>,
-        time_ms: u32,
-    ) -> Option<ResolvedDecoration> {
-        self.decorations
-            .get(id)
-            .map(|decoration| decoration.resolve_at(animation, time_ms))
-    }
-
-    // ---------------------------------------------------------------- objects
-
-    /// Parses, validates and registers an object definition.
-    ///
-    /// # Errors
-    ///
-    /// [`EngineError::Parse`] when the JSON is malformed, or
-    /// [`EngineError::Invalid`] when the definition fails validation.
-    pub fn load_object(&mut self, json: &str) -> Result<(String, ValidationReport), EngineError> {
-        let object = Self::parse_object(json)?;
-
-        let report = validate_object(&object);
-        if !report.valid {
-            return Err(EngineError::Invalid {
-                what: format!("object `{}`", object.id),
-                report: Box::new(report),
-            });
-        }
-
-        let id = object.id.clone();
-        self.objects.insert(id.clone(), object);
-        Ok((id, report))
-    }
-
-    /// Validates an object definition without registering it, keys included.
-    ///
-    /// # Errors
-    ///
-    /// [`EngineError::Parse`] when the JSON is malformed.
-    pub fn validate_object_json(&self, json: &str) -> Result<ValidationReport, EngineError> {
-        let object = Self::parse_object(json)?;
-
-        let report = validate_object(&object);
-        if self.locales.is_empty() {
-            return Ok(report);
-        }
-        Ok(report.merge(self.key_report_for(&object)))
-    }
-
-    fn parse_object(json: &str) -> Result<ObjectDefinition, EngineError> {
-        serde_json::from_str(json).map_err(|source| EngineError::Parse {
-            what: "object".to_owned(),
-            message: source.to_string(),
-        })
-    }
-
-    /// The registered object definition with this id.
-    #[must_use]
-    pub fn object(&self, id: &str) -> Option<&ObjectDefinition> {
-        self.objects.get(id)
-    }
-
-    /// Ids of every registered object definition, sorted.
-    #[must_use]
-    pub fn object_ids(&self) -> Vec<String> {
-        self.objects.keys().cloned().collect()
-    }
-
-    /// Resolves a registered object's icon at a moment of its flipbook.
-    ///
-    /// The resolver lives in `insulaire_world`; this only finds the definition,
-    /// so an inventory panel and the editor's preview show the same frame
-    /// (`docs/adr/ADR-0036-an-object-is-carried-not-placed.md`).
-    #[must_use]
-    pub fn resolve_object(&self, id: &str, time_ms: u32) -> Option<ResolvedObject> {
-        self.objects
-            .get(id)
-            .map(|object| object.resolve_at(time_ms))
-    }
-
-    /// Whether every registered object's name and description resolve.
-    ///
-    /// Merged into the project's report rather than the object's own, for the
-    /// reason the title screen's keys are: a key is only missing relative to
-    /// the languages a *project* declares (`docs/adr/ADR-0020-localised-content-keys.md`).
-    fn object_key_report(&self) -> ValidationReport {
-        if self.locales.is_empty() {
-            return ValidationReport::clean();
-        }
-        self.objects
-            .values()
-            .fold(ValidationReport::clean(), |report, object| {
-                report.merge(self.key_report_for(object))
-            })
-    }
-
-    fn key_report_for(&self, object: &ObjectDefinition) -> ValidationReport {
-        let bundles: Vec<&LocaleBundle> = self.locales.values().collect();
-        let keys = object.referenced_keys();
-        let referenced: Vec<(&str, &str)> = keys
-            .iter()
-            .map(|(path, key)| (path.as_str(), *key))
-            .collect();
-        validate_referenced_keys(referenced, &bundles)
-    }
-
-    // ---------------------------------------------------- character creation
-
-    /// Parses, validates and registers the project's character creation.
-    ///
-    /// Character definitions must be registered first: bindings and preview
-    /// overrides are cross-file references, checked here rather than left for
-    /// a renderer to discover.
-    pub fn load_character_creation(
-        &mut self,
-        json: &str,
-    ) -> Result<(String, ValidationReport), EngineError> {
-        let creation = Self::parse_character_creation(json)?;
-        let report = validate_character_creation(&creation, self.characters.values());
-        if !report.valid {
-            return Err(EngineError::Invalid {
-                what: format!("character creation `{}`", creation.id),
-                report: Box::new(report),
-            });
-        }
-
-        let id = creation.id.clone();
-        self.character_creation = Some(creation);
-        Ok((id, report))
-    }
-
-    /// Validates a creation declaration without registering it, including
-    /// references to loaded characters and locale keys.
-    pub fn validate_character_creation_json(
-        &self,
-        json: &str,
-    ) -> Result<ValidationReport, EngineError> {
-        let creation = Self::parse_character_creation(json)?;
-        let report = validate_character_creation(&creation, self.characters.values());
-        if self.locales.is_empty() {
-            return Ok(report);
-        }
-        let bundles: Vec<&LocaleBundle> = self.locales.values().collect();
-        let keys = creation.referenced_keys();
-        let referenced: Vec<(&str, &str)> = keys
-            .iter()
-            .map(|(path, key)| (path.as_str(), *key))
-            .collect();
-        Ok(report.merge(validate_referenced_keys(referenced, &bundles)))
-    }
-
-    /// The registered character-creation declaration.
-    #[must_use]
-    pub const fn character_creation(&self) -> Option<&CharacterCreationDefinition> {
-        self.character_creation.as_ref()
-    }
-
-    /// Resolves creation values into a character id, parameter bag and player
-    /// characteristics, without interpreting any author-owned id.
-    #[must_use]
-    pub fn resolve_character_creation(
-        &self,
-        choices: &serde_json::Value,
-        characteristics: &serde_json::Value,
-    ) -> Option<CharacterCreationResult> {
-        self.character_creation
-            .as_ref()
-            .map(|creation| creation.resolve(choices, characteristics))
-    }
-
-    fn parse_character_creation(json: &str) -> Result<CharacterCreationDefinition, EngineError> {
-        serde_json::from_str(json).map_err(|source| EngineError::Parse {
-            what: "character creation".to_owned(),
-            message: source.to_string(),
-        })
-    }
-
-    fn character_creation_key_report(&self) -> ValidationReport {
-        let Some(creation) = &self.character_creation else {
-            return ValidationReport::clean();
-        };
-        if self.locales.is_empty() {
-            return ValidationReport::clean();
-        }
-        let bundles: Vec<&LocaleBundle> = self.locales.values().collect();
-        let keys = creation.referenced_keys();
-        let referenced: Vec<(&str, &str)> = keys
-            .iter()
-            .map(|(path, key)| (path.as_str(), *key))
-            .collect();
-        validate_referenced_keys(referenced, &bundles)
-    }
-
-    /// Resolves a registered definition against a customisation, at a moment of
-    /// an animation.
-    ///
-    /// The resolver lives in `insulaire_world`; this only finds the definition,
-    /// so every host — editor preview, runtime, test — draws what the same code
-    /// produced (`docs/adr/ADR-0024-character-definitions.md`,
-    /// `docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`).
-    ///
-    /// `animation` of `None` is the rest pose, and so is an id the definition
-    /// does not declare.
-    ///
-    /// # Errors
-    ///
-    /// [`EngineError::UnknownContent`] when no such definition is registered.
-    pub fn resolve_character(
-        &self,
-        id: &str,
-        values: &serde_json::Value,
-        animation: Option<&str>,
-        time_ms: u32,
-    ) -> Result<ResolvedCharacter, EngineError> {
-        self.characters
-            .get(id)
-            .map(|character| character.resolve_at(values, animation, time_ms))
-            .ok_or_else(|| EngineError::UnknownContent {
-                kind: "character".to_owned(),
-                id: id.to_owned(),
-            })
-    }
-
-    /// Resolves the animation assigned to a gameplay role, including the
-    /// direction-specific to left/right fallback.
-    ///
-    /// # Errors
-    ///
-    /// [`EngineError::UnknownContent`] when no such definition is registered.
-    pub fn resolve_character_role(
-        &self,
-        id: &str,
-        values: &serde_json::Value,
-        role: AnimationRole,
-        time_ms: u32,
-    ) -> Result<ResolvedCharacter, EngineError> {
-        self.characters
-            .get(id)
-            .map(|character| character.resolve_role_at(values, role, time_ms))
-            .ok_or_else(|| EngineError::UnknownContent {
-                kind: "character".to_owned(),
-                id: id.to_owned(),
-            })
-    }
-
     /// Compares the loaded languages against the manifest and each other.
     #[must_use]
     pub fn validate_locales(&self) -> ValidationReport {
-        match &self.project {
-            Some(project) => validate_locales(project, self.locales.values()),
+        match self.only::<Project>() {
+            Some(project) => validate_locales(project, self.locales()),
             None => ValidationReport::clean(),
         }
     }
 
-    /// Forgets every loaded tile set, world and project.
+    // ------------------------------------------------------- the set as a set
+
+    /// Whether the manifest and the content it names agree.
+    ///
+    /// Three questions, one verdict: does the manifest hold together, does
+    /// every loaded map name a zone this project declares, and do the loaded
+    /// languages answer the same keys? Then the text the *registered* content
+    /// names, for the kinds a player meets without opening an editor — the
+    /// title screen, the creation screen and every object. A character's and a
+    /// settings declaration's keys are the editor's business, checked when it
+    /// validates the file it is writing (`docs/adr/ADR-0020-localised-content-keys.md`).
+    fn project_report(&self, project: &ProjectDefinition) -> ValidationReport {
+        validate_project(
+            project,
+            LoadedContent {
+                worlds: &self.ids::<World>(),
+                tile_sets: &self.ids::<TileSet>(),
+                characters: &self.ids::<Character>(),
+                decorations: &self.ids::<Decoration>(),
+                objects: &self.ids::<Object>(),
+                character_creation: self
+                    .only::<CharacterCreation>()
+                    .map(|creation| creation.id.as_str()),
+                title_screen: self.only::<TitleScreen>().map(|screen| screen.id.as_str()),
+                settings: self.only::<Settings>().map(|settings| settings.id.as_str()),
+            },
+        )
+        .merge(validate_project_zones(project, self.all::<World>()))
+        .merge(validate_placed_decorations(
+            self.all::<World>(),
+            &self.ids::<Decoration>(),
+        ))
+        .merge(validate_locales(project, self.locales()))
+        .merge(self.sole_key_report::<TitleScreen>())
+        .merge(self.sole_key_report::<CharacterCreation>())
+        .merge(self.every_key_report::<Object>())
+    }
+
+    /// The keys named by the one definition of a kind, if one is registered.
+    fn sole_key_report<K: Sole>(&self) -> ValidationReport {
+        self.only::<K>()
+            .map_or_else(ValidationReport::clean, |definition| {
+                self.key_report::<K>(definition)
+            })
+    }
+
+    /// The keys named by every registered definition of a kind.
+    fn every_key_report<K: Keyed>(&self) -> ValidationReport {
+        self.all::<K>()
+            .fold(ValidationReport::clean(), |report, definition| {
+                report.merge(self.key_report::<K>(definition))
+            })
+    }
+
+    /// Resolves every map link across all registered worlds.
+    ///
+    /// Single-world validation cannot do this — a link's target lives in another
+    /// file — so this is the check that says a *set* of maps hangs together
+    /// (`docs/adr/ADR-0014-map-links.md`).
+    #[must_use]
+    pub fn validate_links(&self) -> ValidationReport {
+        validate_project_links(self.all::<World>(), |id| self.get::<TileSet>(id))
+    }
+
+    // ----------------------------------------------------------------- resets
+
+    /// Forgets every loaded definition, of every kind, and every language.
     ///
     /// Loading is otherwise additive — a world stays registered under its id
     /// until something replaces it — which is wrong for a *set* of content: an
@@ -810,16 +311,8 @@ impl ContentRegistry {
     /// A game already in progress is unaffected: it holds its own `Arc` to the
     /// grid it is playing.
     pub fn clear(&mut self) {
-        self.tile_sets.clear();
-        self.worlds.clear();
+        self.clear_kinds();
         self.locales.clear();
-        self.characters.clear();
-        self.decorations.clear();
-        self.objects.clear();
-        self.character_creation = None;
-        self.title_screen = None;
-        self.settings = None;
-        self.project = None;
     }
 
     /// Forgets every loaded language, keeping the rest of the content.
@@ -833,71 +326,12 @@ impl ContentRegistry {
     pub fn clear_locales(&mut self) {
         self.locales.clear();
     }
-
-    /// Resolves every map link across all registered worlds.
-    ///
-    /// Single-world validation cannot do this — a link's target lives in another
-    /// file — so this is the check that says a *set* of maps hangs together
-    /// (`docs/adr/ADR-0014-map-links.md`).
-    #[must_use]
-    pub fn validate_links(&self) -> ValidationReport {
-        validate_project_links(self.worlds.values(), |id| self.tile_sets.get(id))
-    }
-
-    fn parse_world(json: &str) -> Result<WorldDefinition, EngineError> {
-        serde_json::from_str(json).map_err(|source| EngineError::Parse {
-            what: "world".to_owned(),
-            message: source.to_string(),
-        })
-    }
-
-    fn validate(&self, world: &WorldDefinition) -> ValidationReport {
-        validate_world(
-            world,
-            self.tile_sets.get(&world.tile_set_id),
-            &self.templates,
-        )
-    }
-
-    /// A registered world.
-    #[must_use]
-    pub fn world(&self, id: &str) -> Option<&WorldDefinition> {
-        self.worlds.get(id)
-    }
-
-    /// A registered tile set.
-    #[must_use]
-    pub fn tile_set(&self, id: &str) -> Option<&TileSetDefinition> {
-        self.tile_sets.get(id)
-    }
-
-    /// The tile set a world paints with.
-    #[must_use]
-    pub fn tile_set_for(&self, world: &WorldDefinition) -> Option<&TileSetDefinition> {
-        self.tile_sets.get(&world.tile_set_id)
-    }
-
-    /// Registered world ids, sorted.
-    #[must_use]
-    pub fn world_ids(&self) -> Vec<String> {
-        self.worlds.keys().cloned().collect()
-    }
-
-    /// Registered tile set ids, sorted.
-    #[must_use]
-    pub fn tile_set_ids(&self) -> Vec<String> {
-        self.tile_sets.keys().cloned().collect()
-    }
-
-    /// All registered worlds, sorted by id.
-    pub fn worlds(&self) -> impl Iterator<Item = &WorldDefinition> {
-        self.worlds.values()
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kind::ContentKind;
 
     fn tile_set_json() -> String {
         serde_json::to_string(&insulaire_world::testing::sample_tile_set()).expect("serialise")
@@ -910,35 +344,73 @@ mod tests {
     fn loaded() -> ContentRegistry {
         let mut registry = ContentRegistry::new();
         registry
-            .load_tile_set(&tile_set_json())
+            .load::<TileSet>(&tile_set_json())
             .expect("tile set loads");
-        registry.load_world(&world_json()).expect("world loads");
+        registry.load::<World>(&world_json()).expect("world loads");
         registry
     }
 
     #[test]
     fn loading_registers_content_under_its_stable_id() {
         let registry = loaded();
-        assert_eq!(registry.tile_set_ids(), vec!["mvp_terrain"]);
-        assert_eq!(registry.world_ids(), vec!["sample_world"]);
-        assert!(registry.world("sample_world").is_some());
-        assert!(registry
-            .tile_set_for(registry.world("sample_world").expect("world"))
-            .is_some());
+        assert_eq!(registry.ids::<TileSet>(), vec!["mvp_terrain"]);
+        assert_eq!(registry.ids::<World>(), vec!["sample_world"]);
+        let world = registry.get::<World>("sample_world").expect("world");
+        assert!(registry.get::<TileSet>(&world.tile_set_id).is_some());
     }
 
     #[test]
     fn malformed_json_is_a_parse_error_not_a_panic() {
         let mut registry = ContentRegistry::new();
-        let error = registry.load_world("{ not json").expect_err("should fail");
+        let error = registry
+            .load::<World>("{ not json")
+            .expect_err("should fail");
         assert!(matches!(error, EngineError::Parse { .. }));
         assert_eq!(error.code(), "parse");
+    }
+
+    /// One string per kind names it everywhere: the parse error, the refusal
+    /// and the "no such content" error cannot drift apart, whatever is added.
+    #[test]
+    fn a_kind_is_called_the_same_thing_in_every_error() {
+        let mut registry = ContentRegistry::new();
+        for what in [
+            <TileSet as ContentKind>::WHAT,
+            <World as ContentKind>::WHAT,
+            <Character as ContentKind>::WHAT,
+            <Decoration as ContentKind>::WHAT,
+            <Object as ContentKind>::WHAT,
+            <TitleScreen as ContentKind>::WHAT,
+            <Settings as ContentKind>::WHAT,
+            <CharacterCreation as ContentKind>::WHAT,
+            <Project as ContentKind>::WHAT,
+        ] {
+            assert!(!what.is_empty());
+        }
+
+        let error = registry
+            .load::<Character>("{ not json")
+            .expect_err("should fail");
+        assert!(
+            error.to_string().contains(<Character as ContentKind>::WHAT),
+            "the parse error names the kind: {error}"
+        );
+
+        let error = registry
+            .load::<World>(&world_json())
+            .expect_err("no tile set is loaded");
+        assert!(
+            error.to_string().contains("world `sample_world`"),
+            "the refusal names the kind and the id: {error}"
+        );
     }
 
     #[test]
     fn a_world_referencing_an_unloaded_tile_set_is_refused() {
         let mut registry = ContentRegistry::new();
-        let error = registry.load_world(&world_json()).expect_err("should fail");
+        let error = registry
+            .load::<World>(&world_json())
+            .expect_err("should fail");
         match error {
             EngineError::Invalid { report, .. } => {
                 assert!(report
@@ -949,7 +421,7 @@ mod tests {
             other => panic!("unexpected error: {other}"),
         }
         assert!(
-            registry.world_ids().is_empty(),
+            registry.ids::<World>().is_empty(),
             "invalid content must not be registered"
         );
     }
@@ -958,13 +430,15 @@ mod tests {
     fn validation_does_not_register_anything() {
         let mut registry = ContentRegistry::new();
         registry
-            .load_tile_set(&tile_set_json())
+            .load::<TileSet>(&tile_set_json())
             .expect("tile set loads");
 
-        let report = registry.validate_world_json(&world_json()).expect("parses");
+        let report = registry
+            .validate_json::<World>(&world_json())
+            .expect("parses");
         assert!(report.valid);
         assert!(
-            registry.world_ids().is_empty(),
+            registry.ids::<World>().is_empty(),
             "validate must be side-effect free"
         );
     }
@@ -975,13 +449,38 @@ mod tests {
         let mut world = insulaire_world::testing::sample_world();
         world.name = "Renamed".into();
         registry
-            .load_world(&serde_json::to_string(&world).expect("serialise"))
+            .load::<World>(&serde_json::to_string(&world).expect("serialise"))
             .expect("reload");
 
-        assert_eq!(registry.world_ids().len(), 1);
+        assert_eq!(registry.ids::<World>().len(), 1);
         assert_eq!(
-            registry.world("sample_world").expect("world").name,
+            registry.get::<World>("sample_world").expect("world").name,
             "Renamed"
+        );
+    }
+
+    /// A project opens on one menu, so a second file replaces the first rather
+    /// than accumulating — which is what the `one` shelf is for.
+    #[test]
+    fn a_kind_a_project_holds_one_of_keeps_only_the_last_file() {
+        let mut registry = ContentRegistry::new();
+        let screen = |id: &str| {
+            format!(
+                r#"{{"id":"{id}","schemaVersion":1,"titleKey":"menu.title",
+                   "buttons":[{{"id":"new","action":"newGame","labelKey":"menu.new"}}]}}"#
+            )
+        };
+
+        registry.load::<TitleScreen>(&screen("first")).expect("one");
+        registry
+            .load::<TitleScreen>(&screen("second"))
+            .expect("two");
+
+        assert_eq!(
+            registry
+                .only::<TitleScreen>()
+                .map(|screen| screen.id.as_str()),
+            Some("second")
         );
     }
 
@@ -997,14 +496,14 @@ mod tests {
     fn linked_registry() -> ContentRegistry {
         let mut registry = ContentRegistry::new();
         registry
-            .load_tile_set(&tile_set_json())
+            .load::<TileSet>(&tile_set_json())
             .expect("tile set loads");
         for world in [
             insulaire_world::testing::linked_world(),
             insulaire_world::testing::interior_world(),
         ] {
             registry
-                .load_world(&serde_json::to_string(&world).expect("serialise"))
+                .load::<World>(&serde_json::to_string(&world).expect("serialise"))
                 .expect("world loads");
         }
         registry
@@ -1014,10 +513,10 @@ mod tests {
     fn links_resolve_once_every_world_is_registered() {
         let mut registry = ContentRegistry::new();
         registry
-            .load_tile_set(&tile_set_json())
+            .load::<TileSet>(&tile_set_json())
             .expect("tile set loads");
         registry
-            .load_world(
+            .load::<World>(
                 &serde_json::to_string(&insulaire_world::testing::linked_world()).expect("json"),
             )
             .expect("a world with an unresolved link still loads on its own");
@@ -1036,19 +535,19 @@ mod tests {
     fn a_project_is_validated_against_what_is_loaded() {
         let mut registry = linked_registry();
         let (id, report) = registry
-            .load_project(&project_json("linked_world"))
+            .load::<Project>(&project_json("linked_world"))
             .expect("project loads");
         assert_eq!(id, "demo");
         assert!(report.valid);
         assert_eq!(
             registry
-                .project()
+                .only::<Project>()
                 .map(|project| project.start_world.as_str()),
             Some("linked_world")
         );
 
         let error = registry
-            .load_project(&project_json("absent_world"))
+            .load::<Project>(&project_json("absent_world"))
             .expect_err("an unknown start world must be refused");
         assert_eq!(error.code(), "invalidContent");
     }
@@ -1060,23 +559,23 @@ mod tests {
     fn a_project_refuses_a_world_in_a_zone_it_does_not_declare() {
         let mut registry = ContentRegistry::new();
         registry
-            .load_tile_set(&tile_set_json())
+            .load::<TileSet>(&tile_set_json())
             .expect("tile set loads");
 
         let mut world = insulaire_world::testing::linked_world();
         world.zone = "caves".to_owned();
         registry
-            .load_world(&serde_json::to_string(&world).expect("serialise"))
+            .load::<World>(&serde_json::to_string(&world).expect("serialise"))
             .expect("a world validates on its own whatever zone it names");
         registry
-            .load_world(
+            .load::<World>(
                 &serde_json::to_string(&insulaire_world::testing::interior_world())
                     .expect("serialise"),
             )
             .expect("world loads");
 
         let error = registry
-            .load_project(&project_json("linked_world"))
+            .load::<Project>(&project_json("linked_world"))
             .expect_err("the project declares no `caves`");
         assert_eq!(error.code(), "invalidContent");
 
@@ -1085,7 +584,7 @@ mod tests {
             r#""startWorld":"linked_world","#,
             r#""startWorld":"linked_world","zones":[{"id":"caves","name":"Caves"}],"#,
         );
-        registry.load_project(&declared).expect("project loads");
+        registry.load::<Project>(&declared).expect("project loads");
     }
 
     #[test]
@@ -1094,14 +593,14 @@ mod tests {
         // start from an empty registry or the removed map keeps answering.
         let mut registry = linked_registry();
         registry
-            .load_project(&project_json("linked_world"))
+            .load::<Project>(&project_json("linked_world"))
             .expect("project loads");
 
         registry.clear();
 
-        assert!(registry.world_ids().is_empty());
-        assert!(registry.tile_set_ids().is_empty());
-        assert!(registry.project().is_none());
+        assert!(registry.ids::<World>().is_empty());
+        assert!(registry.ids::<TileSet>().is_empty());
+        assert!(registry.only::<Project>().is_none());
         assert!(
             registry.validate_links().valid,
             "no worlds means no unresolved links"
@@ -1112,7 +611,7 @@ mod tests {
     fn warnings_do_not_block_registration() {
         let mut registry = ContentRegistry::new();
         registry
-            .load_tile_set(&tile_set_json())
+            .load::<TileSet>(&tile_set_json())
             .expect("tile set loads");
 
         let mut world = insulaire_world::testing::sample_world();
@@ -1121,7 +620,7 @@ mod tests {
             .retain(|entity| entity.template_id == "player");
 
         let (id, report) = registry
-            .load_world(&serde_json::to_string(&world).expect("serialise"))
+            .load::<World>(&serde_json::to_string(&world).expect("serialise"))
             .expect("a world without monsters is still loadable");
         assert_eq!(id, "sample_world");
         assert!(report

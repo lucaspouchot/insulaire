@@ -39,8 +39,8 @@ these tickets remove.
 
 | Fact | Count |
 |---|---|
-| Engine method list, written by hand | 5 times (54 / 54 / 55 / 55 / 53) + a 952-line reference doc |
-| Content kinds threaded through the stack | 9 |
+| Engine method list, written by hand | 5 times (54 / 54 / 55 / 55 / 53) + a 952-line reference doc *(fixed in 01)* |
+| Content kinds threaded through the stack | 9 *(fixed in 02)* |
 | TypeScript types mirroring Rust definitions | 85, with 1 assertion checking a pair |
 | Asset workspace lines with no spec | 6,303 |
 | Editor modules with no spec | 15 of 17 |
@@ -52,7 +52,7 @@ these tickets remove.
 | # | Deepening | Strength |
 |---|---|---|
 | [01](issues/01-declare-the-engine-seam-once.md) | Declare the engine seam once | Strong · **done** |
-| [02](issues/02-content-kind-is-a-module.md) | Make the content kind a module | Strong |
+| [02](issues/02-content-kind-is-a-module.md) | Make the content kind a module | Strong · **done** |
 | [03](issues/03-derive-content-types-from-definitions.md) | Derive the content types from the definitions | Strong |
 | [04](issues/04-one-editing-session-for-the-workspaces.md) | Give the asset workspaces one editing session | Strong · **done** |
 | [05](issues/05-close-the-project-store-read-side.md) | Close the project store's read side | Strong · **done** |
@@ -96,7 +96,16 @@ own note that "doing 01 first makes 02 smaller". One declaration,
 stays hand-written but can no longer fall behind it. 02 now adds a kind to a
 list instead of to five.
 
-Then **02**. **03** and **06** sequence together: the default table 06 needs is
+**Then 02, and done.** A `ContentKind` trait for what a kind does, a
+`content_kinds!` macro for the list of them, and a `kind` row in `seam.json`
+that expands into the boundary methods that kind has. Only two of the four
+operations the ticket proposed generalise — `resolve` and `preview` take
+different arguments per kind, which is what makes a kind that kind — and the
+locale file turned out not to be a kind at all, for the reasons 09 found on the
+Angular side. `ContentRegistry` went from 48 public members to 18, none of them
+per-kind; `seam.json` from 25 per-kind rows to 9. No rule moved.
+
+Then **03** and **06**, which sequence together: the default table 06 needs is
 the fact 03 generates. **07** is independent and can go at any point.
 
 ## What is deliberately not proposed

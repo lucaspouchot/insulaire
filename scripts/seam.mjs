@@ -71,6 +71,121 @@ export function camelCase(name) {
   return name.replace(/_([a-z0-9])/g, (_, character) => character.toUpperCase());
 }
 
+/** `character_creation` is the `CharacterCreation` type parameter. */
+function pascalCase(name) {
+  return name.replace(/(^|_)([a-z0-9])/g, (_, __, character) => character.toUpperCase());
+}
+
+/**
+ * What a content kind owes the boundary, as one method each.
+ *
+ * A kind is loaded, validated, read back and — when a project may hold many of
+ * them — listed. `insulaire_engine` writes those four once, over a
+ * `ContentKind`, so the boundary declares them once too: a row in `methods`
+ * with a `kind` expands here into the methods that kind has, and the engine
+ * call each makes is the generic one with the kind as its type parameter.
+ *
+ * Anything that is *not* one of the four stays an ordinary row — a decoration's
+ * validation takes a cell no load can supply, a character resolves against a
+ * customisation. Those differ per kind, which is exactly why they are not here.
+ */
+const KIND_METHODS = {
+  load: (kind) => ({
+    name: `load_${kind.kind}`,
+    mutates: true,
+    params: [{ name: 'json', type: 'str' }],
+    returns: 'json',
+    payload: 'LoadOutcome',
+    inner: 'load',
+    doc: [`Parses, validates and registers ${kind.noun}. Returns a {crate::LoadOutcome}.`],
+    errors: [
+      `\`parse\` for malformed JSON, \`invalidContent\` for a failing ${kind.bare}.`,
+    ],
+  }),
+  validate: (kind) => ({
+    name: `validate_${kind.kind}`,
+    params: [{ name: 'json', type: 'str' }],
+    returns: 'json',
+    payload: 'ValidationReport',
+    inner: 'validate',
+    doc: [
+      `Validates ${kind.noun} **without** registering it${
+        kind.keys ? ', keys included' : ''
+      }. Returns a \`ValidationReport\`.`,
+    ],
+    errors: ['`parse` for malformed JSON.'],
+  }),
+  get: (kind) => ({
+    name: kind.kind,
+    params: kind.read === 'by_id' ? [{ name: 'id', type: 'str' }] : [],
+    returns: 'json',
+    payload: kind.payload,
+    inner: kind.read === 'by_id' ? 'definition' : 'only',
+    doc:
+      kind.read === 'by_id'
+        ? [`Returns a registered {insulaire_world::${kind.payload}}.`]
+        : [`Returns the registered \`${kind.payload}\`.`],
+    errors:
+      kind.read === 'by_id'
+        ? ['`unknownContent` when no definition has that id.']
+        : [`\`unknownContent\` when the project declares no ${kind.bare}.`],
+  }),
+  ids: (kind) => ({
+    name: `${kind.kind}_ids`,
+    params: [],
+    returns: 'json',
+    payload: 'string[]',
+    infallible: true,
+    inner: 'ids',
+    doc: [`Returns the ids of every registered ${kind.bare}.`],
+    errors: ['Only on serialisation failure.'],
+  }),
+};
+
+/**
+ * What each way of reading a kind back allows.
+ *
+ * This is about the *boundary*, not about the registry: a tile set is a `Many`
+ * in Rust and still `none` here, because nothing across the boundary asks for
+ * one by id — a world view carries what a renderer needs of it.
+ */
+const READ_METHODS = {
+  by_id: ['load', 'validate', 'get', 'ids'],
+  sole: ['load', 'validate', 'get'],
+  none: ['load', 'validate'],
+};
+
+/**
+ * Turns one content-kind row into the methods it declares.
+ *
+ * The row says which of them it wants, because not every kind owes all four: a
+ * tile set is never read back by id, and a decoration is validated against a
+ * cell no load can supply, so those keep a door of their own. What a row may
+ * *not* do is invent a fifth shape — an unknown name here is a gate failure.
+ */
+function expandKind(row) {
+  const where = `seam kind \`${row.kind}\``;
+  const allowed = READ_METHODS[row.read];
+  if (!allowed) throw new Error(`${where} has unknown read shape \`${row.read}\``);
+  if (!row.noun) throw new Error(`${where} must say what prose calls it`);
+  if (!row.payload) throw new Error(`${where} must name the definition it parses into`);
+  if (!Array.isArray(row.methods) || row.methods.length === 0) {
+    throw new Error(`${where} declares no methods`);
+  }
+
+  const kind = { ...row, bare: row.noun.replace(/^(a|an|the) /, '') };
+  const type = `crate::kinds::${pascalCase(row.kind)}`;
+
+  return row.methods.map((name) => {
+    if (!allowed.includes(name)) {
+      throw new Error(`${where} is read \`${row.read}\`, which has no \`${name}\``);
+    }
+    const method = KIND_METHODS[name](kind);
+    const override = row[name] ?? {};
+    return { ...method, ...override, generic: type };
+  });
+}
+
 /**
  * Reads a declaration and refuses one the targets could not render.
  *
@@ -80,7 +195,10 @@ export function camelCase(name) {
  */
 export function loadSeam(declaration) {
   const seen = new Set();
-  const methods = declaration.methods.map((method) => {
+  const declared = declaration.methods.flatMap((entry) =>
+    entry.kind ? expandKind(entry) : [entry],
+  );
+  const methods = declared.map((method) => {
     const where = `seam method \`${method.name}\``;
     if (seen.has(method.name)) throw new Error(`${where} is declared twice`);
     seen.add(method.name);
@@ -291,7 +409,10 @@ function renderJsonMethod(method) {
     ...(method.returns === 'bool' ? ['#[must_use]'] : []),
   ];
   const args = method.params.map((p) => p.adapt?.as ?? p.name).join(', ');
-  const call = method.expr ?? `self.inner.${method.inner}(${args})`;
+  // A content kind reaches the engine through the generic method, with itself
+  // as the type parameter; everything else names an engine method of its own.
+  const turbofish = method.generic ? `::<${method.generic}>` : '';
+  const call = method.expr ?? `self.inner.${method.inner}${turbofish}(${args})`;
 
   const lines = method.params.filter((p) => p.adapt).map((param) => adaptInJson(param));
   if (method.expr) {

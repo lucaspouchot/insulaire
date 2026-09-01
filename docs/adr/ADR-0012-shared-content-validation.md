@@ -11,7 +11,7 @@ ADR-0016 requires that the editor "must not implement a second version of game r
 
 There is exactly one validator, `insulaire_world::validate_world`, written in Rust.
 
-- The **runtime** runs it inside `Engine::load_world`. A world is registered only if it has no errors.
+- The **runtime** runs it inside `Engine::load::<kinds::World>`, which is the same door every content kind loads through (ADR-0010). A world is registered only if it has no errors.
 - The **editor** runs it through WASM via `InsulaireEngine.validateWorld(json)`, which validates without registering anything.
 
 Both receive the same `ValidationReport`: a `valid` flag plus a list of issues, each with a stable `code`, a `severity`, a JSON-ish `path` such as `entities[3].at`, and a human message.

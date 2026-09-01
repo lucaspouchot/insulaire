@@ -350,14 +350,16 @@ export class EngineError extends Error {
 export interface RawInsulaireEngine {
   engineInfo(): string;
   loadTileSet(json: string): string;
+  validateTileSet(json: string): string;
   loadWorld(json: string): string;
+  validateWorld(json: string): string;
   loadProject(json: string): string;
   loadLocale(language: string, namespace: string, json: string): string;
   locale(language: string): string;
   validateLocales(): string;
   loadTitleScreen(json: string): string;
   validateTitleScreen(json: string): string;
-  validateTileSet(json: string): string;
+  titleScreen(): string;
   previewTileRender(
     tileSetJson: string,
     tileId: string,
@@ -369,11 +371,9 @@ export interface RawInsulaireEngine {
     /** A `PlacedTileArt`; `"{}"` rolls everything. */
     choiceJson: string,
   ): string;
-  titleScreen(): string;
   resetContent(): void;
   resetLocales(): void;
   validateLinks(): string;
-  validateWorld(json: string): string;
   contentSummary(): string;
   worldView(worldId: string): string;
   terrainBuffer(worldId: string): Uint8Array;
@@ -389,9 +389,9 @@ export interface RawInsulaireEngine {
   character(id: string): string;
   characterIds(): string;
   loadDecoration(json: string): string;
-  validateDecoration(json: string, cellJson: string): string;
   decoration(id: string): string;
   decorationIds(): string;
+  validateDecoration(json: string, cellJson: string): string;
   resolveDecoration(id: string, animation: string | undefined, timeMs: number): string;
   previewDecoration(decorationJson: string, animation: string | undefined, timeMs: number): string;
   loadObject(json: string): string;

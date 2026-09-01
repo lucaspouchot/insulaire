@@ -73,7 +73,21 @@ impl JsonEngine {
     pub fn load_tile_set(&mut self, json: &str) -> JsonResult {
         let value = self
             .inner
-            .load_tile_set(json)
+            .load::<crate::kinds::TileSet>(json)
+            .map_err(|error| err(&error))?;
+        ok(&value)
+    }
+
+    /// Validates a tile set **without** registering it. Returns a
+    /// `ValidationReport`.
+    ///
+    /// # Errors
+    ///
+    /// `parse` for malformed JSON.
+    pub fn validate_tile_set(&self, json: &str) -> JsonResult {
+        let value = self
+            .inner
+            .validate::<crate::kinds::TileSet>(json)
             .map_err(|error| err(&error))?;
         ok(&value)
     }
@@ -86,7 +100,25 @@ impl JsonEngine {
     /// `parse` for malformed JSON, `invalidContent` for a failing world. The
     /// error payload carries the full validation report.
     pub fn load_world(&mut self, json: &str) -> JsonResult {
-        let value = self.inner.load_world(json).map_err(|error| err(&error))?;
+        let value = self
+            .inner
+            .load::<crate::kinds::World>(json)
+            .map_err(|error| err(&error))?;
+        ok(&value)
+    }
+
+    /// Validates a world *without* registering it — the editor's pre-export
+    /// check. Returns a `ValidationReport`.
+    ///
+    /// # Errors
+    ///
+    /// `parse` for malformed JSON. An unusable world yields an invalid report,
+    /// not an error.
+    pub fn validate_world(&self, json: &str) -> JsonResult {
+        let value = self
+            .inner
+            .validate::<crate::kinds::World>(json)
+            .map_err(|error| err(&error))?;
         ok(&value)
     }
 
@@ -101,7 +133,10 @@ impl JsonEngine {
     /// `parse` for malformed JSON, `invalidContent` when it references content
     /// that is not loaded.
     pub fn load_project(&mut self, json: &str) -> JsonResult {
-        let value = self.inner.load_project(json).map_err(|error| err(&error))?;
+        let value = self
+            .inner
+            .load::<crate::kinds::Project>(json)
+            .map_err(|error| err(&error))?;
         ok(&value)
     }
 
@@ -152,12 +187,12 @@ impl JsonEngine {
     pub fn load_title_screen(&mut self, json: &str) -> JsonResult {
         let value = self
             .inner
-            .load_title_screen(json)
+            .load::<crate::kinds::TitleScreen>(json)
             .map_err(|error| err(&error))?;
         ok(&value)
     }
 
-    /// Validates a title screen *without* registering it, keys included.
+    /// Validates a title screen **without** registering it, keys included.
     /// Returns a `ValidationReport`.
     ///
     /// # Errors
@@ -166,21 +201,20 @@ impl JsonEngine {
     pub fn validate_title_screen(&self, json: &str) -> JsonResult {
         let value = self
             .inner
-            .validate_title_screen(json)
+            .validate::<crate::kinds::TitleScreen>(json)
             .map_err(|error| err(&error))?;
         ok(&value)
     }
 
-    /// Validates a tile set **without** registering it. Returns a
-    /// `ValidationReport`.
+    /// Returns the registered `TitleScreenDefinition`.
     ///
     /// # Errors
     ///
-    /// `parse` for malformed JSON.
-    pub fn validate_tile_set(&self, json: &str) -> JsonResult {
+    /// `unknownContent` when the project declares no title screen.
+    pub fn title_screen(&self) -> JsonResult {
         let value = self
             .inner
-            .validate_tile_set(json)
+            .only::<crate::kinds::TitleScreen>()
             .map_err(|error| err(&error))?;
         ok(&value)
     }
@@ -229,16 +263,6 @@ impl JsonEngine {
         ok(&value)
     }
 
-    /// Returns the registered `TitleScreenDefinition`.
-    ///
-    /// # Errors
-    ///
-    /// `unknownContent` when the project ships no title screen.
-    pub fn title_screen(&self) -> JsonResult {
-        let value = self.inner.title_screen().map_err(|error| err(&error))?;
-        ok(&value)
-    }
-
     /// Forgets every loaded tile set, world, locale and project.
     ///
     /// Hosts call this before re-loading a whole project, so content removed in
@@ -264,21 +288,6 @@ impl JsonEngine {
     /// Only on serialisation failure.
     pub fn validate_links(&self) -> JsonResult {
         ok(&self.inner.validate_links())
-    }
-
-    /// Validates a world *without* registering it — the editor's pre-export
-    /// check. Returns a `ValidationReport`.
-    ///
-    /// # Errors
-    ///
-    /// `parse` for malformed JSON. An unusable world yields an invalid report,
-    /// not an error.
-    pub fn validate_world(&self, json: &str) -> JsonResult {
-        let value = self
-            .inner
-            .validate_world(json)
-            .map_err(|error| err(&error))?;
-        ok(&value)
     }
 
     /// Returns a [`ContentSummary`](crate::ContentSummary): loaded tile sets,
@@ -376,12 +385,12 @@ impl JsonEngine {
     pub fn load_settings(&mut self, json: &str) -> JsonResult {
         let value = self
             .inner
-            .load_settings(json)
+            .load::<crate::kinds::Settings>(json)
             .map_err(|error| err(&error))?;
         ok(&value)
     }
 
-    /// Validates a settings declaration *without* registering it, keys
+    /// Validates a settings declaration **without** registering it, keys
     /// included. Returns a `ValidationReport`.
     ///
     /// # Errors
@@ -390,7 +399,7 @@ impl JsonEngine {
     pub fn validate_settings(&self, json: &str) -> JsonResult {
         let value = self
             .inner
-            .validate_settings(json)
+            .validate::<crate::kinds::Settings>(json)
             .map_err(|error| err(&error))?;
         ok(&value)
     }
@@ -399,9 +408,12 @@ impl JsonEngine {
     ///
     /// # Errors
     ///
-    /// `unknownContent` when the project declares no settings.
+    /// `unknownContent` when the project declares no settings declaration.
     pub fn settings(&self) -> JsonResult {
-        let value = self.inner.settings().map_err(|error| err(&error))?;
+        let value = self
+            .inner
+            .only::<crate::kinds::Settings>()
+            .map_err(|error| err(&error))?;
         ok(&value)
     }
 
@@ -424,25 +436,26 @@ impl JsonEngine {
     ///
     /// # Errors
     ///
-    /// `parse` for malformed JSON, `invalidContent` for a failing definition.
+    /// `parse` for malformed JSON, `invalidContent` for a failing character
+    /// definition.
     pub fn load_character(&mut self, json: &str) -> JsonResult {
         let value = self
             .inner
-            .load_character(json)
+            .load::<crate::kinds::Character>(json)
             .map_err(|error| err(&error))?;
         ok(&value)
     }
 
-    /// Validates a character definition *without* registering it, keys
+    /// Validates a character definition **without** registering it, keys
     /// included. Returns a `ValidationReport`.
     ///
     /// # Errors
     ///
-    /// `parse` when the JSON is malformed.
+    /// `parse` for malformed JSON.
     pub fn validate_character(&self, json: &str) -> JsonResult {
         let value = self
             .inner
-            .validate_character(json)
+            .validate::<crate::kinds::Character>(json)
             .map_err(|error| err(&error))?;
         ok(&value)
     }
@@ -454,7 +467,10 @@ impl JsonEngine {
     ///
     /// `unknownContent` when no definition has that id.
     pub fn character(&self, id: &str) -> JsonResult {
-        let value = self.inner.character(id).map_err(|error| err(&error))?;
+        let value = self
+            .inner
+            .definition::<crate::kinds::Character>(id)
+            .map_err(|error| err(&error))?;
         ok(&value)
     }
 
@@ -464,7 +480,7 @@ impl JsonEngine {
     ///
     /// Only on serialisation failure.
     pub fn character_ids(&self) -> JsonResult {
-        ok(&self.inner.character_ids())
+        ok(&self.inner.ids::<crate::kinds::Character>())
     }
 
     /// Parses, validates and registers a decoration definition. Returns a
@@ -472,13 +488,37 @@ impl JsonEngine {
     ///
     /// # Errors
     ///
-    /// `parse` for malformed JSON, `invalidContent` for a failing definition.
+    /// `parse` for malformed JSON, `invalidContent` for a failing decoration
+    /// definition.
     pub fn load_decoration(&mut self, json: &str) -> JsonResult {
         let value = self
             .inner
-            .load_decoration(json)
+            .load::<crate::kinds::Decoration>(json)
             .map_err(|error| err(&error))?;
         ok(&value)
+    }
+
+    /// Returns a registered
+    /// [`DecorationDefinition`](insulaire_world::DecorationDefinition).
+    ///
+    /// # Errors
+    ///
+    /// `unknownContent` when no definition has that id.
+    pub fn decoration(&self, id: &str) -> JsonResult {
+        let value = self
+            .inner
+            .definition::<crate::kinds::Decoration>(id)
+            .map_err(|error| err(&error))?;
+        ok(&value)
+    }
+
+    /// Returns the ids of every registered decoration definition.
+    ///
+    /// # Errors
+    ///
+    /// Only on serialisation failure.
+    pub fn decoration_ids(&self) -> JsonResult {
+        ok(&self.inner.ids::<crate::kinds::Decoration>())
     }
 
     /// Validates a decoration definition *without* registering it. Returns a
@@ -496,26 +536,6 @@ impl JsonEngine {
             .validate_decoration(json, cell_json)
             .map_err(|error| err(&error))?;
         ok(&value)
-    }
-
-    /// Returns a registered
-    /// [`DecorationDefinition`](insulaire_world::DecorationDefinition).
-    ///
-    /// # Errors
-    ///
-    /// `unknownContent` when no definition has that id.
-    pub fn decoration(&self, id: &str) -> JsonResult {
-        let value = self.inner.decoration(id).map_err(|error| err(&error))?;
-        ok(&value)
-    }
-
-    /// Returns the ids of every registered decoration definition.
-    ///
-    /// # Errors
-    ///
-    /// Only on serialisation failure.
-    pub fn decoration_ids(&self) -> JsonResult {
-        ok(&self.inner.decoration_ids())
     }
 
     /// Resolves a registered decoration at a moment of one of its animations.
@@ -560,22 +580,26 @@ impl JsonEngine {
     ///
     /// # Errors
     ///
-    /// `parse` for malformed JSON, `invalidContent` for a failing definition.
+    /// `parse` for malformed JSON, `invalidContent` for a failing object
+    /// definition.
     pub fn load_object(&mut self, json: &str) -> JsonResult {
-        let value = self.inner.load_object(json).map_err(|error| err(&error))?;
+        let value = self
+            .inner
+            .load::<crate::kinds::Object>(json)
+            .map_err(|error| err(&error))?;
         ok(&value)
     }
 
-    /// Validates an object definition *without* registering it, keys included.
-    /// Returns a `ValidationReport`.
+    /// Validates an object definition **without** registering it, keys
+    /// included. Returns a `ValidationReport`.
     ///
     /// # Errors
     ///
-    /// `parse` when the JSON is malformed.
+    /// `parse` for malformed JSON.
     pub fn validate_object(&self, json: &str) -> JsonResult {
         let value = self
             .inner
-            .validate_object(json)
+            .validate::<crate::kinds::Object>(json)
             .map_err(|error| err(&error))?;
         ok(&value)
     }
@@ -587,7 +611,10 @@ impl JsonEngine {
     ///
     /// `unknownContent` when no definition has that id.
     pub fn object(&self, id: &str) -> JsonResult {
-        let value = self.inner.object(id).map_err(|error| err(&error))?;
+        let value = self
+            .inner
+            .definition::<crate::kinds::Object>(id)
+            .map_err(|error| err(&error))?;
         ok(&value)
     }
 
@@ -597,7 +624,7 @@ impl JsonEngine {
     ///
     /// Only on serialisation failure.
     pub fn object_ids(&self) -> JsonResult {
-        ok(&self.inner.object_ids())
+        ok(&self.inner.ids::<crate::kinds::Object>())
     }
 
     /// Resolves a registered object's icon at a moment of its flipbook. Returns
@@ -637,7 +664,7 @@ impl JsonEngine {
     pub fn load_character_creation(&mut self, json: &str) -> JsonResult {
         let value = self
             .inner
-            .load_character_creation(json)
+            .load::<crate::kinds::CharacterCreation>(json)
             .map_err(|error| err(&error))?;
         ok(&value)
     }
@@ -646,11 +673,11 @@ impl JsonEngine {
     ///
     /// # Errors
     ///
-    /// `parse` when the JSON is malformed.
+    /// `parse` for malformed JSON.
     pub fn validate_character_creation(&self, json: &str) -> JsonResult {
         let value = self
             .inner
-            .validate_character_creation(json)
+            .validate::<crate::kinds::CharacterCreation>(json)
             .map_err(|error| err(&error))?;
         ok(&value)
     }
@@ -659,11 +686,12 @@ impl JsonEngine {
     ///
     /// # Errors
     ///
-    /// `unknownContent` when the project declares none.
+    /// `unknownContent` when the project declares no character-creation
+    /// declaration.
     pub fn character_creation(&self) -> JsonResult {
         let value = self
             .inner
-            .character_creation()
+            .only::<crate::kinds::CharacterCreation>()
             .map_err(|error| err(&error))?;
         ok(&value)
     }

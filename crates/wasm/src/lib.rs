@@ -69,6 +69,17 @@ impl InsulaireEngine {
         self.inner.load_tile_set(json).map_err(to_js)
     }
 
+    /// Validates a tile set **without** registering it. Returns a
+    /// `ValidationReport`.
+    ///
+    /// # Errors
+    ///
+    /// `parse` for malformed JSON.
+    #[wasm_bindgen(js_name = validateTileSet)]
+    pub fn validate_tile_set(&self, json: &str) -> Result<String, JsValue> {
+        self.inner.validate_tile_set(json).map_err(to_js)
+    }
+
     /// Parses, validates and registers a world. Returns a `LoadOutcome`.
     ///
     /// # Errors
@@ -78,6 +89,18 @@ impl InsulaireEngine {
     #[wasm_bindgen(js_name = loadWorld)]
     pub fn load_world(&mut self, json: &str) -> Result<String, JsValue> {
         self.inner.load_world(json).map_err(to_js)
+    }
+
+    /// Validates a world *without* registering it — the editor's pre-export
+    /// check. Returns a `ValidationReport`.
+    ///
+    /// # Errors
+    ///
+    /// `parse` for malformed JSON. An unusable world yields an invalid report,
+    /// not an error.
+    #[wasm_bindgen(js_name = validateWorld)]
+    pub fn validate_world(&self, json: &str) -> Result<String, JsValue> {
+        self.inner.validate_world(json).map_err(to_js)
     }
 
     /// Parses, validates and registers the project manifest — the list of
@@ -148,7 +171,7 @@ impl InsulaireEngine {
         self.inner.load_title_screen(json).map_err(to_js)
     }
 
-    /// Validates a title screen *without* registering it, keys included.
+    /// Validates a title screen **without** registering it, keys included.
     /// Returns a `ValidationReport`.
     ///
     /// # Errors
@@ -159,15 +182,14 @@ impl InsulaireEngine {
         self.inner.validate_title_screen(json).map_err(to_js)
     }
 
-    /// Validates a tile set **without** registering it. Returns a
-    /// `ValidationReport`.
+    /// Returns the registered `TitleScreenDefinition`.
     ///
     /// # Errors
     ///
-    /// `parse` for malformed JSON.
-    #[wasm_bindgen(js_name = validateTileSet)]
-    pub fn validate_tile_set(&self, json: &str) -> Result<String, JsValue> {
-        self.inner.validate_tile_set(json).map_err(to_js)
+    /// `unknownContent` when the project declares no title screen.
+    #[wasm_bindgen(js_name = titleScreen)]
+    pub fn title_screen(&self) -> Result<String, JsValue> {
+        self.inner.title_screen().map_err(to_js)
     }
 
     /// Resolves what to draw for one cell of a tile set **passed in** — the
@@ -213,16 +235,6 @@ impl InsulaireEngine {
             .map_err(to_js)
     }
 
-    /// Returns the registered `TitleScreenDefinition`.
-    ///
-    /// # Errors
-    ///
-    /// `unknownContent` when the project ships no title screen.
-    #[wasm_bindgen(js_name = titleScreen)]
-    pub fn title_screen(&self) -> Result<String, JsValue> {
-        self.inner.title_screen().map_err(to_js)
-    }
-
     /// Forgets every loaded tile set, world, locale and project.
     ///
     /// Hosts call this before re-loading a whole project, so content removed in
@@ -251,18 +263,6 @@ impl InsulaireEngine {
     #[wasm_bindgen(js_name = validateLinks)]
     pub fn validate_links(&self) -> Result<String, JsValue> {
         self.inner.validate_links().map_err(to_js)
-    }
-
-    /// Validates a world *without* registering it — the editor's pre-export
-    /// check. Returns a `ValidationReport`.
-    ///
-    /// # Errors
-    ///
-    /// `parse` for malformed JSON. An unusable world yields an invalid report,
-    /// not an error.
-    #[wasm_bindgen(js_name = validateWorld)]
-    pub fn validate_world(&self, json: &str) -> Result<String, JsValue> {
-        self.inner.validate_world(json).map_err(to_js)
     }
 
     /// Returns a `ContentSummary`: loaded tile sets, worlds and templates.
@@ -357,7 +357,7 @@ impl InsulaireEngine {
         self.inner.load_settings(json).map_err(to_js)
     }
 
-    /// Validates a settings declaration *without* registering it, keys
+    /// Validates a settings declaration **without** registering it, keys
     /// included. Returns a `ValidationReport`.
     ///
     /// # Errors
@@ -372,7 +372,7 @@ impl InsulaireEngine {
     ///
     /// # Errors
     ///
-    /// `unknownContent` when the project declares no settings.
+    /// `unknownContent` when the project declares no settings declaration.
     #[wasm_bindgen(js_name = settings)]
     pub fn settings(&self) -> Result<String, JsValue> {
         self.inner.settings().map_err(to_js)
@@ -394,18 +394,19 @@ impl InsulaireEngine {
     ///
     /// # Errors
     ///
-    /// `parse` for malformed JSON, `invalidContent` for a failing definition.
+    /// `parse` for malformed JSON, `invalidContent` for a failing character
+    /// definition.
     #[wasm_bindgen(js_name = loadCharacter)]
     pub fn load_character(&mut self, json: &str) -> Result<String, JsValue> {
         self.inner.load_character(json).map_err(to_js)
     }
 
-    /// Validates a character definition *without* registering it, keys
+    /// Validates a character definition **without** registering it, keys
     /// included. Returns a `ValidationReport`.
     ///
     /// # Errors
     ///
-    /// `parse` when the JSON is malformed.
+    /// `parse` for malformed JSON.
     #[wasm_bindgen(js_name = validateCharacter)]
     pub fn validate_character(&self, json: &str) -> Result<String, JsValue> {
         self.inner.validate_character(json).map_err(to_js)
@@ -436,26 +437,11 @@ impl InsulaireEngine {
     ///
     /// # Errors
     ///
-    /// `parse` for malformed JSON, `invalidContent` for a failing definition.
+    /// `parse` for malformed JSON, `invalidContent` for a failing decoration
+    /// definition.
     #[wasm_bindgen(js_name = loadDecoration)]
     pub fn load_decoration(&mut self, json: &str) -> Result<String, JsValue> {
         self.inner.load_decoration(json).map_err(to_js)
-    }
-
-    /// Validates a decoration definition *without* registering it. Returns a
-    /// `ValidationReport`.
-    ///
-    /// `cell_json` is the `TileArtGeometry` it will stand among; `""` skips
-    /// `decoration.overflowsCell` alone.
-    ///
-    /// # Errors
-    ///
-    /// `parse` when either JSON is malformed.
-    #[wasm_bindgen(js_name = validateDecoration)]
-    pub fn validate_decoration(&self, json: &str, cell_json: &str) -> Result<String, JsValue> {
-        self.inner
-            .validate_decoration(json, cell_json)
-            .map_err(to_js)
     }
 
     /// Returns a registered `DecorationDefinition`.
@@ -476,6 +462,22 @@ impl InsulaireEngine {
     #[wasm_bindgen(js_name = decorationIds)]
     pub fn decoration_ids(&self) -> Result<String, JsValue> {
         self.inner.decoration_ids().map_err(to_js)
+    }
+
+    /// Validates a decoration definition *without* registering it. Returns a
+    /// `ValidationReport`.
+    ///
+    /// `cell_json` is the `TileArtGeometry` it will stand among; `""` skips
+    /// `decoration.overflowsCell` alone.
+    ///
+    /// # Errors
+    ///
+    /// `parse` when either JSON is malformed.
+    #[wasm_bindgen(js_name = validateDecoration)]
+    pub fn validate_decoration(&self, json: &str, cell_json: &str) -> Result<String, JsValue> {
+        self.inner
+            .validate_decoration(json, cell_json)
+            .map_err(to_js)
     }
 
     /// Resolves a registered decoration at a moment of one of its animations.
@@ -518,18 +520,19 @@ impl InsulaireEngine {
     ///
     /// # Errors
     ///
-    /// `parse` for malformed JSON, `invalidContent` for a failing definition.
+    /// `parse` for malformed JSON, `invalidContent` for a failing object
+    /// definition.
     #[wasm_bindgen(js_name = loadObject)]
     pub fn load_object(&mut self, json: &str) -> Result<String, JsValue> {
         self.inner.load_object(json).map_err(to_js)
     }
 
-    /// Validates an object definition *without* registering it, keys included.
-    /// Returns a `ValidationReport`.
+    /// Validates an object definition **without** registering it, keys
+    /// included. Returns a `ValidationReport`.
     ///
     /// # Errors
     ///
-    /// `parse` when the JSON is malformed.
+    /// `parse` for malformed JSON.
     #[wasm_bindgen(js_name = validateObject)]
     pub fn validate_object(&self, json: &str) -> Result<String, JsValue> {
         self.inner.validate_object(json).map_err(to_js)
@@ -594,7 +597,7 @@ impl InsulaireEngine {
     ///
     /// # Errors
     ///
-    /// `parse` when the JSON is malformed.
+    /// `parse` for malformed JSON.
     #[wasm_bindgen(js_name = validateCharacterCreation)]
     pub fn validate_character_creation(&self, json: &str) -> Result<String, JsValue> {
         self.inner.validate_character_creation(json).map_err(to_js)
@@ -604,7 +607,8 @@ impl InsulaireEngine {
     ///
     /// # Errors
     ///
-    /// `unknownContent` when the project declares none.
+    /// `unknownContent` when the project declares no character-creation
+    /// declaration.
     #[wasm_bindgen(js_name = characterCreation)]
     pub fn character_creation(&self) -> Result<String, JsValue> {
         self.inner.character_creation().map_err(to_js)

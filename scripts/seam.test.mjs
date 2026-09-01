@@ -316,11 +316,128 @@ describe('unwiredMethods', () => {
   });
 });
 
+describe('a content kind', () => {
+  /** A declaration whose only entry is one content kind. */
+  const kindSeam = (row) => ({
+    modules: {
+      json: { doc: ['The string facade.'] },
+      wasm: { doc: ['The bindings.'] },
+      typescript: { doc: ['The raw class.'] },
+    },
+    methods: [
+      {
+        kind: 'character',
+        noun: 'a character definition',
+        payload: 'CharacterDefinition',
+        read: 'by_id',
+        methods: ['load', 'validate', 'get', 'ids'],
+        ...row,
+      },
+    ],
+  });
+
+  it('expands one row into the four methods a keyed kind has', () => {
+    const seam = loadSeam(kindSeam({}));
+    assert.deepEqual(
+      seam.methods.map((method) => method.name),
+      ['load_character', 'validate_character', 'character', 'character_ids'],
+    );
+    assert.deepEqual(
+      seam.methods.map((method) => method.jsName),
+      ['loadCharacter', 'validateCharacter', 'character', 'characterIds'],
+    );
+  });
+
+  it('reads a keyed kind by id and lists it', () => {
+    const [, , get, ids] = loadSeam(kindSeam({})).methods;
+    assert.deepEqual(
+      get.params.map((param) => param.name),
+      ['id'],
+    );
+    assert.equal(get.payload, 'CharacterDefinition');
+    assert.deepEqual(ids.params, []);
+    assert.equal(ids.payload, 'string[]');
+  });
+
+  it('reads a kind a project holds one of without an id', () => {
+    const [, , get] = loadSeam(
+      kindSeam({ kind: 'title_screen', noun: 'a title screen', read: 'sole', methods: ['load', 'validate', 'get'] }),
+    ).methods;
+    assert.equal(get.name, 'title_screen');
+    assert.deepEqual(get.params, []);
+  });
+
+  it('calls the generic engine method with the kind as its type parameter', () => {
+    const out = renderJsonEngine(loadSeam(kindSeam({})));
+    assert.match(out, /self\.inner\.load::<crate::kinds::Character>\(json\)/);
+    assert.match(out, /self\.inner\.validate::<crate::kinds::Character>\(json\)/);
+    assert.match(out, /self\.inner\.definition::<crate::kinds::Character>\(id\)/);
+    assert.match(out, /ok\(&self\.inner\.ids::<crate::kinds::Character>\(\)\)/);
+  });
+
+  it('reaches a kind a project holds one of through `only`', () => {
+    const out = renderJsonEngine(
+      loadSeam(kindSeam({ kind: 'settings', noun: 'a settings declaration', read: 'sole', methods: ['get'] })),
+    );
+    assert.match(out, /self\.inner\.only::<crate::kinds::Settings>\(\)/);
+  });
+
+  it('takes only the methods the row asks for', () => {
+    const seam = loadSeam(kindSeam({ methods: ['load'] }));
+    assert.deepEqual(
+      seam.methods.map((method) => method.name),
+      ['load_character'],
+    );
+  });
+
+  it('says a kind names the keys it shows only when it has some', () => {
+    const [, withKeys] = loadSeam(kindSeam({ keys: true })).methods;
+    const [, without] = loadSeam(kindSeam({})).methods;
+    assert.match(withKeys.doc[0], /keys included/);
+    assert.doesNotMatch(without.doc[0], /keys included/);
+  });
+
+  it('lets a row override the prose a template cannot know', () => {
+    const [load] = loadSeam(
+      kindSeam({ load: { doc: ['Registers it, but the characters must be loaded first.'] } }),
+    ).methods;
+    assert.equal(load.doc[0], 'Registers it, but the characters must be loaded first.');
+    assert.match(load.errors[0], /`invalidContent`/, 'the untouched half stays templated');
+  });
+
+  it('refuses a way of reading a kind back that the boundary has no method for', () => {
+    assert.throws(() => loadSeam(kindSeam({ read: 'several' })), /unknown read shape `several`/);
+  });
+
+  it('refuses to list a kind a project holds one of', () => {
+    assert.throws(
+      () => loadSeam(kindSeam({ read: 'sole', methods: ['ids'] })),
+      /is read `sole`, which has no `ids`/,
+    );
+  });
+
+  it('refuses a row that says nothing about itself', () => {
+    assert.throws(() => loadSeam(kindSeam({ noun: undefined })), /must say what prose calls it/);
+    assert.throws(() => loadSeam(kindSeam({ payload: undefined })), /must name the definition/);
+    assert.throws(() => loadSeam(kindSeam({ methods: [] })), /declares no methods/);
+  });
+});
+
 describe('the declaration this repository ships', () => {
   const seam = loadSeam(JSON.parse(readFileSync(fileURLToPath(SEAM_PATH), 'utf8')));
 
   it('is the whole seam, stated once', () => {
     assert.equal(seam.methods.length, 54);
+  });
+
+  it('states its content kinds as kinds, not as methods four at a time', () => {
+    const rows = JSON.parse(readFileSync(fileURLToPath(SEAM_PATH), 'utf8')).methods;
+    const kinds = rows.filter((row) => row.kind);
+    assert.equal(kinds.length, 9, 'every content kind the engine holds');
+    assert.ok(
+      rows.length < seam.methods.length,
+      `${rows.length} rows declare ${seam.methods.length} methods`,
+    );
   });
 
   it('documents every method', () => {

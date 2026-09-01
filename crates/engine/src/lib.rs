@@ -8,8 +8,8 @@
 //! # Shape of the API
 //!
 //! ```text
-//! load_tile_set(json)  ─┐
-//! load_world(json)     ─┴─> content registry ──> create_game(worldId, seed, "{}")
+//! load::<TileSet>(json) ─┐
+//! load::<World>(json)   ─┴─> content registry ─> create_game(worldId, seed, "{}")
 //!                                                      │
 //!                       world_view(worldId) ───────────┤  once per world
 //!                       terrain_buffer(worldId) ───────┤  (packed Uint8Array)
@@ -29,7 +29,7 @@
 //! # Example
 //!
 //! ```
-//! use insulaire_engine::{Command, Engine};
+//! use insulaire_engine::{kinds, Command, Engine};
 //! # let tile_set = r#"{"id":"t","schemaVersion":1,"tiles":[
 //! #   {"id":"grass","terrain":"grass","movementCost":1,
 //! #    "visual":{"visualId":"terrain.grass","fallbackColor":"green"}}]}"#;
@@ -38,8 +38,8 @@
 //! #     {"id":"p","templateId":"player","at":[2,2]},
 //! #     {"id":"m","templateId":"monster","at":[6,2]}]}"#;
 //! let mut engine = Engine::new();
-//! engine.load_tile_set(tile_set)?;
-//! engine.load_world(world)?;
+//! engine.load::<kinds::TileSet>(tile_set)?;
+//! engine.load::<kinds::World>(world)?;
 //!
 //! let state = engine.create_game("w", 42, "{}")?;
 //! assert_eq!(state.tick, 0);
@@ -56,16 +56,16 @@
 pub mod dto;
 pub mod error;
 pub mod json;
+pub mod kind;
 pub mod registry;
 
 use std::collections::BTreeMap;
 
 use insulaire_simulation::{rules, tick, GameState, PendingTransition, SimEvent};
 use insulaire_world::{
-    resolve_cell_art, resolve_tile_render, AnimationRole, CharacterCreationDefinition,
-    CharacterCreationResult, CharacterDefinition, DecorationDefinition, Hex, ObjectDefinition,
-    PlacedTileArt, ProjectionMode, ResolvedCharacter, ResolvedDecoration, ResolvedObject,
-    ResolvedTile, ResolvedTileRender, SettingsDefinition, TileArtGeometry, TitleScreenDefinition,
+    resolve_cell_art, resolve_tile_render, AnimationRole, CharacterCreationResult,
+    CharacterDefinition, Hex, PlacedTileArt, ProjectionMode, ResolvedCharacter, ResolvedDecoration,
+    ResolvedObject, ResolvedTile, ResolvedTileRender, TileArtGeometry, TileSetDefinition,
     WorldDefinition, WorldGrid,
 };
 
@@ -77,6 +77,23 @@ pub use dto::{
 pub use error::{EngineError, EngineErrorPayload};
 pub use json::{JsonEngine, JsonResult};
 pub use registry::ContentRegistry;
+
+/// The content kinds this engine knows, as the type parameters that name them.
+///
+/// `engine.load::<kinds::World>(json)` reads a map, `engine.only::<kinds::Settings>()`
+/// the settings declaration. Each is declared once in `content_kinds!` in
+/// [`crate::registry`], which is also where a tenth kind is added.
+pub mod kinds {
+    pub use crate::registry::{
+        Character, CharacterCreation, Decoration, Object, Project, Settings, TileSet, TitleScreen,
+        World,
+    };
+}
+
+use crate::kind::{ContentKind, Keyed, Sole};
+use crate::kinds::{
+    Character, CharacterCreation, Decoration, Object, Project, Settings, TileSet, World,
+};
 
 /// A loaded world together with its flattened grid.
 #[derive(Debug, Clone)]
@@ -112,26 +129,80 @@ impl Engine {
         EngineInfo::current()
     }
 
-    /// Parses, validates and registers a tile set.
+    // ---------------------------------------------------------------- content
+
+    /// Parses, validates and registers one authored file.
+    ///
+    /// The kind is the type parameter: `engine.load::<kinds::World>(json)`.
+    /// Every kind loads the same way, and the list of them is `content_kinds!`
+    /// in [`crate::registry`] — adding one adds no method here.
     ///
     /// # Errors
     ///
-    /// See [`ContentRegistry::load_tile_set`].
-    pub fn load_tile_set(&mut self, json: &str) -> Result<LoadOutcome, EngineError> {
-        let (id, report) = self.content.load_tile_set(json)?;
+    /// See [`ContentRegistry::load`].
+    pub fn load<K: ContentKind>(&mut self, json: &str) -> Result<LoadOutcome, EngineError> {
+        let (id, report) = self.content.load::<K>(json)?;
         Ok(LoadOutcome { id, report })
     }
 
-    /// Validates a tile set *without* registering it.
+    /// Validates one authored file **without** registering it, keys included.
     ///
     /// # Errors
     ///
-    /// See [`ContentRegistry::validate_tile_set_json`].
-    pub fn validate_tile_set(
+    /// See [`ContentRegistry::validate_json`].
+    pub fn validate<K: ContentKind>(
         &self,
         json: &str,
     ) -> Result<insulaire_world::ValidationReport, EngineError> {
-        self.content.validate_tile_set_json(json)
+        self.content.validate_json::<K>(json)
+    }
+
+    /// A registered definition of a kind a project may hold many of.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::UnknownContent`] when no definition has that id.
+    pub fn definition<K>(&self, id: &str) -> Result<K::Definition, EngineError>
+    where
+        K: Keyed,
+        K::Definition: Clone,
+    {
+        self.content
+            .get::<K>(id)
+            .cloned()
+            .ok_or_else(|| EngineError::UnknownContent {
+                kind: K::WHAT.to_owned(),
+                id: id.to_owned(),
+            })
+    }
+
+    /// The ids of every registered definition of a kind, sorted.
+    #[must_use]
+    pub fn ids<K: Keyed>(&self) -> Vec<String> {
+        self.content.ids::<K>()
+    }
+
+    /// The registered definition of a kind a project holds one of.
+    ///
+    /// A `Result` rather than an `Option` because this is the boundary: a
+    /// project that ships no title screen is a legitimate state, and a host
+    /// asking for one anyway has made a mistake worth reporting.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::UnknownContent`] when the project declares none.
+    pub fn only<K>(&self) -> Result<K::Definition, EngineError>
+    where
+        K: Sole,
+        K::Definition: Clone,
+    {
+        self.content
+            .only::<K>()
+            .cloned()
+            .ok_or_else(|| EngineError::UnknownContent {
+                kind: K::WHAT.to_owned(),
+                id: "(none loaded)".to_owned(),
+            })
     }
 
     /// Resolves what to draw for one cell of a tile set **passed in** — the
@@ -164,11 +235,7 @@ impl Engine {
         roll: u32,
         choice_json: &str,
     ) -> Result<ResolvedTileRender, EngineError> {
-        let tile_set: insulaire_world::TileSetDefinition = serde_json::from_str(tile_set_json)
-            .map_err(|source| EngineError::Parse {
-                what: "tile set".to_owned(),
-                message: source.to_string(),
-            })?;
+        let tile_set = ContentRegistry::parse::<TileSet>(tile_set_json)?;
         let choice: PlacedTileArt = if choice_json.trim().is_empty() {
             PlacedTileArt::default()
         } else {
@@ -197,26 +264,6 @@ impl Engine {
             cell.against(&palette),
             tile_set.art.band_levels(),
         ))
-    }
-
-    /// Parses, validates and registers a world.
-    ///
-    /// # Errors
-    ///
-    /// See [`ContentRegistry::load_world`].
-    pub fn load_world(&mut self, json: &str) -> Result<LoadOutcome, EngineError> {
-        let (id, report) = self.content.load_world(json)?;
-        Ok(LoadOutcome { id, report })
-    }
-
-    /// Parses, validates and registers the project manifest.
-    ///
-    /// # Errors
-    ///
-    /// See [`ContentRegistry::load_project`].
-    pub fn load_project(&mut self, json: &str) -> Result<LoadOutcome, EngineError> {
-        let (id, report) = self.content.load_project(json)?;
-        Ok(LoadOutcome { id, report })
     }
 
     /// Parses and registers one locale file under a language and a namespace.
@@ -300,50 +347,6 @@ impl Engine {
 
     // ----------------------------------------------------------- title screen
 
-    /// Parses, validates and registers the title screen a client opens on.
-    ///
-    /// # Errors
-    ///
-    /// See [`ContentRegistry::load_title_screen`].
-    pub fn load_title_screen(&mut self, json: &str) -> Result<LoadOutcome, EngineError> {
-        let (id, report) = self.content.load_title_screen(json)?;
-        Ok(LoadOutcome { id, report })
-    }
-
-    /// Validates a title screen without registering it — the editor's check.
-    ///
-    /// Unlike the load, this also resolves the keys it references against the
-    /// loaded languages, because an editor wants both answers at once
-    /// (`docs/adr/ADR-0021-authored-title-screen.md`).
-    ///
-    /// # Errors
-    ///
-    /// [`EngineError::Parse`] when the JSON is malformed.
-    pub fn validate_title_screen(
-        &self,
-        json: &str,
-    ) -> Result<insulaire_world::ValidationReport, EngineError> {
-        self.content.validate_title_screen_json(json)
-    }
-
-    /// The registered title screen.
-    ///
-    /// # Errors
-    ///
-    /// [`EngineError::UnknownContent`] when the project ships none — which is a
-    /// legitimate state, and why this is a `Result` rather than an `Option` at
-    /// the boundary: a host asking for a screen that does not exist has made a
-    /// mistake worth reporting.
-    pub fn title_screen(&self) -> Result<TitleScreenDefinition, EngineError> {
-        self.content
-            .title_screen()
-            .cloned()
-            .ok_or_else(|| EngineError::UnknownContent {
-                kind: "title screen".to_owned(),
-                id: "(none loaded)".to_owned(),
-            })
-    }
-
     /// Forgets every loaded tile set, world, locale and project.
     ///
     /// Call it before re-loading a whole project, so content that was removed
@@ -362,18 +365,6 @@ impl Engine {
         self.content.clear_locales();
     }
 
-    /// Validates a world without registering it — the editor's pre-export check.
-    ///
-    /// # Errors
-    ///
-    /// [`EngineError::Parse`] when the JSON is malformed.
-    pub fn validate_world(
-        &self,
-        json: &str,
-    ) -> Result<insulaire_world::ValidationReport, EngineError> {
-        self.content.validate_world_json(json)
-    }
-
     /// Resolves every map link across the loaded worlds.
     ///
     /// A world validates on its own without its link targets existing, so this
@@ -389,10 +380,10 @@ impl Engine {
     #[must_use]
     pub fn content_summary(&self) -> ContentSummary {
         ContentSummary {
-            tile_sets: self.content.tile_set_ids(),
+            tile_sets: self.content.ids::<TileSet>(),
             worlds: self
                 .content
-                .worlds()
+                .all::<World>()
                 .map(|world| WorldSummary {
                     id: world.id.clone(),
                     name: world.name.clone(),
@@ -415,14 +406,14 @@ impl Engine {
                     fallback_color: template.fallback_color.clone(),
                 })
                 .collect(),
-            characters: self.content.character_ids(),
-            decorations: self.content.decoration_ids(),
-            objects: self.content.object_ids(),
+            characters: self.content.ids::<Character>(),
+            decorations: self.content.ids::<Decoration>(),
+            objects: self.content.ids::<Object>(),
             character_creation: self
                 .content
-                .character_creation()
+                .only::<CharacterCreation>()
                 .map(|creation| creation.id.clone()),
-            project: self.content.project().map(Into::into),
+            project: self.content.only::<Project>().map(Into::into),
         }
     }
 
@@ -480,13 +471,7 @@ impl Engine {
 
     fn prepare(&self, world_id: &str) -> Result<PreparedWorld, EngineError> {
         let world = self.world_or_err(world_id)?;
-        let tile_set =
-            self.content
-                .tile_set_for(world)
-                .ok_or_else(|| EngineError::UnknownContent {
-                    kind: "tile set".to_owned(),
-                    id: world.tile_set_id.clone(),
-                })?;
+        let tile_set = self.tile_set_or_err(world)?;
 
         // Registered worlds are validated, so this cannot fail in practice; the
         // error is mapped rather than unwrapped so a future validation gap
@@ -561,10 +546,24 @@ impl Engine {
 
     fn world_or_err(&self, world_id: &str) -> Result<&WorldDefinition, EngineError> {
         self.content
-            .world(world_id)
+            .get::<World>(world_id)
             .ok_or_else(|| EngineError::UnknownContent {
-                kind: "world".to_owned(),
+                kind: World::WHAT.to_owned(),
                 id: world_id.to_owned(),
+            })
+    }
+
+    /// The tile set a world paints with, or the error a host expects.
+    ///
+    /// A registered world names a registered set — that is what `world.unknownTileSet`
+    /// refuses at load time — so this is a guard against a validation gap rather
+    /// than an expected outcome.
+    fn tile_set_or_err(&self, world: &WorldDefinition) -> Result<&TileSetDefinition, EngineError> {
+        self.content
+            .get::<TileSet>(&world.tile_set_id)
+            .ok_or_else(|| EngineError::UnknownContent {
+                kind: TileSet::WHAT.to_owned(),
+                id: world.tile_set_id.clone(),
             })
     }
 
@@ -585,13 +584,7 @@ impl Engine {
     ) -> Result<GameSnapshot, EngineError> {
         self.game_settings = self.resolve_settings(settings_json)?;
         let world = self.world_or_err(world_id)?;
-        let tile_set =
-            self.content
-                .tile_set_for(world)
-                .ok_or_else(|| EngineError::UnknownContent {
-                    kind: "tile set".to_owned(),
-                    id: world.tile_set_id.clone(),
-                })?;
+        let tile_set = self.tile_set_or_err(world)?;
 
         let state = GameState::create(world, tile_set, self.content.templates(), u64::from(seed))?;
         let snapshot = self.snapshot_of(&state);
@@ -622,46 +615,9 @@ impl Engine {
 
         Ok(self
             .content
-            .settings()
+            .only::<Settings>()
             .map(|settings| settings.resolve(&values))
             .unwrap_or_default())
-    }
-
-    /// Parses, validates and registers the game's settings declaration.
-    ///
-    /// # Errors
-    ///
-    /// See [`ContentRegistry::load_settings`].
-    pub fn load_settings(&mut self, json: &str) -> Result<LoadOutcome, EngineError> {
-        let (id, report) = self.content.load_settings(json)?;
-        Ok(LoadOutcome { id, report })
-    }
-
-    /// Validates a settings declaration without registering it, keys included.
-    ///
-    /// # Errors
-    ///
-    /// [`EngineError::Parse`] when the JSON is malformed.
-    pub fn validate_settings(
-        &self,
-        json: &str,
-    ) -> Result<insulaire_world::ValidationReport, EngineError> {
-        self.content.validate_settings_json(json)
-    }
-
-    /// The registered settings declaration.
-    ///
-    /// # Errors
-    ///
-    /// [`EngineError::UnknownContent`] when the project declares none.
-    pub fn settings(&self) -> Result<SettingsDefinition, EngineError> {
-        self.content
-            .settings()
-            .cloned()
-            .ok_or_else(|| EngineError::UnknownContent {
-                kind: "settings".to_owned(),
-                id: "(none loaded)".to_owned(),
-            })
     }
 
     /// Resolves a set of values against the declaration, without a game.
@@ -679,67 +635,16 @@ impl Engine {
         self.resolve_settings(json)
     }
 
-    // -------------------------------------------------------------- characters
-
-    /// Parses, validates and registers a character definition.
-    ///
-    /// # Errors
-    ///
-    /// See [`ContentRegistry::load_character`].
-    pub fn load_character(&mut self, json: &str) -> Result<LoadOutcome, EngineError> {
-        let (id, report) = self.content.load_character(json)?;
-        Ok(LoadOutcome { id, report })
-    }
-
-    /// Validates a character definition without registering it, keys included.
-    ///
-    /// # Errors
-    ///
-    /// [`EngineError::Parse`] when the JSON is malformed.
-    pub fn validate_character(
-        &self,
-        json: &str,
-    ) -> Result<insulaire_world::ValidationReport, EngineError> {
-        self.content.validate_character_json(json)
-    }
-
-    /// A registered character definition.
-    ///
-    /// # Errors
-    ///
-    /// [`EngineError::UnknownContent`] when no definition has that id.
-    pub fn character(&self, id: &str) -> Result<CharacterDefinition, EngineError> {
-        self.content
-            .character(id)
-            .cloned()
-            .ok_or_else(|| EngineError::UnknownContent {
-                kind: "character".to_owned(),
-                id: id.to_owned(),
-            })
-    }
-
-    /// Ids of every registered character definition.
-    #[must_use]
-    pub fn character_ids(&self) -> Vec<String> {
-        self.content.character_ids()
-    }
-
-    // ------------------------------------------------------------ decorations
-
-    /// Parses, validates and registers a decoration definition.
-    ///
-    /// # Errors
-    ///
-    /// See [`ContentRegistry::load_decoration`].
-    pub fn load_decoration(&mut self, json: &str) -> Result<LoadOutcome, EngineError> {
-        let (id, report) = self.content.load_decoration(json)?;
-        Ok(LoadOutcome { id, report })
-    }
+    // ------------------------------------------------ resolving what is drawn
 
     /// Validates a decoration definition without registering it.
     ///
-    /// `cell_json` is the pixel grid it will stand among; an empty string
-    /// skips the cell check. See [`ContentRegistry::validate_decoration_json`].
+    /// The one kind whose editor check needs an argument the load does not:
+    /// `cell_json` is the pixel grid the decoration will stand among, as a
+    /// [`TileArtGeometry`], and an empty string means there is none in hand and
+    /// skips `decoration.overflowsCell` alone. A decoration is not bound to one
+    /// tile set, so [`Engine::load`] can never supply it
+    /// (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
     ///
     /// # Errors
     ///
@@ -749,28 +654,20 @@ impl Engine {
         json: &str,
         cell_json: &str,
     ) -> Result<insulaire_world::ValidationReport, EngineError> {
-        self.content.validate_decoration_json(json, cell_json)
-    }
-
-    /// A registered decoration definition.
-    ///
-    /// # Errors
-    ///
-    /// [`EngineError::UnknownContent`] when no definition has that id.
-    pub fn decoration(&self, id: &str) -> Result<DecorationDefinition, EngineError> {
-        self.content
-            .decoration(id)
-            .cloned()
-            .ok_or_else(|| EngineError::UnknownContent {
-                kind: "decoration".to_owned(),
-                id: id.to_owned(),
-            })
-    }
-
-    /// Ids of every registered decoration definition.
-    #[must_use]
-    pub fn decoration_ids(&self) -> Vec<String> {
-        self.content.decoration_ids()
+        let cell = if cell_json.trim().is_empty() {
+            None
+        } else {
+            Some(
+                serde_json::from_str::<TileArtGeometry>(cell_json).map_err(|source| {
+                    EngineError::Parse {
+                        what: "decoration cell".to_owned(),
+                        message: source.to_string(),
+                    }
+                })?,
+            )
+        };
+        let decoration = ContentRegistry::parse::<Decoration>(json)?;
+        Ok(insulaire_world::validate_decoration(&decoration, cell))
     }
 
     /// Resolves a registered decoration at a moment of one of its animations.
@@ -785,7 +682,8 @@ impl Engine {
         time_ms: u32,
     ) -> Result<ResolvedDecoration, EngineError> {
         self.content
-            .resolve_decoration(id, animation, time_ms)
+            .get::<Decoration>(id)
+            .map(|decoration| decoration.resolve_at(animation, time_ms))
             .ok_or_else(|| EngineError::UnknownContent {
                 kind: "decoration".to_owned(),
                 id: id.to_owned(),
@@ -807,57 +705,8 @@ impl Engine {
         animation: Option<&str>,
         time_ms: u32,
     ) -> Result<ResolvedDecoration, EngineError> {
-        let decoration: DecorationDefinition =
-            serde_json::from_str(decoration_json).map_err(|source| EngineError::Parse {
-                what: "decoration".to_owned(),
-                message: source.to_string(),
-            })?;
+        let decoration = ContentRegistry::parse::<Decoration>(decoration_json)?;
         Ok(decoration.resolve_at(animation, time_ms))
-    }
-
-    // ---------------------------------------------------------------- objects
-
-    /// Parses, validates and registers an object definition.
-    ///
-    /// # Errors
-    ///
-    /// See [`ContentRegistry::load_object`].
-    pub fn load_object(&mut self, json: &str) -> Result<LoadOutcome, EngineError> {
-        let (id, report) = self.content.load_object(json)?;
-        Ok(LoadOutcome { id, report })
-    }
-
-    /// Validates an object definition without registering it, keys included.
-    ///
-    /// # Errors
-    ///
-    /// [`EngineError::Parse`] when the JSON is malformed.
-    pub fn validate_object(
-        &self,
-        json: &str,
-    ) -> Result<insulaire_world::ValidationReport, EngineError> {
-        self.content.validate_object_json(json)
-    }
-
-    /// A registered object definition.
-    ///
-    /// # Errors
-    ///
-    /// [`EngineError::UnknownContent`] when no definition has that id.
-    pub fn object(&self, id: &str) -> Result<ObjectDefinition, EngineError> {
-        self.content
-            .object(id)
-            .cloned()
-            .ok_or_else(|| EngineError::UnknownContent {
-                kind: "object".to_owned(),
-                id: id.to_owned(),
-            })
-    }
-
-    /// Ids of every registered object definition.
-    #[must_use]
-    pub fn object_ids(&self) -> Vec<String> {
-        self.content.object_ids()
     }
 
     /// Resolves a registered object's icon at a moment of its flipbook.
@@ -867,7 +716,8 @@ impl Engine {
     /// [`EngineError::UnknownContent`] when no definition has that id.
     pub fn resolve_object(&self, id: &str, time_ms: u32) -> Result<ResolvedObject, EngineError> {
         self.content
-            .resolve_object(id, time_ms)
+            .get::<Object>(id)
+            .map(|object| object.resolve_at(time_ms))
             .ok_or_else(|| EngineError::UnknownContent {
                 kind: "object".to_owned(),
                 id: id.to_owned(),
@@ -888,45 +738,8 @@ impl Engine {
         object_json: &str,
         time_ms: u32,
     ) -> Result<ResolvedObject, EngineError> {
-        let object: ObjectDefinition =
-            serde_json::from_str(object_json).map_err(|source| EngineError::Parse {
-                what: "object".to_owned(),
-                message: source.to_string(),
-            })?;
+        let object = ContentRegistry::parse::<Object>(object_json)?;
         Ok(object.resolve_at(time_ms))
-    }
-
-    /// Parses, validates and registers the character-creation declaration.
-    ///
-    /// # Errors
-    ///
-    /// See [`ContentRegistry::load_character_creation`].
-    pub fn load_character_creation(&mut self, json: &str) -> Result<LoadOutcome, EngineError> {
-        let (id, report) = self.content.load_character_creation(json)?;
-        Ok(LoadOutcome { id, report })
-    }
-
-    /// Validates a creation declaration without registering it.
-    pub fn validate_character_creation(
-        &self,
-        json: &str,
-    ) -> Result<insulaire_world::ValidationReport, EngineError> {
-        self.content.validate_character_creation_json(json)
-    }
-
-    /// The registered character-creation declaration.
-    ///
-    /// # Errors
-    ///
-    /// [`EngineError::UnknownContent`] when the project declares none.
-    pub fn character_creation(&self) -> Result<CharacterCreationDefinition, EngineError> {
-        self.content
-            .character_creation()
-            .cloned()
-            .ok_or_else(|| EngineError::UnknownContent {
-                kind: "character creation".to_owned(),
-                id: "(none loaded)".to_owned(),
-            })
     }
 
     /// Resolves submitted creation values without giving their ids semantics.
@@ -940,18 +753,11 @@ impl Engine {
         choices_json: &str,
         characteristics_json: &str,
     ) -> Result<CharacterCreationResult, EngineError> {
-        let choices: serde_json::Value =
-            serde_json::from_str(choices_json).map_err(|source| EngineError::Parse {
-                what: "character creation choices".to_owned(),
-                message: source.to_string(),
-            })?;
-        let characteristics: serde_json::Value = serde_json::from_str(characteristics_json)
-            .map_err(|source| EngineError::Parse {
-                what: "character characteristics".to_owned(),
-                message: source.to_string(),
-            })?;
+        let choices = values(choices_json, "character creation choices")?;
+        let characteristics = values(characteristics_json, "character characteristics")?;
         self.content
-            .resolve_character_creation(&choices, &characteristics)
+            .only::<CharacterCreation>()
+            .map(|creation| creation.resolve(&choices, &characteristics))
             .ok_or_else(|| EngineError::UnknownContent {
                 kind: "character creation".to_owned(),
                 id: "(none loaded)".to_owned(),
@@ -966,21 +772,9 @@ impl Engine {
         choices_json: &str,
         characteristics_json: &str,
     ) -> Result<CharacterCreationResult, EngineError> {
-        let creation: CharacterCreationDefinition =
-            serde_json::from_str(creation_json).map_err(|source| EngineError::Parse {
-                what: "character creation".to_owned(),
-                message: source.to_string(),
-            })?;
-        let choices: serde_json::Value =
-            serde_json::from_str(choices_json).map_err(|source| EngineError::Parse {
-                what: "character creation choices".to_owned(),
-                message: source.to_string(),
-            })?;
-        let characteristics: serde_json::Value = serde_json::from_str(characteristics_json)
-            .map_err(|source| EngineError::Parse {
-                what: "character characteristics".to_owned(),
-                message: source.to_string(),
-            })?;
+        let creation = ContentRegistry::parse::<CharacterCreation>(creation_json)?;
+        let choices = values(choices_json, "character creation choices")?;
+        let characteristics = values(characteristics_json, "character characteristics")?;
         Ok(creation.resolve(&choices, &characteristics))
     }
 
@@ -1004,17 +798,9 @@ impl Engine {
         animation: Option<&str>,
         time_ms: u32,
     ) -> Result<ResolvedCharacter, EngineError> {
-        let character: CharacterDefinition =
-            serde_json::from_str(character_json).map_err(|source| EngineError::Parse {
-                what: "character".to_owned(),
-                message: source.to_string(),
-            })?;
-        let values: serde_json::Value =
-            serde_json::from_str(values_json).map_err(|source| EngineError::Parse {
-                what: "character values".to_owned(),
-                message: source.to_string(),
-            })?;
-        Ok(character.resolve_at(&values, animation, time_ms))
+        let character = ContentRegistry::parse::<Character>(character_json)?;
+        let chosen = values(values_json, "character values")?;
+        Ok(character.resolve_at(&chosen, animation, time_ms))
     }
 
     /// Turns a definition, a customisation and a moment of an animation into
@@ -1039,13 +825,9 @@ impl Engine {
         animation: Option<&str>,
         time_ms: u32,
     ) -> Result<ResolvedCharacter, EngineError> {
-        let values: serde_json::Value =
-            serde_json::from_str(values_json).map_err(|source| EngineError::Parse {
-                what: "character values".to_owned(),
-                message: source.to_string(),
-            })?;
-        self.content
-            .resolve_character(id, &values, animation, time_ms)
+        let chosen = values(values_json, "character values")?;
+        self.character_or_err(id)
+            .map(|character| character.resolve_at(&chosen, animation, time_ms))
     }
 
     /// Turns a gameplay animation role into a drawable character.
@@ -1065,13 +847,19 @@ impl Engine {
         role: AnimationRole,
         time_ms: u32,
     ) -> Result<ResolvedCharacter, EngineError> {
-        let values: serde_json::Value =
-            serde_json::from_str(values_json).map_err(|source| EngineError::Parse {
-                what: "character values".to_owned(),
-                message: source.to_string(),
-            })?;
+        let chosen = values(values_json, "character values")?;
+        self.character_or_err(id)
+            .map(|character| character.resolve_role_at(&chosen, role, time_ms))
+    }
+
+    /// The registered character definition, or the error a host expects.
+    fn character_or_err(&self, id: &str) -> Result<&CharacterDefinition, EngineError> {
         self.content
-            .resolve_character_role(id, &values, role, time_ms)
+            .get::<Character>(id)
+            .ok_or_else(|| EngineError::UnknownContent {
+                kind: "character".to_owned(),
+                id: id.to_owned(),
+            })
     }
 
     /// Discards the running game, if any.
@@ -1137,10 +925,10 @@ impl Engine {
             reason,
         };
 
-        let Some(target) = self.content.world(&transition.target_world).cloned() else {
+        let Some(target) = self.content.get::<World>(&transition.target_world).cloned() else {
             return unresolved(format!("world `{}` is not loaded", transition.target_world));
         };
-        let Some(tile_set) = self.content.tile_set_for(&target).cloned() else {
+        let Some(tile_set) = self.content.get::<TileSet>(&target.tile_set_id).cloned() else {
             return unresolved(format!("tile set `{}` is not loaded", target.tile_set_id));
         };
         let Some(state) = self.game.as_mut() else {
@@ -1185,6 +973,18 @@ impl Engine {
     }
 }
 
+/// Reads a bag of values the boundary carries as a JSON object.
+///
+/// Customisations, settings and creation choices are author-owned keys the
+/// engine never interprets, so they cross as `serde_json::Value` rather than as
+/// a typed struct; `what` is what the parse error calls the one that failed.
+fn values(json: &str, what: &str) -> Result<serde_json::Value, EngineError> {
+    serde_json::from_str(json).map_err(|source| EngineError::Parse {
+        what: what.to_owned(),
+        message: source.to_string(),
+    })
+}
+
 /// The projection a wire string names.
 ///
 /// Everything that is not `"isometric"` is top-down, which is what
@@ -1208,10 +1008,12 @@ mod tests {
     fn engine() -> Engine {
         let mut engine = Engine::new();
         engine
-            .load_tile_set(&serde_json::to_string(&testing::sample_tile_set()).expect("serialise"))
+            .load::<TileSet>(
+                &serde_json::to_string(&testing::sample_tile_set()).expect("serialise"),
+            )
             .expect("tile set loads");
         engine
-            .load_world(&serde_json::to_string(&testing::sample_world()).expect("serialise"))
+            .load::<World>(&serde_json::to_string(&testing::sample_world()).expect("serialise"))
             .expect("world loads");
         engine
     }
@@ -1264,7 +1066,7 @@ mod tests {
 
         let mut engine = engine();
         engine
-            .load_world(&serde_json::to_string(&world).expect("serialise"))
+            .load::<World>(&serde_json::to_string(&world).expect("serialise"))
             .expect("world loads");
 
         assert_eq!(
@@ -1281,7 +1083,7 @@ mod tests {
 
         let mut engine = engine();
         engine
-            .load_world(&serde_json::to_string(&world).expect("serialise"))
+            .load::<World>(&serde_json::to_string(&world).expect("serialise"))
             .expect("world loads");
 
         assert_eq!(
@@ -1303,7 +1105,7 @@ mod tests {
 
         let mut engine = engine();
         engine
-            .load_world(&serde_json::to_string(&world).expect("serialise"))
+            .load::<World>(&serde_json::to_string(&world).expect("serialise"))
             .expect("world loads");
 
         let grid = &engine.world_view("styled_world").expect("view").grid;
@@ -1322,7 +1124,7 @@ mod tests {
 
         let mut engine = engine();
         engine
-            .load_world(&serde_json::to_string(&world).expect("serialise"))
+            .load::<World>(&serde_json::to_string(&world).expect("serialise"))
             .expect("world loads");
 
         let reveal = &engine.world_view("revealing_world").expect("view").reveal;
@@ -1526,11 +1328,13 @@ mod tests {
     fn linked() -> Engine {
         let mut engine = Engine::new();
         engine
-            .load_tile_set(&serde_json::to_string(&testing::sample_tile_set()).expect("serialise"))
+            .load::<TileSet>(
+                &serde_json::to_string(&testing::sample_tile_set()).expect("serialise"),
+            )
             .expect("tile set loads");
         for world in [testing::linked_world(), testing::interior_world()] {
             engine
-                .load_world(&serde_json::to_string(&world).expect("serialise"))
+                .load::<World>(&serde_json::to_string(&world).expect("serialise"))
                 .expect("world loads");
         }
         engine
@@ -1574,10 +1378,12 @@ mod tests {
         // the runtime must degrade rather than end the session.
         let mut engine = Engine::new();
         engine
-            .load_tile_set(&serde_json::to_string(&testing::sample_tile_set()).expect("serialise"))
+            .load::<TileSet>(
+                &serde_json::to_string(&testing::sample_tile_set()).expect("serialise"),
+            )
             .expect("tile set loads");
         engine
-            .load_world(&serde_json::to_string(&testing::linked_world()).expect("serialise"))
+            .load::<World>(&serde_json::to_string(&testing::linked_world()).expect("serialise"))
             .expect("world loads");
         engine
             .create_game("linked_world", 7, "{}")
@@ -1605,15 +1411,17 @@ mod tests {
     fn cross_world_links_are_only_resolvable_once_every_world_is_loaded() {
         let mut engine = Engine::new();
         engine
-            .load_tile_set(&serde_json::to_string(&testing::sample_tile_set()).expect("serialise"))
+            .load::<TileSet>(
+                &serde_json::to_string(&testing::sample_tile_set()).expect("serialise"),
+            )
             .expect("tile set loads");
         engine
-            .load_world(&serde_json::to_string(&testing::linked_world()).expect("serialise"))
+            .load::<World>(&serde_json::to_string(&testing::linked_world()).expect("serialise"))
             .expect("a world with an outbound link is valid on its own");
         assert!(!engine.validate_links().valid);
 
         engine
-            .load_world(&serde_json::to_string(&testing::interior_world()).expect("serialise"))
+            .load::<World>(&serde_json::to_string(&testing::interior_world()).expect("serialise"))
             .expect("world loads");
         assert!(engine.validate_links().valid);
     }
@@ -1622,7 +1430,7 @@ mod tests {
     fn a_project_manifest_names_the_start_world() {
         let mut engine = linked();
         let outcome = engine
-            .load_project(
+            .load::<Project>(
                 r#"{"id":"demo","schemaVersion":1,"name":"Demo","startWorld":"linked_world",
                     "tileSets":[{"id":"mvp_terrain","path":"tilesets/mvp_terrain.json"}],
                     "worlds":[{"id":"linked_world","path":"worlds/linked_world.json"},
@@ -1640,11 +1448,13 @@ mod tests {
     fn the_editors_validate_call_never_registers_content() {
         let mut engine = Engine::new();
         engine
-            .load_tile_set(&serde_json::to_string(&testing::sample_tile_set()).expect("serialise"))
+            .load::<TileSet>(
+                &serde_json::to_string(&testing::sample_tile_set()).expect("serialise"),
+            )
             .expect("tile set loads");
 
         let json = serde_json::to_string(&testing::sample_world()).expect("serialise");
-        assert!(engine.validate_world(&json).expect("parses").valid);
+        assert!(engine.validate::<World>(&json).expect("parses").valid);
         assert!(engine.content_summary().worlds.is_empty());
         assert_eq!(
             engine

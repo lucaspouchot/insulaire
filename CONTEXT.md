@@ -128,6 +128,17 @@ neither is called an "entity".
   `GameState`, the rules and every verdict about content
   (`docs/adr/ADR-0001-separation-ui-engine.md`,
   `docs/adr/ADR-0012-shared-content-validation.md`).
+- **content kind** — one kind of authored file, as the engine holds it: a tile
+  set, a world, a character, a decoration, an object, a title screen, a settings
+  declaration, a character creation, the project manifest. Declared once in
+  `content_kinds!` (`crates/engine/src/registry.rs`), which is what makes
+  loading, validating, reading back and listing generic over the kind
+  (`crates/engine/src/kind.rs`). A locale file is deliberately not one — it has
+  no id and several files merge into one bundle. Distinct from a **draft**,
+  which is the Angular side of the same file while it is being written.
+- **shelf** — where a kind's definitions live in the registry: `Many`, kept by
+  id, or `One`, replaced by whatever is loaded next. It is what decides how a
+  caller reads the kind back — `get`/`ids` against `only`.
 - **resolve** / **preview** — the engine turning a definition into what to draw.
   *Resolve* names one it already holds; *preview* takes one the editor is still
   editing. The editor never assembles a drawing itself.

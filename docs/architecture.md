@@ -80,7 +80,8 @@ The MVP implements the marked parts. Unmarked entries are the planned shape.
 │   ├── world/                   # hexes, content definitions, validation     [MVP]
 │   ├── simulation/              # GameState, ticks, rules, AI, RNG           [MVP]
 │   ├── engine/                  # facade, DTOs, content registry             [MVP]
-│   │   └── seam.json            # the boundary's method list, declared once   [MVP]
+│   │   ├── src/kind.rs          # what a content kind is, once               [MVP]
+│   │   └── seam.json            # the boundary's methods and kinds, once     [MVP]
 │   ├── wasm/                    # wasm-bindgen pass-through                  [MVP]
 │   ├── scenario/                # acts, triggers, events
 │   └── combat/                  # deck/cards/effects
@@ -115,7 +116,7 @@ browser. `cargo test` runs the entire simulation without WASM.
 |---|---|---|
 | `insulaire-world` | Hex coordinates, `WorldDefinition`, `TileSetDefinition`, `CharacterDefinition`, its animations and its resolver, entity templates, validation, the flattened `WorldGrid`. | Ticks, rules, entities in motion. |
 | `insulaire-simulation` | `GameState`, the tick pipeline, movement rules, monster AI, the deterministic RNG. | Serialisation for hosts, JSON, JavaScript. |
-| `insulaire-engine` | The facade, the content registry, the DTOs, the string contract. | `wasm-bindgen`. |
+| `insulaire-engine` | The facade, the content registry, what a content kind is, the DTOs, the string contract. | `wasm-bindgen`. |
 | `insulaire-wasm` | `#[wasm_bindgen]` declarations. | Everything else — it holds no logic. |
 
 ## Where the seams are
@@ -123,6 +124,8 @@ browser. `cargo test` runs the entire simulation without WASM.
 - **Angular ↔ engine** — commands in, compact snapshots out. The method list is
   declared once in `crates/engine/seam.json`; `JsonEngine`, the `wasm-bindgen`
   methods, `RawInsulaireEngine` and the reference's table are rendered from it.
+  A content kind is one row of that declaration and one `ContentKind` in
+  `crates/engine/src/kind.rs`, not a method list of its own.
   See `docs/wasm-api.md` and ADR-0010.
 - **Content ↔ runtime** — `WorldDefinition` is immutable reference data;
   `GameState` is the mutable runtime. See `docs/data-model.md` and ADR-0002.

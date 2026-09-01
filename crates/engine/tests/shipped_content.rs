@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
-use insulaire_engine::{Command, Engine};
+use insulaire_engine::{kinds, Command, Engine};
 
 fn repo_root() -> PathBuf {
     // CARGO_MANIFEST_DIR is `<repo>/crates/engine`.
@@ -42,11 +42,11 @@ const SHIPPED_LOCALES: [(&str, &str); 4] = [
 fn engine_with_shipped_content() -> Engine {
     let mut engine = Engine::new();
     engine
-        .load_tile_set(&read("content/tilesets/mvp_terrain.json"))
+        .load::<kinds::TileSet>(&read("content/tilesets/mvp_terrain.json"))
         .expect("the shipped tile set must load");
     for world in ["demo_world", "demo_refuge"] {
         engine
-            .load_world(&read(&format!("content/worlds/{world}.json")))
+            .load::<kinds::World>(&read(&format!("content/worlds/{world}.json")))
             .unwrap_or_else(|error| panic!("the shipped world `{world}` must load: {error}"));
     }
     for (language, namespace) in SHIPPED_LOCALES {
@@ -59,19 +59,19 @@ fn engine_with_shipped_content() -> Engine {
             .unwrap_or_else(|error| panic!("locale `{language}/{namespace}` must load: {error}"));
     }
     engine
-        .load_character(&read("content/characters/human_player.json"))
+        .load::<kinds::Character>(&read("content/characters/human_player.json"))
         .expect("the shipped character must load");
     engine
-        .load_character_creation(&read("content/character-creation.json"))
+        .load::<kinds::CharacterCreation>(&read("content/character-creation.json"))
         .expect("the shipped character creation must load");
     engine
-        .load_title_screen(&read("content/menu/title-screen.json"))
+        .load::<kinds::TitleScreen>(&read("content/menu/title-screen.json"))
         .expect("the shipped title screen must load");
     engine
-        .load_settings(&read("content/settings.json"))
+        .load::<kinds::Settings>(&read("content/settings.json"))
         .expect("the shipped settings must load");
     engine
-        .load_project(&read("content/project.json"))
+        .load::<kinds::Project>(&read("content/project.json"))
         .expect("the shipped project must load");
     engine
 }
@@ -86,7 +86,7 @@ fn the_shipped_content_loads_without_errors_or_warnings() {
     let mut engine = Engine::new();
 
     let tile_set = engine
-        .load_tile_set(&read("content/tilesets/mvp_terrain.json"))
+        .load::<kinds::TileSet>(&read("content/tilesets/mvp_terrain.json"))
         .expect("tile set loads");
     assert_eq!(tile_set.id, "mvp_terrain");
     assert!(
@@ -97,7 +97,7 @@ fn the_shipped_content_loads_without_errors_or_warnings() {
 
     for id in ["demo_world", "demo_refuge"] {
         let world = engine
-            .load_world(&read(&format!("content/worlds/{id}.json")))
+            .load::<kinds::World>(&read(&format!("content/worlds/{id}.json")))
             .expect("world loads");
         assert_eq!(world.id, id);
         assert!(
@@ -118,7 +118,7 @@ fn the_shipped_content_loads_without_errors_or_warnings() {
     }
 
     let character = engine
-        .load_character(&read("content/characters/human_player.json"))
+        .load::<kinds::Character>(&read("content/characters/human_player.json"))
         .expect("character loads");
     assert_eq!(character.id, "human_player");
     assert!(
@@ -128,7 +128,7 @@ fn the_shipped_content_loads_without_errors_or_warnings() {
     );
 
     let creation = engine
-        .load_character_creation(&read("content/character-creation.json"))
+        .load::<kinds::CharacterCreation>(&read("content/character-creation.json"))
         .expect("character creation loads");
     assert_eq!(creation.id, "new_game");
     assert!(
@@ -138,13 +138,13 @@ fn the_shipped_content_loads_without_errors_or_warnings() {
     );
 
     let title_screen = engine
-        .load_title_screen(&read("content/menu/title-screen.json"))
+        .load::<kinds::TitleScreen>(&read("content/menu/title-screen.json"))
         .expect("title screen loads");
     assert_eq!(title_screen.id, "main");
     assert!(title_screen.report.issues.is_empty());
 
     let settings = engine
-        .load_settings(&read("content/settings.json"))
+        .load::<kinds::Settings>(&read("content/settings.json"))
         .expect("settings load");
     assert_eq!(settings.id, "insulaire_game");
     assert!(
@@ -154,7 +154,7 @@ fn the_shipped_content_loads_without_errors_or_warnings() {
     );
 
     let project = engine
-        .load_project(&read("content/project.json"))
+        .load::<kinds::Project>(&read("content/project.json"))
         .expect("project loads");
     assert_eq!(project.id, "insulaire");
     assert!(project.report.issues.is_empty());
@@ -462,10 +462,10 @@ fn the_shipped_world_survives_an_export_reload_round_trip() {
 
     let mut engine = Engine::new();
     engine
-        .load_tile_set(&read("content/tilesets/mvp_terrain.json"))
+        .load::<kinds::TileSet>(&read("content/tilesets/mvp_terrain.json"))
         .expect("tile set loads");
     engine
-        .load_world(&reserialised)
+        .load::<kinds::World>(&reserialised)
         .expect("round-tripped world loads");
 
     let reparsed: insulaire_world::WorldDefinition =
@@ -597,7 +597,9 @@ fn the_shipped_character_resolves_for_every_choice_it_offers() {
 fn the_shipped_character_plays_its_idle_through_the_hierarchy() {
     let engine = engine_with_shipped_content();
 
-    let definition = engine.character("human_player").expect("the definition");
+    let definition = engine
+        .definition::<kinds::Character>("human_player")
+        .expect("the definition");
     let idle = definition.animation("idle").expect("an idle animation");
     assert_eq!(idle.role, Some(insulaire_world::AnimationRole::Idle));
     assert!(idle.looping);
@@ -661,7 +663,9 @@ fn the_shipped_character_plays_its_idle_through_the_hierarchy() {
 #[test]
 fn the_shipped_character_walks_left_and_mirrors_it_to_walk_right() {
     let engine = engine_with_shipped_content();
-    let definition = engine.character("human_player").expect("the definition");
+    let definition = engine
+        .definition::<kinds::Character>("human_player")
+        .expect("the definition");
     let walk = definition
         .animation("walking_left")
         .expect("a walking_left animation");

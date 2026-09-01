@@ -106,6 +106,41 @@ it. An entry states:
 Types in `doc` and `errors` are written `{crate::LoadOutcome}`: an intra-doc
 link in `insulaire-engine`, a bare name everywhere else.
 
+## Adding a content kind
+
+A content kind — a tile set, a character, an object — is not four methods to
+write. It is one row in `methods` with a `kind` instead of a `name`, which
+expands into the methods that kind has. Each of them forwards to the generic
+`Engine::load`, `Engine::validate`, `Engine::definition` / `Engine::only` and
+`Engine::ids`, with the kind as the type parameter, so nothing is implemented
+per kind on this side of the boundary at all.
+
+Adding one is:
+
+1. declare the kind in `content_kinds!` in `crates/engine/src/registry.rs` —
+   what it is called, what it parses into, where it lives, which validator
+   judges it;
+2. add the row here;
+3. write the `###` section for each method it takes;
+4. run `node scripts/generate-seam.mjs`;
+5. wire each of them into `EngineService`, exactly as for a hand-written method
+   — `check:seam`'s unwired check does not exempt a generated one.
+
+A kind reaching the boundary by a door of its own keeps an ordinary method entry
+beside its row: `previewTileRender`, `validateDecoration` and `resolveCharacter`
+all do, because their arguments differ per kind, which is the whole reason they
+are not generated.
+
+| Field | Meaning |
+|---|---|
+| `kind` | The Rust name of the kind: `tile_set`, `character_creation`. |
+| `noun` | What prose calls one, with its article: `a character definition`. |
+| `payload` | The definition type its files parse into. |
+| `read` | How the boundary reads it back: `by_id`, `sole` (the one the project declares), or `none`. This is about the boundary, not the registry — a tile set is kept by id in Rust and is still `none` here, because nothing across the boundary asks for one. |
+| `keys` | `true` when its files name locale keys, which `validate` says it checks. |
+| `methods` | Which of `load`, `validate`, `get`, `ids` this kind takes. |
+| `load` / `validate` / `get` / `ids` | Per-method `doc` and `errors` overrides, where the template cannot know what to say. |
+
 ---
 
 ## Methods
@@ -119,20 +154,20 @@ the prose cannot come apart.
 |---|---|---|
 | [`engineInfo`](#engineinfo-engineinfo) | — | `EngineInfo` |
 | [`loadTileSet`](#loadtilesetjson-string-loadoutcome) | `json` | `LoadOutcome` |
+| [`validateTileSet`](#validatetilesetjson-string-validationreport) | `json` | `ValidationReport` |
 | [`loadWorld`](#loadworldjson-string-loadoutcome) | `json` | `LoadOutcome` |
+| [`validateWorld`](#validateworldjson-string-validationreport) | `json` | `ValidationReport` |
 | [`loadProject`](#loadprojectjson-string-loadoutcome) | `json` | `LoadOutcome` |
 | [`loadLocale`](#loadlocalelanguage-string-namespace-string-json-string-loadoutcome) | `language`, `namespace`, `json` | `LoadOutcome` |
 | [`locale`](#localelanguage-string-localeview) | `language` | `LocaleView` |
 | [`validateLocales`](#validatelocales-validationreport) | — | `ValidationReport` |
 | [`loadTitleScreen`](#loadtitlescreenjson-string-loadoutcome) | `json` | `LoadOutcome` |
 | [`validateTitleScreen`](#validatetitlescreenjson-string-validationreport) | `json` | `ValidationReport` |
-| [`validateTileSet`](#validatetilesetjson-string-validationreport) | `json` | `ValidationReport` |
-| [`previewTileRender`](#previewtilerendertilesetjson-tileid-projection-elevation-base-roll-choicejson-resolvedtilerender) | `tileSetJson`, `tileId`, `projection`, `elevation`, `base`, `roll`, `choiceJson` | `ResolvedTileRender` |
 | [`titleScreen`](#titlescreen-titlescreendefinition) | — | `TitleScreenDefinition` |
+| [`previewTileRender`](#previewtilerendertilesetjson-tileid-projection-elevation-base-roll-choicejson-resolvedtilerender) | `tileSetJson`, `tileId`, `projection`, `elevation`, `base`, `roll`, `choiceJson` | `ResolvedTileRender` |
 | [`resetContent`](#resetcontent-void) | — | `void` |
 | [`resetLocales`](#resetlocales-void) | — | `void` |
 | [`validateLinks`](#validatelinks-validationreport) | — | `ValidationReport` |
-| [`validateWorld`](#validateworldjson-string-validationreport) | `json` | `ValidationReport` |
 | [`contentSummary`](#contentsummary-contentsummary) | — | `ContentSummary` |
 | [`worldView`](#worldviewworldid-string-worldview) | `worldId` | `WorldView` |
 | [`terrainBuffer`](#terrainbufferworldid-string-uint8array) | `worldId` | `Uint8Array` |
@@ -148,9 +183,9 @@ the prose cannot come apart.
 | [`character`](#characterid-string-characterdefinition) | `id` | `CharacterDefinition` |
 | [`characterIds`](#characterids-string) | — | `string[]` |
 | [`loadDecoration`](#loaddecorationjson-string-loadoutcome) | `json` | `LoadOutcome` |
-| [`validateDecoration`](#validatedecorationjson-string-celljson-string-validationreport) | `json`, `cellJson` | `ValidationReport` |
 | [`decoration`](#decorationid-string-decorationdefinition) | `id` | `DecorationDefinition` |
 | [`decorationIds`](#decorationids-string) | — | `string[]` |
+| [`validateDecoration`](#validatedecorationjson-string-celljson-string-validationreport) | `json`, `cellJson` | `ValidationReport` |
 | [`resolveDecoration`](#resolvedecorationid-animation-timems-resolveddecoration) | `id`, `animation?`, `timeMs` | `ResolvedDecoration` |
 | [`previewDecoration`](#previewdecorationdecorationjson-animation-timems-resolveddecoration) | `decorationJson`, `animation?`, `timeMs` | `ResolvedDecoration` |
 | [`loadObject`](#loadobjectjson-string-loadoutcome) | `json` | `LoadOutcome` |
