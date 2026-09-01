@@ -10,19 +10,10 @@
       "control": "select",
       "default": "human",
       "options": [
-        {
-          "value": "human",
-          "labelKey": "game.creation.lineageHuman"
-        },
-        {
-          "value": "elf",
-          "labelKey": "game.creation.lineageElf"
-        }
+        { "value": "human", "labelKey": "game.creation.lineageHuman" },
+        { "value": "elf", "labelKey": "game.creation.lineageElf" }
       ],
-      "binding": {
-        "kind": "parameter",
-        "parameter": "lineage"
-      }
+      "binding": { "kind": "parameter", "parameter": "lineage" }
     },
     {
       "id": "gender",
@@ -30,19 +21,10 @@
       "control": "select",
       "default": "woman",
       "options": [
-        {
-          "value": "woman",
-          "labelKey": "game.creation.genderWoman"
-        },
-        {
-          "value": "man",
-          "labelKey": "game.creation.genderMan"
-        }
+        { "value": "woman", "labelKey": "game.creation.genderWoman" },
+        { "value": "man", "labelKey": "game.creation.genderMan" }
       ],
-      "binding": {
-        "kind": "parameter",
-        "parameter": "gender"
-      }
+      "binding": { "kind": "parameter", "parameter": "gender" }
     },
     {
       "id": "hairStyle",
@@ -50,29 +32,17 @@
       "control": "select",
       "default": "short",
       "options": [
-        {
-          "value": "short",
-          "labelKey": "game.character.hairShort"
-        },
-        {
-          "value": "long",
-          "labelKey": "game.character.hairLong"
-        }
+        { "value": "short", "labelKey": "game.character.hairShort" },
+        { "value": "long", "labelKey": "game.character.hairLong" }
       ],
-      "binding": {
-        "kind": "parameter",
-        "parameter": "hairStyle"
-      }
+      "binding": { "kind": "parameter", "parameter": "hairStyle" }
     },
     {
       "id": "eyeColor",
       "labelKey": "game.creation.eyeColor",
       "control": "color",
       "default": "#4f7cac",
-      "binding": {
-        "kind": "parameter",
-        "parameter": "eyeColor"
-      }
+      "binding": { "kind": "parameter", "parameter": "eyeColor" }
     },
     {
       "id": "height",
@@ -83,10 +53,7 @@
       "max": 210,
       "step": 1,
       "unit": "cm",
-      "binding": {
-        "kind": "parameter",
-        "parameter": "height"
-      }
+      "binding": { "kind": "parameter", "parameter": "height" }
     },
     {
       "id": "bust",
@@ -97,10 +64,7 @@
       "max": 100,
       "step": 5,
       "unit": "%",
-      "binding": {
-        "kind": "parameter",
-        "parameter": "bust"
-      }
+      "binding": { "kind": "parameter", "parameter": "bust" }
     }
   ],
   "characteristics": [
@@ -108,8 +72,7 @@
       "id": "name",
       "labelKey": "game.creation.name",
       "control": "text",
-      "default": "",
-      "nullable": false
+      "default": ""
     },
     {
       "id": "age",
@@ -117,8 +80,7 @@
       "control": "number",
       "default": 18,
       "min": 0,
-      "step": 1,
-      "nullable": false
+      "step": 1
     },
     {
       "id": "hp",
@@ -126,8 +88,7 @@
       "control": "number",
       "default": 100,
       "min": 0,
-      "max": 100,
-      "nullable": false
+      "max": 100
     },
     {
       "id": "mana",
@@ -142,8 +103,7 @@
       "labelKey": "game.creation.endurance",
       "control": "number",
       "default": 10,
-      "min": 0,
-      "nullable": false
+      "min": 0
     },
     {
       "id": "agility",
@@ -151,16 +111,14 @@
       "control": "number",
       "default": 10,
       "min": 0,
-      "max": 100,
-      "nullable": false
+      "max": 100
     },
     {
       "id": "experience",
       "labelKey": "game.creation.experience",
       "control": "number",
       "default": 0,
-      "min": 0,
-      "nullable": false
+      "min": 0
     }
   ],
   "screens": [
@@ -170,26 +128,11 @@
       "textKey": "game.creation.identityText",
       "transition": "fade",
       "blocks": [
-        {
-          "type": "choice",
-          "choice": "lineage"
-        },
-        {
-          "type": "choice",
-          "choice": "gender"
-        },
-        {
-          "type": "characteristic",
-          "characteristic": "name"
-        },
-        {
-          "type": "characteristic",
-          "characteristic": "age"
-        },
-        {
-          "type": "preview",
-          "animation": "idle"
-        }
+        { "type": "choice", "choice": "lineage" },
+        { "type": "choice", "choice": "gender" },
+        { "type": "characteristic", "characteristic": "name" },
+        { "type": "characteristic", "characteristic": "age" },
+        { "type": "preview", "animation": "idle" }
       ]
     },
     {
@@ -198,26 +141,11 @@
       "textKey": "game.creation.appearanceText",
       "transition": "slideLeft",
       "blocks": [
-        {
-          "type": "choice",
-          "choice": "hairStyle"
-        },
-        {
-          "type": "choice",
-          "choice": "eyeColor"
-        },
-        {
-          "type": "choice",
-          "choice": "height"
-        },
-        {
-          "type": "choice",
-          "choice": "bust"
-        },
-        {
-          "type": "preview",
-          "animation": "idle"
-        }
+        { "type": "choice", "choice": "hairStyle" },
+        { "type": "choice", "choice": "eyeColor" },
+        { "type": "choice", "choice": "height" },
+        { "type": "choice", "choice": "bust" },
+        { "type": "preview", "animation": "idle" }
       ]
     },
     {
@@ -226,37 +154,13 @@
       "textKey": "game.creation.attributesText",
       "transition": "slideLeft",
       "blocks": [
-        {
-          "type": "preview",
-          "animation": "idle",
-          "parameters": {
-            "armor": "plate",
-            "cape": true
-          }
-        },
-        {
-          "type": "characteristic",
-          "characteristic": "hp"
-        },
-        {
-          "type": "characteristic",
-          "characteristic": "mana"
-        },
-        {
-          "type": "characteristic",
-          "characteristic": "endurance"
-        },
-        {
-          "type": "characteristic",
-          "characteristic": "agility"
-        },
-        {
-          "type": "characteristic",
-          "characteristic": "experience"
-        },
-        {
-          "type": "summary"
-        }
+        { "type": "preview", "animation": "idle", "parameters": { "armor": "plate", "cape": true } },
+        { "type": "characteristic", "characteristic": "hp" },
+        { "type": "characteristic", "characteristic": "mana" },
+        { "type": "characteristic", "characteristic": "endurance" },
+        { "type": "characteristic", "characteristic": "agility" },
+        { "type": "characteristic", "characteristic": "experience" },
+        { "type": "summary" }
       ]
     }
   ]

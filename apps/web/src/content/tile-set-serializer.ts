@@ -26,130 +26,114 @@
  *
  * The format is specified in `docs/content-format.md`, and the shipped
  * `content/tilesets/mvp_terrain.json` is written this way, so an exported set
- * diffs cleanly against a hand-edited one.
+ * diffs cleanly against a hand-edited one. See `canonical-json.ts` for the
+ * layout these tables are read by.
  */
 
+import { blockOf, canonicalJson, list, rowOf, Shape } from './canonical-json';
 import {
+  ELEVATION_LEVEL_ABSENT,
   ElevationLevel,
+  TILE_ABSENT,
+  TILE_ART_ABSENT,
+  TILE_ELEVATION_ABSENT,
+  TILE_SET_ABSENT,
   TileArt,
+  TileArtGeometry,
   TileArtVariant,
   TileDefinition,
+  TileElevation,
   TileSetDefinition,
 } from './generated/tile-set';
 import { tileArtGeometry } from './tile-set-geometry';
-import { formatValue, inlineObject } from './world-serializer';
 
-/** Serialises a tile set in the canonical layout. */
-export function serializeTileSet(tileSet: TileSetDefinition): string {
-  const geometry = tileArtGeometry(tileSet);
-  const lines: string[] = [
-    '{',
-    `  "id": ${JSON.stringify(tileSet.id)},`,
-    `  "schemaVersion": ${JSON.stringify(tileSet.schemaVersion)},`,
-  ];
-  if (tileSet.name !== undefined && tileSet.name.length > 0) {
-    lines.push(`  "name": ${JSON.stringify(tileSet.name)},`);
-  }
-  lines.push('  "art": {');
-  lines.push(`    "width": ${geometry.width},`);
-  lines.push(`    "flatHeight": ${geometry.flatHeight},`);
-  lines.push(`    "surfaceHeight": ${geometry.surfaceHeight},`);
-  lines.push(`    "elevationHeight": ${geometry.elevationHeight},`);
-  lines.push(`    "elevationStep": ${geometry.elevationStep}`);
-  lines.push('  },');
+/** One image of a tile, on one line. */
+const VARIANT: Shape<TileArtVariant> = {
+  fields: { id: 'always', asset: 'always' },
+};
 
-  lines.push('  "tiles": [');
-  tileSet.tiles.forEach((tile, index) => {
-    lines.push(...tileBlock(tile, index === tileSet.tiles.length - 1));
-  });
-  lines.push('  ]');
-  lines.push('}');
-  return `${lines.join('\n')}\n`;
-}
+const variants = (images: readonly TileArtVariant[]) =>
+  list(images.map((image) => rowOf(image, VARIANT)));
 
-function tileBlock(tile: TileDefinition, last: boolean): string[] {
-  const lines = ['    {'];
-  lines.push(`      "id": ${JSON.stringify(tile.id)},`);
-  if (tile.name !== undefined && tile.name.length > 0) {
-    lines.push(`      "name": ${JSON.stringify(tile.name)},`);
-  }
-  lines.push(`      "terrain": ${JSON.stringify(tile.terrain)},`);
-  lines.push(`      "movementCost": ${JSON.stringify(tile.movementCost)},`);
-  lines.push(`      "tags": ${formatValue(tile.tags ?? [])},`);
+const LEVEL: Shape<ElevationLevel> = {
+  absent: ELEVATION_LEVEL_ABSENT,
+  fields: {
+    name: 'unless-redundant',
+    variants: { write: 'always', as: variants },
+  },
+};
 
-  const art = artBlock(tile.art);
-  const visualTrailer = art.length > 0 ? ',' : '';
-  lines.push(`      "visual": ${inlineObject(tile.visual)}${visualTrailer}`);
-  lines.push(...art);
+const ELEVATION: Shape<TileElevation> = {
+  absent: TILE_ELEVATION_ABSENT,
+  fields: {
+    levels: {
+      write: (elevation) => elevation.levels.length > 0,
+      as: (levels) => list(levels.map((level) => blockOf(level, LEVEL))),
+    },
+    repeat: 'unless-redundant',
+  },
+};
 
-  lines.push(last ? '    }' : '    },');
-  return lines;
-}
+const ART: Shape<TileArt> = {
+  absent: TILE_ART_ABSENT,
+  fields: {
+    flat: { write: 'unless-redundant', as: variants },
+    surface: { write: 'unless-redundant', as: variants },
+    elevation: { write: 'unless-redundant', as: (elevation) => blockOf(elevation, ELEVATION) },
+  },
+};
 
-/** The `art` member of one tile, or nothing when the tile declares none. */
-function artBlock(art: TileArt | undefined): string[] {
-  const flat = art?.flat ?? [];
-  const surface = art?.surface ?? [];
-  const levels = art?.elevation?.levels ?? [];
-  const repeat = art?.elevation?.repeat ?? null;
-  if (flat.length === 0 && surface.length === 0 && levels.length === 0 && repeat === null) {
-    return [];
-  }
-
-  const lines = ['      "art": {'];
-  const members: string[][] = [];
-  if (flat.length > 0) {
-    members.push(['        "flat": [', ...variantLines(flat, '          '), '        ]']);
-  }
-  if (surface.length > 0) {
-    members.push(['        "surface": [', ...variantLines(surface, '          '), '        ]']);
-  }
-  if (levels.length > 0 || repeat !== null) {
-    const elevation = ['        "elevation": {'];
-    const inner: string[][] = [];
-    if (levels.length > 0) {
-      inner.push(['          "levels": [', ...levelLines(levels), '          ]']);
-    }
-    if (repeat !== null) {
-      inner.push([`          "repeat": ${inlineObject(repeat)}`]);
-    }
-    elevation.push(...joinMembers(inner));
-    elevation.push('        }');
-    members.push(elevation);
-  }
-  lines.push(...joinMembers(members));
-  lines.push('      }');
-  return lines;
-}
-
-function levelLines(levels: readonly ElevationLevel[]): string[] {
-  return levels.flatMap((level, index) => {
-    const block = ['            {'];
-    if (level.name !== undefined && level.name.length > 0) {
-      block.push(`              "name": ${JSON.stringify(level.name)},`);
-    }
-    block.push('              "variants": [');
-    block.push(...variantLines(level.variants ?? [], '                '));
-    block.push('              ]');
-    block.push(index === levels.length - 1 ? '            }' : '            },');
-    return block;
-  });
-}
-
-function variantLines(variants: readonly TileArtVariant[], indent: string): string[] {
-  return variants.map(
-    (variant, index) =>
-      `${indent}${inlineObject(variant)}${index === variants.length - 1 ? '' : ','}`,
+/** Whether a tile authors any art at all, or falls back to flat colour. */
+function draws(tile: TileDefinition): boolean {
+  const art = tile.art;
+  return (
+    (art?.flat ?? []).length > 0 ||
+    (art?.surface ?? []).length > 0 ||
+    (art?.elevation?.levels ?? []).length > 0 ||
+    art?.elevation?.repeat !== undefined
   );
 }
 
-/** Joins blocks with a comma after every one but the last. */
-function joinMembers(members: readonly string[][]): string[] {
-  return members.flatMap((block, index) => {
-    if (index === members.length - 1) {
-      return block;
-    }
-    const last = block.length - 1;
-    return block.map((line, at) => (at === last ? `${line},` : line));
-  });
+/** One tile: what it is, then the images that draw it. */
+const TILE: Shape<TileDefinition> = {
+  absent: TILE_ABSENT,
+  fields: {
+    id: 'always',
+    name: 'unless-redundant',
+    terrain: 'always',
+    movementCost: 'always',
+    tags: 'always',
+    visual: 'always',
+    art: { write: draws, as: (art) => blockOf(art, ART) },
+  },
+};
+
+/** The grid every image in the set is authored on. */
+const GEOMETRY: Shape<TileArtGeometry> = {
+  fields: {
+    width: 'always',
+    flatHeight: 'always',
+    surfaceHeight: 'always',
+    elevationHeight: 'always',
+    elevationStep: 'always',
+  },
+};
+
+/** The tile set file, field by field, in the order it states them. */
+const TILE_SET: Shape<TileSetDefinition> = {
+  absent: TILE_SET_ABSENT,
+  fields: {
+    id: 'always',
+    schemaVersion: 'always',
+    name: 'unless-redundant',
+    // Written from the set rather than read off it: a file that names none
+    // still states the grid its images were drawn on.
+    art: { write: 'always', as: (_, tileSet) => blockOf(tileArtGeometry(tileSet), GEOMETRY) },
+    tiles: { write: 'always', as: (tiles) => list(tiles.map((tile) => blockOf(tile, TILE))) },
+  },
+};
+
+/** Serialises a tile set in the canonical layout. */
+export function serializeTileSet(tileSet: TileSetDefinition): string {
+  return canonicalJson(blockOf(tileSet, TILE_SET));
 }

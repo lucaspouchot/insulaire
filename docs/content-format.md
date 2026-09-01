@@ -24,6 +24,12 @@ A field that carries its default is written by neither side: the definitions use
 are the same file. Every such field is optional in the table entries below, and
 reading one back gives the default either way.
 
+*What* an absent key means crosses too, as a `*_ABSENT` table beside the shapes:
+`crates/world/src/ts_export.rs` parses each definition from the smallest document
+it accepts and publishes what every field then holds. So the editor's writer
+drops a redundant field without stating a second time what `#[serde(default)]`
+already says, and a changed default moves both sides at once.
+
 Canonical implementations:
 
 | Concern | Rust | TypeScript |
@@ -31,7 +37,7 @@ Canonical implementations:
 | Types | `crates/world/src/definition.rs`, `tileset.rs`, `decoration.rs`, `object.rs` | *(derived — `apps/web/src/content/generated/`)* |
 | Bounds | `crates/world/src/ts_export.rs` publishes them | *(derived — same modules)* |
 | Validation | `crates/world/src/validation.rs` | *(none — see ADR-0012)* |
-| Writing | `serde_json` | `apps/web/src/content/world-serializer.ts`, `decoration-serializer.ts`, `object-serializer.ts` |
+| Writing | `serde_json` | `apps/web/src/content/canonical-json.ts`, one table per kind beside it |
 
 ---
 
@@ -1773,8 +1779,18 @@ exposed across the boundary as `validateLinks()` and `loadProject()`.
 
 ## File layout conventions
 
-The editor writes worlds through
-`apps/web/src/content/world-serializer.ts`, which produces one record per line:
+Every content file is written by one module — `apps/web/src/content/canonical-json.ts`
+— which decides where a comma goes, how a value is spaced, and which fields to
+drop. What differs per kind is a **table** beside it: the fields in the order the
+file states them, whether each is laid out on one line or over several, and
+whether it is written always, never, or unless it is redundant. Nothing there
+states a default; those come from the `*_ABSENT` tables above.
+
+A nested record reads the same everywhere it appears — `{ "lineWidth": 3 }`, not
+`{"lineWidth":3}` — and a coordinate as `[4, 10]`.
+
+The editor writes worlds through `apps/web/src/content/world-serializer.ts`'s
+table, which produces one record per line:
 
 ```json
   "tiles": [
@@ -1800,6 +1816,12 @@ cleanly against a hand-edited one. Tests assert that both shipped worlds and
 
 Every world file carries all four record arrays — `tiles`, `entities`,
 `locations`, `links` — even when empty.
+
+`content/character-creation.json` is written the same way
+(`apps/web/src/content/character-creation-serializer.ts`), with the **block** as
+the record: one per line, so a screen's contents read as a list rather than four
+lines each. A choice and a characteristic write the settings table with `scope`
+turned off — a creation choice is answered once.
 
 Plain `JSON.stringify(world, null, 2)` is still valid input — the format
 requirement is on writing, not reading.

@@ -169,7 +169,7 @@ describe('serializeWorld', () => {
     });
 
     expect(json).toContain(
-      '  "reveal": {"radius":2,"opacity":0.1,"neighbourOpacity":0.25},\n  "tileSetId": "t",\n',
+      '  "reveal": { "radius": 2, "opacity": 0.1, "neighbourOpacity": 0.25 },\n  "tileSetId": "t",\n',
     );
   });
 
@@ -206,6 +206,11 @@ describe('serializeWorld', () => {
     );
   });
 
+  /**
+   * Spaced like every other record in these files. The scalar loop this writer
+   * used to run reached `JSON.stringify` directly and wrote `{"lineWidth":3}`,
+   * against the rule its own documentation gave; one writer, one answer.
+   */
   it('writes the authored grid appearance next to the map presentation', () => {
     const json = serializeWorld({
       id: 'w',
@@ -219,7 +224,8 @@ describe('serializeWorld', () => {
     });
 
     expect(json).toContain(
-      '  "projection": "isometric",\n  "grid": {"lineWidth":3,"color":"#336699","alpha":0.6},\n',
+      '  "projection": "isometric",\n' +
+        '  "grid": { "lineWidth": 3, "color": "#336699", "alpha": 0.6 },\n',
     );
   });
 

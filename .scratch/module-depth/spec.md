@@ -56,7 +56,7 @@ these tickets remove.
 | [03](issues/03-derive-content-types-from-definitions.md) | Derive the content types from the definitions | Strong · **done** |
 | [04](issues/04-one-editing-session-for-the-workspaces.md) | Give the asset workspaces one editing session | Strong · **done** |
 | [05](issues/05-close-the-project-store-read-side.md) | Close the project store's read side | Strong · **done** |
-| [06](issues/06-one-canonical-writer.md) | One canonical writer, not seven | Worth exploring |
+| [06](issues/06-one-canonical-writer.md) | One canonical writer, not seven | Worth exploring · **done** |
 | [07](issues/07-lift-the-session-presentation.md) | Lift the session presentation out of the play page | Worth exploring |
 | [08](issues/08-adr-references-must-resolve.md) | ADR references must resolve, and be checkable | Strong · **done** |
 | [09](issues/09-tile-and-locale-do-not-fit-the-draft-set.md) | Tile and locale do not fit the draft set | Strong · split out of 04 · **done** |
@@ -114,8 +114,19 @@ the hand-kept file had been hiding, one of them a live bug — `CreationBlock::T
 asked for `text_key` while every other side said `textKey` — and it cost 1,401
 bytes of WASM, 0.18%.
 
-Then **06**: the default table it needs is the fact 03 now generates. **07** is
-independent and can go at any point.
+**Then 06, and done.** The default table it needed was indeed the fact 03
+generates, and it generates it the same way: `absent_values!` names a *field*
+and a definition parsed from the smallest document it accepts supplies the
+value, so nothing is retyped beside the `#[serde(default)]` that decides it.
+`content/canonical-json.ts` owns the comma, the spacing and four rules —
+`always`, `unless-redundant`, `when-present`, `never` — and the seven writers
+are tables of those rules. The Rust-writer alternative was costed and dropped:
+two call sites serialise a world only to hand it straight back to the engine.
+Two files moved, both onto the copy that was wrong — `character-creation.json`,
+the one content file still written by `JSON.stringify`, and a world's `grid`,
+which was compact against the rule its own writer documented.
+
+**07** is independent and can go at any point.
 
 ## What is deliberately not proposed
 

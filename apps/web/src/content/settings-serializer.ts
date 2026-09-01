@@ -8,121 +8,91 @@
  * writes what an author would have written — fixed key order, one option per
  * line, and nothing that carries no information.
  *
- * The rule for omitting is the engine's own defaults (`crates/world/src/
- * settings.rs`): an absent `helpKey`, `unit`, `options`, `min`, `max`, `step`
- * or `showIf` parses back to exactly the value dropped here. `scope` is the
- * exception and is always written — it decides whether a player can move the
- * setting during a game, which is worth reading in the file rather than knowing
- * (`docs/adr/ADR-0022-settings.md`).
+ * The rule for omitting is the engine's own defaults, as `CONTROL_ABSENT`
+ * publishes them from `crates/world/src/settings.rs`: an absent `helpKey`,
+ * `unit`, `options`, `min`, `max`, `step` or `showIf` parses back to exactly the
+ * value dropped here. `scope` is the exception and is always written — it
+ * decides whether a player can move the setting during a game, which is worth
+ * reading in the file rather than knowing (`docs/adr/ADR-0022-settings.md`).
+ * See `canonical-json.ts` for the layout these tables are read by.
  */
 
+import { blockOf, canonicalJson, Fields, list, rowOf, Shape } from './canonical-json';
 import {
+  CONTROL_ABSENT,
   ControlDefinition,
+  ControlOption,
   SettingsDefinition,
   SettingsGroup,
   SettingsSection,
 } from './generated/settings';
 
+/** One choice of a select, on one line. */
+const OPTION: Shape<ControlOption> = {
+  fields: { value: 'always', labelKey: 'always' },
+};
+
+/**
+ * One setting, in the order the file states it.
+ *
+ * Exported because a character parameter is the same vocabulary read by a
+ * different screen — `character-serializer.ts` writes this table with `scope`
+ * turned off, which is the only field the two disagree about
+ * (`docs/adr/ADR-0024-character-definitions.md`).
+ */
+export const CONTROL_FIELDS: Fields<ControlDefinition> = {
+  id: 'always',
+  labelKey: 'always',
+  helpKey: 'unless-redundant',
+  control: 'always',
+  default: 'always',
+  min: 'unless-redundant',
+  max: 'unless-redundant',
+  step: 'unless-redundant',
+  unit: 'unless-redundant',
+  scope: 'always',
+  // One option per line: a choice added is a line added.
+  options: {
+    write: 'unless-redundant',
+    as: (options) => list(options.map((option) => rowOf(option, OPTION))),
+  },
+  showIf: 'unless-redundant',
+};
+
+/** What an absent field of a setting means, for anything that writes one. */
+export const CONTROL: Shape<ControlDefinition> = {
+  absent: CONTROL_ABSENT,
+  fields: CONTROL_FIELDS,
+};
+
+const GROUP: Shape<SettingsGroup> = {
+  fields: {
+    id: 'always',
+    labelKey: 'always',
+    fields: { write: 'always', as: (fields) => list(fields.map((field) => blockOf(field, CONTROL))) },
+  },
+};
+
+const SECTION: Shape<SettingsSection> = {
+  fields: {
+    id: 'always',
+    labelKey: 'always',
+    groups: { write: 'always', as: (groups) => list(groups.map((group) => blockOf(group, GROUP))) },
+  },
+};
+
+const SETTINGS: Shape<SettingsDefinition> = {
+  fields: {
+    id: 'always',
+    schemaVersion: 'always',
+    sections: {
+      write: 'always',
+      as: (sections) => list(sections.map((section) => blockOf(section, SECTION))),
+    },
+  },
+};
+
 /** The settings file, in the canonical layout. */
 export function serializeSettings(settings: SettingsDefinition): string {
-  const lines = [
-    '{',
-    `  "id": ${JSON.stringify(settings.id)},`,
-    `  "schemaVersion": ${JSON.stringify(settings.schemaVersion)},`,
-    '  "sections": [',
-    ...blocks(settings.sections, (section) => sectionLines(section, 4)),
-    '  ]',
-    '}',
-  ];
-  return `${lines.join('\n')}\n`;
-}
-
-function sectionLines(section: SettingsSection, indent: number): string[] {
-  const pad = ' '.repeat(indent);
-  return [
-    `${pad}{`,
-    `${pad}  "id": ${JSON.stringify(section.id)},`,
-    `${pad}  "labelKey": ${JSON.stringify(section.labelKey)},`,
-    `${pad}  "groups": [`,
-    ...blocks(section.groups, (group) => groupLines(group, indent + 4)),
-    `${pad}  ]`,
-    `${pad}}`,
-  ];
-}
-
-function groupLines(group: SettingsGroup, indent: number): string[] {
-  const pad = ' '.repeat(indent);
-  return [
-    `${pad}{`,
-    `${pad}  "id": ${JSON.stringify(group.id)},`,
-    `${pad}  "labelKey": ${JSON.stringify(group.labelKey)},`,
-    `${pad}  "fields": [`,
-    ...blocks(group.fields, (field) => fieldLines(field, indent + 4)),
-    `${pad}  ]`,
-    `${pad}}`,
-  ];
-}
-
-function fieldLines(field: ControlDefinition, indent: number): string[] {
-  const pad = ' '.repeat(indent);
-  const entries: string[] = [
-    `"id": ${JSON.stringify(field.id)}`,
-    `"labelKey": ${JSON.stringify(field.labelKey)}`,
-  ];
-  if (field.helpKey) {
-    entries.push(`"helpKey": ${JSON.stringify(field.helpKey)}`);
-  }
-  entries.push(`"control": ${JSON.stringify(field.control)}`);
-  entries.push(`"default": ${JSON.stringify(field.default)}`);
-  for (const bound of ['min', 'max', 'step'] as const) {
-    const value = field[bound];
-    if (typeof value === 'number') {
-      entries.push(`"${bound}": ${JSON.stringify(value)}`);
-    }
-  }
-  if (field.unit) {
-    entries.push(`"unit": ${JSON.stringify(field.unit)}`);
-  }
-  entries.push(`"scope": ${JSON.stringify(field.scope ?? 'session')}`);
-
-  const lines = [`${pad}{`, ...entries.map((entry) => `${pad}  ${entry},`)];
-
-  const options = field.options ?? [];
-  if (options.length > 0) {
-    lines.push(`${pad}  "options": [`);
-    lines.push(
-      ...options.map(
-        (option, index) =>
-          `${pad}    { "value": ${JSON.stringify(option.value)}, ` +
-          `"labelKey": ${JSON.stringify(option.labelKey)} }` +
-          (index === options.length - 1 ? '' : ','),
-      ),
-    );
-    lines.push(`${pad}  ],`);
-  }
-
-  if (field.showIf) {
-    lines.push(
-      `${pad}  "showIf": { "field": ${JSON.stringify(field.showIf.field)}, ` +
-        `"equals": ${JSON.stringify(field.showIf.equals)} },`,
-    );
-  }
-
-  // Whichever entry ended up last carries no comma.
-  const last = lines.length - 1;
-  lines[last] = (lines[last] as string).replace(/,$/, '');
-  lines.push(`${pad}}`);
-  return lines;
-}
-
-/** Renders a list of nested blocks, comma-separating them. */
-function blocks<T>(items: readonly T[], render: (item: T) => string[]): string[] {
-  return items.flatMap((item, index) => {
-    const lines = render(item);
-    if (index === items.length - 1) {
-      return lines;
-    }
-    const last = lines.length - 1;
-    return [...lines.slice(0, last), `${lines[last] as string},`];
-  });
+  return canonicalJson(blockOf(settings, SETTINGS));
 }

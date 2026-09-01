@@ -1,6 +1,6 @@
 # 06 — One canonical writer, not seven
 
-Status: needs-triage
+Status: done
 Strength: worth exploring
 Blocked by: 03
 
@@ -65,17 +65,63 @@ defaults already live, and the editor asks the engine to render a definition.
 That deletes the TypeScript writer entirely, at the cost of a seam crossing on
 every save.
 
-## Open questions
+## Decisions
 
-- TypeScript writer with a generated table, or Rust writer behind the seam?
-- Does the table describe field order only, or also the per-kind layout rules
-  (one frame per line, resolution on one line, a matrix in a block)?
-- Seven spec files exist for the seven writers. Do they become one spec of the
-  writer plus seven table fixtures?
+**A TypeScript writer with a generated table.** The Rust alternative was costed
+and dropped: `serializeWorld` feeds `engine.loadWorld` at `play-page.ts:374` and
+`map-editor-page.ts:1528`, so a writer behind the seam would serialise in Rust
+in order to parse in Rust; the per-kind layout rules are presentation the play
+runtime never needs and would carry in the WASM bundle; and a draft that fails
+to deserialise could no longer be saved, which is exactly the blocked-out
+content the editor exists to write.
+
+**The table describes both** — field order *and* the per-kind layout. One rule
+per field: `always`, `unless-redundant`, `when-present` or `never`, plus an
+optional `as` that lays the value out (one frame per line, a record on one
+line). That is what makes seven printers one module: the layout was never the
+duplicated part, the commas and the defaults were.
+
+**What an absent field means is generated, and the values are never retyped.**
+`absent_values!` in `crates/world/src/ts_export.rs` names the *field*; a
+definition parsed from the smallest document it accepts supplies the value, the
+way `boundary_values!` names a constant and lets the compiler supply what it
+holds. A renamed field is a compile error, a changed `#[serde(default = "…")]`
+changes the table on the next generator run, and one test per entry proves the
+published value is what omitting the field already means. Twenty tables, so the
+mirror publishes 61 values where it published 41.
+
+**The seven specs stay**, and the writer gets its own. Each spec still pins the
+layout of one format, which is the fact it was testing; `canonical-json.spec.ts`
+pins the comma, the spacing and the four rules once. Coverage did not move: it
+grew by the two files that had none of it.
 
 ## Done when
 
-- One module decides where a comma goes.
-- No default is stated in both Rust and TypeScript.
-- The `content/` fixtures round-trip byte for byte.
-- `npm run check` passes.
+- One module decides where a comma goes. ✔ `content/canonical-json.ts`; the
+  seven are tables now. 738 lines of printing became 499 of table plus 175 of
+  writer — the saving is small because a table is not free, and the point was
+  never the line count: there is one answer where there were seven.
+- No default is stated in both Rust and TypeScript. ✔ The two that were
+  TypeScript-only — a character's `64×128` canvas and a 120ms frame, both
+  retyped in `character-serializer.ts` — are gone with the rest.
+- The `content/` fixtures round-trip byte for byte. ✔ Five did already; the
+  sixth, `content/character-creation.json`, is now written by the same module
+  and has the same test. It lost 96 lines and six `"nullable": false` keys that
+  said what leaving them out already said.
+- `npm run check` passes. ✔
+
+Two files moved, both explained by the consolidation and both landing on the
+copy that was wrong:
+
+- `content/character-creation.json` — was `JSON.stringify(_, null, 2)`, the one
+  content file written by a different rule.
+- a world's `grid` and `reveal` — were `{"lineWidth":3}`, against the rule
+  `world-serializer.ts`'s own documentation gave two paragraphs further up
+  (`{ "surface": "f" }` rather than `{"surface":"f"}`). No shipped world states
+  either, so no fixture moved; two spec expectations did.
+
+One bug found on the way, in the same class as the one ticket 03 found: `??`
+reads a `null` as absent, so a nullable characteristic's `"default": null` was
+dropped by the first draft of the writer — from a *required* field, which would
+have made the file fail to parse. `undefined` is now the only way a definition
+says it holds nothing.

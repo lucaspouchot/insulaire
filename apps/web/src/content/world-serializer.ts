@@ -14,55 +14,31 @@
  *
  * The format is specified in `docs/content-format.md`, and
  * `content/worlds/demo_world.json` is written the same way — so a world exported
- * from the editor diffs cleanly against a hand-edited one.
+ * from the editor diffs cleanly against a hand-edited one. See
+ * `canonical-json.ts` for the layout these tables are read by.
+ *
+ * A map states what it was given rather than what it means: every scalar the
+ * definition holds is written, defaults included, because a world file is the
+ * record of an authored map and an author who set the grid to its default set
+ * it. What is dropped is what the definition does not hold at all.
  */
 
-import { ProjectDefinition } from './generated/project';
-import { WorldDefinition } from './generated/world';
+import {
+  block,
+  blockOf,
+  canonicalJson,
+  list,
+  member,
+  Node,
+  row,
+  Shape,
+  value,
+} from './canonical-json';
+import { LocalesDefinition, PROJECT_ABSENT, ProjectDefinition } from './generated/project';
+import { MapShape, WORLD_ABSENT, WorldDefinition, WorldMetadata } from './generated/world';
 
-/** Keys written before the record arrays, in this order. */
-const SCALAR_KEYS = [
-  'id',
-  'schemaVersion',
-  'name',
-  'zone',
-  'origin',
-  'width',
-  'height',
-  'orientation',
-  'projection',
-  'characterHeightTiles',
-  'grid',
-  'reveal',
-  'tileSetId',
-  'defaultTile',
-] as const;
-
-/** Serialises a world definition in the canonical layout. */
-export function serializeWorld(world: WorldDefinition): string {
-  const lines: string[] = ['{'];
-
-  for (const key of SCALAR_KEYS) {
-    const value = world[key];
-    if (value !== undefined) {
-      // `origin` is a coordinate, and coordinates read as `[0, -2]` in these
-      // files rather than `[0,-2]`. Nothing else here is an array.
-      const rendered = Array.isArray(value) ? formatValue(value) : JSON.stringify(value);
-      lines.push(`  ${JSON.stringify(key)}: ${rendered},`);
-    }
-  }
-
-  lines.push(...shapeBlock(world.shape));
-  lines.push(...recordArray('tiles', world.tiles ?? []));
-  lines.push(...recordArray('entities', world.entities ?? []));
-  lines.push(...recordArray('decorations', world.decorations ?? []));
-  lines.push(...recordArray('locations', world.locations ?? []));
-  lines.push(...recordArray('links', world.links ?? []));
-  lines.push(...metadataBlock(world.metadata ?? {}));
-
-  lines.push('}');
-  return `${lines.join('\n')}\n`;
-}
+/** A list of records, one to a line. */
+const records = (entries: readonly object[]) => list(entries.map((entry) => value(entry)));
 
 /**
  * The `shape` block: one carved — or drawn — cell per line.
@@ -72,75 +48,57 @@ export function serializeWorld(world: WorldDefinition): string {
  * reflowed line (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`). Omitted
  * entirely when the map is the full rectangle it used to be.
  */
-function shapeBlock(shape: WorldDefinition['shape']): string[] {
-  const exceptions = shape?.exceptions ?? [];
-  if (shape === undefined || exceptions.length === 0) {
-    return [];
-  }
+const SHAPE: Shape<MapShape> = {
+  fields: {
+    default: 'when-present',
+    exceptions: { write: 'always', as: (cells) => list(cells.map((cell) => value(cell))) },
+  },
+};
 
-  const lines = ['  "shape": {'];
-  if (shape.default !== undefined) {
-    lines.push(`    "default": ${JSON.stringify(shape.default)},`);
-  }
-  lines.push('    "exceptions": [');
-  exceptions.forEach((cell, index) => {
-    const comma = index < exceptions.length - 1 ? ',' : '';
-    lines.push(`      ${formatValue(cell)}${comma}`);
-  });
-  lines.push('    ]');
-  lines.push('  },');
-  return lines;
+function carved(world: WorldDefinition): boolean {
+  return (world.shape?.exceptions ?? []).length > 0;
 }
 
-/**
- * Serialises a project manifest in the same one-record-per-line layout.
- *
- * The editor writes this file whenever the set of maps changes, so a delivered
- * bundle can be produced from exported content alone
- * (`docs/adr/ADR-0015-client-delivery-build.md`).
- */
-export function serializeProject(project: ProjectDefinition): string {
-  const lines = [
-    '{',
-    `  "id": ${JSON.stringify(project.id)},`,
-    `  "schemaVersion": ${JSON.stringify(project.schemaVersion)},`,
-  ];
-  if (project.name !== undefined) {
-    lines.push(`  "name": ${JSON.stringify(project.name)},`);
-  }
-  lines.push(`  "startWorld": ${JSON.stringify(project.startWorld)},`);
-  lines.push(...recordArray('zones', project.zones ?? []));
-  lines.push(...recordArray('tileSets', project.tileSets));
+/** Whatever the map carries, one entry per line. */
+function metadata(entries: WorldMetadata): Node {
+  return block(
+    Object.entries(entries)
+      .filter(([, held]) => held !== undefined)
+      .map(([key, held]) => member(key, value(held))),
+  );
+}
 
-  lines.push(...recordArray('worlds', project.worlds));
-  // Only written when the project ships characters: a manifest that has never
-  // seen one should not grow an empty array on its first unrelated save.
-  if (project.characters !== undefined && project.characters.length > 0) {
-    lines.push(...recordArray('characters', project.characters));
-  }
-  if (project.decorations !== undefined && project.decorations.length > 0) {
-    lines.push(...recordArray('decorations', project.decorations));
-  }
-  if (project.objects !== undefined && project.objects.length > 0) {
-    lines.push(...recordArray('objects', project.objects));
-  }
-  if (project.characterCreation != null) {
-    lines.push(`  "characterCreation": ${inlineObject(project.characterCreation)},`);
-  }
-  if (project.titleScreen != null) {
-    lines.push(`  "titleScreen": ${inlineObject(project.titleScreen)},`);
-  }
-  if (project.settings != null) {
-    lines.push(`  "settings": ${inlineObject(project.settings)},`);
-  }
-  lines.push(...localesBlock(project.locales));
+/** The world file, field by field, in the order it states them. */
+const WORLD: Shape<WorldDefinition> = {
+  absent: WORLD_ABSENT,
+  fields: {
+    id: 'always',
+    schemaVersion: 'always',
+    name: 'when-present',
+    zone: 'when-present',
+    origin: 'when-present',
+    width: 'always',
+    height: 'always',
+    orientation: 'when-present',
+    projection: 'when-present',
+    characterHeightTiles: 'when-present',
+    grid: 'when-present',
+    reveal: 'when-present',
+    tileSetId: 'always',
+    defaultTile: 'always',
+    shape: { write: carved, as: (shape) => blockOf(shape, SHAPE) },
+    tiles: { write: 'always', as: records },
+    entities: { write: 'always', as: records },
+    decorations: { write: 'always', as: records },
+    locations: { write: 'always', as: records },
+    links: { write: 'always', as: records },
+    metadata: { write: 'always', as: metadata },
+  },
+};
 
-  // The last entry carries no comma, whichever block it turned out to be.
-  const last = lines.length - 1;
-  lines[last] = (lines[last] as string).replace(/,$/, '');
-
-  lines.push('}');
-  return `${lines.join('\n')}\n`;
+/** Serialises a world definition in the canonical layout. */
+export function serializeWorld(world: WorldDefinition): string {
+  return canonicalJson(blockOf(world, WORLD));
 }
 
 /**
@@ -150,70 +108,47 @@ export function serializeProject(project: ProjectDefinition): string {
  * export would lose every screen's text with them
  * (`docs/adr/ADR-0020-localised-content-keys.md`).
  */
-function localesBlock(locales: ProjectDefinition['locales']): string[] {
-  const languages = locales?.languages ?? [];
+function locales(declared: LocalesDefinition): Node {
+  const languages = declared.languages ?? [];
   if (languages.length === 0) {
-    return ['  "locales": { "default": "", "languages": [] },'];
+    return row([member('default', value('')), member('languages', value([]))]);
   }
-
-  const lines = ['  "locales": {'];
-  lines.push(`    "default": ${JSON.stringify(locales?.default ?? languages[0]?.id ?? '')},`);
-  lines.push('    "languages": [');
-  languages.forEach((language, index) => {
-    const comma = index < languages.length - 1 ? ',' : '';
-    lines.push(`      ${inlineObject(language)}${comma}`);
-  });
-  lines.push('    ]');
-  lines.push('  },');
-  return lines;
-}
-
-function recordArray(key: string, records: readonly object[]): string[] {
-  if (records.length === 0) {
-    return [`  ${JSON.stringify(key)}: [],`];
-  }
-  const lines = [`  ${JSON.stringify(key)}: [`];
-  records.forEach((record, index) => {
-    const comma = index < records.length - 1 ? ',' : '';
-    lines.push(`    ${inlineObject(record)}${comma}`);
-  });
-  lines.push('  ],');
-  return lines;
-}
-
-function metadataBlock(metadata: Record<string, unknown>): string[] {
-  const entries = Object.entries(metadata).filter(([, value]) => value !== undefined);
-  if (entries.length === 0) {
-    return ['  "metadata": {}'];
-  }
-  const lines = ['  "metadata": {'];
-  entries.forEach(([key, value], index) => {
-    const comma = index < entries.length - 1 ? ',' : '';
-    lines.push(`    ${JSON.stringify(key)}: ${formatValue(value)}${comma}`);
-  });
-  lines.push('  }');
-  return lines;
-}
-
-/** `{ "at": [4, 1], "tile": "mountain" }` — one record, one line. */
-export function inlineObject(record: object): string {
-  const parts = Object.entries(record)
-    .filter(([, value]) => value !== undefined)
-    .map(([key, value]) => `${JSON.stringify(key)}: ${formatValue(value)}`);
-  return parts.length === 0 ? '{}' : `{ ${parts.join(', ')} }`;
+  return block([
+    member('default', value(declared.default ?? languages[0]?.id ?? '')),
+    member('languages', records(languages)),
+  ]);
 }
 
 /**
- * Like `JSON.stringify`, but spaced the way the rest of these files are:
- * coordinates read as `[4, 10]` rather than `[4,10]`, and a nested record as
- * `{ "surface": "f" }` rather than `{"surface":"f"}`.
+ * The project manifest, in the same one-record-per-line layout.
+ *
+ * The editor writes this file whenever the set of maps changes, so a delivered
+ * bundle can be produced from exported content alone
+ * (`docs/adr/ADR-0015-client-delivery-build.md`). A list it has never held —
+ * characters, decorations, objects — stays out of the file rather than growing
+ * an empty array on its first unrelated save.
  */
-export function formatValue(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => formatValue(item)).join(', ')}]`;
-  }
-  if (typeof value === 'object' && value !== null) {
-    return inlineObject(value);
-  }
-  return JSON.stringify(value);
+const PROJECT: Shape<ProjectDefinition> = {
+  absent: PROJECT_ABSENT,
+  fields: {
+    id: 'always',
+    schemaVersion: 'always',
+    name: 'when-present',
+    startWorld: 'always',
+    zones: { write: 'always', as: records },
+    tileSets: { write: 'always', as: records },
+    worlds: { write: 'always', as: records },
+    characters: { write: 'unless-redundant', as: records },
+    decorations: { write: 'unless-redundant', as: records },
+    objects: { write: 'unless-redundant', as: records },
+    characterCreation: 'unless-redundant',
+    titleScreen: 'unless-redundant',
+    settings: 'unless-redundant',
+    locales: { write: 'always', as: locales },
+  },
+};
+
+/** Serialises a project manifest in the canonical layout. */
+export function serializeProject(project: ProjectDefinition): string {
+  return canonicalJson(blockOf(project, PROJECT));
 }

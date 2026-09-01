@@ -1,7 +1,12 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
-import { CharacterCreationDefinition } from './generated/character-creation';
 import { serializeCharacterCreation } from './character-creation-serializer';
+import { CharacterCreationDefinition } from './generated/character-creation';
+
+const repoRoot = resolve(import.meta.dirname, '../../../..');
 
 describe('serializeCharacterCreation', () => {
   it('round trips the generic workflow without a settings scope', () => {
@@ -30,5 +35,19 @@ describe('serializeCharacterCreation', () => {
       ...definition,
       choices: definition.choices?.map(({ scope: _scope, ...choice }) => choice),
     });
+  });
+
+  /**
+   * The workflow the game ships is written by this module, so an exported file
+   * diffs cleanly against the hand-edited one — the same guarantee every other
+   * content kind has.
+   */
+  it('reproduces the shipped workflow byte for byte', () => {
+    const path = resolve(repoRoot, 'content/character-creation.json');
+    const original = readFileSync(path, 'utf8');
+
+    expect(serializeCharacterCreation(JSON.parse(original) as CharacterCreationDefinition)).toBe(
+      original,
+    );
   });
 });

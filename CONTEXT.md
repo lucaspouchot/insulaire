@@ -91,6 +91,13 @@ neither is called an "entity".
 - **draft source** — the seam under a draft set: everything about a *kind* of
   content that the session must not know — how one is read, validated,
   serialized, written and declared. `app/editing/draft-source.ts`.
+- **canonical writer** — the one module that turns a definition into the text of
+  its file: `content/canonical-json.ts`. It decides where a comma goes, how a
+  value is spaced, and which fields to drop; a kind brings a **table** of its
+  fields — the order the file states them, how each is laid out, and when each
+  is written. The table states no defaults: what an absent field means is
+  generated from the Rust definitions
+  (`docs/adr/ADR-0012-shared-content-validation.md`).
 - **unsaved** / **dirty** — what a *draft* owes the disk, and the draft set is
   the only thing that decides it: a draft is dirty when its definition differs
   from the file **or** an image it owns is unwritten. There is no second answer
