@@ -20,3 +20,8 @@ missing_docs = "warn"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+# The TypeScript mirror of these definitions is derived from them rather than
+# retyped beside them (`docs/adr/ADR-0012-shared-content-validation.md`). The
+# derive contributes `impl TS` blocks and the `#[test]` writers that
+# `scripts/generate-content-types.mjs` drives; nothing calls them at runtime.
+ts-rs = { workspace = true }

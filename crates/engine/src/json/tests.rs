@@ -1116,8 +1116,12 @@ fn characters_load_and_resolve_through_the_string_api() {
 
     let definition = json(&engine.character("human_player").expect("definition"));
     assert_eq!(definition["category"], "player");
-    assert_eq!(definition["resolution"]["width"], 64);
     assert_eq!(definition["parameters"][0]["id"], "hairColor");
+    // A definition drawn on the canvas `SpriteResolution::default()` names
+    // writes no `resolution`, which is what makes the field optional in the
+    // generated TypeScript. What the default *is* stays the engine's answer:
+    // the resolved character below carries it.
+    assert!(definition["resolution"].is_null());
 
     // The customisation crosses as values and comes back as geometry: the
     // host blits what Rust resolved, and resolves nothing itself.

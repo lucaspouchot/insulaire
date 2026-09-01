@@ -60,6 +60,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::HexDirection;
+use ts_rs::TS;
 
 /// Most frames an animation may declare.
 ///
@@ -126,8 +127,9 @@ pub fn flipbook_index_at(
 /// called `stride` can be movement to the west. This role is the validated seam
 /// gameplay uses instead of guessing from either name
 /// (`docs/adr/ADR-0030-gameplay-selects-character-animations-by-role.md`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "character.ts")]
 pub enum AnimationRole {
     /// The character is not moving.
     Idle,
@@ -213,7 +215,8 @@ impl FromStr for AnimationRole {
 ///
 /// The same units and the same reasoning as `PixelRect`: a sprite moved by
 /// half a pixel is a sprite with a seam down its middle.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "shared.ts")]
 pub struct PixelOffset(pub [i32; 2]);
 
 impl PixelOffset {
@@ -259,11 +262,12 @@ impl PixelOffset {
 /// one without resampling — the same reasoning that made a layer's image a
 /// `Sprite` rather than a path
 /// (`docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "character.ts")]
 pub struct Transform {
     /// Translation from the rest pose, in canvas pixels.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "crate::is_default")]
     pub offset: PixelOffset,
 }
 
@@ -319,9 +323,10 @@ impl Transform {
 
 /// How a keyframe reaches the one after it.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize,
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize, TS,
 )]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "character.ts")]
 pub enum Interpolation {
     /// Hold this value until the next keyframe, then jump. The default, and
     /// what hand-drawn sprite animation actually does.
@@ -337,8 +342,9 @@ pub enum Interpolation {
 /// `{ "frame": 1, "offset": [0, -2] }` rather than nesting a `transform`
 /// object around two numbers. The *type* keeps the concept; the file keeps the
 /// diff readable.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "character.ts")]
 pub struct Keyframe {
     /// Which frame of the animation this value is written at, `0`-based.
     pub frame: u32,
@@ -364,8 +370,9 @@ fn is_step(interpolation: &Interpolation) -> bool {
 ///
 /// `frame` is therefore the one key a pose may not use; serde reads it as the
 /// frame number.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "character.ts")]
 pub struct PoseKey {
     /// Which frame of the animation these values are set at, `0`-based.
     pub frame: u32,
@@ -375,8 +382,9 @@ pub struct PoseKey {
 }
 
 /// Everything one node does over the course of an animation.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "character.ts")]
 pub struct AnimationTrack {
     /// Id of the layer this track drives.
     pub node: String,
@@ -461,19 +469,21 @@ impl AnimationTrack {
 }
 
 /// A named movement a character can play.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "character.ts")]
 pub struct Animation {
     /// Stable id, unique within the definition — `idle`, `walk`, `attack`.
     pub id: String,
     /// Name shown in the editor. Not player-facing text, so not a key.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
     /// Gameplay situation this animation illustrates.
     ///
     /// Optional because animations may exist only for a portrait, cutscene or
     /// editor preview. Gameplay selects this field and never interprets the id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub role: Option<AnimationRole>,
     /// Id of the animation this one is the **mirror image** of.
     ///
@@ -486,18 +496,22 @@ pub struct Animation {
     /// A mirror of a mirror is refused (`character.chainedMirror`), which is
     /// what keeps this one hop rather than a chain to walk.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub mirror_of: Option<String>,
     /// How many frames long it is, `1..=`[`MAX_ANIMATION_FRAMES`].
     ///
     /// Defaulted rather than required, because a mirror declares no timing of
     /// its own — it borrows its source's.
-    #[serde(default = "default_frames")]
+    #[serde(default = "default_frames", skip_serializing_if = "is_default_frames")]
     pub frames: u32,
     /// How long each frame lasts, in milliseconds.
-    #[serde(default = "default_frame_duration")]
+    #[serde(
+        default = "default_frame_duration",
+        skip_serializing_if = "is_default_frame_duration"
+    )]
     pub frame_duration_ms: u32,
     /// Whether it starts again when it ends.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "crate::is_default")]
     pub looping: bool,
     /// Pose values that hold for the **whole** animation.
     ///
@@ -505,6 +519,7 @@ pub struct Animation {
     /// `{ "view": "side" }`, and every layer with a side-on drawing says so
     /// once, in the `when` of one variant, rather than once per frame.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[ts(as = "BTreeMap<String, crate::settings::SettingValue>")]
     pub pose: BTreeMap<String, Value>,
     /// Pose values set frame by frame, laid over [`Self::pose`].
     ///
@@ -516,12 +531,22 @@ pub struct Animation {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub poses: Vec<PoseKey>,
     /// What moves, and when. A node with no track follows its parent.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tracks: Vec<AnimationTrack>,
+}
+
+/// `true` when a track runs at the duration an absent key would have meant.
+fn is_default_frame_duration(value: &u32) -> bool {
+    *value == default_frame_duration()
 }
 
 const fn default_frame_duration() -> u32 {
     DEFAULT_FRAME_DURATION_MS
+}
+
+/// `true` when an animation is the single frame an absent key would have meant.
+fn is_default_frames(value: &u32) -> bool {
+    *value == default_frames()
 }
 
 const fn default_frames() -> u32 {

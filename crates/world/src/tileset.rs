@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::tile_art::{TileArt, TileArtGeometry};
+use ts_rs::TS;
 
 /// Highest tile-set schema version this build understands.
 ///
@@ -28,21 +29,22 @@ use crate::tile_art::{TileArt, TileArtGeometry};
 pub const TILE_SET_SCHEMA_VERSION: u32 = 3;
 
 /// A palette of authored tiles.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "tile-set.ts")]
 pub struct TileSetDefinition {
     /// Stable content id, referenced by [`crate::WorldDefinition::tile_set_id`].
     pub id: String,
     /// Schema version of this file.
     pub schema_version: u32,
     /// Human readable name shown in the editor.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
     /// The pixel grid every image in this set is authored on.
     ///
     /// One grid per set rather than per tile: tiles sit next to each other on
     /// the same map, so two tiles drawn at two sizes cannot both be right.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "crate::is_default")]
     pub art: TileArtGeometry,
     /// The tiles available in this palette.
     #[serde(default)]
@@ -61,13 +63,14 @@ impl TileSetDefinition {
 ///
 /// Placed map cells are [`crate::PlacedTile`] and only carry a position plus a
 /// reference to one of these ids.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "tile-set.ts")]
 pub struct TileDefinition {
     /// Stable id, e.g. `"grass"`.
     pub id: String,
     /// Human readable name shown in the editor palette.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
     /// Terrain family this tile belongs to, e.g. `"water"`.
     ///
@@ -81,7 +84,7 @@ pub struct TileDefinition {
     /// the engine for future pathfinding.
     pub movement_cost: u32,
     /// Free-form gameplay tags.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
     /// How this tile should be drawn.
     pub visual: TileVisual,
@@ -115,8 +118,9 @@ impl TileDefinition {
 /// sprite registry. `fallback_color` exists so the MVP can ship without an asset
 /// pipeline, and stays useful later as the colour drawn while a texture loads or
 /// at low levels of detail.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "tile-set.ts")]
 pub struct TileVisual {
     /// Stable visual id resolved by the renderer, e.g. `"terrain.grass"`.
     pub visual_id: String,

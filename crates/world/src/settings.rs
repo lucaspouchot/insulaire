@@ -22,6 +22,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use ts_rs::TS;
 
 /// Highest settings schema version this build understands.
 ///
@@ -30,8 +31,9 @@ use serde_json::Value;
 pub const SETTINGS_SCHEMA_VERSION: u32 = 2;
 
 /// How a setting is presented, and therefore what values it accepts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "settings.ts")]
 pub enum ControlKind {
     /// On/off, rendered as a switch. Boolean.
     Toggle,
@@ -80,8 +82,9 @@ impl ControlKind {
 }
 
 /// When a setting may be changed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "settings.ts")]
 pub enum SettingScope {
     /// Applies immediately and may change at any time — a volume, a text speed.
     #[default]
@@ -91,8 +94,9 @@ pub enum SettingScope {
 }
 
 /// One choice offered by a `select` or `multiSelect`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "settings.ts")]
 pub struct ControlOption {
     /// The stored value.
     pub value: String,
@@ -101,50 +105,80 @@ pub struct ControlOption {
 }
 
 /// Shows a field only when another one holds a given value.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "settings.ts")]
 pub struct ShowIf {
     /// Id of the field to look at.
     pub field: String,
     /// The value it must hold.
+    #[ts(as = "SettingValue")]
     pub equals: Value,
 }
 
+/// The four shapes an authored value may take.
+///
+/// Rust keeps these as `serde_json::Value`, because *what is valid* is a
+/// question for [`crate::validate_settings`] and its error messages, not for
+/// the parser (`docs/adr/ADR-0012-shared-content-validation.md`). This enum
+/// exists so that *what is representable* is declared once here rather than
+/// retyped in TypeScript: the fields it stands in for carry `#[ts(as =
+/// "SettingValue")]`, and the editor's narrower view is generated from it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(untagged)]
+#[ts(export, export_to = "settings.ts")]
+pub enum SettingValue {
+    /// A toggle.
+    Flag(bool),
+    /// A number, whether a slider's or a stepper's.
+    Number(f64),
+    /// Text, an id, or a chosen option's value.
+    Text(String),
+    /// The values a multi-select holds.
+    List(Vec<String>),
+}
+
 /// One setting: what it is called, how it is shown, and what it accepts.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "settings.ts")]
 pub struct ControlDefinition {
     /// Stable id; the key its value is stored under.
     pub id: String,
     /// Key of its label.
     pub label_key: String,
     /// Key of the sentence under it.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub help_key: String,
     /// How it is presented.
     pub control: ControlKind,
     /// The value used until the player changes it.
+    #[ts(as = "SettingValue")]
     pub default: Value,
     /// Choices, for `select` and `multiSelect`.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub options: Vec<ControlOption>,
     /// Lower bound, for numeric controls.
     #[serde(default)]
+    #[ts(optional = nullable)]
     pub min: Option<f64>,
     /// Upper bound, for numeric controls.
     #[serde(default)]
+    #[ts(optional = nullable)]
     pub max: Option<f64>,
     /// Step, for numeric controls.
     #[serde(default)]
+    #[ts(optional = nullable)]
     pub step: Option<f64>,
     /// Unit shown next to the value, e.g. `%`. Displayed as written.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub unit: String,
     /// When it may be changed.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "crate::is_default")]
     pub scope: SettingScope,
     /// Condition on another field.
     #[serde(default)]
+    #[ts(optional = nullable)]
     pub show_if: Option<ShowIf>,
 }
 
@@ -224,8 +258,9 @@ fn is_keyboard_code(code: &str) -> bool {
 }
 
 /// A group of related settings inside a section.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "settings.ts")]
 pub struct SettingsGroup {
     /// Stable id.
     pub id: String,
@@ -237,8 +272,9 @@ pub struct SettingsGroup {
 }
 
 /// One tab of the settings screen.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "settings.ts")]
 pub struct SettingsSection {
     /// Stable id.
     pub id: String,
@@ -250,8 +286,9 @@ pub struct SettingsSection {
 }
 
 /// The settings a project declares.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "settings.ts")]
 pub struct SettingsDefinition {
     /// Stable content id.
     pub id: String,

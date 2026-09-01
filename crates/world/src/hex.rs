@@ -39,6 +39,7 @@
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 /// The six neighbour directions of a pointy-top hexagon, in **canonical
 /// order**.
@@ -227,7 +228,8 @@ impl From<OffsetCoord> for Hex {
 ///
 /// Serialises as a two-element array `[col, row]`, which keeps authored world
 /// files compact and produces readable line-oriented Git diffs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, TS)]
+#[ts(export, export_to = "shared.ts", type = "[number, number]")]
 pub struct OffsetCoord {
     /// Column index; increases to the right.
     pub col: i32,

@@ -40,6 +40,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::animation::{flipbook_duration_ms, flipbook_index_at, DEFAULT_FRAME_DURATION_MS};
 use crate::character::SpriteResolution;
+use ts_rs::TS;
 
 /// Highest object schema version this build understands.
 ///
@@ -65,9 +66,10 @@ pub const DEFAULT_ICON_RESOLUTION: SpriteResolution = SpriteResolution {
 /// what a consumable does when consumed is scenario content, not a branch in
 /// this crate.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize,
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize, TS,
 )]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "object.ts")]
 pub enum ObjectKind {
     /// Used up: a potion, a ration, a bandage.
     Consumable,
@@ -86,59 +88,81 @@ pub enum ObjectKind {
 ///
 /// Mirrors the TypeScript `ObjectDefinition` in
 /// `apps/web/src/content/content-types.ts`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "object.ts")]
 pub struct ObjectDefinition {
     /// Stable content id, referenced by inventories and by the scenario.
     pub id: String,
     /// Schema version of this file.
     pub schema_version: u32,
     /// Shown in the editor. Not player-facing, so not a key.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
     /// How this definition is filed.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "crate::is_default")]
     pub kind: ObjectKind,
     /// Key of the name a player reads.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name_key: String,
     /// Key of the description a player reads. Empty when it has none.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub description_key: String,
     /// The images of the icon, in play order. Paths under the content root.
     ///
     /// One frame is a still icon. Empty is an object blocked out before its art
     /// exists, which is a warning and not a refusal.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub frames: Vec<String>,
     /// How long each frame lasts, in milliseconds. Unread by a still icon.
-    #[serde(default = "default_frame_duration")]
+    #[serde(
+        default = "default_frame_duration",
+        skip_serializing_if = "is_default_frame_duration"
+    )]
     pub frame_duration_ms: u32,
     /// Whether it starts again when it ends. A glinting gem does; a one-shot
     /// flourish holds its last frame.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "crate::is_default")]
     pub looping: bool,
     /// The canvas every frame is drawn on.
-    #[serde(default = "default_icon_resolution")]
+    #[serde(
+        default = "default_icon_resolution",
+        skip_serializing_if = "is_default_icon_resolution"
+    )]
     pub resolution: SpriteResolution,
     /// How many fit in one inventory slot. `1` means it does not stack.
-    #[serde(default = "one")]
+    #[serde(default = "one", skip_serializing_if = "is_one")]
     pub stack_size: u32,
     /// Where equipment is worn — an author-owned id such as `head` or
     /// `mainHand`. Empty for anything that is not worn.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub slot: String,
     /// Author-owned gameplay tags, as everywhere else in the format.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
+}
+
+/// `true` when an icon is drawn on the canvas an absent key would have meant.
+fn is_default_icon_resolution(value: &SpriteResolution) -> bool {
+    *value == default_icon_resolution()
 }
 
 fn default_icon_resolution() -> SpriteResolution {
     DEFAULT_ICON_RESOLUTION
 }
 
+/// `true` when an icon runs at the duration an absent key would have meant.
+fn is_default_frame_duration(value: &u32) -> bool {
+    *value == default_frame_duration()
+}
+
 const fn default_frame_duration() -> u32 {
     DEFAULT_FRAME_DURATION_MS
+}
+
+/// `true` when a stack holds the single item an absent key would have meant.
+fn is_one(value: &u32) -> bool {
+    *value == one()
 }
 
 const fn one() -> u32 {
@@ -236,8 +260,9 @@ impl ObjectDefinition {
 ///
 /// Flat on purpose: an inventory panel should not have to redo the frame
 /// arithmetic to draw a glinting gem.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "object.ts")]
 pub struct ResolvedObject {
     /// Id of the definition this came from.
     pub id: String,

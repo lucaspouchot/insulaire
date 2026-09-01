@@ -72,6 +72,7 @@ use serde_json::Value;
 
 use crate::animation::{Animation, AnimationRole, PixelOffset, Transform};
 use crate::settings::{resolve_controls, ControlDefinition};
+use ts_rs::TS;
 
 /// Highest character schema version this build understands.
 ///
@@ -104,9 +105,10 @@ pub const UNRESOLVED_COLOR: &str = "#ff00ff";
 /// feature can ask a project for "its playable characters" without a naming
 /// convention.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize,
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize, TS,
 )]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "character.ts")]
 pub enum CharacterCategory {
     /// A character a human plays.
     Player,
@@ -125,8 +127,9 @@ pub enum CharacterCategory {
 ///
 /// Every [`PixelRect`] in the definition is a position on *this* grid, so the
 /// renderer knows how big the character is without loading a single image.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "shared.ts")]
 pub struct SpriteResolution {
     /// Canvas width in pixels, `1..=`[`MAX_SPRITE_RESOLUTION`].
     pub width: u32,
@@ -164,7 +167,8 @@ impl Default for SpriteResolution {
 /// they are always **whole pixels**, which is the point: the renderer blits
 /// this at an integer zoom, so a sprite lands on the pixel grid it was drawn
 /// on.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "shared.ts")]
 pub struct PixelRect(pub [i32; 4]);
 
 impl PixelRect {
@@ -231,8 +235,9 @@ impl Default for PixelRect {
 /// The second case is what makes "hair colour" a *choice* rather than one
 /// image per colour: a single greyscale sprite is recoloured by the value the
 /// customisation holds.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "character.ts")]
 pub enum ColorSource {
     /// A CSS colour written in the file.
     Fixed(String),
@@ -256,19 +261,22 @@ impl ColorSource {
 }
 
 /// The image a layer draws, and how it is recoloured.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "character.ts")]
 pub struct Sprite {
     /// Path under the content root, e.g. `assets/characters/hair_long.png`.
     pub asset: String,
     /// Recolouring, fixed or read off a parameter. Absent draws it as authored.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub tint: Option<ColorSource>,
 }
 
 /// One appearance a layer can take, and the choices it answers to.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "character.ts")]
 pub struct LayerVariant {
     /// Stable id, unique within its layer.
     pub id: String,
@@ -278,6 +286,7 @@ pub struct LayerVariant {
     /// list matches a scalar it *contains*, which is how one variant answers
     /// "wearing a helmet" without enumerating every other piece of equipment.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[ts(as = "BTreeMap<String, crate::settings::SettingValue>")]
     pub when: BTreeMap<String, Value>,
     /// Where it is drawn, **relative to the point its layer hangs off**.
     ///
@@ -285,7 +294,7 @@ pub struct LayerVariant {
     /// so a sprite drawn to sit on that joint is `[0, 0, width, height]`; a
     /// root measures from the canvas origin, because it hangs off nothing
     /// (`docs/adr/ADR-0024-character-definitions.md`).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "crate::is_default")]
     pub rect: PixelRect,
     /// Where this variant is drawn in the stack, overriding the author order.
     ///
@@ -345,8 +354,9 @@ fn holds(held: &Value, required: &Value) -> bool {
 /// lets the editor draw the skeleton through the joints rather than through the
 /// corners of boxes, and it is the pivot a rotation will turn about the day
 /// there is one.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "character.ts")]
 pub struct AttachmentPoint {
     /// Stable id, unique within its layer.
     pub id: String,
@@ -364,17 +374,20 @@ pub struct AttachmentPoint {
 /// A layer is also a **node**: [`Self::parent`] makes it hang off another one,
 /// and an animation's offsets compose down that tree. Parentage and draw order
 /// are independent — a cape is drawn behind the body and still moves with it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "character.ts")]
 pub struct CharacterLayer {
     /// Stable id, unique within the definition.
     pub id: String,
     /// Id of the layer this one hangs off. Absent makes it a root.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub parent: Option<String>,
     /// Which of the parent's [`Self::anchors`] it hangs off, and is **placed
     /// from**. Absent measures from the parent's own origin.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub parent_anchor: Option<String>,
     /// Points other layers may hang off.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -409,30 +422,31 @@ impl CharacterLayer {
 }
 
 /// How a kind of character can be drawn, and what may be chosen about it.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "character.ts")]
 pub struct CharacterDefinition {
     /// Stable content id.
     pub id: String,
     /// Schema version of this file.
     pub schema_version: u32,
     /// Name shown in the editor. Not player-facing text, so not a key.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
     /// What the definition is used for. Never read by the resolver.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "crate::is_default")]
     pub category: CharacterCategory,
     /// The canvas its sprites are authored on.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "crate::is_default")]
     pub resolution: SpriteResolution,
     /// The choices this definition offers, in author order.
     ///
     /// A definition may offer none — a skeleton that always looks the same is
     /// a list of layers and nothing else.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub parameters: Vec<ControlDefinition>,
     /// The pieces it is drawn from, back to front.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub layers: Vec<CharacterLayer>,
     /// The movements it can play. A definition may declare none, and a still
     /// character is what one with none resolves to.
@@ -722,7 +736,8 @@ impl CharacterDefinition {
 }
 
 /// Where a node's local coordinate frame ended up.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, TS)]
+#[ts(export, export_to = "character.ts")]
 pub struct Placement {
     /// The frame's position on the canvas, animation included. A layer's box
     /// and its anchors are both measured from here.
@@ -733,8 +748,9 @@ pub struct Placement {
 }
 
 /// One layer of a resolved character, ready to draw.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "character.ts")]
 pub struct ResolvedLayer {
     /// Id of the layer it came from.
     pub layer: String,
@@ -767,8 +783,9 @@ pub struct ResolvedLayer {
 /// Absent on a rest pose. It is carried so a payload says what it is —
 /// a frame captured out of a preview and one captured out of a game are
 /// comparable, which is the point of both going through the same resolver.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "character.ts")]
 pub struct ResolvedPose {
     /// Id of the animation that was playing.
     pub animation: String,
@@ -784,6 +801,7 @@ pub struct ResolvedPose {
     /// The pose values in force at that moment, which is what chose the
     /// variants. Empty when the animation sets none.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[ts(as = "BTreeMap<String, crate::settings::SettingValue>")]
     pub values: BTreeMap<String, Value>,
 }
 
@@ -792,8 +810,9 @@ pub struct ResolvedPose {
 /// The renderer needs nothing else — no definition, no customisation, no
 /// lookup. That is what lets the same struct feed the editor's preview, a map
 /// token and a portrait.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "character.ts")]
 pub struct ResolvedCharacter {
     /// Id of the definition it came from.
     pub character: String,
@@ -802,6 +821,7 @@ pub struct ResolvedCharacter {
     /// The canvas the layer boxes are positions on.
     pub resolution: SpriteResolution,
     /// The customisation actually applied, defaults filled in.
+    #[ts(as = "BTreeMap<String, crate::settings::SettingValue>")]
     pub values: BTreeMap<String, Value>,
     /// What to draw, back to front.
     pub layers: Vec<ResolvedLayer>,
@@ -815,6 +835,7 @@ pub struct ResolvedCharacter {
     pub mirrored: bool,
     /// The animation and moment this pose came from. Absent is the rest pose.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub pose: Option<ResolvedPose>,
 }
 

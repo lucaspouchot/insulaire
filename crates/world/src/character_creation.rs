@@ -14,13 +14,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::settings::{resolve_controls, ControlDefinition};
+use ts_rs::TS;
 
 /// Highest character-creation schema version this build understands.
 pub const CHARACTER_CREATION_SCHEMA_VERSION: u32 = 1;
 
 /// What one creation choice changes in the resolved character.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", rename_all = "camelCase")]
+#[ts(export, export_to = "character-creation.ts")]
 pub enum CreationBinding {
     /// The chosen value is the id of a character definition.
     Character,
@@ -37,8 +39,9 @@ pub enum CreationBinding {
 /// is a `select`, eye colour may be a `color`, and height may be a `slider`.
 /// `scope` has no meaning here and is ignored, as it is for character
 /// parameters.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "character-creation.ts")]
 pub struct CreationChoice {
     /// The control shown to the player and the values it accepts.
     #[serde(flatten)]
@@ -52,20 +55,22 @@ pub struct CreationChoice {
 /// A characteristic uses the same scalar vocabulary as every other authored
 /// control. Absent numeric bounds mean infinity in that direction; `nullable`
 /// permits `null` as the default and as a resolved value.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "character-creation.ts")]
 pub struct CharacteristicDefinition {
     /// The control and its default, enum options or numeric bounds.
     #[serde(flatten)]
     pub field: ControlDefinition,
     /// Whether the characteristic may hold JSON `null`.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "crate::is_default")]
     pub nullable: bool,
 }
 
 /// Animation used when moving from one creation screen to the next.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "character-creation.ts")]
 pub enum ScreenTransition {
     /// Replace the screen immediately.
     #[default]
@@ -79,8 +84,9 @@ pub enum ScreenTransition {
 }
 
 /// One item placed on a creation screen, in display order.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "camelCase")]
+#[ts(export, export_to = "character-creation.ts")]
 pub enum CreationBlock {
     /// A paragraph of localised text.
     Text {
@@ -105,6 +111,7 @@ pub enum CreationBlock {
         animation: String,
         /// Values used only while drawing this preview.
         #[serde(default)]
+        #[ts(as = "BTreeMap<String, crate::settings::SettingValue>")]
         parameters: BTreeMap<String, Value>,
     },
     /// A read-only recap of the values already chosen.
@@ -112,57 +119,66 @@ pub enum CreationBlock {
 }
 
 /// One page of the player-facing creation workflow.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "character-creation.ts")]
 pub struct CreationScreen {
     /// Stable id, used by authoring tools.
     pub id: String,
     /// Key of the screen heading.
     pub title_key: String,
     /// Key of the optional introduction below the heading.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub text_key: String,
     /// How the screen appears after the previous one.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "crate::is_default")]
     pub transition: ScreenTransition,
     /// What the screen contains, in display order.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub blocks: Vec<CreationBlock>,
 }
 
 /// The generic result of resolving a creation form.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "character-creation.ts")]
 pub struct CharacterCreationResult {
     /// Character definition chosen by the form.
     pub character: String,
     /// Active creation values, after defaults and conditions.
+    #[ts(as = "BTreeMap<String, crate::settings::SettingValue>")]
     pub choices: BTreeMap<String, Value>,
     /// Values forwarded to `CharacterDefinition.parameters`.
+    #[ts(as = "BTreeMap<String, crate::settings::SettingValue>")]
     pub parameters: BTreeMap<String, Value>,
     /// Values stored on the player independently of appearance.
+    ///
+    /// `null` where a characteristic declares itself [`CharacteristicDefinition::nullable`];
+    /// whether that is *allowed* is the validator's answer, not this type's.
+    #[ts(as = "BTreeMap<String, Option<crate::settings::SettingValue>>")]
     pub characteristics: BTreeMap<String, Value>,
 }
 
 /// The authored declaration behind a character-creation workflow.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "character-creation.ts")]
 pub struct CharacterCreationDefinition {
     /// Stable content id.
     pub id: String,
     /// Schema version of this file.
     pub schema_version: u32,
     /// Character definition used until a choice targets `character`.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub base_character: String,
     /// Appearance choices, in dependency and display order.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub choices: Vec<CreationChoice>,
     /// Player characteristics, in author order.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub characteristics: Vec<CharacteristicDefinition>,
     /// Player-facing screens, in traversal order.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub screens: Vec<CreationScreen>,
 }
 

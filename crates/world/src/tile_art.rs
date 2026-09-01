@@ -68,6 +68,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::definition::ProjectionMode;
+use ts_rs::TS;
 
 /// Authored width of a tile image when a tile set declares no geometry.
 pub const DEFAULT_TILE_WIDTH: u32 = 32;
@@ -148,8 +149,9 @@ pub const MAX_STACKED_LEVELS: u32 = 64;
 ///     the tilted top face      the two side faces       the hexagon itself,
 ///     (isometric worlds)       (isometric worlds)       untilted (top-down)
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "tile-set.ts")]
 pub struct TileArtGeometry {
     /// Width of every image in the set, in authored pixels.
     pub width: u32,
@@ -235,8 +237,9 @@ impl TileArtGeometry {
 /// Which one a cell gets is decided by [`variant_roll`], never by chance at
 /// draw time: a tile keeps the same face from frame to frame and from session
 /// to session.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "tile-set.ts")]
 pub struct TileArtVariant {
     /// Stable id, unique within the surface or level that declares it.
     pub id: String,
@@ -245,8 +248,9 @@ pub struct TileArtVariant {
 }
 
 /// One authored step of relief: the images that may draw it.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "tile-set.ts")]
 pub struct ElevationLevel {
     /// Display name for the editor; the level's number when empty.
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -261,8 +265,9 @@ pub struct ElevationLevel {
 /// Absent — `None` on [`TileElevation::repeat`] — reuses the highest explicit
 /// level, which is the answer that needs no authoring and is right most of the
 /// time.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "tile-set.ts")]
 pub enum ElevationRepeat {
     /// Every level above the explicit ones reuses this one, 1-based.
     Level(u32),
@@ -273,14 +278,16 @@ pub enum ElevationRepeat {
 }
 
 /// A tile's ladder of relief.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "tile-set.ts")]
 pub struct TileElevation {
     /// Explicit levels; index `i` is level `i + 1`. Level `0` is the surface.
     #[serde(default)]
     pub levels: Vec<ElevationLevel>,
     /// What draws levels above the last explicit one; absent repeats the last.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub repeat: Option<ElevationRepeat>,
 }
 
@@ -353,8 +360,9 @@ impl TileElevation {
 /// view, both, or neither — whatever a projection finds nothing for is drawn in
 /// the tile's `fallbackColor`
 /// (`docs/adr/ADR-0026-tile-art-is-authored-and-resolved-by-level.md`).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "tile-set.ts")]
 pub struct TileArt {
     /// Images for the untilted hexagon, one per variant. Top-down worlds only.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

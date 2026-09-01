@@ -11,6 +11,7 @@
 //! by the same Rust validator the runtime uses (ADR-0002, ADR-0012).
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 /// Highest project schema version this build understands.
 pub const PROJECT_SCHEMA_VERSION: u32 = 1;
@@ -27,19 +28,21 @@ pub const DEFAULT_ZONE_ID: &str = "default";
 /// zone, not only the map the player stands on, so two maps in a zone share a
 /// clock while a map in another zone does not
 /// (`docs/adr/ADR-0018-map-zones.md`). Every map belongs to exactly one.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "project.ts")]
 pub struct ZoneDefinition {
     /// Stable id, referenced by `WorldDefinition::zone`.
     pub id: String,
     /// Human readable name; defaults to the id in the editor.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
 }
 
 /// One content file the project ships.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "project.ts")]
 pub struct ContentRef {
     /// Id of the content in the file — its `id` field.
     pub id: String,
@@ -53,29 +56,31 @@ pub struct ContentRef {
 /// registered as `menu` provides the keys under `menu.` — so the same key
 /// exists in every language, and a translator works on one area at a time
 /// (`docs/adr/ADR-0020-localised-content-keys.md`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "project.ts")]
 pub struct LanguageDefinition {
     /// Stable id, ideally a BCP 47 tag: `fr`, `en`, `pt-BR`.
     pub id: String,
     /// Name shown in the language picker, in that language.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
     /// Locale files, by namespace.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub files: Vec<ContentRef>,
 }
 
 /// The languages a project ships, and which one stands in for the others.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "project.ts")]
 pub struct LocalesDefinition {
     /// Id of the language a missing translation falls back to. Empty means the
     /// first declared.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub default: String,
     /// Every language, in author order.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub languages: Vec<LanguageDefinition>,
 }
 
@@ -106,15 +111,16 @@ impl LocalesDefinition {
 }
 
 /// The set of content files that make up one game, and where it starts.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "project.ts")]
 pub struct ProjectDefinition {
     /// Stable content id.
     pub id: String,
     /// Schema version of this file.
     pub schema_version: u32,
     /// Human readable name; shown by the client build.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
     /// Id of the world a new session starts on.
     pub start_world: String,
@@ -122,7 +128,7 @@ pub struct ProjectDefinition {
     ///
     /// The **first is the default**: a world naming no zone belongs to it. An
     /// empty list means the single implicit [`DEFAULT_ZONE_ID`] zone.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub zones: Vec<ZoneDefinition>,
     /// Tile sets to load, in order.
     #[serde(default)]
@@ -136,19 +142,19 @@ pub struct ProjectDefinition {
     /// A project may ship none: characters describe how an entity is *drawn*,
     /// and a map of coloured tokens needs no definition
     /// (`docs/adr/ADR-0024-character-definitions.md`).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub characters: Vec<ContentRef>,
     /// Decoration definitions to load, in order.
     ///
     /// A project may ship none: a map of bare terrain needs no props
     /// (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub decorations: Vec<ContentRef>,
     /// Object definitions to load, in order.
     ///
     /// A project may ship none: a game with no inventory carries nothing
     /// (`docs/adr/ADR-0036-an-object-is-carried-not-placed.md`).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub objects: Vec<ContentRef>,
     /// The player-facing character-creation workflow, if this game has one.
     ///
@@ -156,9 +162,10 @@ pub struct ProjectDefinition {
     /// gender are author-owned ids, never fields of the engine
     /// (`docs/adr/ADR-0029-character-creation-is-a-generic-authored-workflow.md`).
     #[serde(default)]
+    #[ts(optional = nullable)]
     pub character_creation: Option<ContentRef>,
     /// The languages the game is available in, and their locale files.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "crate::is_default")]
     pub locales: LocalesDefinition,
     /// The title screen a client opens on, if the project authors one.
     ///
@@ -166,6 +173,7 @@ pub struct ProjectDefinition {
     /// what development wants and what a delivery should not do
     /// (`docs/adr/ADR-0021-authored-title-screen.md`).
     #[serde(default)]
+    #[ts(optional = nullable)]
     pub title_screen: Option<ContentRef>,
     /// The settings this game offers, if it declares any.
     ///
@@ -173,6 +181,7 @@ pub struct ProjectDefinition {
     /// not here: they configure the shell, not the game
     /// (`docs/adr/ADR-0022-settings.md`).
     #[serde(default)]
+    #[ts(optional = nullable)]
     pub settings: Option<ContentRef>,
 }
 

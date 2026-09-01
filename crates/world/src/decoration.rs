@@ -57,6 +57,7 @@ use crate::animation::{
     flipbook_duration_ms, flipbook_index_at, PixelOffset, DEFAULT_FRAME_DURATION_MS,
 };
 use crate::character::SpriteResolution;
+use ts_rs::TS;
 
 /// Highest decoration schema version this build understands.
 ///
@@ -84,9 +85,10 @@ pub const DEFAULT_DECORATION_RESOLUTION: SpriteResolution = SpriteResolution {
 /// ask for without a naming convention — exactly the role
 /// [`crate::CharacterCategory`] plays for characters.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize,
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize, TS,
 )]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "decoration.ts")]
 pub enum DecorationCategory {
     /// Grown or geological: a tree, a rock, a bush.
     Nature,
@@ -107,9 +109,10 @@ pub enum DecorationCategory {
 /// this is the one thing a combined ordering cannot say
 /// (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize,
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize, TS,
 )]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "decoration.ts")]
 pub enum DecorationPlane {
     /// Drawn before the characters: the ground the feet cover.
     #[default]
@@ -123,23 +126,32 @@ pub enum DecorationPlane {
 /// Both an *animation* (a torch flickering) and a *state* (a chest that is
 /// open) are this: the second is simply one frame long, and the scenario asks
 /// for it by id.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "decoration.ts")]
 pub struct DecorationAnimation {
     /// Stable id, unique within the definition — `idle`, `open`, `burning`.
     pub id: String,
     /// Shown in the editor. Not player-facing, so not a key.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
     /// The images, in play order. Paths under the content root.
     #[serde(default)]
     pub frames: Vec<String>,
     /// How long each frame lasts, in milliseconds.
-    #[serde(default = "default_frame_duration")]
+    #[serde(
+        default = "default_frame_duration",
+        skip_serializing_if = "is_default_frame_duration"
+    )]
     pub frame_duration_ms: u32,
     /// Whether it starts again when it ends. A state does not; a flame does.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "crate::is_default")]
     pub looping: bool,
+}
+
+/// `true` when a flipbook runs at the duration an absent key would have meant.
+fn is_default_frame_duration(value: &u32) -> bool {
+    *value == default_frame_duration()
 }
 
 const fn default_frame_duration() -> u32 {
@@ -192,22 +204,26 @@ impl DecorationAnimation {
 ///
 /// Mirrors the TypeScript `DecorationDefinition` in
 /// `apps/web/src/content/content-types.ts`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "decoration.ts")]
 pub struct DecorationDefinition {
     /// Stable content id, referenced by a placed decoration.
     pub id: String,
     /// Schema version of this file.
     pub schema_version: u32,
     /// Shown in the editor. Not player-facing, so not a key.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
     /// How this definition is filed.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "crate::is_default")]
     pub category: DecorationCategory,
     /// The canvas every frame is drawn on, at most
     /// [`crate::MAX_SPRITE_RESOLUTION`] a side.
-    #[serde(default = "default_resolution")]
+    #[serde(
+        default = "default_resolution",
+        skip_serializing_if = "is_default_resolution"
+    )]
     pub resolution: SpriteResolution,
     /// The pixel of that canvas which lands on the cell's ground point.
     ///
@@ -215,26 +231,31 @@ pub struct DecorationDefinition {
     /// knowledge of the image. It is rarely what an author wants — a thing
     /// standing on the ground anchors at its bottom middle — so the editor
     /// puts a new decoration's anchor there rather than leaving it at `[0, 0]`.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "crate::is_default")]
     pub anchor: PixelOffset,
     /// Whether characters on the same cell pass in front of it or behind it.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "crate::is_default")]
     pub plane: DecorationPlane,
     /// Sort key within [`Self::plane`]; higher is drawn later, so over.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "crate::is_default")]
     pub order: i32,
     /// Author-owned gameplay tags, as everywhere else in the format.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
     /// The appearances it can play, in author order. The first is the default.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub animations: Vec<DecorationAnimation>,
     /// Id of the animation played when nothing else is asked for.
     ///
     /// Empty names the first declared, which is what nearly every decoration
     /// means.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub default_animation: String,
+}
+
+/// `true` when a decoration is drawn on the canvas an absent key would have meant.
+fn is_default_resolution(value: &SpriteResolution) -> bool {
+    *value == default_resolution()
 }
 
 fn default_resolution() -> SpriteResolution {
@@ -333,8 +354,9 @@ impl DecorationDefinition {
 ///
 /// Flat on purpose: a host should not have to redo the frame arithmetic or the
 /// anchor subtraction to place a tree.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "decoration.ts")]
 pub struct ResolvedDecoration {
     /// Id of the definition this came from.
     pub id: String,

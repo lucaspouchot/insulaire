@@ -48,7 +48,24 @@ pub mod template;
 pub mod tile_art;
 pub mod tileset;
 pub mod title_screen;
+// The mirror's generators, and the table that keeps them honest. Test-only:
+// `export_bindings_*` and `export_boundary_values` are how it runs, and nothing
+// in a shipped build has anything to ask it.
+#[cfg(test)]
+mod ts_export;
 pub mod validation;
+
+/// `true` when a value is exactly what an absent key would have meant.
+///
+/// The `skip_serializing_if` half of `#[serde(default)]`: together they say
+/// that a key carrying the default is the same file as one without it, which
+/// is what lets the generated TypeScript mark the field optional
+/// (`docs/adr/ADR-0012-shared-content-validation.md`). Whether an absent value
+/// is *acceptable* stays with the validator, which is why this is spelled on
+/// the field rather than in the schema.
+pub(crate) fn is_default<T: Default + PartialEq>(value: &T) -> bool {
+    value == &T::default()
+}
 
 #[cfg(feature = "testing")]
 pub mod testing;
@@ -84,8 +101,9 @@ pub use definition::{
     RevealStyle, WorldDefinition, WorldMetadata, DEFAULT_CHARACTER_HEIGHT_TILES,
     DEFAULT_GRID_ALPHA, DEFAULT_GRID_COLOR, DEFAULT_GRID_LINE_WIDTH,
     DEFAULT_REVEAL_NEIGHBOUR_OPACITY, DEFAULT_REVEAL_OPACITY, DEFAULT_REVEAL_RADIUS,
-    MAX_CHARACTER_HEIGHT_TILES, MAX_ELEVATION, MAX_GRID_LINE_WIDTH, MAX_REVEAL_RADIUS,
-    MIN_CHARACTER_HEIGHT_TILES, MIN_ELEVATION, MIN_GRID_LINE_WIDTH, WORLD_SCHEMA_VERSION,
+    MAX_CHARACTER_HEIGHT_TILES, MAX_DECORATION_OFFSET, MAX_ELEVATION, MAX_GRID_LINE_WIDTH,
+    MAX_REVEAL_RADIUS, MIN_CHARACTER_HEIGHT_TILES, MIN_ELEVATION, MIN_GRID_LINE_WIDTH,
+    WORLD_SCHEMA_VERSION,
 };
 pub use grid::{resolve_cell_art, CellArtChoice, GridError, ResolvedTile, WorldGrid};
 pub use hex::{Hex, HexDirection, MapBounds, OffsetCoord, DIRECTIONS};

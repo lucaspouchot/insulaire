@@ -16,6 +16,7 @@
 //! (`docs/adr/ADR-0020-localised-content-keys.md`).
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 /// Highest title screen schema version this build understands.
 pub const TITLE_SCREEN_SCHEMA_VERSION: u32 = 1;
@@ -24,8 +25,9 @@ pub const TITLE_SCREEN_SCHEMA_VERSION: u32 = 1;
 ///
 /// Closed on purpose: an action is something the application implements, so a
 /// new one is a code change and an ADR, not a content field.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "title-screen.ts")]
 pub enum TitleAction {
     /// Start a new game on the project's `startWorld`.
     NewGame,
@@ -40,21 +42,23 @@ pub enum TitleAction {
 }
 
 /// One button of the menu.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "title-screen.ts")]
 pub struct TitleButton {
     /// What pressing it does.
     pub action: TitleAction,
     /// Key of its label.
     pub label_key: String,
     /// Authored out of the menu without deleting it.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "crate::is_default")]
     pub hidden: bool,
 }
 
 /// How a background image fills the screen.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "title-screen.ts")]
 pub enum BackgroundFit {
     /// Fill the screen, cropping what does not fit.
     #[default]
@@ -66,8 +70,9 @@ pub enum BackgroundFit {
 }
 
 /// The image behind the menu.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "title-screen.ts")]
 pub struct TitleBackground {
     /// Path under the content root. Empty means a plain background.
     #[serde(default)]
@@ -81,8 +86,9 @@ pub struct TitleBackground {
 }
 
 /// The game's logo, drawn above the menu.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "title-screen.ts")]
 pub struct TitleLogo {
     /// Path under the content root.
     pub image: String,
@@ -96,8 +102,9 @@ const fn default_logo_width() -> u32 {
 }
 
 /// The image shown before the menu, once per launch.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "title-screen.ts")]
 pub struct TitleSplash {
     /// Path under the content root. Empty shows the title alone.
     #[serde(default)]
@@ -114,8 +121,9 @@ const fn default_true() -> bool {
 }
 
 /// The menu's music.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "title-screen.ts")]
 pub struct TitleMusic {
     /// Path under the content root.
     pub track: String,
@@ -135,8 +143,9 @@ const fn default_gain() -> f32 {
 }
 
 /// Colours the menu is drawn with. Every field is a CSS colour.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "title-screen.ts")]
 pub struct TitleTheme {
     /// Buttons and highlights.
     #[serde(default)]
@@ -153,8 +162,9 @@ pub struct TitleTheme {
 }
 
 /// Where the menu sits on screen.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "title-screen.ts")]
 pub enum TitleLayout {
     /// Against the left edge.
     #[default]
@@ -166,8 +176,9 @@ pub enum TitleLayout {
 }
 
 /// The authored title screen.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "title-screen.ts")]
 pub struct TitleScreenDefinition {
     /// Stable content id.
     pub id: String,
@@ -183,12 +194,15 @@ pub struct TitleScreenDefinition {
     pub background: TitleBackground,
     /// The logo above it, if any.
     #[serde(default)]
+    #[ts(optional = nullable)]
     pub logo: Option<TitleLogo>,
     /// The splash shown before it, if any.
     #[serde(default)]
+    #[ts(optional = nullable)]
     pub splash: Option<TitleSplash>,
     /// The music it plays, if any.
     #[serde(default)]
+    #[ts(optional = nullable)]
     pub music: Option<TitleMusic>,
     /// Colours and font.
     #[serde(default)]

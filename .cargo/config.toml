@@ -1,0 +1,8 @@
+# Where the `TS` derive writes the TypeScript mirror of the content definitions.
+#
+# `scripts/generate-content-types.mjs` overrides this with a temporary directory
+# and assembles the committed modules from what lands there; the default only
+# has to be somewhere `git` ignores, so that a bare `cargo test` cannot leave
+# half-rendered bindings in the working tree.
+[env]
+TS_RS_EXPORT_DIR = { value = "target/ts-bindings", relative = true }

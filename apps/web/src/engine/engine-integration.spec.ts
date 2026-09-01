@@ -792,7 +792,11 @@ describe.skipIf(!built)('engine boundary', () => {
 
     const definition = JSON.parse(instance.character('human_player')) as CharacterDefinition;
     expect(definition.category).toBe('player');
-    expect(definition.resolution).toEqual({ width: 64, height: 128 });
+    // A definition drawn on the canvas the schema defaults to writes no
+    // `resolution`, which is why the generated type marks the field optional.
+    // What the default *is* stays the engine's answer: `resolvedCharacter`
+    // below carries it.
+    expect(definition.resolution).toBeUndefined();
     expect(definition.parameters?.map((parameter) => parameter.id)).toEqual([
       'lineage',
       'gender',

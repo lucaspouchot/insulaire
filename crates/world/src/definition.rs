@@ -11,6 +11,7 @@ use serde_json::Value;
 
 use crate::animation::PixelOffset;
 use crate::hex::{MapBounds, OffsetCoord};
+use ts_rs::TS;
 
 /// Furthest a placed decoration may be nudged from its anchor, in either axis.
 ///
@@ -45,8 +46,9 @@ pub const WORLD_SCHEMA_VERSION: u32 = 6;
 /// Only [`HexOrientation::Pointy`] is implemented in the MVP; the enum exists so
 /// that flat-top support is a content-format addition rather than a breaking
 /// change.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "world.ts")]
 pub enum HexOrientation {
     /// Pointy-top hexagons with an odd-r offset layout.
     #[default]
@@ -60,8 +62,9 @@ pub enum HexOrientation {
 /// This is *presentation* carried by content: the simulation never reads it, and
 /// no rule may depend on it. The renderer turns it into an affine transform of
 /// world-space points (`docs/adr/ADR-0013-isometric-projection.md`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "world.ts")]
 pub enum ProjectionMode {
     /// Straight down: the hex plane is the drawing plane.
     #[default]
@@ -104,8 +107,9 @@ pub const DEFAULT_GRID_ALPHA: f32 = 0.25;
 ///
 /// Visibility remains a per-view toggle. These values define how the grid is
 /// drawn whenever it is visible; no simulation rule reads them.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "world.ts")]
 pub struct GridStyle {
     /// Stroke width in screen pixels, independent of camera zoom.
     #[serde(default = "default_grid_line_width")]
@@ -162,8 +166,9 @@ pub const DEFAULT_REVEAL_NEIGHBOUR_OPACITY: f32 = 0.55;
 /// see-through, since drawing the hex back over that relief puts it in front of
 /// the cliff it is behind (`docs/adr/ADR-0034-relief-never-hides-a-hex.md`).
 /// Presentation only; no simulation rule reads it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "world.ts")]
 pub struct RevealStyle {
     /// Hex rings around the pointed-at hex revealed with it; `0` reveals it alone.
     #[serde(default = "default_reveal_radius")]
@@ -200,8 +205,9 @@ impl RevealStyle {
 }
 
 /// Whether a cell is part of the map or a hole in it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "world.ts")]
 pub enum CellPresence {
     /// The map has this hex.
     #[default]
@@ -235,11 +241,12 @@ impl CellPresence {
 /// carving a coastline out of a full canvas lists holes, drawing an archipelago
 /// on an empty one lists hexes. Whichever list is shorter is the one written
 /// (`docs/adr/ADR-0033-a-map-is-a-set-of-hexes.md`).
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "world.ts")]
 pub struct MapShape {
     /// What a cell is when the exception list does not name it.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "crate::is_default")]
     pub default: CellPresence,
     /// The cells that are the opposite of [`default`](Self::default).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -272,15 +279,16 @@ impl MapShape {
 }
 
 /// An authored hexagonal world.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "world.ts")]
 pub struct WorldDefinition {
     /// Stable content id.
     pub id: String,
     /// Schema version of this file.
     pub schema_version: u32,
     /// Human readable name.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
     /// Id of the [`crate::ZoneDefinition`] this map belongs to.
     ///
@@ -314,10 +322,10 @@ pub struct WorldDefinition {
     #[serde(default, skip_serializing_if = "MapShape::is_full")]
     pub shape: MapShape,
     /// Hex orientation.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "crate::is_default")]
     pub orientation: HexOrientation,
     /// How the renderer projects this map. Never read by the simulation.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "crate::is_default")]
     pub projection: ProjectionMode,
     /// Projected tile-face heights occupied by a 128-pixel character canvas.
     ///
@@ -345,27 +353,27 @@ pub struct WorldDefinition {
     /// are written out. This keeps authored files small and Git diffs readable.
     pub default_tile: String,
     /// Explicitly painted cells.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tiles: Vec<PlacedTile>,
     /// Authored entities (player, monsters, ...).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub entities: Vec<EntityDefinition>,
     /// Decorations standing on this map's cells.
     ///
     /// Several may share a cell, and each is drawn in the plane its definition
     /// declares — everything `behind`, then the characters, then everything
     /// `front` (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub decorations: Vec<PlacedDecoration>,
     /// Authored points of interest.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub locations: Vec<LocationDefinition>,
     /// Cells that send the player to another map
     /// (`docs/adr/ADR-0014-map-links.md`).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub links: Vec<MapLinkDefinition>,
     /// Free-form authoring metadata; never read by the simulation.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "crate::is_default")]
     pub metadata: WorldMetadata,
 }
 
@@ -407,8 +415,9 @@ impl WorldDefinition {
 }
 
 /// A cell whose tile differs from [`WorldDefinition::default_tile`].
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "world.ts")]
 pub struct PlacedTile {
     /// Offset position `[col, row]`.
     pub at: OffsetCoord,
@@ -445,8 +454,9 @@ pub struct PlacedTile {
 /// questions: what the top face shows, what the cut underneath is made of, and
 /// which cut. An empty string is "roll it", which is what nearly every cell of
 /// nearly every map says.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "world.ts")]
 pub struct PlacedTileArt {
     /// Id of the surface variant of this cell's own tile.
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -475,8 +485,9 @@ impl PlacedTileArt {
 }
 
 /// An authored entity placed on the map.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "world.ts")]
 pub struct EntityDefinition {
     /// Stable content id, unique within the world.
     pub id: String,
@@ -489,6 +500,7 @@ pub struct EntityDefinition {
     pub tags: Vec<String>,
     /// Authored properties. Opaque to the MVP rules, carried into the runtime.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[ts(type = "Record<string, unknown>")]
     pub properties: BTreeMap<String, Value>,
 }
 
@@ -503,8 +515,9 @@ pub struct EntityDefinition {
 /// [`Self::id`] is unique within the map because that is what a scenario
 /// addresses: one definition is placed a dozen times, and only one of those
 /// chests holds the letter.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "world.ts")]
 pub struct PlacedDecoration {
     /// Stable id, unique within this world.
     pub id: String,
@@ -539,15 +552,16 @@ pub struct PlacedDecoration {
 }
 
 /// An authored point of interest.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "world.ts")]
 pub struct LocationDefinition {
     /// Stable content id, unique within the world.
     pub id: String,
     /// Offset position `[col, row]`.
     pub at: OffsetCoord,
     /// Display name.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
     /// Free-form gameplay tags.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -560,8 +574,9 @@ pub struct LocationDefinition {
 /// reserved so that adding an interaction command later is a content-format
 /// addition rather than a breaking change; validation rejects it until then, on
 /// the same principle as [`HexOrientation::Flat`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "world.ts")]
 pub enum LinkTrigger {
     /// Fires when the player's move ends on the link's cell.
     #[default]
@@ -585,8 +600,9 @@ impl LinkTrigger {
 /// and duplicates are checked per world, and the target is checked by
 /// [`crate::validate_project_links`] once every world is loaded
 /// (`docs/adr/ADR-0014-map-links.md`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "world.ts")]
 pub struct MapLinkDefinition {
     /// Stable content id, unique within the world.
     pub id: String,
@@ -610,8 +626,9 @@ pub struct MapLinkDefinition {
 }
 
 /// Authoring metadata attached to a world.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "world.ts")]
 pub struct WorldMetadata {
     /// Free text author name.
     #[serde(default, skip_serializing_if = "String::is_empty")]
