@@ -276,93 +276,14 @@
               }
             </section>
 
-            <section class="panel">
-              <h2>{{ 'ui.editor.map.decorations.onHex' | t }}</h2>
-              @if (selected() === null) {
-                <p class="hint">{{ 'ui.editor.map.decorations.noHex' | t }}</p>
-              } @else if (placementsHere().length === 0) {
-                <p class="hint">{{ 'ui.editor.map.decorations.empty' | t }}</p>
-              }
-              @for (placed of placementsHere(); track placed.id) {
-                <div class="node" [class.on]="placed.id === selectedPlacement()">
-                  <div class="line head">
-                    <button type="button" class="small pick" (click)="selectPlacement(placed.id)">
-                      {{ placed.decoration }}
-                    </button>
-                    <button
-                      type="button"
-                      class="small remove"
-                      (click)="removePlacement(placed.id)"
-                    >
-                      ×
-                    </button>
-                  </div>
-                  <!-- The id is what a scenario will name, so it is written
-                       here rather than only generated. -->
-                  <div class="line">
-                    <span class="axis">{{ 'ui.editor.map.decorations.id' | t }}</span>
-                    <input
-                      type="text"
-                      class="id"
-                      [value]="placed.id"
-                      [attr.aria-label]="'ui.editor.map.decorations.id' | t"
-                      (change)="setPlacementId(placed.id, $any($event.target))"
-                    />
-                  </div>
-                  <!-- Where on the case it sits: the anchor its definition
-                       gives it, plus this nudge. -->
-                  <div class="line nudge">
-                    <span class="axis">{{ 'ui.editor.map.decorations.offset' | t }}</span>
-                    <input
-                      type="number"
-                      [min]="-maxOffset"
-                      [max]="maxOffset"
-                      [value]="placed.offset[0]"
-                      [attr.aria-label]="'ui.editor.map.decorations.offsetX' | t"
-                      (change)="setPlacementOffset(placed.id, 0, $any($event.target).value)"
-                    />
-                    <input
-                      type="number"
-                      [min]="-maxOffset"
-                      [max]="maxOffset"
-                      [value]="placed.offset[1]"
-                      [attr.aria-label]="'ui.editor.map.decorations.offsetY' | t"
-                      (change)="setPlacementOffset(placed.id, 1, $any($event.target).value)"
-                    />
-                    <span class="unit">px</span>
-                  </div>
-                  <div class="line nudge arrows">
-                    <button type="button" class="small" (click)="nudgePlacement(placed.id, -1, 0)">
-                      ←
-                    </button>
-                    <button type="button" class="small" (click)="nudgePlacement(placed.id, 1, 0)">
-                      →
-                    </button>
-                    <button type="button" class="small" (click)="nudgePlacement(placed.id, 0, -1)">
-                      ↑
-                    </button>
-                    <button type="button" class="small" (click)="nudgePlacement(placed.id, 0, 1)">
-                      ↓
-                    </button>
-                  </div>
-                  <div class="line">
-                    <button type="button" class="small" (click)="resetPlacementOffset(placed.id)">
-                      {{ 'ui.editor.map.decorations.centre' | t }}
-                    </button>
-                  </div>
-                  <label class="check">
-                    <input
-                      type="checkbox"
-                      [checked]="placed.interactive"
-                      (change)="setPlacementInteractive(placed.id, $any($event.target).checked)"
-                    />
-                    {{ 'ui.editor.map.decorations.interactive' | t }}
-                  </label>
-                </div>
-              }
-              <p class="hint">{{ 'ui.editor.map.decorations.offsetHint' | t }}</p>
-              <p class="hint">{{ 'ui.editor.map.decorations.interactiveHint' | t }}</p>
-            </section>
+            <app-placement-inspector
+              [placements]="placedDecorations()"
+              [cell]="selected()"
+              [selectedId]="selectedPlacement()"
+              (changed)="applyPlacements($event)"
+              (picked)="pickPlacement($event)"
+              (renameRejected)="rejectPlacementId($event)"
+            />
           }
 
           @case ('doors') {
@@ -578,11 +499,7 @@
             </button>
           }
         </div>
-        <label
-          class="grid-color"
-          [class.off]="!showGrid()"
-          [title]="'ui.viewport.gridColor' | t"
-        >
+        <label class="grid-color" [class.off]="!showGrid()" [title]="'ui.viewport.gridColor' | t">
           <span>{{ 'ui.viewport.gridColorShort' | t }}</span>
           <input
             type="color"
@@ -592,11 +509,7 @@
             (input)="selectGridLineColor($any($event.target).value)"
           />
         </label>
-        <label
-          class="grid-alpha"
-          [class.off]="!showGrid()"
-          [title]="'ui.viewport.gridAlpha' | t"
-        >
+        <label class="grid-alpha" [class.off]="!showGrid()" [title]="'ui.viewport.gridAlpha' | t">
           <span>{{ 'ui.viewport.gridAlphaShort' | t }}</span>
           <input
             type="range"

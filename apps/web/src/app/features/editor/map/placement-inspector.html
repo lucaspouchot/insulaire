@@ -1,0 +1,73 @@
+<section class="panel">
+  <h2>{{ 'ui.editor.map.decorations.onHex' | t }}</h2>
+  @if (cell() === null) {
+    <p class="hint">{{ 'ui.editor.map.decorations.noHex' | t }}</p>
+  } @else if (here().length === 0) {
+    <p class="hint">{{ 'ui.editor.map.decorations.empty' | t }}</p>
+  }
+  @for (placed of here(); track placed.id) {
+    <div class="node" [class.on]="placed.id === selectedId()">
+      <div class="line head">
+        <button type="button" class="small pick" (click)="pick(placed.id)">
+          {{ placed.decoration }}
+        </button>
+        <button type="button" class="small remove" (click)="remove(placed.id)">×</button>
+      </div>
+      <!-- The id is what a scenario will name, so it is written here rather than
+           only generated. -->
+      <div class="line">
+        <span class="axis">{{ 'ui.editor.map.decorations.id' | t }}</span>
+        <input
+          type="text"
+          class="id"
+          [value]="placed.id"
+          [attr.aria-label]="'ui.editor.map.decorations.id' | t"
+          (change)="rename(placed.id, $any($event.target))"
+        />
+      </div>
+      <!-- Where on the case it sits: the anchor its definition gives it, plus
+           this nudge. -->
+      <div class="line nudge">
+        <span class="axis">{{ 'ui.editor.map.decorations.offset' | t }}</span>
+        <input
+          type="number"
+          [min]="-maxOffset"
+          [max]="maxOffset"
+          [value]="placed.offset[0]"
+          [attr.aria-label]="'ui.editor.map.decorations.offsetX' | t"
+          (change)="setOffset(placed.id, 0, $any($event.target).value)"
+        />
+        <input
+          type="number"
+          [min]="-maxOffset"
+          [max]="maxOffset"
+          [value]="placed.offset[1]"
+          [attr.aria-label]="'ui.editor.map.decorations.offsetY' | t"
+          (change)="setOffset(placed.id, 1, $any($event.target).value)"
+        />
+        <span class="unit">px</span>
+      </div>
+      <div class="line nudge arrows">
+        <button type="button" class="small" (click)="nudge(placed.id, -1, 0)">←</button>
+        <button type="button" class="small" (click)="nudge(placed.id, 1, 0)">→</button>
+        <button type="button" class="small" (click)="nudge(placed.id, 0, -1)">↑</button>
+        <button type="button" class="small" (click)="nudge(placed.id, 0, 1)">↓</button>
+      </div>
+      <div class="line">
+        <button type="button" class="small" (click)="resetOffset(placed.id)">
+          {{ 'ui.editor.map.decorations.centre' | t }}
+        </button>
+      </div>
+      <label class="check">
+        <input
+          type="checkbox"
+          [checked]="placed.interactive"
+          (change)="setInteractive(placed.id, $any($event.target).checked)"
+        />
+        {{ 'ui.editor.map.decorations.interactive' | t }}
+      </label>
+    </div>
+  }
+  <p class="hint">{{ 'ui.editor.map.decorations.offsetHint' | t }}</p>
+  <p class="hint">{{ 'ui.editor.map.decorations.interactiveHint' | t }}</p>
+</section>

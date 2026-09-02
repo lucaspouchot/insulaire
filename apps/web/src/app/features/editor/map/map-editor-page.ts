@@ -40,7 +40,6 @@ import {
   DEFAULT_GRID_COLOR,
   DEFAULT_GRID_LINE_WIDTH,
   MAX_CHARACTER_HEIGHT_TILES,
-  MAX_DECORATION_OFFSET,
   MAX_GRID_LINE_WIDTH,
   MAX_REVEAL_RADIUS,
   MIN_CHARACTER_HEIGHT_TILES,
@@ -49,12 +48,12 @@ import {
   RevealStyle,
   WorldDefinition,
 } from '../../../../content/generated/world';
-import { PixelOffset } from '../../../../content/generated/shared';
 import { ResolvedCharacter } from '../../../../content/generated/character';
 import { ResolvedDecoration } from '../../../../content/generated/decoration';
 import { TILE_ART_BUNDLE } from '../../../../content/sprite-bundle';
 import {
   CellOccupant,
+  DocumentDecoration,
   DocumentEntity,
   DocumentLink,
   DocumentTile,
@@ -86,6 +85,7 @@ import { WorldLibrary } from '../../../project/world-library';
 import { WriteLedger } from '../../../project/write-ledger';
 import { ProjectStoreService, contentUrl } from '../../../services/project-store.service';
 import { slugId } from '../../../editing/ids';
+import { PlacementInspector } from './placement-inspector';
 
 /** Hex circumradius in world pixels. The camera scales from here. */
 const HEX_SIZE = 28;
@@ -124,7 +124,7 @@ const EXTENT_STEP = 4;
 
 @Component({
   selector: 'app-map-editor-page',
-  imports: [TranslatePipe],
+  imports: [TranslatePipe, PlacementInspector],
   templateUrl: './map-editor-page.html',
   styleUrl: './map-editor-page.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -451,22 +451,19 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     };
   });
 
-  protected readonly maxOffset = MAX_DECORATION_OFFSET;
-
   /** The decorations this project ships, for the brush. */
   protected readonly decorationChoices = this.decorations.choices;
 
   /**
-   * The decorations standing on the selected hex, in author order.
+   * Every decoration on the open map, for the placement inspector.
    *
-   * A list rather than one, because a cell may hold a tree, a bush and a
-   * signpost (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+   * The inspector shows only the ones on the selected hex, but it takes the
+   * whole list: a rename it accepts has to be unique across the map, not just
+   * the cell (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
    */
-  protected readonly placementsHere = computed(() => {
+  protected readonly placedDecorations = computed<readonly DocumentDecoration[]>(() => {
     this.revision();
-    const cell = this.selected();
-    const document = this.document();
-    return cell === null || document === null ? [] : document.decorationsAt(cell);
+    return this.document()?.placedDecorations ?? [];
   });
 
   /** Picks which decoration the brush plants. */
@@ -476,123 +473,63 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   }
 
   /** Outlines one placement on the canvas, so a row and a tree can be paired. */
-  protected selectPlacement(id: string): void {
-    this.selectedPlacement.set(this.selectedPlacement() === id ? null : id);
-    this.refresh();
-  }
-
-  /**
-   * Says whether a player may interact with **this** placement.
-   *
-   * The decision belongs here rather than to the definition: one chest in ten
-   * holds the letter, and the other nine are scenery
-   * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
-   */
-  protected setPlacementInteractive(id: string, interactive: boolean): void {
-    const document = this.worlds.document();
-    if (document === null || !document.updateDecoration(id, { interactive })) {
-      return;
-    }
-    this.ledger.touch();
-    this.report.set(null);
-    this.message.set(null);
-    this.refresh();
-  }
-
-  /**
-   * Renames one placement.
-   *
-   * The id is what the scenario will name, so it is the author's to write. A
-   * name already taken on this map is refused and said so: two placements
-   * answering to one name is not a state worth passing through
-   * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
-   */
-  protected setPlacementId(id: string, input: HTMLInputElement): void {
-    const document = this.worlds.document();
-    const next = input.value.trim();
-    if (document === null || next === id) {
-      return;
-    }
-    if (!document.renameDecoration(id, next)) {
-      this.error.set(this.i18n.t('ui.editor.map.error.decorationIdTaken', { id: next }));
-      // Put the real id back in the box by hand: nothing about the document
-      // changed, so no binding would, and a field showing a name the placement
-      // does not have is the field lying.
-      input.value = id;
-      return;
-    }
-    if (this.selectedPlacement() === id) {
-      this.selectedPlacement.set(next);
-    }
-    this.error.set(null);
-    this.ledger.touch();
-    this.report.set(null);
-    this.message.set(null);
-    this.refresh();
-  }
-
-  /**
-   * Nudges one placement off the anchor its definition gives it.
-   *
-   * The anchor is where a tree *belongs*; this is the few pixels that keep a
-   * row of them from reading as a stamped pattern, and it is per placement
-   * because that is the only thing that differs between two trees drawn from
-   * one definition (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
-   */
-  protected setPlacementOffset(id: string, axis: 0 | 1, raw: string): void {
-    const value = Math.round(Number.parseFloat(raw));
-    if (!Number.isFinite(value)) {
-      return;
-    }
-    this.movePlacement(id, (offset) => {
-      const next: PixelOffset = [...offset];
-      next[axis] = Math.max(-MAX_DECORATION_OFFSET, Math.min(MAX_DECORATION_OFFSET, value));
-      return next;
-    });
-  }
-
-  /** Moves a placement by a pixel, which is what the nudge buttons do. */
-  protected nudgePlacement(id: string, dx: number, dy: number): void {
-    this.movePlacement(id, (offset) => [
-      Math.max(-MAX_DECORATION_OFFSET, Math.min(MAX_DECORATION_OFFSET, offset[0] + dx)),
-      Math.max(-MAX_DECORATION_OFFSET, Math.min(MAX_DECORATION_OFFSET, offset[1] + dy)),
-    ]);
-  }
-
-  /** Puts a placement back exactly where its definition anchors it. */
-  protected resetPlacementOffset(id: string): void {
-    this.movePlacement(id, () => [0, 0]);
-  }
-
-  private movePlacement(id: string, move: (offset: PixelOffset) => PixelOffset): void {
-    const document = this.worlds.document();
-    const placed = document?.placedDecorations.find((candidate) => candidate.id === id);
-    if (document === null || placed === undefined) {
-      return;
-    }
-    if (!document.updateDecoration(id, { offset: move(placed.offset) })) {
-      return;
-    }
+  protected pickPlacement(id: string | null): void {
     this.selectedPlacement.set(id);
-    this.ledger.touch();
-    this.report.set(null);
-    this.message.set(null);
     this.refresh();
   }
 
-  /** Removes one placement, whatever else stands on its cell. */
-  protected removePlacement(id: string): void {
+  /**
+   * Reconciles a rewritten placement list from the inspector onto the document.
+   *
+   * The inspector hands back the whole list; each author action changes exactly
+   * one placement, so this is one of a removal, a rename or a field edit, and
+   * the three map onto the document's own mutators
+   * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+   */
+  protected applyPlacements(next: readonly DocumentDecoration[]): void {
     const document = this.worlds.document();
-    if (document === null || !document.removeDecoration(id)) {
+    if (document === null) {
       return;
     }
-    if (this.selectedPlacement() === id) {
-      this.selectedPlacement.set(null);
+    const before = document.placedDecorations;
+    let changed = false;
+    if (next.length < before.length) {
+      const gone = before.find((placement) => !next.some((entry) => entry.id === placement.id));
+      changed = gone !== undefined && document.removeDecoration(gone.id);
+    } else {
+      for (let index = 0; index < next.length; index += 1) {
+        const was = before[index];
+        const now = next[index];
+        if (was === undefined || now === undefined) {
+          continue;
+        }
+        if (was.id !== now.id) {
+          changed = document.renameDecoration(was.id, now.id) || changed;
+        } else if (
+          was.interactive !== now.interactive ||
+          was.offset[0] !== now.offset[0] ||
+          was.offset[1] !== now.offset[1]
+        ) {
+          changed =
+            document.updateDecoration(now.id, {
+              interactive: now.interactive,
+              offset: now.offset,
+            }) || changed;
+        }
+      }
     }
-    this.ledger.touch();
-    this.report.set(null);
-    this.message.set(null);
+    if (changed) {
+      this.error.set(null);
+      this.ledger.touch();
+      this.report.set(null);
+      this.message.set(null);
+    }
     this.refresh();
+  }
+
+  /** The inspector refused an id another placement on the map already holds. */
+  protected rejectPlacementId(id: string): void {
+    this.error.set(this.i18n.t('ui.editor.map.error.decorationIdTaken', { id }));
   }
 
   async ngAfterViewInit(): Promise<void> {
