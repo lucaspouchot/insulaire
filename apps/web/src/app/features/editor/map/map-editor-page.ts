@@ -532,10 +532,14 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   /**
    * Reconciles a rewritten placement list from the inspector onto the document.
    *
-   * The inspector hands back the whole list; each author action changes exactly
-   * one placement, so this is one of a removal, a rename or a field edit, and
-   * the three map onto the document's own mutators
+   * The inspector hands back the whole list, and one author action changes
+   * exactly one placement: a removal (`next` is one shorter), or a rename or a
+   * field edit (`next` is the same length, in the same order — the edit helpers
+   * rebuild with an order-preserving `map`). So the rows are paired by
+   * position, not by id — a rename changes the id, which would otherwise read
+   * as a delete-and-add. Each case maps onto the document's own mutators
    * (`docs/adr/ADR-0035-a-decoration-is-anchored-to-a-hex-in-two-planes.md`).
+   * `applyLinks` pairs by id instead, because a link's id is never edited.
    */
   protected applyPlacements(next: readonly DocumentDecoration[]): void {
     const document = this.worlds.document();
@@ -1281,11 +1285,9 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    * Writes the open map into the content directory.
    *
    * The map is validated first and an invalid one is **not** written: the file
-   * on disk is what the runtime boots on, so the editor never puts content
-   * there that the runtime would refuse to load.
-   *
-   * A map that already matches its file is left alone — see
-   * {@link reconcileManifest} for the rest of what a save owes the directory.
+   * on disk is what the runtime boots on. A map that already matches its file
+   * is left alone. Everything else a save owes the directory — `project.json`,
+   * the files of maps renamed or removed — is {@link WorldSavePipeline}'s.
    */
   protected async saveWorld(): Promise<void> {
     await this.write(async () => this.noticeForSave(await this.pipeline.saveOpenWorld(), true));
@@ -1308,8 +1310,9 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    */
   private noticeForSave(result: SaveResult, openMap: boolean): string | null {
     if (result.status === 'engine-not-ready') {
-      this.message.set(this.i18n.t('ui.editor.map.message.engineLoading'));
-      return null;
+      // Returned, not set: `write()` sets the message from what this returns, so
+      // setting it here would only be overwritten with `null`.
+      return this.i18n.t('ui.editor.map.message.engineLoading');
     }
     if (result.status === 'invalid') {
       this.report.set(result.report);
