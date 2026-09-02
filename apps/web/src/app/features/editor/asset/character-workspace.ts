@@ -89,7 +89,7 @@ import { ContentRef } from '../../../../content/generated/project';
 import { serializeCharacter } from '../../../../content/character-serializer';
 import { PALETTE_SIZE, SpriteDocument } from '../../../../content/sprite-document';
 import { assetUrl } from '../../../../core/asset-url';
-import { isEditableTarget, routeUndoRedo } from '../../../../core/keyboard-shortcuts';
+import { routeUndoRedo } from '../../../../core/keyboard-shortcuts';
 import { SpriteCache, SpriteSource } from '../../../../renderer/character-renderer';
 import { CharacterStage } from '../../../../renderer/character-stage';
 import { I18nService } from '../../../i18n/i18n.service';
