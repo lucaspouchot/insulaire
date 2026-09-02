@@ -90,7 +90,7 @@ describe('WorldLibrary — the set of maps', () => {
     expect(held.worlds.worldChoices().map((choice) => choice.zone)).toEqual(['valley', 'valley']);
 
     held.worlds.selectWorld('ridge');
-    held.worlds.addZone('north', 'North');
+    held.manifest.setZones([...held.manifest.zones(), { id: 'north', name: 'North' }]);
     held.worlds.setZone('north');
 
     expect(held.worlds.worldChoices()).toContainEqual({
@@ -98,33 +98,6 @@ describe('WorldLibrary — the set of maps', () => {
       name: 'ridge',
       zone: 'north',
     });
-  });
-
-  it('refuses a zone that is empty or already declared', () => {
-    expect(held.worlds.addZone('', 'Nowhere')).toBe(false);
-    expect(held.worlds.addZone('valley', 'Again')).toBe(false);
-    expect(held.worlds.addZone('north', 'North')).toBe(true);
-  });
-
-  it('names a zone after its id when the name is blank', () => {
-    held.worlds.addZone('north', '   ');
-
-    expect(held.manifest.zones()).toContainEqual({ id: 'north', name: 'north' });
-  });
-
-  it('refuses to remove a zone a map is still in', () => {
-    held.worlds.addZone('north', 'North');
-    held.worlds.selectWorld('ridge');
-    held.worlds.setZone('north');
-
-    expect(held.worlds.removeZone('north')).toBe(false);
-
-    held.worlds.setZone('valley');
-    expect(held.worlds.removeZone('north')).toBe(true);
-  });
-
-  it('refuses to remove the last zone', () => {
-    expect(held.worlds.removeZone('valley')).toBe(false);
   });
 
   it('counts an edit only when something changed', () => {

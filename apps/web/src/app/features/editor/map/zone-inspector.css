@@ -1,0 +1,19 @@
+.fold {
+  margin-top: 10px;
+}
+
+.fold summary {
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.fold > *:not(summary) {
+  margin-top: 8px;
+}
+
+.new-world {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}

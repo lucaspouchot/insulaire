@@ -216,9 +216,9 @@ describe('WriteLedger — what a save has to write', () => {
   });
 
   it('wants the manifest written when a map moves to another zone', async () => {
-    const { ledger, worlds } = await open();
+    const { ledger, worlds, manifest } = await open();
     worlds.selectWorld('valley');
-    worlds.addZone('north', 'North');
+    manifest.setZones([...manifest.zones(), { id: 'north', name: 'North' }]);
     worlds.setZone('north');
 
     expect(ledger.manifestNeedsWriting()).toBe(true);

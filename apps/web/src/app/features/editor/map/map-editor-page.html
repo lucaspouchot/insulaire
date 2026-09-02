@@ -724,28 +724,14 @@
             }
           </div>
 
-          <details class="fold">
-            <summary>{{ 'ui.editor.map.maps.zonesFold' | t }}</summary>
-            <div class="new-world">
-              <input
-                #zoneName
-                type="text"
-                [attr.placeholder]="'ui.editor.map.maps.zoneNamePlaceholder' | t"
-                [attr.aria-label]="'ui.editor.map.maps.newZoneNameAria' | t"
-              />
-              <div class="button-row">
-                <button type="button" (click)="createZone(zoneName.value)">
-                  {{ 'ui.editor.map.maps.addZone' | t }}
-                </button>
-                @if (zoneFilter() !== null) {
-                  <button type="button" (click)="removeFilteredZone()">
-                    {{ 'ui.editor.map.maps.removeZone' | t }}
-                  </button>
-                }
-              </div>
-            </div>
-            <p class="hint">{{ 'ui.editor.map.maps.zonesHint' | t }}</p>
-          </details>
+          <app-zone-inspector
+            [zones]="zoneList()"
+            [activeFilter]="zoneFilter()"
+            [occupiedZoneIds]="occupiedZoneIds()"
+            (changed)="applyZoneChange($event)"
+            (filterPicked)="pickZoneFilter($event)"
+            (rejected)="error.set($event)"
+          />
         </section>
 
         <section class="panel">

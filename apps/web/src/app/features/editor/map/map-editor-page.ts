@@ -87,6 +87,7 @@ import { ProjectStoreService, contentUrl } from '../../../services/project-store
 import { slugId } from '../../../editing/ids';
 import { PlacementInspector } from './placement-inspector';
 import { LinkInspector } from './link-inspector';
+import { ZoneChange, ZoneInspector } from './zone-inspector';
 
 /** Hex circumradius in world pixels. The camera scales from here. */
 const HEX_SIZE = 28;
@@ -125,7 +126,7 @@ const EXTENT_STEP = 4;
 
 @Component({
   selector: 'app-map-editor-page',
-  imports: [TranslatePipe, PlacementInspector, LinkInspector],
+  imports: [TranslatePipe, PlacementInspector, LinkInspector, ZoneInspector],
   templateUrl: './map-editor-page.html',
   styleUrl: './map-editor-page.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -318,6 +319,20 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   protected zoneLabel(id: string): string {
     return this.zones().find((zone) => zone.id === id)?.label ?? id;
   }
+
+  /** The manifest's zone list, for the zone inspector. */
+  protected readonly zoneList = this.manifest.zones;
+
+  /**
+   * Every zone id a map still resolves to, the implicit default included.
+   *
+   * What the zone inspector checks before removing a zone: the first zone is
+   * "occupied" while any map names no zone of its own
+   * (`docs/adr/ADR-0018-map-zones.md`).
+   */
+  protected readonly occupiedZoneIds = computed<readonly string[]>(() => [
+    ...new Set(this.maps().map((map) => map.zone)),
+  ]);
 
   /** The zone the open map is in, with the default resolved. */
   protected readonly openZoneId = computed(() => {
@@ -1084,37 +1099,23 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     return true;
   }
 
-  /** Declares a zone, named by the author; the id is derived from the name. */
-  protected createZone(name: string): void {
-    const id = slugify(name);
-    if (!this.worlds.addZone(id, name)) {
-      this.error.set(
-        id.length === 0
-          ? 'Give the zone a name.'
-          : `The project already has a zone called "${id}".`,
-      );
-      return;
-    }
-    this.zoneFilter.set(id);
-    this.message.set(this.i18n.t('ui.editor.map.message.zoneAdded', { zone: id }));
+  /** Writes a rewritten zone list from the inspector back onto the manifest. */
+  protected applyZoneChange(change: ZoneChange): void {
+    this.manifest.setZones(change.zones);
+    this.message.set(
+      this.i18n.t(
+        change.notice.kind === 'added'
+          ? 'ui.editor.map.message.zoneAdded'
+          : 'ui.editor.map.message.zoneRemoved',
+        { zone: change.notice.id },
+      ),
+    );
     this.rebuild();
   }
 
-  /** Removes the zone the picker is filtered on, if it is empty. */
-  protected removeFilteredZone(): void {
-    const zone = this.zoneFilter();
-    if (zone === null) {
-      return;
-    }
-    if (!this.worlds.removeZone(zone)) {
-      this.error.set(
-        `Zone "${zone}" still holds maps, or is the project's only zone. Move its maps first.`,
-      );
-      return;
-    }
-    this.zoneFilter.set(null);
-    this.message.set(this.i18n.t('ui.editor.map.message.zoneRemoved', { zone }));
-    this.rebuild();
+  /** Points the maps picker at a zone the inspector chose, or at every map. */
+  protected pickZoneFilter(id: string | null): void {
+    this.zoneFilter.set(id);
   }
 
   protected switchMap(worldId: string): void {

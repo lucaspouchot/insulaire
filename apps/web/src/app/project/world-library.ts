@@ -224,43 +224,6 @@ export class WorldLibrary {
   }
 
   /**
-   * Declares a zone.
-   *
-   * The zones a project declares are content, not a derived list: a zone has to
-   * exist before a map can be put in it, which is the whole point of creating
-   * one. Materialising the implicit default alongside it keeps every map that
-   * named no zone exactly where it was — the default is the *first* zone.
-   *
-   * @returns `false` when the id is empty or already taken.
-   */
-  addZone(id: string, name: string): boolean {
-    const zones = this.manifest.zones();
-    if (id.length === 0 || zones.some((zone) => zone.id === id)) {
-      return false;
-    }
-    this.manifest.setZones([...zones, { id, name: name.trim() || id }]);
-    return true;
-  }
-
-  /**
-   * Removes a zone.
-   *
-   * @returns `false` when it is the last zone or a map is still in it — moving
-   * those maps somewhere is the author's decision, not this method's.
-   */
-  removeZone(id: string): boolean {
-    const zones = this.manifest.zones();
-    if (zones.length <= 1 || !zones.some((zone) => zone.id === id)) {
-      return false;
-    }
-    if (this.worldChoices().some((world) => world.zone === id)) {
-      return false;
-    }
-    this.manifest.setZones(zones.filter((zone) => zone.id !== id));
-    return true;
-  }
-
-  /**
    * Moves the open map into a zone.
    *
    * @returns `true` when the zone changed.

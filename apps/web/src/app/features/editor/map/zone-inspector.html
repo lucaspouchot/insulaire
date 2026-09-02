@@ -1,0 +1,22 @@
+<details class="fold">
+  <summary>{{ 'ui.editor.map.maps.zonesFold' | t }}</summary>
+  <div class="new-world">
+    <input
+      #zoneName
+      type="text"
+      [attr.placeholder]="'ui.editor.map.maps.zoneNamePlaceholder' | t"
+      [attr.aria-label]="'ui.editor.map.maps.newZoneNameAria' | t"
+    />
+    <div class="button-row">
+      <button type="button" (click)="add(zoneName.value)">
+        {{ 'ui.editor.map.maps.addZone' | t }}
+      </button>
+      @if (activeFilter() !== null) {
+        <button type="button" (click)="removeFiltered()">
+          {{ 'ui.editor.map.maps.removeZone' | t }}
+        </button>
+      }
+    </div>
+  </div>
+  <p class="hint">{{ 'ui.editor.map.maps.zonesHint' | t }}</p>
+</details>
