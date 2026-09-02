@@ -1481,6 +1481,9 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
       // The cache may hold a "missing" entry for this path from a previous
       // draw, and the file on disk has just changed under it either way.
       this.sprites.clear();
+      // The session may have decoded this path already — or recorded it as
+      // naming nothing — so drop it and let the next open read the new bytes.
+      this.sessions.discard(path);
       this.setAsset(index, path);
       this.drafts.announce(this.i18n.t('ui.editor.character.uploaded', { file: path }));
     } catch (cause) {
