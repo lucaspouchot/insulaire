@@ -114,6 +114,7 @@ import { CharacterLibraryService } from '../../../services/character-library.ser
 import { ProjectManifest } from '../../../project/project-manifest';
 import { WriteLedger } from '../../../project/write-ledger';
 import { CONTENT_ROOT, ProjectStoreService } from '../../../services/project-store.service';
+import { AnimationBounds, AnimationClock } from '../../../editing/animation-clock';
 import { DraftSet } from '../../../editing/draft-set';
 import { DraftSource } from '../../../editing/draft-source';
 import { SpriteSessions, SpriteStore } from '../../../editing/sprite-sessions';
@@ -301,11 +302,31 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
 
   /** Id of the animation the preview is playing; `null` is the rest pose. */
   private readonly animationIdSignal = signal<string | null>(null);
-  /** Where in that animation the preview is, in milliseconds. */
-  private readonly timeMs = signal(0);
-  protected readonly playing = signal(false);
+  /** How long the played animation runs and whether it loops; `null` is a rest pose. */
+  private readonly animationBounds = computed<AnimationBounds | null>(() => {
+    const animation = this.played();
+    return animation === null
+      ? null
+      : {
+          durationMs:
+            (animation.frames ?? 1) * (animation.frameDurationMs ?? DEFAULT_FRAME_DURATION_MS),
+          loop: animation.looping === true,
+        };
+  });
+  /**
+   * Play, pause, scrub and speed for the preview.
+   *
+   * Its own, not `flipbook-clock.ts`'s: a flipbook is a list of images at a
+   * fixed rate, a character animation is a frame count played at a speed the
+   * author sets that stops itself at a non-looping end
+   * (`docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`).
+   */
+  private readonly clock = new AnimationClock(this.animationBounds, () => this.repose());
+  /** Where in the played animation the preview is, in milliseconds. */
+  private readonly timeMs = this.clock.timeMs;
+  protected readonly playing = this.clock.playing;
   /** Playback rate, as a multiple of real time. */
-  protected readonly speed = signal(1);
+  protected readonly speed = this.clock.speed;
   /** `true` while the preview draws the bones and joints over the character. */
   protected readonly skeleton = signal(false);
 
@@ -317,10 +338,6 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
    */
   protected readonly tab = signal<EditorTab>('layers');
 
-  /** The running playback loop, if any. */
-  private clock: number | null = null;
-  /** When the loop last advanced, so a dropped frame does not skip time. */
-  private lastTick = 0;
   /** A node being dragged in the preview, and where the drag started. */
   private dragging: {
     readonly node: string;
@@ -653,16 +670,6 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
         this.sessions.open(drawn.asset);
       }
     });
-    // The playback loop lives and dies with the Play button, and with the
-    // animation still existing: deleting the one being played must stop it
-    // rather than leave a timer running against a definition nobody has.
-    effect(() => {
-      if (this.playing() && this.played() !== null) {
-        this.startClock();
-      } else {
-        this.stopClock();
-      }
-    });
     void this.drafts.load();
   }
 
@@ -679,69 +686,17 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.resizeObserver?.disconnect();
-    this.stopClock();
+    this.clock.stop();
   }
 
   // --------------------------------------------------------------- playback
 
-  /**
-   * Advances the preview in real time, one animation frame of the *browser*
-   * per pose.
-   *
-   * The clock is here rather than in the animation panel because the preview
-   * is here: the loop's only job is to move the time the resolver is asked
-   * about, and everything else follows from the resolved character changing.
-   *
-   * And it is *this screen's own* rather than `app/editing/flipbook-clock.ts`,
-   * which the decoration and object editors share. A flipbook is a list of
-   * images at a rate; a character animation is a frame **count** with tracks
-   * over it, played at a speed the author sets, and it stops itself at the end
-   * when it does not loop. None of those three is a flipbook's
-   * (`docs/adr/ADR-0025-characters-animate-by-hierarchy-and-offsets.md`).
-   */
-  private startClock(): void {
-    if (this.clock !== null) {
-      return;
-    }
-    this.lastTick = performance.now();
-    const tick = (now: number): void => {
-      const elapsed = now - this.lastTick;
-      this.lastTick = now;
-      this.timeMs.update((time) => time + elapsed * this.speed());
-
-      // An animation that does not loop is over when it is over; leaving the
-      // loop running would burn a frame a tick to redraw the same picture.
-      const animation = this.played();
-      if (animation !== null && animation.looping !== true) {
-        const duration =
-          (animation.frames ?? 1) * (animation.frameDurationMs ?? DEFAULT_FRAME_DURATION_MS);
-        if (this.timeMs() >= duration) {
-          this.timeMs.set(Math.max(0, duration - 1));
-          this.playing.set(false);
-          this.repose();
-          return;
-        }
-      }
-
-      this.repose();
-      this.clock = requestAnimationFrame(tick);
-    };
-    this.clock = requestAnimationFrame(tick);
-  }
-
-  private stopClock(): void {
-    if (this.clock !== null) {
-      cancelAnimationFrame(this.clock);
-      this.clock = null;
-    }
-  }
-
   protected togglePlay(): void {
-    this.playing.update((on) => !on);
+    this.clock.togglePlay();
   }
 
   protected setSpeed(speed: number): void {
-    this.speed.set(speed);
+    this.clock.setSpeed(speed);
   }
 
   protected toggleSkeleton(): void {
@@ -752,8 +707,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
   /** Opens an animation in the timeline, from its first frame. */
   protected openAnimation(id: string | null): void {
     this.animationIdSignal.set(id);
-    this.timeMs.set(0);
-    this.playing.set(false);
+    this.clock.scrubTo(0);
     this.repose();
   }
 
@@ -769,8 +723,9 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
     if (animation === null) {
       return;
     }
-    this.playing.set(false);
-    this.timeMs.set(Math.max(0, frame) * (animation.frameDurationMs ?? DEFAULT_FRAME_DURATION_MS));
+    this.clock.scrubTo(
+      Math.max(0, frame) * (animation.frameDurationMs ?? DEFAULT_FRAME_DURATION_MS),
+    );
     this.repose();
   }
 
@@ -1890,7 +1845,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
     event.preventDefault();
     (event.target as HTMLElement).setPointerCapture(event.pointerId);
     // Playing while dragging would fight the pointer for the same value.
-    this.playing.set(false);
+    this.clock.stop();
     this.dragging = {
       node,
       from: at,
