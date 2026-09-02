@@ -80,6 +80,18 @@ import {
   wouldLoop,
 } from './character-editor.types';
 import { clampResolution, move } from './asset-editing';
+import {
+  addParameter,
+  addParameterOption,
+  defaultFor,
+  editParameterOption,
+  moveParameter,
+  patchParameter,
+  referencedKeys,
+  removeParameter,
+  removeParameterOption,
+  setParameterControl,
+} from './character-parameters';
 import { AssetWorkspace } from './asset-workspace';
 import { CharacterAnimator } from './character-animator';
 import { PixelEditor } from './pixel-editor';
@@ -95,14 +107,7 @@ import { CharacterStage } from '../../../../renderer/character-stage';
 import { I18nService } from '../../../i18n/i18n.service';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
 import { ControlField } from '../../../settings/control-field';
-import {
-  addOption,
-  editOption,
-  isNumeric,
-  removeOption,
-  setControlKind,
-  usesOptions,
-} from '../../../settings/control-list';
+import { isNumeric, usesOptions } from '../../../settings/control-list';
 import { ContentWorkspaceService } from '../../../services/content-workspace.service';
 import { WorkspaceFiles } from '../../../services/workspace-files';
 import { CharacterPose, EngineService } from '../../../services/engine.service';
@@ -902,34 +907,19 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
   }
 
   // -------------------------------------------------------------- parameters
+  //
+  // The list rules — a fresh id and label key, dropping a deleted parameter's
+  // tints, carrying a renamed option value onto every variant condition — live
+  // in `character-parameters.ts`, framework-free and specced. These wrappers
+  // add only the `resetChoices()` the preview needs before the document moves.
 
   protected addParameter(): void {
-    const id = freeId(
-      'parameter',
-      this.parameters().map((parameter) => parameter.id),
-    );
-    this.edit((draft) => {
-      draft.parameters = [
-        ...(draft.parameters ?? []),
-        {
-          id,
-          labelKey: `game.character.${id}`,
-          control: 'select',
-          default: '',
-          options: [],
-        },
-      ];
-    });
+    this.edit(addParameter);
   }
 
   protected patchParameter(index: number, change: Partial<ControlDefinition>): void {
     this.resetChoices();
-    this.edit((draft) => {
-      const parameter = draft.parameters?.[index];
-      if (parameter !== undefined) {
-        Object.assign(parameter, change);
-      }
-    });
+    this.edit((draft) => patchParameter(draft, index, change));
   }
 
   /**
@@ -945,36 +935,16 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
 
   protected removeParameter(index: number): void {
     this.resetChoices();
-    this.edit((draft) => {
-      const removed = draft.parameters?.[index];
-      draft.parameters?.splice(index, 1);
-      if (removed !== undefined) {
-        // A tint bound to a parameter that no longer exists would not validate.
-        dropTint(draft, removed.id);
-      }
-    });
+    this.edit((draft) => removeParameter(draft, index));
   }
 
   protected moveParameter(index: number, delta: number): void {
-    this.edit((draft) => move(draft.parameters ?? [], index, delta));
+    this.edit((draft) => moveParameter(draft, index, delta));
   }
 
-  /**
-   * Changes what a parameter *is*, and takes its default with it.
-   *
-   * The engine refuses a default its own control does not accept, so switching
-   * a slider to a select has to replace `1` with an option.
-   */
   protected setControl(index: number, control: ControlKind): void {
     this.resetChoices();
-    this.edit((draft) => {
-      const parameters = draft.parameters;
-      const parameter = parameters?.[index];
-      if (parameters === undefined || parameter === undefined || parameter.control === control) {
-        return;
-      }
-      parameters[index] = setControlKind(parameter, control, defaultFor);
-    });
+    this.edit((draft) => setParameterControl(draft, index, control));
   }
 
   /** Reads a bound out of an input; an empty field means "no bound". */
@@ -989,18 +959,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
 
   protected addOption(index: number): void {
     this.resetChoices();
-    this.edit((draft) => {
-      const parameters = draft.parameters;
-      const parameter = parameters?.[index];
-      if (parameters === undefined || parameter === undefined) {
-        return;
-      }
-      const value = freeId(
-        'value',
-        (parameter.options ?? []).map((option) => option.value),
-      );
-      parameters[index] = addOption(parameter, { value, labelKey: `game.character.${value}` });
-    });
+    this.edit((draft) => addParameterOption(draft, index));
   }
 
   protected patchOption(
@@ -1009,40 +968,12 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
     change: Partial<{ value: string; labelKey: string }>,
   ): void {
     this.resetChoices();
-    this.edit((draft) => {
-      const parameters = draft.parameters;
-      const parameter = parameters?.[index];
-      const option = parameter?.options?.[optionIndex];
-      if (parameters === undefined || parameter === undefined || option === undefined) {
-        return;
-      }
-      const previous = option.value;
-      parameters[index] = editOption(parameter, optionIndex, change);
-      if (change.value === undefined || change.value === previous) {
-        return;
-      }
-      // A renamed option takes every condition naming it along, rather than
-      // leaving a variant waiting for a value nobody offers.
-      for (const layer of draft.layers ?? []) {
-        for (const variant of layer.variants) {
-          if (variant.when?.[parameter.id] === previous) {
-            variant.when[parameter.id] = change.value;
-          }
-        }
-      }
-    });
+    this.edit((draft) => editParameterOption(draft, index, optionIndex, change));
   }
 
   protected removeOption(index: number, optionIndex: number): void {
     this.resetChoices();
-    this.edit((draft) => {
-      const parameters = draft.parameters;
-      const parameter = parameters?.[index];
-      if (parameters === undefined || parameter === undefined) {
-        return;
-      }
-      parameters[index] = removeOption(parameter, optionIndex);
-    });
+    this.edit((draft) => removeParameterOption(draft, index, optionIndex));
   }
 
   // ------------------------------------------------------------------ layers
@@ -2140,23 +2071,6 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
 }
 
 /**
- * Drops every tint bound to a parameter that no longer exists.
- *
- * A dangling binding does not validate, and the author deleting a parameter is
- * not saying "and break every layer that read it".
- */
-function dropTint(draft: CharacterDefinition, parameterId: string): void {
-  for (const layer of draft.layers ?? []) {
-    for (const variant of layer.variants) {
-      const tint = variant.sprite.tint;
-      if (tint && 'parameter' in tint && tint.parameter === parameterId) {
-        variant.sprite = { asset: variant.sprite.asset };
-      }
-    }
-  }
-}
-
-/**
  * Every image a character definition names, once each.
  *
  * What the session asks for when it wants to know whether this draft owes the
@@ -2174,50 +2088,6 @@ function spriteAssets(document: CharacterDefinition): string[] {
     }
   }
   return [...assets];
-}
-
-/**
- * Every locale key a character definition names.
- *
- * The same set the Rust validator walks, in the same order.
- */
-function referencedKeys(document: CharacterDefinition): string[] {
-  const keys: string[] = [];
-  for (const parameter of document.parameters ?? []) {
-    keys.push(parameter.labelKey);
-    if (parameter.helpKey !== undefined) {
-      keys.push(parameter.helpKey);
-    }
-    for (const option of parameter.options ?? []) {
-      keys.push(option.labelKey);
-    }
-  }
-  return keys;
-}
-
-/** A default this control accepts, given the options it currently declares. */
-function defaultFor(control: ControlKind, options: readonly string[] = []): SettingValue {
-  switch (control) {
-    case 'toggle':
-    case 'checkbox':
-      return false;
-    case 'slider':
-    case 'number':
-      return 1;
-    case 'color':
-      return '#7a5c3e';
-    case 'select':
-      return options[0] ?? '';
-    case 'multiSelect':
-      return [];
-    case 'text':
-      return '';
-    case 'keyBinding':
-      // The character editor never offers this settings-only control. Keeping
-      // the shared union exhaustive makes an imported invalid document fail in
-      // Rust instead of leaving this helper with an undefined value.
-      return 'KeyQ';
-  }
 }
 
 /** Reads a condition value out of a text field: JSON when it is, text otherwise. */

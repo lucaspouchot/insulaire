@@ -1,6 +1,6 @@
 # 04 — Break up the character workspace
 
-Status: ready-for-agent
+Status: resolved
 Strength: strong
 Blocked by: 02, 03
 Card: 2
@@ -164,3 +164,49 @@ closing this ticket on the three extractions it named.
 wrappers, the canvas/input path and the wiring. A `ControlListEditor` extraction
 for the character parameter form can be raised as its own ticket if the size is
 still felt to be a problem.
+
+---
+
+### The fourth extraction, done
+
+> *Requested after the triage close: lift the control-definition editor into a
+> `control-list`-style module.*
+
+**`character-parameters.ts` (252 l.) + `character-parameters.spec.ts` (309 l.,
+no `TestBed`).** Framework-free, DOM-free. It owns the parameter-**list** rules
+the way `app/settings/control-list.ts` owns the single-control rules — and calls
+into that module for the moves it already covers (`setControlKind`, option
+add/edit/remove). What is here is everything that keeps the whole
+`CharacterDefinition` valid the instant the list changes:
+
+- `addParameter` — a fresh id nothing else holds, its label key;
+- `removeParameter` — splice **and** drop every tint bound to the gone
+  parameter (the old private `dropTint`, now this module's);
+- `editParameterOption` — `control-list.editOption` **and** carry a renamed
+  option value onto every variant `when` that named it;
+- `moveParameter`, `patchParameter`, `setParameterControl`, `addParameterOption`,
+  `removeParameterOption`;
+- `defaultFor` — the character editor's colours and numbers, the `DefaultPolicy`
+  it feeds `setControlKind` (distinct from the settings editor's);
+- `referencedKeys` — the locale keys a parameter list names, in the validator's
+  order (was a free function on the page).
+
+`character-workspace.ts` keeps eight `protected` wrappers, each now one or two
+lines: `this.edit((draft) => …)` plus, where the preview needs it, the
+`resetChoices()` that must run before the document moves. The three free
+functions left the file.
+
+**Size: 2,234 → 2,099 lines** (−135). Still above the revised ~2,200 estimate's
+spirit but not its letter; the rest is the ~50 `computed` selectors and the
+canvas/input path, which stay by the ticket's own decision. No further
+extraction is scoped.
+
+**Gates + smoke.** `npm run check` green (clippy, rustfmt, `cargo test`, 643 web
+specs incl. the new 21). Full smoke run: `verdict: clean`, transcript identical,
+`problems: []`, every `editor-asset-characters*` screen pixel-identical to
+baseline (`canvasDistance 0`); the `similar` markers elsewhere are the known
+rasterisation noise, unrelated to this change.
+
+**ADR-0025 / ADR-0028 hold.** The module rewrites the *declaration*; resolution
+and drawing still go through the Rust engine and `CharacterStage`. No second
+evaluator.
