@@ -1,6 +1,6 @@
 # 06 — Collapse the control-list editor and the file-picker
 
-Status: ready-for-agent
+Status: resolved
 Strength: worth exploring
 Blocked by: —
 Card: 7
@@ -58,9 +58,22 @@ an existing port.
 
 ## Done when
 
-- [ ] `control-list.ts` owns the three mutation rules; the four call sites are
-      one line each.
-- [ ] `control-list.spec.ts` covers the rules with no Angular.
-- [ ] No screen holds its own `files` / `refreshFiles` / `upload*`; they take
-      `WorkspaceFiles`.
-- [ ] `npm run check` and the smoke run pass, screenshots unchanged.
+- [x] `control-list.ts` owns the mutation rules (`setControlKind`, `addOption`,
+      `editOption`, `removeOption` — `editOption` replaces the named
+      `renameOption` so one call also carries a label change); the four call
+      sites call them inside their own `edit()`.
+- [x] `control-list.spec.ts` covers the rules with no Angular.
+- [x] No screen holds its own `files` / `refreshFiles` / `upload*`; they take
+      `WorkspaceFiles`. The port is a whole-directory `refresh()` + `all()` with
+      `images` / `pictures` / `tracks` computed off it, not `listFiles(dir)` —
+      no caller ever listed a single directory.
+- [x] `npm run check` (web), `npm run build` and the smoke run pass; smoke
+      verdict clean, transcript identical.
+
+## Resolution
+
+Commit `e858fec`. `usesOptions` / `isNumeric` moved into `control-list.ts` and
+are no longer re-exported from the two `*-editor.types.ts` barrels — every
+caller and the type specs moved with them. The character-creation editor's
+option add/remove converges onto the same first-select-default and
+select/multiSelect fallback rules the other two editors already used.
