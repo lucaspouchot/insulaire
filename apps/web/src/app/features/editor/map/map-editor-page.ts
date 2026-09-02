@@ -60,7 +60,6 @@ import {
   WorldDocument,
   previewCharacterOf,
 } from '../../../../content/world-document';
-import { serializeWorld } from '../../../../content/world-serializer';
 import { ValidationReport } from '../../../../engine/engine.types';
 import { Camera } from '../../../../renderer/camera';
 import { CanvasView } from '../../../../renderer/canvas-view';
@@ -83,6 +82,7 @@ import { ProjectManifest } from '../../../project/project-manifest';
 import { TileSetLibrary } from '../../../project/tile-set-library';
 import { WorldLibrary } from '../../../project/world-library';
 import { WriteLedger } from '../../../project/write-ledger';
+import { SaveResult, WorldSavePipeline } from '../../../project/world-save-pipeline';
 import { ProjectStoreService, contentUrl } from '../../../services/project-store.service';
 import { slugId } from '../../../editing/ids';
 import { PlacementInspector } from './placement-inspector';
@@ -146,6 +146,36 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   private readonly decorations = inject(DecorationLibraryService);
   private readonly objects = inject(ObjectLibraryService);
   private readonly workspace = inject(ContentWorkspaceService);
+
+  /**
+   * The save / validate / reconcile choreography, out of the page.
+   *
+   * The page keeps the busy flag, the notices and the user-facing text; the
+   * pipeline owns the sequence and hands back a {@link SaveResult} to phrase
+   * (`docs/adr/ADR-0014-map-links.md`, `docs/adr/ADR-0018-map-zones.md`).
+   */
+  private readonly pipeline = new WorldSavePipeline({
+    engineReady: () => this.engine.isReady,
+    openWorld: () => this.worlds.currentDefinition(),
+    allWorlds: () => this.worlds.definitions(),
+    worldPath: (id) => this.ledger.worldPath(id),
+    worldNeedsWriting: (id) => this.ledger.worldNeedsWriting(id),
+    markWorldWritten: (id) => this.ledger.markWorldWritten(id),
+    changedWorldIds: () => this.ledger.changedWorldIds(),
+    orphanedWorlds: () => this.ledger.orphanedWorlds(),
+    markWorldDeleted: (id) => this.ledger.markWorldDeleted(id),
+    manifestNeedsWriting: () => this.ledger.manifestNeedsWriting(),
+    projectJson: () => this.ledger.projectJson(),
+    markManifestWritten: () => this.ledger.markManifestWritten(),
+    registerOpenTileSet: () =>
+      this.engine.loadTileSet(JSON.stringify(this.tileSets.requireTileSet())),
+    resetAndRegisterContent: () => this.resetEngineContent(),
+    validateWorld: (json) => this.engine.validateWorld(json),
+    loadWorld: (json) => this.engine.loadWorld(json),
+    validateLinks: () => this.engine.validateLinks(),
+    writeJson: (path, json) => this.workspace.writeJson(path, json),
+    removeFile: (path) => this.workspace.remove(path),
+  });
 
   /**
    * Keeps the map view on the player's own peek binding.
@@ -999,8 +1029,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       return;
     }
     try {
-      this.loadProjectIntoEngine();
-      const report = this.engine.validateLinks();
+      const report = this.pipeline.revalidateLinks();
       this.report.set(report);
       this.message.set(
         this.i18n.t(
@@ -1232,12 +1261,10 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       return null;
     }
     try {
-      // A world is validated *against its tile set*, so the tile set has to be
-      // registered first. Loading it again is harmless: the registry replaces
-      // an existing entry with the same id.
-      this.engine.loadTileSet(JSON.stringify(this.tileSets.requireTileSet()));
-      const report = this.engine.validateWorld(this.worlds.currentJson());
-      this.report.set(report);
+      const report = this.pipeline.validateOpenWorld();
+      if (report !== null) {
+        this.report.set(report);
+      }
       return report;
     } catch (cause) {
       this.error.set(describeError(cause));
@@ -1256,30 +1283,7 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    * {@link reconcileManifest} for the rest of what a save owes the directory.
    */
   protected async saveWorld(): Promise<void> {
-    const definition = this.worlds.currentDefinition();
-    const path = this.ledger.worldPath(definition.id);
-
-    await this.write(async () => {
-      const report = this.validate();
-      if (report === null) {
-        return null;
-      }
-      if (!report.valid) {
-        this.error.set(this.i18n.t('ui.editor.map.error.notWritten'));
-        return null;
-      }
-
-      const parts: string[] = [];
-      if (this.ledger.worldNeedsWriting(definition.id)) {
-        await this.workspace.writeJson(path, serializeWorld(definition));
-        this.ledger.markWorldWritten(definition.id);
-        parts.push(this.i18n.t('ui.editor.map.message.savedMap', { file: path }));
-      } else {
-        parts.push(this.i18n.t('ui.editor.map.message.mapUpToDate', { file: path }));
-      }
-      parts.push(...(await this.reconcileManifest()));
-      return parts.join(' \u00b7 ');
-    });
+    await this.write(async () => this.noticeForSave(await this.pipeline.saveOpenWorld(), true));
   }
 
   /**
@@ -1290,74 +1294,57 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
    * change in a diff of timestamps.
    */
   protected async saveProject(): Promise<void> {
-    await this.write(async () => {
-      const report = this.validateProject();
-      if (report === null) {
-        return null;
-      }
-      if (!report.valid) {
-        this.error.set(this.i18n.t('ui.editor.map.error.notWritten'));
-        return null;
-      }
-
-      const byId = new Map(
-        this.worlds.definitions().map((definition) => [definition.id, definition]),
-      );
-      const changed = this.ledger.changedWorldIds();
-      for (const id of changed) {
-        const definition = byId.get(id);
-        if (definition === undefined) {
-          continue;
-        }
-        await this.workspace.writeJson(this.ledger.worldPath(id), serializeWorld(definition));
-        this.ledger.markWorldWritten(id);
-      }
-
-      const parts =
-        changed.length === 0
-          ? []
-          : [this.i18n.t('ui.editor.map.message.savedProject', { count: changed.length })];
-      parts.push(...(await this.reconcileManifest()));
-      return parts.length === 0
-        ? this.i18n.t('ui.editor.map.message.upToDate')
-        : parts.join(' \u00b7 ');
-    });
+    await this.write(async () => this.noticeForSave(await this.pipeline.saveProject(), false));
   }
 
   /**
-   * Writes `project.json` when it no longer describes the project, then deletes
-   * the files of maps the editor no longer holds — removed, or renamed, which
-   * leaves the old file behind just the same.
-   *
-   * The manifest goes first on purpose: a manifest still naming a file that has
-   * been deleted is content the runtime cannot load, while a file no manifest
-   * names is only clutter. If one of the two fails, this is the half to have
-   * done.
+   * Turns a {@link SaveResult} into the note the toolbar shows, and sets the
+   * `report` / `error` signals the save itself does not own.
    */
-  private async reconcileManifest(): Promise<string[]> {
-    const parts: string[] = [];
+  private noticeForSave(result: SaveResult, openMap: boolean): string | null {
+    if (result.status === 'engine-not-ready') {
+      this.message.set(this.i18n.t('ui.editor.map.message.engineLoading'));
+      return null;
+    }
+    if (result.status === 'invalid') {
+      this.report.set(result.report);
+      this.error.set(this.i18n.t('ui.editor.map.error.notWritten'));
+      return null;
+    }
 
-    if (this.ledger.manifestNeedsWriting()) {
-      await this.workspace.writeJson('project.json', this.ledger.projectJson());
-      this.ledger.markManifestWritten();
+    const { outcome } = result;
+    this.report.set(outcome.report);
+    const parts: string[] = [];
+    if (openMap) {
+      const path = outcome.written[0] ?? this.ledger.worldPath(this.worlds.currentDefinition().id);
+      parts.push(
+        this.i18n.t(
+          outcome.openMapUpToDate
+            ? 'ui.editor.map.message.mapUpToDate'
+            : 'ui.editor.map.message.savedMap',
+          { file: path },
+        ),
+      );
+    } else if (outcome.written.length > 0) {
+      parts.push(
+        this.i18n.t('ui.editor.map.message.savedProject', { count: outcome.written.length }),
+      );
+    }
+    if (outcome.manifestWritten) {
       parts.push(this.i18n.t('ui.editor.map.message.savedManifest'));
     }
-
-    const orphans = this.ledger.orphanedWorlds();
-    for (const orphan of orphans) {
-      await this.workspace.remove(orphan.path);
-      this.ledger.markWorldDeleted(orphan.id);
-    }
-    if (orphans.length > 0) {
+    if (outcome.deleted.length > 0) {
       parts.push(
         this.i18n.t('ui.editor.map.message.removedMaps', {
-          count: orphans.length,
-          files: orphans.map((orphan) => orphan.path).join(', '),
+          count: outcome.deleted.length,
+          files: outcome.deleted.join(', '),
         }),
       );
     }
-
-    return parts;
+    if (!openMap && parts.length === 0) {
+      return this.i18n.t('ui.editor.map.message.upToDate');
+    }
+    return parts.join(' \u00b7 ');
   }
 
   /**
@@ -1383,41 +1370,6 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
       // per file written.
       this.ledger.refreshDirty();
       this.busy.set(false);
-    }
-  }
-
-  /**
-   * Validates every map plus the doors between them.
-   *
-   * A project is only loadable if each of its files is *and* every door
-   * resolves, so saving the project checks both (`docs/adr/ADR-0014-map-links.md`).
-   * `null` means the engine was not ready and nothing was checked.
-   */
-  private validateProject(): ValidationReport | null {
-    if (!this.engine.isReady) {
-      this.message.set(this.i18n.t('ui.editor.map.message.engineLoading'));
-      return null;
-    }
-    try {
-      // Each world is validated *before* it is registered: `loadWorld` throws on
-      // content the validator would reject, and a thrown error is a worse
-      // report than the one the validator writes.
-      this.resetEngineContent();
-      for (const definition of this.worlds.definitions()) {
-        const json = serializeWorld(definition);
-        const report = this.engine.validateWorld(json);
-        if (!report.valid) {
-          this.report.set(report);
-          return report;
-        }
-        this.engine.loadWorld(json);
-      }
-      const links = this.engine.validateLinks();
-      this.report.set(links);
-      return links;
-    } catch (cause) {
-      this.error.set(describeError(cause));
-      return null;
     }
   }
 
@@ -1453,23 +1405,11 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
   }
 
   /**
-   * Registers the whole project with the engine, for link validation.
-   *
-   * The registry is cleared first: loading is additive, so a map removed or
-   * renamed in the editor would otherwise still be there to satisfy a door that
-   * points at it, and the check would pass on content that no longer exists.
-   */
-  private loadProjectIntoEngine(): void {
-    this.resetEngineContent();
-    for (const definition of this.worlds.definitions()) {
-      this.engine.loadWorld(serializeWorld(definition));
-    }
-  }
-
-  /**
-   * Clears the registry and puts back everything a world is judged against:
-   * the locales, the title screen, the settings, the characters and every tile
-   * set.
+   * Clears the engine's content registry and puts back everything a world is
+   * judged against but the worlds themselves: the locales, the title screen,
+   * the settings, the characters, the decorations, the objects and every tile
+   * set. {@link WorldSavePipeline} calls this before it validates or
+   * re-registers, then loads the worlds itself.
    *
    * Locales go back in with the rest; `resetContent` cleared them, and the
    * manifest will not load without the languages it declares
