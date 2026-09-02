@@ -22,11 +22,11 @@
 
 import { Injectable, computed, inject, signal } from '@angular/core';
 
-import { serializeProject } from '../../content/world-serializer';
 import { I18nService } from '../i18n/i18n.service';
 import { ContentWorkspaceService } from './content-workspace.service';
 import { EngineService } from './engine.service';
 import { ProjectManifest } from '../project/project-manifest';
+import { WriteLedger } from '../project/write-ledger';
 import { LocaleFile, ProjectStoreService } from './project-store.service';
 
 /** What one save wrote. */
@@ -41,6 +41,7 @@ export interface LocaleSaveOutcome {
 export class LocaleAuthoringService {
   private readonly store = inject(ProjectStoreService);
   private readonly manifest = inject(ProjectManifest);
+  private readonly ledger = inject(WriteLedger);
   private readonly engine = inject(EngineService);
   private readonly i18n = inject(I18nService);
   private readonly workspace = inject(ContentWorkspaceService);
@@ -218,7 +219,12 @@ export class LocaleAuthoringService {
     }
 
     if (manifestChanged) {
-      await this.workspace.writeJson('project.json', serializeProject(this.manifest.require()));
+      // The regenerated manifest, not the one as loaded: saving a language
+      // while the map editor holds an unwritten map must not drop that map from
+      // `project.json`. `WriteLedger` owns what the file says on disk
+      // (`.scratch/module-depth-2/issues/01-one-writer-for-project-json.md`).
+      await this.workspace.writeJson('project.json', this.ledger.projectJson());
+      this.ledger.markManifestWritten();
     }
 
     // Disk is only half of it: the engine still holds the text it was given at

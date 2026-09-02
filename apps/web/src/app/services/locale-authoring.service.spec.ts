@@ -15,6 +15,9 @@ import { EngineService } from './engine.service';
 import { LocaleAuthoringService } from './locale-authoring.service';
 import { ProjectStoreService } from './project-store.service';
 import { ProjectManifest } from '../project/project-manifest';
+import { TILE_SET, world } from '../project/project-fixture';
+import { WorldLibrary } from '../project/world-library';
+import { WorldDocument } from '../../content/world-document';
 import { LocaleView } from '../../engine/engine.types';
 import { I18nService } from '../i18n/i18n.service';
 
@@ -181,6 +184,22 @@ describe('LocaleAuthoringService', () => {
     expect(workspace.written.get('project.json')).toContain('locales/en/credits.json');
     const files = manifest.languages()[0]?.files ?? [];
     expect(files.map((file) => file.id)).toEqual(['menu', 'credits']);
+  });
+
+  it('writes a manifest that still lists an unwritten open world', async () => {
+    // `project.json` has one writer: the regenerated manifest `WriteLedger`
+    // owns. Writing it from the manifest as loaded would drop a map the editor
+    // added but has not saved yet
+    // (`.scratch/module-depth-2/issues/01-one-writer-for-project-json.md`).
+    const { locales, workspace } = setup();
+    TestBed.inject(WorldLibrary).addWorld(WorldDocument.fromDefinition(world('north'), TILE_SET));
+    await locales.ensureLoaded();
+
+    locales.ensureKeys(['credits.author']);
+    const outcome = await locales.save();
+
+    expect(outcome.manifestChanged).toBe(true);
+    expect(workspace.written.get('project.json')).toContain('worlds/north.json');
   });
 });
 
