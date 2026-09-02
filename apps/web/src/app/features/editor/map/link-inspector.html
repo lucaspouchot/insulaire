@@ -1,0 +1,84 @@
+<section class="panel">
+  <h2>{{ 'ui.editor.map.doors.heading' | t }}</h2>
+  @let link = selectedLink();
+  @if (link === null) {
+    <p class="hint">{{ 'ui.editor.map.doors.empty' | t }}</p>
+  } @else {
+    <div class="link-editor">
+      <div class="row">
+        <span>{{ 'ui.editor.map.doors.id' | t }}</span
+        ><span>{{ link.id }}</span>
+      </div>
+      <div class="row">
+        <span>{{ 'ui.editor.map.doors.onHex' | t }}</span>
+        <span>[{{ link.at.col }}, {{ link.at.row }}]</span>
+      </div>
+
+      <label>
+        <span>{{ 'ui.editor.map.doors.leadsTo' | t }}</span>
+        <select [value]="link.targetWorld" (change)="setTarget($any($event.target).value)">
+          @for (map of maps(); track map.id) {
+            <option [value]="map.id" [selected]="map.id === link.targetWorld">{{ map.id }}</option>
+          }
+        </select>
+      </label>
+
+      <label>
+        <span>{{ 'ui.editor.map.doors.arrivesAt' | t }}</span>
+        <span class="dims">
+          <input
+            #arrivalCol
+            type="number"
+            min="0"
+            [value]="link.targetAt.col"
+            [attr.aria-label]="'ui.editor.map.doors.arrivalColumn' | t"
+            (change)="setArrival(arrivalCol.value, arrivalRow.value)"
+          />
+          <input
+            #arrivalRow
+            type="number"
+            min="0"
+            [value]="link.targetAt.row"
+            [attr.aria-label]="'ui.editor.map.doors.arrivalRow' | t"
+            (change)="setArrival(arrivalCol.value, arrivalRow.value)"
+          />
+        </span>
+      </label>
+
+      <label>
+        <span>{{ 'ui.editor.map.doors.label' | t }}</span>
+        <input
+          #linkName
+          type="text"
+          [value]="link.name"
+          [attr.placeholder]="'ui.editor.map.doors.namePlaceholder' | t"
+          (change)="setName(linkName.value)"
+        />
+      </label>
+
+      <button type="button" (click)="remove()">
+        {{ 'ui.editor.map.doors.remove' | t }}
+      </button>
+    </div>
+  }
+
+  @if (links().length > 0) {
+    <ul class="link-list">
+      @for (entry of links(); track entry.id) {
+        <li>
+          <button type="button" (click)="select(entry)">
+            [{{ entry.at.col }}, {{ entry.at.row }}] → {{ entry.targetWorld }} [{{
+              entry.targetAt.col
+            }}, {{ entry.targetAt.row }}]
+          </button>
+        </li>
+      }
+    </ul>
+  }
+  <div class="button-row">
+    <button type="button" (click)="validate.emit()">
+      {{ 'ui.editor.map.doors.validate' | t }}
+    </button>
+  </div>
+  <p class="hint">{{ 'ui.editor.map.doors.hint' | t }}</p>
+</section>

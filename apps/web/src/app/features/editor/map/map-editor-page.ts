@@ -86,6 +86,7 @@ import { WriteLedger } from '../../../project/write-ledger';
 import { ProjectStoreService, contentUrl } from '../../../services/project-store.service';
 import { slugId } from '../../../editing/ids';
 import { PlacementInspector } from './placement-inspector';
+import { LinkInspector } from './link-inspector';
 
 /** Hex circumradius in world pixels. The camera scales from here. */
 const HEX_SIZE = 28;
@@ -124,7 +125,7 @@ const EXTENT_STEP = 4;
 
 @Component({
   selector: 'app-map-editor-page',
-  imports: [TranslatePipe, PlacementInspector],
+  imports: [TranslatePipe, PlacementInspector, LinkInspector],
   templateUrl: './map-editor-page.html',
   styleUrl: './map-editor-page.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -920,57 +921,55 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
 
   // ------------------------------------------------------------------ links
 
-  /** Repoints the selected door at another map. */
-  protected setLinkTarget(worldId: string): void {
-    this.updateSelectedLink({ targetWorld: worldId });
-  }
-
-  /**
-   * Moves where the selected door lands.
-   *
-   * The arrival is *not* checked against the target map's bounds here: whether
-   * it is in bounds, passable and free is the Rust validator's verdict, and
-   * "Validate doors" reports it as `link.targetOutOfBounds`,
-   * `link.targetImpassable` or `link.targetOccupied`.
-   */
-  protected setLinkArrival(colInput: string, rowInput: string): void {
-    this.updateSelectedLink({
-      targetAt: { col: clampCoordinate(colInput), row: clampCoordinate(rowInput) },
-    });
-  }
-
-  protected setLinkName(name: string): void {
-    this.updateSelectedLink({ name: name.trim() });
-  }
-
-  /** Removes the selected door. */
-  protected removeSelectedLink(): void {
-    const cell = this.selected();
-    const document = this.worlds.document();
-    if (cell === null || document === null || !document.removeLinkAt(cell)) {
-      return;
-    }
-    this.ledger.touch();
-    this.report.set(null);
-    this.rebuild();
-  }
-
-  /** Selects a door from the list, so the inspector opens on it. */
-  protected selectLink(link: DocumentLink): void {
-    this.selected.set(link.at);
+  /** Opens the door inspector on a door picked from its list. */
+  protected pickLink(at: Offset): void {
+    this.selected.set(at);
     this.tool.set('link');
     this.refresh();
   }
 
-  private updateSelectedLink(patch: Partial<Omit<DocumentLink, 'id' | 'at'>>): void {
-    const cell = this.selected();
+  /**
+   * Reconciles a rewritten link list from the inspector onto the document.
+   *
+   * The inspector edits the door under the selection, so each call is one of a
+   * removal or a field edit; both map onto the document's own mutators, keyed
+   * by the door's hex (`docs/adr/ADR-0014-map-links.md`).
+   */
+  protected applyLinks(next: readonly DocumentLink[]): void {
     const document = this.worlds.document();
-    if (cell === null || document === null || !document.updateLink(cell, patch)) {
+    if (document === null) {
       return;
     }
-    this.ledger.touch();
-    this.report.set(null);
-    this.rebuild();
+    const before = document.placedLinks;
+    let changed = false;
+    if (next.length < before.length) {
+      const gone = before.find((link) => !next.some((entry) => entry.id === link.id));
+      changed = gone !== undefined && document.removeLinkAt(gone.at);
+    } else {
+      for (const link of next) {
+        const was = before.find((entry) => entry.id === link.id);
+        if (
+          was === undefined ||
+          (was.targetWorld === link.targetWorld &&
+            was.targetAt.col === link.targetAt.col &&
+            was.targetAt.row === link.targetAt.row &&
+            was.name === link.name)
+        ) {
+          continue;
+        }
+        changed =
+          document.updateLink(was.at, {
+            targetWorld: link.targetWorld,
+            targetAt: link.targetAt,
+            name: link.name,
+          }) || changed;
+      }
+    }
+    if (changed) {
+      this.ledger.touch();
+      this.report.set(null);
+      this.rebuild();
+    }
   }
 
   /**
@@ -1783,11 +1782,6 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
 function clampDimension(raw: string): number {
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) ? Math.min(256, Math.max(1, parsed)) : 20;
-}
-
-function clampCoordinate(raw: string): number {
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
 }
 
 function slugify(name: string): string {
