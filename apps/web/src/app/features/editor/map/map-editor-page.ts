@@ -364,7 +364,12 @@ export class MapEditorPage implements AfterViewInit, OnDestroy {
     ...new Set(this.maps().map((map) => map.zone)),
   ]);
 
-  /** The zone the open map is in, with the default resolved. */
+  /**
+   * The zone the open map is in, with the default resolved.
+   *
+   * A map that names no zone is in the first one the manifest declares
+   * (`docs/adr/ADR-0018-map-zones.md`).
+   */
   protected readonly openZoneId = computed(() => {
     this.revision();
     const zone = this.document()?.zone ?? '';
