@@ -91,7 +91,9 @@ import { PixelEditor } from './pixel-editor';
 import { DraftSet } from '../../../editing/draft-set';
 import { DraftSource } from '../../../editing/draft-source';
 import { FlipbookClock } from '../../../editing/flipbook-clock';
+import { SpriteSessions, SpriteStore } from '../../../editing/sprite-sessions';
 import { freeId } from '../../../editing/ids';
+import { decodeContentSprite } from './sprite-decode';
 
 /** The categories the picker offers, in the order it shows them. */
 const CATEGORIES: readonly DecorationCategory[] = [
@@ -241,16 +243,8 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
   /** What the resolver made of the open definition at that moment. */
   protected readonly resolved = signal<ResolvedDecoration | null>(null);
 
-  /** The frames open for editing, by content path. */
-  private readonly sessions = new Map<string, SpriteDocument>();
-  /** Paths being decoded, so the effect asks for each of them only once. */
-  private readonly opening = new Set<string>();
-  /** Decoded images for the hex stage, by content path. */
-  private readonly images = new Map<string, HTMLImageElement>();
-  /** Paths already asked for, so a missing file is not fetched every frame. */
-  private readonly requested = new Set<string>();
-  /** Bumped by every stroke and every decode, so the view re-reads the pixels. */
-  private readonly strokes = signal(0);
+  /** The frames open for editing, the unsaved set, and what a save writes. */
+  private readonly sessions = new SpriteSessions(this.spriteStore());
 
   /** The reference character's own sprites, fetched as the stage asks for them. */
   private readonly figureSprites = new SpriteCache(
@@ -367,16 +361,15 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
 
   /** The pixels behind that image, once it has been decoded. */
   protected readonly sprite = computed<SpriteDocument | null>(() => {
-    this.strokes();
+    this.sessions.revision();
     const asset = this.openAsset();
     return asset.length === 0 ? null : (this.sessions.get(asset) ?? null);
   });
 
-  /** Frames holding pixels the content directory has not been told about. */
-  protected readonly unsavedSprites = computed<readonly string[]>(() => {
-    this.strokes();
-    return [...this.sessions].filter(([, sprite]) => sprite.unsaved).map(([asset]) => asset);
-  });
+  /** Frames of the open definition holding pixels the content directory lacks. */
+  protected readonly unsavedSprites = computed<readonly string[]>(() =>
+    this.sessions.unsavedIn(frameAssets(this.document())),
+  );
 
   protected readonly errorCount = this.drafts.errorCount;
 
@@ -393,7 +386,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
       this.figure();
       this.hexZoom();
       this.geometry();
-      this.strokes();
+      this.sessions.revision();
       this.draw();
     });
 
@@ -401,7 +394,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
     // author has not opened costs nothing.
     effect(() => {
       for (const asset of this.frames()) {
-        this.require(asset);
+        this.sessions.open(asset);
       }
     });
   }
@@ -425,6 +418,14 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
   }
 
   // ----------------------------------------------------------------- source
+
+  /** How this screen's frames are read and written: the content directory. */
+  private spriteStore(): SpriteStore {
+    return {
+      load: (path) => decodeContentSprite(path),
+      write: (path, blob) => this.workspace.write(path, blob),
+    };
+  }
 
   /**
    * What a *decoration* means by reading, validating, writing and declaring.
@@ -470,13 +471,8 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
       forget: (id) => this.library.forget(id),
       declare: (id, path) => this.manifest.declareDecoration(id, path),
       undeclare: (id) => this.manifest.undeclareDecoration(id),
-      dirtySprites: (document) => {
-        this.strokes();
-        return (document.animations ?? [])
-          .flatMap((animation) => animation.frames)
-          .filter((asset) => this.sessions.get(asset)?.unsaved === true);
-      },
-      writeSprites: () => this.writeSprites(),
+      dirtySprites: (document) => this.sessions.unsavedIn(frameAssets(document)),
+      writeSprites: (document) => this.writeSprites(frameAssets(document)),
       // A decoration is not player-facing text: it names no locale keys.
       keysOf: () => [],
       removed: () => {},
@@ -791,7 +787,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
     this.editAnimation((draft) => {
       draft.frames = draft.frames.map((frame, at) => (at === index ? path : frame));
     });
-    this.require(path);
+    this.sessions.open(path);
   }
 
   /** `true` when a frame names a file the content directory does not hold. */
@@ -813,7 +809,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
     // It exists nowhere else, so it owes the disk a write from the moment it is
     // created rather than from its first stroke.
     sprite.markUnsaved();
-    this.sessions.set(path, sprite);
+    this.sessions.add(path, sprite);
     this.touchSprites();
     this.setFrame(index, path);
   }
@@ -839,8 +835,8 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
       const path = `${ASSET_DIR}/${file.name}`;
       await this.workspace.write(path, file);
       await this.refreshFiles();
-      // The decoded copies hold the bytes this path used to have.
-      this.forgetImage(path);
+      // The decoded copy holds the bytes this path used to have.
+      this.sessions.discard(path);
       this.setFrame(index, path);
       this.drafts.announce(this.i18n.t('ui.editor.decoration.uploaded', { file: path }));
     } catch (cause) {
@@ -928,65 +924,22 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
   }
 
   /**
-   * Writes the edited frames, one PNG each.
+   * Writes the open definition's edited frames, one PNG each.
    *
    * @returns how many were written
    */
-  private async writeSprites(): Promise<number> {
-    const pending = [...this.sessions].filter(([, sprite]) => sprite.unsaved);
-    for (const [asset, sprite] of pending) {
-      await this.workspace.write(asset, await sprite.toBlob());
-      sprite.markSaved();
-    }
-    if (pending.length > 0) {
+  private async writeSprites(frames: readonly string[]): Promise<number> {
+    const written = await this.sessions.writeIn(frames);
+    if (written > 0) {
       await this.refreshFiles();
       this.touchSprites();
     }
-    return pending.length;
-  }
-
-  /** Opens a frame for editing and for drawing, at most once per path. */
-  private require(asset: string): void {
-    if (asset.length === 0 || this.requested.has(asset)) {
-      return;
-    }
-    this.requested.add(asset);
-    void this.decode(asset);
-  }
-
-  private async decode(asset: string): Promise<void> {
-    if (this.opening.has(asset)) {
-      return;
-    }
-    this.opening.add(asset);
-    try {
-      const image = await loadImage(asset);
-      if (image === null) {
-        // A path naming nothing is already reported as a missing frame, and the
-        // stage draws the box the image would have filled.
-        return;
-      }
-      this.images.set(asset, image);
-      const sprite = SpriteDocument.fromImage(image);
-      if (sprite !== null) {
-        this.sessions.set(asset, sprite);
-      }
-      this.touchSprites();
-    } finally {
-      this.opening.delete(asset);
-    }
-  }
-
-  /** Drops what was decoded for a path whose bytes have just changed. */
-  private forgetImage(asset: string): void {
-    this.images.delete(asset);
-    this.sessions.delete(asset);
-    this.requested.delete(asset);
+    return written;
   }
 
   /** Tells the view that the pixels moved. */
   private touchSprites(): void {
-    this.strokes.update((count) => count + 1);
+    this.sessions.touched();
     // The session decides what "unsaved" means, and a stroke is half of it.
     this.drafts.touchSprites();
   }
@@ -1187,8 +1140,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
     const left = groundX + x * zoom;
     const top = groundY + y * zoom;
 
-    const painted = this.sessions.get(resolved.asset)?.surface() ?? null;
-    const image = painted ?? this.images.get(resolved.asset) ?? null;
+    const image = this.sessions.get(resolved.asset)?.surface() ?? null;
     if (image === null) {
       // No image yet: the box it will fill, so the anchor can still be placed
       // against a canvas that exists only as two numbers.
@@ -1297,11 +1249,18 @@ function figureBox(hexHeight: number): { width: number; height: number } {
   return { width: height * FIGURE_ASPECT, height };
 }
 
-function loadImage(asset: string): Promise<HTMLImageElement | null> {
-  return new Promise((resolve) => {
-    const image = new Image();
-    image.addEventListener('load', () => resolve(image));
-    image.addEventListener('error', () => resolve(null));
-    image.src = assetUrl(`${CONTENT_ROOT}/${asset}`);
-  });
+/** Every image the frames of a decoration name, once each. */
+function frameAssets(document: DecorationDefinition | null): string[] {
+  if (document === null) {
+    return [];
+  }
+  const assets = new Set<string>();
+  for (const animation of document.animations ?? []) {
+    for (const frame of animation.frames) {
+      if (frame.length > 0) {
+        assets.add(frame);
+      }
+    }
+  }
+  return [...assets];
 }

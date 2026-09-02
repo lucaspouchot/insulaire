@@ -1,0 +1,61 @@
+# 03 — A clock over an animation, not a flipbook
+
+Status: ready-for-agent
+Strength: worth exploring
+Blocked by: —
+Card: 3
+
+The deepening the first pass named and deferred, in ticket 09: "a clock over
+`Animation` rather than over `Flipbook`; the two would share the ticker and the
+play/pause, not the frame arithmetic." Second prerequisite for 04.
+
+## Problem
+
+`character-workspace.ts` hand-rolls a playback clock —
+`clock` / `lastTick` (322–325), `startClock` / `stopClock` / `togglePlay` /
+`setSpeed` (704–749) — a `timeMs` signal that accumulates `elapsed * speed()`,
+with self-stop at the end of a non-looping animation. It is the
+`rAF + lastTick + accumulate` shape `FlipbookClock` was extracted to kill, done
+a third time.
+
+It cannot reuse `FlipbookClock`: a flipbook yields a frame *index* from a list
+of images at a rate; a skeletal animation is a frame *count* with tracks over
+it, played at a speed the author sets, stopping itself at the end. The workspace
+says so at lines 697–702.
+
+`play-page.ts:687-703` (`ensurePresentationClock`) is **not** a third caller. It
+passes `performance.now()` straight through to `session.sample(now)`, has no
+`timeMs`, no speed, no scrub, and stops itself when `session.changing` goes
+false. It is a fixed-cadence "sample while entities are still gliding" ticker,
+driven by the tick (ADR-0003), not a play button. It stays in the page.
+
+## Deepening
+
+An `AnimationClock` sibling of `FlipbookClock`, reusing its injected `Ticker`
+seam. One caller: `character-workspace`.
+
+## Decisions
+
+- **`app/editing/animation-clock.ts`**, sibling of `flipbook-clock.ts`.
+- **Shares only the injected `Ticker` type.** No `ScrubClock` base class — it
+  buys ~30 lines and couples two things that drifted apart on purpose. One
+  module's worth of shared shape is not a seam.
+- **Interface**: `timeMs` (signal), `playing` (signal), `speed` (signal),
+  `togglePlay()`, `setSpeed(n)`, `scrubTo(ms)`, a `bounds` signal input
+  `{ durationMs, loop }`, injected `Ticker`.
+- **Starts paused at `timeMs = 0`.** The workspace opens on a static pose; the
+  author presses play.
+- **The clock owns self-stop.** It reads `bounds`, so it stays correct when the
+  author switches the selected animation without a re-`play()` — the same way
+  `FlipbookClock` reads its flipbook.
+
+## Done when
+
+- [ ] `character-workspace.ts` holds no `rAF` / `lastTick` / accumulate of its
+      own.
+- [ ] `animation-clock.spec.ts` advances time by hand — no `rAF`, no DOM —
+      and covers: accumulate at speed, `scrubTo`, self-stop at a non-looping
+      end, no self-stop when `loop`, correct behaviour when `bounds` changes
+      mid-play.
+- [ ] `play-page.ts` is untouched.
+- [ ] `npm run check` and the smoke run pass, screenshots unchanged.

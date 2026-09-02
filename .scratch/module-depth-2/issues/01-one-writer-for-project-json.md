@@ -1,0 +1,70 @@
+# 01 — One writer for `project.json`
+
+Status: ready-for-agent
+Strength: strong
+Blocked by: —
+Card: 6
+
+**First of the seven.** Standalone, and it closes a latent bug rather than a
+structural weakness. It is also where the smoke baseline is re-recorded if it is
+still stale at `ad25610`.
+
+## Problem
+
+`project.json` is written by two modules under two different rules.
+
+```ts
+// app/editing/draft-set.ts — via the DraftLedger port
+ledger.projectJson()          // the manifest regenerated from the open documents
+
+// app/services/locale-authoring.service.ts:221
+serializeProject(this.manifest.require())   // the manifest as it was loaded
+```
+
+`WriteLedger` owns the regenerated manifest — it is what a save compares against
+and what Play loads (`.scratch/module-depth/issues/05-close-the-project-store-read-side.md`).
+`LocaleAuthoringService.save()` reaches around that seam. Saving languages while
+the map editor holds an unwritten new map writes a `project.json` that does not
+list the new map.
+
+The first pass found this and left it: 05's `## Comments` says
+"Saving languages while the map editor holds an unwritten new map would
+therefore write a manifest that does not list it. Worth its own ticket."
+
+## Deepening
+
+Route the locale save's manifest write through `WriteLedger`. No new module —
+`WriteLedger` already is the one that owns "what `project.json` says on disk".
+
+## Decisions
+
+- **Routing-only.** `LocaleAuthoringService` takes the `DraftLedger` port
+  (`manifestNeedsWriting()`, `projectJson()`, `markManifestWritten()`,
+  `refreshDirty()`) the same way the six draft-source adapters do, or injects
+  `WriteLedger` directly. Its `save()` writes `ledger.projectJson()` and calls
+  `markManifestWritten()` where it currently writes
+  `serializeProject(this.manifest.require())`.
+- **`serializeProject` may lose its last direct caller here.** If so, check
+  whether `world-serializer.ts` still needs to export it; if nothing else calls
+  it, it moves inside `WriteLedger` or goes. Pre-1.0: no deprecation alias.
+- **The manifest-changed branch stays.** `LocaleAuthoringService` still decides
+  whether a namespace file was newly declared (`declareLocaleFile` returning
+  `true`); what changes is only *how* the resulting `project.json` is
+  serialised.
+
+## Verification note
+
+Confirm whether the `verify-no-regression` baseline is still the one recorded at
+`2680070` (the first pass flagged it stale — 972 locale keys where `HEAD` shows
+978). If stale, re-record it as part of this ticket. One screen is expected to
+move: any screen that reads `project.json` after a language save now sees the
+regenerated manifest.
+
+## Done when
+
+- [ ] `project.json` is written by exactly one module.
+- [ ] Saving a language while an unwritten world is open writes a manifest that
+      lists that world — pinned by a test in
+      `locale-authoring.service.spec.ts`.
+- [ ] `serializeProject` has no orphaned export.
+- [ ] `npm run check` and the smoke run pass; the baseline is current.

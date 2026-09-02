@@ -126,7 +126,9 @@ import {
 } from './tile-editor.types';
 import { DraftSet } from '../../../editing/draft-set';
 import { DraftSource } from '../../../editing/draft-source';
+import { SpriteSessions, SpriteStore } from '../../../editing/sprite-sessions';
 import { slugId } from '../../../editing/ids';
+import { decodeContentSprite, decodeSpriteFile } from './sprite-decode';
 
 /** The board the multi-tile preview lays out, in offset coordinates. */
 const BOARD_WIDTH = 3;
@@ -230,10 +232,8 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
    */
   private view: { layout: PreviewLayout; width: number; height: number } | null = null;
 
-  /** The buffers the pixel editor writes into, by asset path. */
-  private readonly sessions = new Map<string, SpriteDocument>();
-  /** Bumped by every stroke, so what is read off the pixels is re-read. */
-  private readonly strokes = signal(0);
+  /** The buffers the pixel editor writes into, the unsaved set, and the save. */
+  private readonly sessions = new SpriteSessions(this.spriteStore());
   /** Files loaded from the content directory, for everything not being edited. */
   private readonly cache = new SpriteCache(
     (asset) => contentUrl(asset),
@@ -275,7 +275,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
       // open set is read by identity: an edit is a copy, so the draft that
       // comes back is a different object from the one before it.
       this.tileSet();
-      this.strokes();
+      this.sessions.revision();
       this.selectedTileId();
       this.previewElevation();
       this.previewBoard();
@@ -312,6 +312,14 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
   private watching: ResizeObserver | null = null;
 
   // ------------------------------------------------------------------ source
+
+  /** How this screen's images are read and written: the content directory. */
+  private spriteStore(): SpriteStore {
+    return {
+      load: (path) => decodeContentSprite(path),
+      write: (path, blob) => this.workspace.write(path, blob),
+    };
+  }
 
   /**
    * What a *tile set* means by reading, validating, writing and declaring.
@@ -686,7 +694,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
     // It exists nowhere else, so it owes the disk a write from the moment it is
     // created rather than from its first stroke.
     sprite.markUnsaved();
-    this.sessions.set(asset, sprite);
+    this.sessions.add(asset, sprite);
     this.touchSprites();
     this.openImage.set({ level, variant: at });
   }
@@ -712,7 +720,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
     if (level >= 1 && this.previewElevation() < needed) {
       this.previewElevation.set(needed);
     }
-    void this.ensureSession(level, variant);
+    this.ensureSession(level, variant);
   }
 
   /** `true` when this variant is the one the pixel editor has open. */
@@ -721,31 +729,22 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
   }
 
   /**
-   * The buffer for a variant, decoding the file the first time it is asked for.
+   * Opens a variant's buffer, decoding its file the first time it is asked for.
    *
-   * A file that cannot be decoded leaves the pixel editor empty and says so,
-   * rather than opening a blank image over art that exists.
+   * A file that names nothing leaves the pixel editor empty; the variant row
+   * already marks it missing.
    */
-  private async ensureSession(level: number, variant: number): Promise<void> {
+  private ensureSession(level: number, variant: number): void {
     const tile = this.tile();
     const entry = tile === null ? null : (variantsOf(tile, level)[variant] ?? null);
-    if (entry === null || this.sessions.has(entry.asset)) {
-      this.touchSprites();
-      return;
+    if (entry !== null) {
+      this.sessions.open(entry.asset);
     }
-    const image = await loadImage(contentUrl(entry.asset));
-    const sprite = image === null ? null : SpriteDocument.fromImage(image);
-    if (sprite === null) {
-      this.drafts.fail(this.i18n.t('ui.editor.asset.imageUnreadable', { file: entry.asset }));
-      return;
-    }
-    this.sessions.set(entry.asset, sprite);
-    this.touchSprites();
   }
 
   /** The image the pixel editor is holding. */
   protected readonly openSprite = computed<SpriteDocument | null>(() => {
-    this.strokes();
+    this.sessions.revision();
     const tile = this.tile();
     const target = this.openImage();
     if (tile === null || target === null) {
@@ -783,9 +782,9 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
 
   /** Every colour the set's open images use, so its tiles keep one palette. */
   protected readonly sharedPalette = computed<readonly string[]>(() => {
-    this.strokes();
+    this.sessions.revision();
     const counts = new Map<string, number>();
-    for (const sprite of this.sessions.values()) {
+    for (const [, sprite] of this.sessions.entries()) {
       for (const color of sprite.palette(8)) {
         counts.set(color, (counts.get(color) ?? 0) + 1);
       }
@@ -805,7 +804,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
    * (`app/editing/draft-set.ts`).
    */
   private touchSprites(): void {
-    this.strokes.update((count) => count + 1);
+    this.sessions.touched();
     this.drafts.touchSprites();
   }
 
@@ -918,8 +917,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
       return;
     }
 
-    const image = await loadImage(URL.createObjectURL(file));
-    const sprite = image === null ? null : SpriteDocument.fromImage(image);
+    const sprite = await decodeSpriteFile(file);
     if (sprite === null) {
       this.drafts.fail(this.i18n.t('ui.editor.asset.importUnreadable', { file: file.name }));
       return;
@@ -949,7 +947,7 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
     // The definition is untouched: the variant already names this file, and
     // what changed is its pixels — which is the other half of unsaved.
     sprite.markUnsaved();
-    this.sessions.set(entry.asset, sprite);
+    this.sessions.add(entry.asset, sprite);
     this.cache.clear();
     this.drafts.clearError();
     this.openImage.set({ level, variant: index });
@@ -993,12 +991,11 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
    * this of every draft it holds and not only of the one on screen.
    */
   private unwritten(set: TileSetDefinition): readonly string[] {
-    this.strokes();
-    return assetsOf(set).filter((asset) => this.sessions.get(asset)?.unsaved === true);
+    return this.sessions.unsavedIn(assetsOf(set));
   }
 
   /**
-   * Writes the open set's edited images, one PNG each.
+   * Writes a set's edited images, one PNG each.
    *
    * Art and definition are one act of authoring, so they go together (ADR-0028)
    * — the session decides the order, and it writes the file first.
@@ -1006,21 +1003,13 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
    * @returns how many were written
    */
   private async writeSprites(set: TileSetDefinition): Promise<number> {
-    const pending = this.unwritten(set);
-    for (const asset of pending) {
-      const sprite = this.sessions.get(asset);
-      if (sprite === undefined) {
-        continue;
-      }
-      await this.workspace.write(asset, await sprite.toBlob());
-      sprite.markSaved();
-    }
-    if (pending.length > 0) {
+    const written = await this.sessions.writeIn(assetsOf(set));
+    if (written > 0) {
       // The decoded copies hold the bytes these paths used to have.
       this.cache.clear();
       this.touchSprites();
     }
-    return pending.length;
+    return written;
   }
 
   /** Writes the open set into the content directory. */
@@ -1159,12 +1148,12 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
   protected readonly paintable = computed(() => this.openSprite() !== null);
 
   protected readonly canUndo = computed(() => {
-    this.strokes();
+    this.sessions.revision();
     return this.openSprite()?.canUndo === true;
   });
 
   protected readonly canRedo = computed(() => {
-    this.strokes();
+    this.sessions.revision();
     return this.openSprite()?.canRedo === true;
   });
 
@@ -1402,14 +1391,4 @@ export class TileWorkspace implements AfterViewInit, OnDestroy {
     context.stroke();
     context.restore();
   }
-}
-
-/** Loads an image, resolving to `null` rather than rejecting when it will not. */
-function loadImage(url: string): Promise<HTMLImageElement | null> {
-  return new Promise((resolve) => {
-    const image = new Image();
-    image.addEventListener('load', () => resolve(image));
-    image.addEventListener('error', () => resolve(null));
-    image.src = url;
-  });
 }

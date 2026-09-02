@@ -116,7 +116,9 @@ import { WriteLedger } from '../../../project/write-ledger';
 import { CONTENT_ROOT, ProjectStoreService } from '../../../services/project-store.service';
 import { DraftSet } from '../../../editing/draft-set';
 import { DraftSource } from '../../../editing/draft-source';
+import { SpriteSessions, SpriteStore } from '../../../editing/sprite-sessions';
 import { freeId } from '../../../editing/ids';
+import { decodeContentSprite } from './sprite-decode';
 import { prepareSurface, zoomBy } from '../../../../renderer/canvas-surface';
 
 /**
@@ -278,15 +280,11 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
   protected readonly flatZoom = signal(6);
   /** Colours used lately, so a tone carries from one sprite to the next. */
   private readonly recent = signal<readonly string[]>([]);
-  /** Bumped by every stroke, so the palette and the buttons re-read the pixels. */
-  private readonly strokes = signal(0);
   /** The two greys of the transparency checker, read from the theme once. */
   private checker: readonly [string, string] | null = null;
 
-  /** The sprites open for editing, by content path. */
-  private readonly sessions = new Map<string, SpriteDocument>();
-  /** Paths being decoded, so the effect asks for each of them only once. */
-  private readonly opening = new Set<string>();
+  /** The sprites open for editing, the unsaved set, and what a save writes. */
+  private readonly sessions = new SpriteSessions(this.spriteStore());
   /** Where the pointer was when it last painted, in the sprite's own pixels. */
   private stroking: { x: number; y: number } | null = null;
   /**
@@ -529,7 +527,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
 
   /** The pixels behind that layer, once its image has been decoded. */
   protected readonly sprite = computed<SpriteDocument | null>(() => {
-    this.strokes();
+    this.sessions.revision();
     const asset = this.target()?.asset ?? '';
     return asset.length === 0 ? null : (this.sessions.get(asset) ?? null);
   });
@@ -563,7 +561,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
    * is the whole difference between a figure and a collage.
    */
   protected readonly palette = computed<readonly string[]>(() => {
-    this.strokes();
+    this.sessions.revision();
     const active = this.target()?.asset ?? '';
     const colors: string[] = [];
     const add = (found: readonly string[]): void => {
@@ -574,7 +572,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
       }
     };
     add(this.sessions.get(active)?.palette() ?? []);
-    for (const [asset, sprite] of this.sessions) {
+    for (const [asset, sprite] of this.sessions.entries()) {
       if (asset !== active) {
         add(sprite.palette(8));
       }
@@ -583,19 +581,19 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
     return colors.slice(0, PALETTE_SIZE);
   });
 
-  /** Images holding pixels the content directory has not been told about. */
+  /** Images of the open character holding pixels the content directory lacks. */
   protected readonly unsavedSprites = computed<readonly string[]>(() => {
-    this.strokes();
-    return [...this.sessions].filter(([, sprite]) => sprite.unsaved).map(([asset]) => asset);
+    const document = this.document();
+    return document === null ? [] : this.sessions.unsavedIn(spriteAssets(document));
   });
 
   protected readonly canUndo = computed(() => {
-    this.strokes();
+    this.sessions.revision();
     return this.sprite()?.canUndo === true;
   });
 
   protected readonly canRedo = computed(() => {
-    this.strokes();
+    this.sessions.revision();
     return this.sprite()?.canRedo === true;
   });
 
@@ -636,7 +634,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
     // changed it — an edit, a preview choice, or opening another definition.
     effect(() => {
       this.resolved();
-      this.strokes();
+      this.sessions.revision();
       this.paintZoom();
       this.showGrid();
       this.scene();
@@ -652,7 +650,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
     // (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
     effect(() => {
       for (const drawn of this.resolved()?.layers ?? []) {
-        this.requireSprite(drawn.asset);
+        this.sessions.open(drawn.asset);
       }
     });
     // The playback loop lives and dies with the Play button, and with the
@@ -783,6 +781,14 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
     });
   }
 
+  /** How this screen's sprites are read and written: the content directory. */
+  private spriteStore(): SpriteStore {
+    return {
+      load: (path) => decodeContentSprite(path),
+      write: (path, blob) => this.workspace.write(path, blob),
+    };
+  }
+
   /**
    * What a *character* means by reading, validating, writing and declaring.
    *
@@ -820,11 +826,8 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
       forget: (id) => this.library.forget(id),
       declare: (id, path) => this.manifest.declareCharacter(id, path),
       undeclare: (id) => this.manifest.undeclareCharacter(id),
-      dirtySprites: (document) => {
-        this.strokes();
-        return spriteAssets(document).filter((asset) => this.sessions.get(asset)?.unsaved === true);
-      },
-      writeSprites: () => this.writeSprites(),
+      dirtySprites: (document) => this.sessions.unsavedIn(spriteAssets(document)),
+      writeSprites: (document) => this.writeSprites(spriteAssets(document)),
       keysOf: (document) => referencedKeys(document),
       removed: () => {},
       refresh: () => this.repose(),
@@ -1487,7 +1490,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
   /** The natural size of an image under the content root, or `null`. */
   private async measure(asset: string): Promise<{ width: number; height: number } | null> {
     const open = this.sessions.get(asset);
-    if (open !== undefined) {
+    if (open !== null) {
       // An edited sprite is its own truth: the file may still be the old size.
       return { width: open.width, height: open.height };
     }
@@ -1495,18 +1498,8 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
     if (cached !== null) {
       return cached;
     }
-    const image = await this.loadImage(asset);
-    return image === null ? null : { width: image.naturalWidth, height: image.naturalHeight };
-  }
-
-  /** Loads one content image, resolving to `null` when it is not there. */
-  private loadImage(asset: string): Promise<HTMLImageElement | null> {
-    return new Promise((resolve) => {
-      const image = new Image();
-      image.addEventListener('load', () => resolve(image));
-      image.addEventListener('error', () => resolve(null));
-      image.src = assetUrl(`${CONTENT_ROOT}/${asset}`);
-    });
+    const decoded = await decodeContentSprite(asset);
+    return decoded === null ? null : { width: decoded.width, height: decoded.height };
   }
 
   /**
@@ -1766,7 +1759,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
    * (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
    */
   protected onFlatPainted(): void {
-    this.strokes.update((count) => count + 1);
+    this.sessions.touched();
     this.draw();
   }
 
@@ -2061,7 +2054,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
     // It exists nowhere else, so it owes the disk a write from the moment it is
     // created rather than from its first stroke.
     sprite.markUnsaved();
-    this.sessions.set(path, sprite);
+    this.sessions.add(path, sprite);
     this.touchSprites();
 
     this.editLayer((draft) => {
@@ -2082,13 +2075,17 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
     return variants.findIndex((variant) => variant.id === drawn.variant);
   }
 
-  /** Writes every edited sprite into the content directory. */
+  /** Writes every edited sprite of the open character into the content directory. */
   protected async saveSprites(): Promise<void> {
+    const document = this.document();
+    if (document === null) {
+      return;
+    }
     this.drafts.setBusy(true);
     this.drafts.clearError();
     this.drafts.announce(null);
     try {
-      const written = await this.writeSprites();
+      const written = await this.writeSprites(spriteAssets(document));
       this.drafts.announce(this.i18n.t('ui.editor.character.spritesSaved', { count: written }));
     } catch (cause) {
       this.drafts.fail(cause);
@@ -2098,50 +2095,20 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
   }
 
   /**
-   * Writes the edited sprites, one PNG each.
+   * Writes the open character's edited sprites, one PNG each.
    *
    * @returns how many were written
    */
-  private async writeSprites(): Promise<number> {
-    const pending = [...this.sessions].filter(([, sprite]) => sprite.unsaved);
-    if (pending.length === 0) {
-      return 0;
-    }
-    for (const [asset, sprite] of pending) {
-      await this.workspace.write(asset, await sprite.toBlob());
-      sprite.markSaved();
-    }
-    await this.refreshFiles();
-    // The cache holds the bytes these paths used to have — including a
-    // "missing" entry for one that has only just been created.
-    this.sprites.clear();
-    this.touchSprites();
-    return pending.length;
-  }
-
-  /** Opens a sprite for editing, at most once per path. */
-  private requireSprite(asset: string): void {
-    if (asset.length === 0 || this.sessions.has(asset) || this.opening.has(asset)) {
-      return;
-    }
-    this.opening.add(asset);
-    void this.openSprite(asset);
-  }
-
-  private async openSprite(asset: string): Promise<void> {
-    try {
-      const image = await this.loadImage(asset);
-      const sprite = image === null ? null : SpriteDocument.fromImage(image);
-      if (sprite === null) {
-        // A path naming nothing is already reported as a missing asset, and the
-        // stage draws the outline the renderer draws for one.
-        return;
-      }
-      this.sessions.set(asset, sprite);
+  private async writeSprites(assets: readonly string[]): Promise<number> {
+    const written = await this.sessions.writeIn(assets);
+    if (written > 0) {
+      await this.refreshFiles();
+      // The cache holds the bytes these paths used to have — including a
+      // "missing" entry for one that has only just been created.
+      this.sprites.clear();
       this.touchSprites();
-    } finally {
-      this.opening.delete(asset);
     }
+    return written;
   }
 
   private remember(color: string): void {
@@ -2152,7 +2119,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
 
   /** Tells the view that the pixels moved. */
   private touchSprites(): void {
-    this.strokes.update((count) => count + 1);
+    this.sessions.touched();
     // The session decides what "unsaved" means, and a stroke is half of it.
     this.drafts.touchSprites();
   }

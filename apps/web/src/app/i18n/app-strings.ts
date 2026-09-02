@@ -737,7 +737,6 @@ const EN: StringTree = {
         saved: 'Saved {file}',
         imagesSaved: '{count} image(s) written',
         invalid: 'The tile set is invalid; nothing was written.',
-        imageUnreadable: '{file} could not be read as an image, so nothing was opened.',
         importUnreadable: '{file} could not be read as an image; nothing was imported.',
         importWrongSize:
           '{file} is {actual}, and this level needs {expected}; nothing was imported.',
@@ -1863,7 +1862,6 @@ const FR: StringTree = {
         saved: '{file} enregistré',
         imagesSaved: '{count} image(s) écrite(s)',
         invalid: 'Le tileset est invalide ; rien n’a été écrit.',
-        imageUnreadable: '{file} n’a pas pu être lu comme une image, rien n’a été ouvert.',
         importUnreadable: '{file} n’a pas pu être lu comme une image ; rien n’a été importé.',
         importWrongSize:
           '{file} fait {actual}, et ce niveau attend {expected} ; rien n’a été importé.',
