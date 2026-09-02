@@ -15,11 +15,9 @@ import {
   heldOffset,
   heldPose,
   hierarchy,
-  isNumeric,
   keyframeAt,
   poseAt,
   poseValue,
-  usesOptions,
   wouldLoop,
 } from './character-editor.types';
 
@@ -43,22 +41,6 @@ function track(...frames: number[]): AnimationTrack {
     keyframes: frames.map((frame) => ({ frame, offset: [frame, frame * 2] as [number, number] })),
   };
 }
-
-describe('control kinds', () => {
-  it('knows which controls choose from a list', () => {
-    expect(usesOptions('select')).toBe(true);
-    expect(usesOptions('multiSelect')).toBe(true);
-    expect(usesOptions('slider')).toBe(false);
-    expect(usesOptions('text')).toBe(false);
-  });
-
-  it('knows which controls are numbers, and so can drive a scale', () => {
-    expect(isNumeric('slider')).toBe(true);
-    expect(isNumeric('number')).toBe(true);
-    expect(isNumeric('select')).toBe(false);
-    expect(isNumeric('toggle')).toBe(false);
-  });
-});
 
 describe('blankVariant', () => {
   it('gives a new layer a visible box in the middle of the canvas', () => {

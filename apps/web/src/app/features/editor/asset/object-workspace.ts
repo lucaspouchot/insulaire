@@ -52,10 +52,8 @@ import { zoomBy } from '../../../../renderer/canvas-surface';
 import { assetUrl } from '../../../../core/asset-url';
 import { I18nService } from '../../../i18n/i18n.service';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
-import {
-  ContentWorkspaceService,
-  WorkspaceFile,
-} from '../../../services/content-workspace.service';
+import { ContentWorkspaceService } from '../../../services/content-workspace.service';
+import { WorkspaceFiles } from '../../../services/workspace-files';
 import { EngineService } from '../../../services/engine.service';
 import { LocaleAuthoringService } from '../../../services/locale-authoring.service';
 import { ObjectLibraryService } from '../../../services/object-library.service';
@@ -99,14 +97,13 @@ export class ObjectWorkspace implements OnDestroy {
   private readonly engine = inject(EngineService);
   private readonly i18n = inject(I18nService);
   private readonly workspace = inject(ContentWorkspaceService);
+  private readonly workspaceFiles = inject(WorkspaceFiles);
   private readonly locales = inject(LocaleAuthoringService);
   private readonly library = inject(ObjectLibraryService);
 
   /** What the engine says is on screen at the clock's time. */
   protected readonly resolved = signal<ResolvedObject | null>(null);
 
-  /** Content files the workspace holds, for the frame picker. */
-  protected readonly files = signal<readonly WorkspaceFile[]>([]);
   protected readonly zoom = signal(DEFAULT_ZOOM);
   protected readonly showGrid = signal(true);
 
@@ -194,9 +191,7 @@ export class ObjectWorkspace implements OnDestroy {
   protected readonly frame = computed(() => this.frames()[this.frameIndex()] ?? '');
 
   /** Every image in the content directory, which is what a frame may name. */
-  protected readonly images = computed<readonly WorkspaceFile[]>(() =>
-    this.files().filter((file) => /\.(png|gif|webp)$/i.test(file.path)),
-  );
+  protected readonly images = this.workspaceFiles.images;
 
   /** The pixels behind the selected frame, once its image has been decoded. */
   protected readonly sprite = computed<SpriteDocument | null>(() => {
@@ -269,7 +264,7 @@ export class ObjectWorkspace implements OnDestroy {
         // Registered as well as fetched: the *runtime* holds these, and this
         // screen is about to replace one of them.
         await this.library.ensureLoaded();
-        await this.refreshFiles();
+        await this.workspaceFiles.refresh();
       },
       declared: () => this.manifest.objects(),
       read: (entry) => this.fetchObject(entry),
@@ -286,17 +281,6 @@ export class ObjectWorkspace implements OnDestroy {
       removed: (document) => this.forgetFrames(document),
       refresh: () => this.repose(),
     };
-  }
-
-  private async refreshFiles(): Promise<void> {
-    if (this.workspace.status() === null) {
-      return;
-    }
-    try {
-      this.files.set(await this.workspace.list());
-    } catch {
-      // Reported by the workspace service; the editor stays usable without it.
-    }
   }
 
   /**
@@ -514,7 +498,7 @@ export class ObjectWorkspace implements OnDestroy {
    * says. Calling it missing would tell an author their new icon is broken.
    */
   protected frameMissing(asset: string): boolean {
-    const files = this.files();
+    const files = this.workspaceFiles.all();
     if (asset.length === 0 || files.length === 0 || this.sessions.has(asset)) {
       return false;
     }
@@ -564,9 +548,7 @@ export class ObjectWorkspace implements OnDestroy {
     this.drafts.setBusy(true);
     this.drafts.clearError();
     try {
-      const path = `${ASSET_DIR}/${file.name}`;
-      await this.workspace.write(path, file);
-      await this.refreshFiles();
+      const path = await this.workspaceFiles.upload(file, ASSET_DIR);
       // The decoded copy holds the bytes this path used to have.
       this.sessions.discard(path);
       this.setFrame(index, path);
@@ -650,7 +632,7 @@ export class ObjectWorkspace implements OnDestroy {
   private async writeSprites(frames: readonly string[]): Promise<number> {
     const written = await this.sessions.writeIn(frames);
     if (written > 0) {
-      await this.refreshFiles();
+      await this.workspaceFiles.refresh();
       this.touchSprites();
     }
     return written;

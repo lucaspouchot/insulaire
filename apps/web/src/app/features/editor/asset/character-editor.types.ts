@@ -134,16 +134,6 @@ export const CONTROL_KINDS: readonly ControlKind[] = [
   'text',
 ];
 
-/** `true` when this control chooses from a declared list of options. */
-export function usesOptions(control: ControlKind): boolean {
-  return control === 'select' || control === 'multiSelect';
-}
-
-/** `true` when this control has `min`, `max` and `step` — and can drive a scale. */
-export function isNumeric(control: ControlKind): boolean {
-  return control === 'slider' || control === 'number';
-}
-
 /**
  * A first variant for a layer that has just been created.
  *

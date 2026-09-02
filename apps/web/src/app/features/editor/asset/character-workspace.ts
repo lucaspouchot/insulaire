@@ -77,8 +77,6 @@ import {
   blankVariant,
   heldOffset,
   hierarchy,
-  isNumeric,
-  usesOptions,
   wouldLoop,
 } from './character-editor.types';
 import { clampResolution, move } from './asset-editing';
@@ -98,9 +96,15 @@ import { I18nService } from '../../../i18n/i18n.service';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
 import { ControlField } from '../../../settings/control-field';
 import {
-  ContentWorkspaceService,
-  WorkspaceFile,
-} from '../../../services/content-workspace.service';
+  addOption,
+  editOption,
+  isNumeric,
+  removeOption,
+  setControlKind,
+  usesOptions,
+} from '../../../settings/control-list';
+import { ContentWorkspaceService } from '../../../services/content-workspace.service';
+import { WorkspaceFiles } from '../../../services/workspace-files';
 import { CharacterPose, EngineService } from '../../../services/engine.service';
 import { LocaleAuthoringService } from '../../../services/locale-authoring.service';
 import { CharacterLibraryService } from '../../../services/character-library.service';
@@ -189,6 +193,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
   private readonly engine = inject(EngineService);
   private readonly i18n = inject(I18nService);
   private readonly workspace = inject(ContentWorkspaceService);
+  private readonly workspaceFiles = inject(WorkspaceFiles);
   private readonly locales = inject(LocaleAuthoringService);
   private readonly library = inject(CharacterLibraryService);
 
@@ -218,8 +223,6 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
 
   /** The customisation the preview is showing. */
   protected readonly values = signal<CharacterValues>({});
-  /** Content files the workspace holds, for the asset picker. */
-  protected readonly files = signal<readonly WorkspaceFile[]>([]);
   /** What the resolver made of the open definition and those values. */
   protected readonly resolved = signal<ResolvedCharacter | null>(null);
   /** Whole-number zoom the preview settled on, for the readout. */
@@ -385,9 +388,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
   );
 
   /** Every image in the content directory, which is what a variant may name. */
-  protected readonly images = computed<readonly WorkspaceFile[]>(() =>
-    this.files().filter((file) => /\.(png|gif|webp)$/i.test(file.path)),
-  );
+  protected readonly images = this.workspaceFiles.images;
 
   protected readonly parameters = computed<readonly ControlDefinition[]>(
     () => this.document()?.parameters ?? [],
@@ -754,7 +755,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
         // Registered as well as fetched: the *runtime* holds these, and this
         // screen is about to replace one of them.
         await this.library.ensureLoaded();
-        await this.refreshFiles();
+        await this.workspaceFiles.refresh();
       },
       declared: () => this.manifest.characters(),
       read: (entry) => this.fetchCharacter(entry),
@@ -771,23 +772,6 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
       removed: () => {},
       refresh: () => this.repose(),
     };
-  }
-
-  /**
-   * Re-reads what the content directory holds, for the asset picker.
-   *
-   * A read-only workspace answers nothing, which is not an error: the picker is
-   * then empty and a path can still be typed by hand.
-   */
-  private async refreshFiles(): Promise<void> {
-    if (this.workspace.status() === null) {
-      return;
-    }
-    try {
-      this.files.set(await this.workspace.list());
-    } catch {
-      // Reported by the workspace service; the editor stays usable without it.
-    }
   }
 
   /**
@@ -984,23 +968,12 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
   protected setControl(index: number, control: ControlKind): void {
     this.resetChoices();
     this.edit((draft) => {
-      const parameter = draft.parameters?.[index];
-      if (parameter === undefined || parameter.control === control) {
+      const parameters = draft.parameters;
+      const parameter = parameters?.[index];
+      if (parameters === undefined || parameter === undefined || parameter.control === control) {
         return;
       }
-      parameter.control = control;
-      parameter.default = defaultFor(
-        control,
-        (parameter.options ?? []).map((option) => option.value),
-      );
-      if (!usesOptions(control)) {
-        delete parameter.options;
-      }
-      if (!isNumeric(control)) {
-        delete parameter.min;
-        delete parameter.max;
-        delete parameter.step;
-      }
+      parameters[index] = setControlKind(parameter, control, defaultFor);
     });
   }
 
@@ -1017,21 +990,16 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
   protected addOption(index: number): void {
     this.resetChoices();
     this.edit((draft) => {
-      const parameter = draft.parameters?.[index];
-      if (parameter === undefined) {
+      const parameters = draft.parameters;
+      const parameter = parameters?.[index];
+      if (parameters === undefined || parameter === undefined) {
         return;
       }
-      const options = parameter.options ?? [];
       const value = freeId(
         'value',
-        options.map((option) => option.value),
+        (parameter.options ?? []).map((option) => option.value),
       );
-      parameter.options = [...options, { value, labelKey: `game.character.${value}` }];
-      // The first option of an empty select becomes its default: a select whose
-      // default is not one of its own options does not validate.
-      if (parameter.control === 'select' && options.length === 0) {
-        parameter.default = value;
-      }
+      parameters[index] = addOption(parameter, { value, labelKey: `game.character.${value}` });
     });
   }
 
@@ -1042,21 +1010,19 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
   ): void {
     this.resetChoices();
     this.edit((draft) => {
-      const parameter = draft.parameters?.[index];
+      const parameters = draft.parameters;
+      const parameter = parameters?.[index];
       const option = parameter?.options?.[optionIndex];
-      if (parameter === undefined || option === undefined) {
+      if (parameters === undefined || parameter === undefined || option === undefined) {
         return;
       }
       const previous = option.value;
-      Object.assign(option, change);
+      parameters[index] = editOption(parameter, optionIndex, change);
       if (change.value === undefined || change.value === previous) {
         return;
       }
-      // A renamed option takes the default and every condition naming it along,
-      // rather than leaving a variant waiting for a value nobody offers.
-      if (parameter.default === previous) {
-        parameter.default = change.value;
-      }
+      // A renamed option takes every condition naming it along, rather than
+      // leaving a variant waiting for a value nobody offers.
       for (const layer of draft.layers ?? []) {
         for (const variant of layer.variants) {
           if (variant.when?.[parameter.id] === previous) {
@@ -1070,17 +1036,12 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
   protected removeOption(index: number, optionIndex: number): void {
     this.resetChoices();
     this.edit((draft) => {
-      const parameter = draft.parameters?.[index];
-      if (parameter?.options === undefined) {
+      const parameters = draft.parameters;
+      const parameter = parameters?.[index];
+      if (parameters === undefined || parameter === undefined) {
         return;
       }
-      const [removed] = parameter.options.splice(optionIndex, 1);
-      if (parameter.control === 'select' && parameter.default === removed?.value) {
-        parameter.default = parameter.options[0]?.value ?? '';
-      }
-      if (parameter.control === 'multiSelect' && Array.isArray(parameter.default)) {
-        parameter.default = parameter.default.filter((value) => value !== removed?.value);
-      }
+      parameters[index] = removeOption(parameter, optionIndex);
     });
   }
 
@@ -1459,9 +1420,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
     this.drafts.setBusy(true);
     this.drafts.clearError();
     try {
-      const path = `${ASSET_DIR}/${file.name}`;
-      await this.workspace.write(path, file);
-      await this.refreshFiles();
+      const path = await this.workspaceFiles.upload(file, ASSET_DIR);
       // The cache may hold a "missing" entry for this path from a previous
       // draw, and the file on disk has just changed under it either way.
       this.sprites.clear();
@@ -1527,7 +1486,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
   /** `true` when this variant names an image the content directory does not hold. */
   protected assetMissing(variant: LayerVariant): boolean {
     const asset = variant.sprite.asset;
-    return asset.length > 0 && !this.files().some((file) => file.path === asset);
+    return asset.length > 0 && !this.workspaceFiles.all().some((file) => file.path === asset);
   }
 
   // -------------------------------------------------------------- conditions
@@ -2025,7 +1984,7 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
   private async writeSprites(assets: readonly string[]): Promise<number> {
     const written = await this.sessions.writeIn(assets);
     if (written > 0) {
-      await this.refreshFiles();
+      await this.workspaceFiles.refresh();
       // The cache holds the bytes these paths used to have — including a
       // "missing" entry for one that has only just been created.
       this.sprites.clear();

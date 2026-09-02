@@ -29,10 +29,8 @@ import {
 import { TitleAction, TitleScreenDefinition, ValidationReportLike } from './title-editor.types';
 import { I18nService } from '../../../i18n/i18n.service';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
-import {
-  ContentWorkspaceService,
-  WorkspaceFile,
-} from '../../../services/content-workspace.service';
+import { ContentWorkspaceService } from '../../../services/content-workspace.service';
+import { WorkspaceFiles } from '../../../services/workspace-files';
 import { EngineService } from '../../../services/engine.service';
 import { LocaleAuthoringService } from '../../../services/locale-authoring.service';
 import { ProjectManifest } from '../../../project/project-manifest';
@@ -63,6 +61,7 @@ export class TitleEditorPage {
   private readonly engine = inject(EngineService);
   private readonly i18n = inject(I18nService);
   private readonly workspace = inject(ContentWorkspaceService);
+  private readonly workspaceFiles = inject(WorkspaceFiles);
   private readonly titleScreen = inject(TitleScreenService);
   private readonly locales = inject(LocaleAuthoringService);
 
@@ -89,8 +88,6 @@ export class TitleEditorPage {
   protected readonly error = this.drafts.error;
   protected readonly dirty = this.drafts.dirty;
   protected readonly busy = this.drafts.busy;
-  /** Content files that can be picked as an image or a track. */
-  protected readonly files = signal<readonly WorkspaceFile[]>([]);
   /** Bumped to force the preview to re-read the document. */
   protected readonly previewRevision = signal(0);
 
@@ -101,12 +98,8 @@ export class TitleEditorPage {
     () => this.manifest.titleScreen()?.path ?? 'menu/title-screen.json',
   );
 
-  protected readonly images = computed(() =>
-    this.files().filter((file) => /\.(png|jpe?g|webp|gif|svg)$/i.test(file.path)),
-  );
-  protected readonly tracks = computed(() =>
-    this.files().filter((file) => /\.(ogg|mp3|wav|m4a)$/i.test(file.path)),
-  );
+  protected readonly images = this.workspaceFiles.pictures;
+  protected readonly tracks = this.workspaceFiles.tracks;
 
   /** `true` when files can actually be written — the editor is honest about it. */
   protected readonly writable = computed(() => this.workspace.status() !== null);
@@ -135,7 +128,7 @@ export class TitleEditorPage {
         await this.i18n.ensureAdopted();
         await this.workspace.ensureProbed();
         await this.locales.ensureLoaded();
-        await this.refreshFiles();
+        await this.workspaceFiles.refresh();
       },
       declared: () => {
         const declared = this.manifest.titleScreen();
@@ -163,13 +156,6 @@ export class TitleEditorPage {
       removed: () => {},
       refresh: () => {},
     };
-  }
-
-  private async refreshFiles(): Promise<void> {
-    if (this.workspace.status() === null) {
-      return;
-    }
-    this.files.set(await this.workspace.list());
   }
 
   // ------------------------------------------------------------------ edits
@@ -257,9 +243,7 @@ export class TitleEditorPage {
     this.drafts.setBusy(true);
     this.drafts.clearError();
     try {
-      const path = `${UPLOAD_DIR[kind]}/${file.name}`;
-      await this.workspace.write(path, file);
-      await this.refreshFiles();
+      const path = await this.workspaceFiles.upload(file, UPLOAD_DIR[kind]);
       apply(path);
       this.drafts.announce(this.i18n.t('ui.editor.title.uploaded', { file: path }));
     } catch (cause) {

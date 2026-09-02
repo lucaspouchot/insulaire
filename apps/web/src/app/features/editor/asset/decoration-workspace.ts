@@ -73,10 +73,8 @@ import { SpriteCache, drawCharacter } from '../../../../renderer/character-rende
 import { flatHexagon, surfaceHexagon } from '../../../../renderer/tile-preview';
 import { I18nService } from '../../../i18n/i18n.service';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
-import {
-  ContentWorkspaceService,
-  WorkspaceFile,
-} from '../../../services/content-workspace.service';
+import { ContentWorkspaceService } from '../../../services/content-workspace.service';
+import { WorkspaceFiles } from '../../../services/workspace-files';
 import { CharacterLibraryService } from '../../../services/character-library.service';
 import { DecorationLibraryService } from '../../../services/decoration-library.service';
 import { EngineService } from '../../../services/engine.service';
@@ -167,6 +165,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
   private readonly engine = inject(EngineService);
   private readonly i18n = inject(I18nService);
   private readonly workspace = inject(ContentWorkspaceService);
+  private readonly workspaceFiles = inject(WorkspaceFiles);
   private readonly library = inject(DecorationLibraryService);
   /**
    * The project's characters, for the figure standing on the hex.
@@ -202,9 +201,6 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
   protected readonly loading = this.drafts.loading;
   /** Paths the manifest declares that could not be read. */
   protected readonly unreadable = this.drafts.unreadable;
-  /** Content files the workspace holds, for the frame picker. */
-  protected readonly files = signal<readonly WorkspaceFile[]>([]);
-
   /** Which surface is open: the hexagon, or the frame's own pixels. */
   protected readonly scene = signal<'hex' | 'flat'>('hex');
   /** Which projection the hexagon is drawn in; a *view* setting, not content. */
@@ -308,9 +304,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
   });
 
   /** Every image in the content directory, which is what a frame may name. */
-  protected readonly assets = computed<readonly WorkspaceFile[]>(() =>
-    this.files().filter((file) => /\.(png|gif|webp)$/i.test(file.path)),
-  );
+  protected readonly assets = this.workspaceFiles.images;
 
   /** The characters the figure picker offers, in manifest order. */
   protected readonly figureChoices = this.characters.choices;
@@ -458,7 +452,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
         // The first real character the project ships, or the plain silhouette
         // when it ships none: the hex is judged against *something* by default.
         this.figureId.set(this.characters.choices()[0]?.id ?? GENERIC_FIGURE);
-        await this.refreshFiles();
+        await this.workspaceFiles.refresh();
       },
       declared: () => this.manifest.decorations(),
       read: (entry) => this.fetchDecoration(entry),
@@ -478,17 +472,6 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
       removed: () => {},
       refresh: () => this.repose(),
     };
-  }
-
-  private async refreshFiles(): Promise<void> {
-    if (this.workspace.status() === null) {
-      return;
-    }
-    try {
-      this.files.set(await this.workspace.list());
-    } catch {
-      // Reported by the workspace service; the editor stays usable without it.
-    }
   }
 
   /**
@@ -792,7 +775,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
 
   /** `true` when a frame names a file the content directory does not hold. */
   protected frameMissing(asset: string): boolean {
-    const files = this.files();
+    const files = this.workspaceFiles.all();
     return asset.length > 0 && files.length > 0 && !files.some((file) => file.path === asset);
   }
 
@@ -832,9 +815,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
     this.drafts.setBusy(true);
     this.drafts.clearError();
     try {
-      const path = `${ASSET_DIR}/${file.name}`;
-      await this.workspace.write(path, file);
-      await this.refreshFiles();
+      const path = await this.workspaceFiles.upload(file, ASSET_DIR);
       // The decoded copy holds the bytes this path used to have.
       this.sessions.discard(path);
       this.setFrame(index, path);
@@ -931,7 +912,7 @@ export class DecorationWorkspace implements AfterViewInit, OnDestroy {
   private async writeSprites(frames: readonly string[]): Promise<number> {
     const written = await this.sessions.writeIn(frames);
     if (written > 0) {
-      await this.refreshFiles();
+      await this.workspaceFiles.refresh();
       this.touchSprites();
     }
     return written;

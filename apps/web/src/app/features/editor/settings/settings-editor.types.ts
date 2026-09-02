@@ -45,16 +45,6 @@ export const SCOPES: readonly { readonly id: SettingScope; readonly labelKey: st
   { id: 'newGame', labelKey: 'ui.editor.settings.scopeNewGame' },
 ];
 
-/** `true` when this control chooses from a declared list of options. */
-export function usesOptions(control: ControlKind): boolean {
-  return control === 'select' || control === 'multiSelect';
-}
-
-/** `true` when this control has `min`, `max` and `step`. */
-export function isNumeric(control: ControlKind): boolean {
-  return control === 'slider' || control === 'number';
-}
-
 /**
  * A default this control accepts, given the options it currently declares.
  *

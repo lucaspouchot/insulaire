@@ -38,9 +38,15 @@ import {
   SettingsGroup,
   SettingsSection,
   defaultFor,
-  isNumeric,
-  usesOptions,
 } from './settings-editor.types';
+import {
+  addOption,
+  editOption,
+  isNumeric,
+  removeOption,
+  setControlKind,
+  usesOptions,
+} from '../../../settings/control-list';
 import { SETTINGS_SCHEMA_VERSION } from '../../../../content/generated/settings';
 import { serializeSettings } from '../../../../content/settings-serializer';
 import { I18nService } from '../../../i18n/i18n.service';
@@ -394,23 +400,12 @@ export class SettingsEditorPage {
       if (field === undefined || field.control === control) {
         return;
       }
-      field.control = control;
+      const next = setControlKind(field, control, defaultFor);
+      // A physical key is a session control: it cannot be a new-game choice.
       if (control === 'keyBinding') {
-        field.scope = 'session';
+        next.scope = 'session';
       }
-      field.default = defaultFor(
-        control,
-        (field.options ?? []).map((option) => option.value),
-      );
-      if (!usesOptions(control)) {
-        delete field.options;
-      }
-      if (!isNumeric(control)) {
-        delete field.min;
-        delete field.max;
-        delete field.step;
-        delete field.unit;
-      }
+      draft.fields[index] = next;
     });
   }
 
@@ -432,17 +427,11 @@ export class SettingsEditorPage {
       if (field === undefined) {
         return;
       }
-      const options = field.options ?? [];
       const value = freeId(
         'option',
-        options.map((option) => option.value),
+        (field.options ?? []).map((option) => option.value),
       );
-      field.options = [...options, { value, labelKey: `game.settings.${value}` }];
-      // The first option of an empty select becomes its default: a select whose
-      // default is not one of its own options does not validate.
-      if (field.control === 'select' && options.length === 0) {
-        field.default = value;
-      }
+      draft.fields[index] = addOption(field, { value, labelKey: `game.settings.${value}` });
     });
   }
 
@@ -453,16 +442,8 @@ export class SettingsEditorPage {
   ): void {
     this.editGroup((draft) => {
       const field = draft.fields[index];
-      const option = field?.options?.[optionIndex];
-      if (field === undefined || option === undefined) {
-        return;
-      }
-      const previous = option.value;
-      Object.assign(option, change);
-      // A renamed option takes the default with it, rather than leaving behind a
-      // default naming a value nobody declares any more.
-      if (change.value !== undefined && field.default === previous) {
-        field.default = change.value;
+      if (field !== undefined) {
+        draft.fields[index] = editOption(field, optionIndex, change);
       }
     });
   }
@@ -470,16 +451,10 @@ export class SettingsEditorPage {
   protected removeOption(index: number, optionIndex: number): void {
     this.editGroup((draft) => {
       const field = draft.fields[index];
-      if (field?.options === undefined) {
+      if (field === undefined) {
         return;
       }
-      const [removed] = field.options.splice(optionIndex, 1);
-      if (field.control === 'select' && field.default === removed?.value) {
-        field.default = field.options[0]?.value ?? '';
-      }
-      if (field.control === 'multiSelect' && Array.isArray(field.default)) {
-        field.default = field.default.filter((value) => value !== removed?.value);
-      }
+      draft.fields[index] = removeOption(field, optionIndex);
     });
   }
 

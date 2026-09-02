@@ -26,6 +26,7 @@ import {
 import {
   ControlDefinition,
   ControlKind,
+  ControlOption,
   SettingValue,
 } from '../../../../content/generated/settings';
 import { surfaceDensity } from '../../../../renderer/canvas-surface';
@@ -46,12 +47,15 @@ import {
   ProjectStoreService,
   contentUrl,
 } from '../../../services/project-store.service';
+import { CONTROL_KINDS, defaultFor } from '../settings/settings-editor.types';
 import {
-  CONTROL_KINDS,
-  defaultFor,
+  addOption,
+  editOption,
   isNumeric,
+  removeOption,
+  setControlKind,
   usesOptions,
-} from '../settings/settings-editor.types';
+} from '../../../settings/control-list';
 import { DraftSet } from '../../../editing/draft-set';
 import { DraftSource } from '../../../editing/draft-source';
 import { freeId } from '../../../editing/ids';
@@ -393,18 +397,7 @@ export class CharacterCreationEditorPage {
     if (choice === null || choice.control === control) {
       return;
     }
-    this.patchChoice({
-      control,
-      default: defaultFor(
-        control,
-        (choice.options ?? []).map((option) => option.value),
-      ),
-      options: usesOptions(control) ? (choice.options ?? []) : undefined,
-      min: isNumeric(control) ? choice.min : undefined,
-      max: isNumeric(control) ? choice.max : undefined,
-      step: isNumeric(control) ? choice.step : undefined,
-      unit: isNumeric(control) ? choice.unit : undefined,
-    });
+    this.patchChoice(setControlKind(choice, control, defaultFor));
     this.resetPreview();
   }
 
@@ -454,9 +447,8 @@ export class CharacterCreationEditorPage {
       'option',
       (choice.options ?? []).map((option) => option.value),
     );
-    this.patchChoice({
-      options: [...(choice.options ?? []), { value, labelKey: `game.creation.${value}` }],
-    });
+    const next = addOption(choice, { value, labelKey: `game.creation.${value}` });
+    this.patchChoice({ options: next.options, default: next.default });
   }
 
   protected patchChoiceOption(
@@ -467,18 +459,8 @@ export class CharacterCreationEditorPage {
     if (choice === null) {
       return;
     }
-    const options = structuredClone(choice.options ?? []);
-    const option = options[optionIndex];
-    if (option === undefined) {
-      return;
-    }
-    const previous = option.value;
-    Object.assign(option, change);
-    this.patchChoice({
-      options,
-      default:
-        choice.default === previous && change.value !== undefined ? change.value : choice.default,
-    });
+    const next = editOption(choice, optionIndex, change);
+    this.patchChoice({ options: next.options, default: next.default });
     this.resetPreview();
   }
 
@@ -487,13 +469,8 @@ export class CharacterCreationEditorPage {
     if (choice === null) {
       return;
     }
-    const options = (choice.options ?? []).filter((_option, at) => at !== index);
-    this.patchChoice({
-      options,
-      default: options.some((option) => option.value === choice.default)
-        ? choice.default
-        : (options[0]?.value ?? ''),
-    });
+    const next = removeOption(choice, index);
+    this.patchChoice({ options: next.options, default: next.default });
     this.resetPreview();
   }
 
@@ -573,15 +550,11 @@ export class CharacterCreationEditorPage {
     if (field === null) {
       return;
     }
-    this.patchCharacteristic({
-      control,
-      default: field.nullable && field.default === null ? null : defaultFor(control),
-      options: usesOptions(control) ? (field.options ?? []) : undefined,
-      min: isNumeric(control) ? field.min : undefined,
-      max: isNumeric(control) ? field.max : undefined,
-      step: isNumeric(control) ? field.step : undefined,
-      unit: isNumeric(control) ? field.unit : undefined,
-    });
+    const next = setControlKind(field, control, defaultFor);
+    // A nullable characteristic that was left empty stays empty across the switch.
+    this.patchCharacteristic(
+      field.nullable && field.default === null ? { ...next, default: null } : next,
+    );
     this.resetPreview();
   }
 
@@ -602,8 +575,8 @@ export class CharacterCreationEditorPage {
       'value',
       (field.options ?? []).map((option) => option.value),
     );
-    const options = [...(field.options ?? []), { value, labelKey: `game.creation.${value}` }];
-    this.patchCharacteristic({ options, default: field.default ?? options[0]?.value ?? '' });
+    const next = addOption(field, { value, labelKey: `game.creation.${value}` });
+    this.patchCharacteristic({ options: next.options, default: next.default });
   }
 
   protected patchCharacteristicOption(
@@ -615,25 +588,17 @@ export class CharacterCreationEditorPage {
     if (field === null) {
       return;
     }
-    const options = structuredClone(field.options ?? []);
-    const option = options[index];
-    if (option !== undefined) {
-      const previous = option.value;
-      option[key] = value;
-      this.patchCharacteristic({
-        options,
-        default: key === 'value' && field.default === previous ? value : field.default,
-      });
-    }
+    const next = editOption(field, index, { [key]: value } as Partial<ControlOption>);
+    this.patchCharacteristic({ options: next.options, default: next.default });
   }
 
   protected removeCharacteristicOption(index: number): void {
     const field = this.characteristic();
-    if (field !== null) {
-      this.patchCharacteristic({
-        options: (field.options ?? []).filter((_option, at) => at !== index),
-      });
+    if (field === null) {
+      return;
     }
+    const next = removeOption(field, index);
+    this.patchCharacteristic({ options: next.options, default: next.default });
   }
 
   protected removeCharacteristic(): void {
