@@ -23,7 +23,8 @@ import {
 import { ControlDefinition, SettingValue } from '../../../content/generated/settings';
 import { ResolvedCharacter } from '../../../content/generated/character';
 import { surfaceDensity } from '../../../renderer/canvas-surface';
-import { SpriteCache, drawCharacter } from '../../../renderer/character-renderer';
+import { SpriteCache } from '../../../renderer/character-renderer';
+import { CharacterStage, NO_STAGE_CHROME } from '../../../renderer/character-stage';
 import { I18nService } from '../../i18n/i18n.service';
 import { TranslatePipe } from '../../i18n/translate.pipe';
 import { ControlField } from '../../settings/control-field';
@@ -57,6 +58,8 @@ export class CharacterCreationPage implements OnDestroy {
     (asset) => contentUrl(asset),
     () => this.drawPreviews(),
   );
+  /** One framework-free drawing surface per preview canvas. */
+  private readonly stages = new WeakMap<HTMLCanvasElement, CharacterStage>();
   private resizeObserver: ResizeObserver | null = null;
 
   protected readonly busy = signal(true);
@@ -302,14 +305,20 @@ export class CharacterCreationPage implements OnDestroy {
       context.setTransform(density, 0, 0, density, 0, 0);
       context.clearRect(0, 0, width, height);
       const character = previews[index]?.character;
-      if (character !== null && character !== undefined) {
-        drawCharacter(
-          context,
-          character,
-          { x: 18, y: 18, width: width - 36, height: height - 36 },
-          this.sprites,
-        );
+      if (character === null || character === undefined) {
+        continue;
       }
+      let stage = this.stages.get(canvas);
+      if (stage === undefined) {
+        stage = new CharacterStage(context, this.sprites);
+        this.stages.set(canvas, stage);
+      }
+      stage.setModel({
+        character,
+        box: { x: 18, y: 18, width: width - 36, height: height - 36 },
+        chrome: NO_STAGE_CHROME,
+      });
+      stage.draw();
     }
   }
 }

@@ -71,7 +71,6 @@ import {
   DEFAULT_FRAME_DURATION_MS,
   MAX_SPRITE_RESOLUTION,
   PixelOffset,
-  PixelRect,
   ResolvedCharacter,
   SettingValue,
   SpriteResolution,
@@ -93,14 +92,8 @@ import { serializeCharacter } from '../../../../content/character-serializer';
 import { PALETTE_SIZE, SpriteDocument } from '../../../../content/sprite-document';
 import { assetUrl } from '../../../../core/asset-url';
 import { isEditableTarget, routeUndoRedo } from '../../../../core/keyboard-shortcuts';
-import {
-  CharacterBox,
-  SpriteCache,
-  SpriteSource,
-  drawCharacter,
-  pixelUnder,
-  placement,
-} from '../../../../renderer/character-renderer';
+import { SpriteCache, SpriteSource } from '../../../../renderer/character-renderer';
+import { CharacterStage } from '../../../../renderer/character-stage';
 import { I18nService } from '../../../i18n/i18n.service';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
 import { ControlField } from '../../../settings/control-field';
@@ -155,12 +148,6 @@ const ZOOM_STEPS: readonly number[] = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32];
  */
 const MAX_STAGE = 3072;
 
-/** From this zoom up, the stage rules the pixel grid. */
-const GRID_ZOOM = 6;
-
-/** Smallest a transparency square may get on screen, in CSS pixels. */
-const MIN_CHECKER = 6;
-
 /**
  * The largest backing store the stage may allocate, in pixels a side.
  *
@@ -172,13 +159,6 @@ const MAX_BACKING = 4096;
 
 /** How many colours the palette carries over from previous strokes. */
 const RECENT_COLORS = 8;
-
-/** What a click on the stage does. */
-/** Colour of the bones drawn between a node and its parent. */
-const BONE_COLOR = 'rgba(122, 192, 255, 0.75)';
-
-/** Colour of an attachment point, and of the selected node's own marker. */
-const JOINT_COLOR = '#7ac0ff';
 
 @Component({
   selector: 'app-character-workspace',
@@ -289,13 +269,17 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
   /** Where the pointer was when it last painted, in the sprite's own pixels. */
   private stroking: { x: number; y: number } | null = null;
   /**
-   * What the last draw put on the stage, for turning a click into a pixel.
+   * The drawing surface: the resolved character plus the editor chrome, and the
+   * pointer maths for turning a click back into a pixel. Framework-free, so it
+   * has a spec of its own (`renderer/character-stage.ts`).
    *
-   * The box is kept with the placement because a pointer arrives in the box the
-   * *element* occupies, which the interface scale has multiplied, and only the
-   * box we drew in says what that means (`app/app.css`).
+   * Rebuilt whenever the canvas element changes, because the `#stage` canvas is
+   * inside `@if (scene() === 'composed')` and the flat/composed switch destroys
+   * and recreates it — a stage holding the old element's 2D context would draw
+   * into nothing. `null` until the first draw.
    */
-  private view = { zoom: 1, originX: 0, originY: 0, box: { x: 0, y: 0, width: 1, height: 1 } };
+  private stage: CharacterStage | null = null;
+  private stageCanvas: HTMLCanvasElement | null = null;
 
   /** Which layer the variant editor is showing — and which *node* is selected. */
   private readonly layerIdSignal = signal<string | null>(null);
@@ -1895,28 +1879,9 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
     });
   }
 
-  /**
-   * The canvas pixel a pointer is over, in the character's own coordinates.
-   *
-   * Un-mirrored on the way back: the stage may be showing the character
-   * flipped, and a click means the pixel it *points at*, not the one that
-   * would be there if it were facing the other way.
-   */
+  /** The canvas pixel a pointer is over, in the character's own coordinates. */
   private canvasPixel(event: PointerEvent): { x: number; y: number } | null {
-    const canvas = this.canvasRef()?.nativeElement;
-    if (canvas === undefined) {
-      return null;
-    }
-    const at = pixelUnder(
-      { x: event.clientX, y: event.clientY },
-      canvas.getBoundingClientRect(),
-      this.view.box,
-      this.view,
-    );
-    if (at === null || this.resolved()?.mirrored !== true) {
-      return at;
-    }
-    return { x: this.resolution().width - 1 - at.x, y: at.y };
+    return this.stage?.pixelAt(event.clientX, event.clientY) ?? null;
   }
 
   /** Paints from the last point to this one, so a fast drag is still a line. */
@@ -2082,44 +2047,22 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
     this.drafts.touchSprites();
   }
 
-  /**
-   * Where in the edited sprite this pointer is, in the sprite's own pixels.
-   *
-   * Deliberately unbounded: a drag that leaves the sprite and comes back is one
-   * stroke, and the line between two points is the part that matters. What is
-   * outside is dropped a layer down, by the plot itself.
-   */
+  /** Where in the edited sprite this pointer is, in the sprite's own pixels. */
   private pixelAt(event: PointerEvent): { x: number; y: number } | null {
-    // The **resolved** box, not the authored one: a child's `rect` is measured
-    // from the joint it hangs off, so the file's numbers are not where the
-    // sprite is (`docs/adr/ADR-0024-character-definitions.md`).
-    const box = this.drawnRect();
-    if (box === null) {
-      return null;
-    }
-    // Through the renderer's own inverse, measured off the element: a pointer
-    // is reported in screen pixels and the stage was drawn in layout pixels,
-    // and the interface scale is the factor between them.
-    const at = this.canvasPixel(event);
-    return at === null ? null : { x: at.x - box[0], y: at.y - box[1] };
-  }
-
-  /** Where the open layer's sprite actually landed, animation included. */
-  private drawnRect(): PixelRect | null {
-    const open = this.layer()?.id;
-    return this.resolved()?.layers.find((drawn) => drawn.layer === open)?.rect ?? null;
+    return this.stage?.layerPixelAt(event.clientX, event.clientY) ?? null;
   }
 
   // ----------------------------------------------------------------- drawing
 
   /**
-   * Draws the resolved character into the preview canvas.
+   * Draws the resolved character into the preview canvas, through
+   * {@link CharacterStage}.
    *
-   * The same function the game will draw with, over the same payload — the
-   * preview has no drawing code of its own. What it adds is what only an
-   * *editor* needs: the canvas bounds, a box around the layer being edited so
-   * an author can see what they are moving, and — once the zoom is high enough
-   * for it to mean anything — the pixel grid they are painting on.
+   * What stays here is the surface: the fitted-or-explicit size, the interface
+   * scale the shell is zoomed by, and the one backing-store policy
+   * (`renderer/canvas-surface.ts`). The character and every editor overlay is
+   * the stage's, and the pointer maths that turns a click back into a pixel
+   * lives beside the drawing that produced it.
    */
   private draw(): void {
     const canvas = this.canvasRef()?.nativeElement;
@@ -2176,195 +2119,33 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
       return;
     }
 
-    const box: CharacterBox = { x: 0, y: 0, width, height };
-    // Asked of the renderer rather than assumed, so a click lands on the pixel
-    // it points at: the stage and the drawing agree because they are the same
-    // calculation.
-    const { zoom, originX, originY } = placement(resolved.resolution, box);
-    this.view = { zoom, originX, originY, box };
-
-    this.paintTransparency(context, resolved.resolution, zoom, originX, originY);
-    this.strokeCanvasBounds(context, resolved.resolution, zoom, originX, originY);
-    drawCharacter(context, this.painted(resolved), box, this.source);
-    if (this.showGrid() && zoom >= GRID_ZOOM) {
-      this.strokeGrid(context, resolved.resolution, zoom, originX, originY);
+    // Rebuilt only when the element itself changes: `getContext` hands back the
+    // same context for the life of a canvas, and the flat/composed switch is
+    // what swaps the canvas underneath.
+    if (this.stageCanvas !== canvas) {
+      this.stage = new CharacterStage(context, this.source);
+      this.stageCanvas = canvas;
+    }
+    const stage = this.stage;
+    if (stage === null) {
+      return;
     }
 
-    // The overlays are drawn in canvas coordinates, so a mirrored character
-    // needs them reflected too — a selection box on the wrong side of the
-    // figure is worse than none at all.
-    context.save();
-    if (resolved.mirrored) {
-      context.translate(originX * 2 + resolved.resolution.width * zoom, 0);
-      context.scale(-1, 1);
-    }
-    if (this.skeleton()) {
-      this.strokeSkeleton(context, zoom, originX, originY);
-    }
-    this.strokeOpenLayer(context, zoom, originX, originY);
-    context.restore();
-    this.zoom.set(zoom);
-  }
-
-  /**
-   * The bones and joints, drawn over the character.
-   *
-   * What makes a positioning problem diagnosable: a line runs from where a
-   * layer hangs — its parent's attachment point when it names one, the parent's
-   * own origin otherwise — to the child's centre, and every attachment point is
-   * marked. Both ends move with the animation, because
-   * both are read off the *resolved* boxes rather than the authored ones.
-   *
-   * Editor-only: nothing in this method exists in the runtime's renderer.
-   */
-  private strokeSkeleton(
-    context: CanvasRenderingContext2D,
-    zoom: number,
-    originX: number,
-    originY: number,
-  ): void {
-    const drawn = new Map((this.resolved()?.layers ?? []).map((layer) => [layer.layer, layer]));
-    const selected = this.layer()?.id;
-    const point = (x: number, y: number): [number, number] => [
-      originX + x * zoom + zoom / 2,
-      originY + y * zoom + zoom / 2,
-    ];
-
-    context.save();
-    context.lineWidth = Math.max(1, Math.round(zoom / 3));
-
-    for (const layer of this.layers()) {
-      const child = drawn.get(layer.id);
-      const parentId = layer.parent;
-      if (child === undefined || !parentId) {
-        continue;
-      }
-      const parent = drawn.get(parentId);
-      if (parent === undefined) {
-        continue;
-      }
-      // Where it hangs: the named attachment point, measured from its own
-      // layer's frame — which is what the child was placed from, so the bone
-      // ends exactly where the placement started.
-      const anchor = this.layers()
-        .find((candidate) => candidate.id === parentId)
-        ?.anchors?.find((candidate) => candidate.id === layer.parentAnchor);
-      const from = anchor
-        ? point(parent.origin[0] + anchor.at[0], parent.origin[1] + anchor.at[1])
-        : point(parent.origin[0], parent.origin[1]);
-      const to = point(child.rect[0] + child.rect[2] / 2, child.rect[1] + child.rect[3] / 2);
-
-      context.strokeStyle =
-        layer.id === selected || parentId === selected ? JOINT_COLOR : BONE_COLOR;
-      context.beginPath();
-      context.moveTo(from[0], from[1]);
-      context.lineTo(to[0], to[1]);
-      context.stroke();
-    }
-
-    // The joints themselves, on top of the bones so they stay readable.
-    const radius = Math.max(2, Math.round(zoom * 0.9));
-    context.fillStyle = JOINT_COLOR;
-    for (const layer of this.layers()) {
-      const placed = drawn.get(layer.id);
-      if (placed === undefined) {
-        continue;
-      }
-      for (const anchor of layer.anchors ?? []) {
-        const [x, y] = point(placed.origin[0] + anchor.at[0], placed.origin[1] + anchor.at[1]);
-        context.beginPath();
-        context.arc(x, y, radius, 0, Math.PI * 2);
-        context.fill();
-      }
-    }
-    context.restore();
-  }
-
-  /**
-   * The character as the stage shows it while painting.
-   *
-   * The edited layer loses its tint. What the pencil writes is the file, and a
-   * file seen through a multiply is not the thing being edited — an author
-   * matching two greys would be matching them through a colour that is not in
-   * either of them (`docs/adr/ADR-0028-one-editor-for-everything-drawn.md`).
-   */
-  private painted(resolved: ResolvedCharacter): ResolvedCharacter {
-    const target = this.target();
-    if (target === null || target.tint.length === 0) {
-      return resolved;
-    }
-    return {
-      ...resolved,
-      layers: resolved.layers.map((layer) => (layer === target ? { ...layer, tint: '' } : layer)),
-    };
-  }
-
-  /** One line per authored pixel, once they are big enough to aim at. */
-  private strokeGrid(
-    context: CanvasRenderingContext2D,
-    resolution: SpriteResolution,
-    zoom: number,
-    originX: number,
-    originY: number,
-  ): void {
-    context.save();
-    context.strokeStyle = 'rgba(147, 161, 177, 0.16)';
-    context.lineWidth = 1;
-    context.beginPath();
-    for (let x = 1; x < resolution.width; x += 1) {
-      context.moveTo(originX + x * zoom + 0.5, originY);
-      context.lineTo(originX + x * zoom + 0.5, originY + resolution.height * zoom);
-    }
-    for (let y = 1; y < resolution.height; y += 1) {
-      context.moveTo(originX, originY + y * zoom + 0.5);
-      context.lineTo(originX + resolution.width * zoom, originY + y * zoom + 0.5);
-    }
-    context.stroke();
-    context.restore();
-  }
-
-  /**
-   * The checkerboard that says "nothing is drawn here", on the canvas itself.
-   *
-   * Its squares are a whole number of **authored** pixels, so it reads as the
-   * grid being painted on and zooms with it. A fixed screen size — which is
-   * what a CSS background is — puts a second grid on the stage at a different
-   * scale from the first, and at any real zoom the two disagree visibly.
-   *
-   * It covers the authored canvas and nothing else, which also makes the canvas
-   * itself visible as a region rather than as a dashed line around everything.
-   */
-  private paintTransparency(
-    context: CanvasRenderingContext2D,
-    resolution: SpriteResolution,
-    zoom: number,
-    originX: number,
-    originY: number,
-  ): void {
-    const [light, dark] = this.checkerColors();
-    const width = resolution.width * zoom;
-    const height = resolution.height * zoom;
-
-    context.save();
-    context.fillStyle = light;
-    context.fillRect(originX, originY, width, height);
-
-    // How many authored pixels one square is: one, unless one would be too
-    // small to read, in which case as few as still clear MIN_CHECKER.
-    const step = Math.max(1, Math.ceil(MIN_CHECKER / zoom));
-    const square = step * zoom;
-    context.fillStyle = dark;
-    for (let row = 0; row * step < resolution.height; row += 1) {
-      for (let column = row % 2; column * step < resolution.width; column += 2) {
-        context.fillRect(
-          originX + column * square,
-          originY + row * square,
-          Math.min(square, width - column * square),
-          Math.min(square, height - row * square),
-        );
-      }
-    }
-    context.restore();
+    stage.setModel({
+      character: resolved,
+      box: { x: 0, y: 0, width, height },
+      chrome: {
+        showSkeleton: this.skeleton(),
+        showGrid: this.showGrid(),
+        showTransparency: true,
+        canvasBounds: true,
+        openLayerId: this.layer()?.id ?? null,
+      },
+      layers: this.layers(),
+      transparencyColors: this.checkerColors(),
+    });
+    stage.draw();
+    this.zoom.set(stage.zoom);
   }
 
   /**
@@ -2383,51 +2164,6 @@ export class CharacterWorkspace implements AfterViewInit, OnDestroy {
       ];
     }
     return this.checker;
-  }
-
-  /** The authored canvas, so an author sees what their pixels are measured in. */
-  private strokeCanvasBounds(
-    context: CanvasRenderingContext2D,
-    resolution: SpriteResolution,
-    zoom: number,
-    originX: number,
-    originY: number,
-  ): void {
-    context.save();
-    context.strokeStyle = 'rgba(147, 161, 177, 0.35)';
-    context.setLineDash([2, 3]);
-    context.strokeRect(
-      originX + 0.5,
-      originY + 0.5,
-      resolution.width * zoom - 1,
-      resolution.height * zoom - 1,
-    );
-    context.restore();
-  }
-
-  /** A box around the layer open in the form, drawn over the character. */
-  private strokeOpenLayer(
-    context: CanvasRenderingContext2D,
-    zoom: number,
-    originX: number,
-    originY: number,
-  ): void {
-    const open = this.layer()?.id;
-    const drawn = this.resolved()?.layers.find((layer) => layer.layer === open);
-    if (drawn === undefined) {
-      return;
-    }
-    const [x, y, layerWidth, layerHeight] = drawn.rect;
-    context.save();
-    context.strokeStyle = '#ffd166';
-    context.lineWidth = 1;
-    context.strokeRect(
-      originX + x * zoom - 0.5,
-      originY + y * zoom - 0.5,
-      layerWidth * zoom + 1,
-      layerHeight * zoom + 1,
-    );
-    context.restore();
   }
 
   // ---------------------------------------------------------------- plumbing

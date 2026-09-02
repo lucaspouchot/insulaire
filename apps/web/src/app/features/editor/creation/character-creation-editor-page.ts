@@ -29,7 +29,8 @@ import {
   SettingValue,
 } from '../../../../content/generated/settings';
 import { surfaceDensity } from '../../../../renderer/canvas-surface';
-import { SpriteCache, drawCharacter } from '../../../../renderer/character-renderer';
+import { SpriteCache } from '../../../../renderer/character-renderer';
+import { CharacterStage, NO_STAGE_CHROME } from '../../../../renderer/character-stage';
 import { I18nService } from '../../../i18n/i18n.service';
 import { TranslatePipe } from '../../../i18n/translate.pipe';
 import { ControlField } from '../../../settings/control-field';
@@ -89,6 +90,13 @@ export class CharacterCreationEditorPage {
     (asset) => contentUrl(asset),
     () => this.drawPreview(),
   );
+  /**
+   * The framework-free drawing surface, rebuilt when the canvas element
+   * changes: `#previewCanvas` sits inside the workflow-screen `@switch`, so
+   * navigating away from a screen with a preview block and back recreates it.
+   */
+  private stage: CharacterStage | null = null;
+  private stageCanvas: HTMLCanvasElement | null = null;
 
   /**
    * The editing session, holding exactly one draft.
@@ -856,12 +864,16 @@ export class CharacterCreationEditorPage {
     context.clearRect(0, 0, width, height);
     context.fillStyle = '#101820';
     context.fillRect(0, 0, width, height);
-    drawCharacter(
-      context,
-      resolved,
-      { x: 12, y: 12, width: width - 24, height: height - 24 },
-      this.sprites,
-    );
+    if (this.stageCanvas !== canvas || this.stage === null) {
+      this.stage = new CharacterStage(context, this.sprites);
+      this.stageCanvas = canvas;
+    }
+    this.stage.setModel({
+      character: resolved,
+      box: { x: 12, y: 12, width: width - 24, height: height - 24 },
+      chrome: NO_STAGE_CHROME,
+    });
+    this.stage.draw();
   }
 
   // ------------------------------------------------------------- validation
